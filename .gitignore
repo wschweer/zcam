@@ -1,0 +1,6 @@
+.nped
+.nped.json
+.*,
+*/.*,
+build
+zcam.log
