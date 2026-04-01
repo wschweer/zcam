@@ -3,4 +3,6 @@
 .*,
 */.*,
 build
-zcam.log
+zcam.log*
+.nped-log*
+.qmlls.ini

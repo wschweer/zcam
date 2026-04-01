@@ -1,5 +1,5 @@
 //=============================================================================
-//  nped Program Editor
+//  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
 //  Copyright (C) 2025-2026 Werner Schweer
 //

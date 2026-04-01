@@ -1,5 +1,5 @@
 //=============================================================================
-//  ZCam - manufactoring tool for G-code machines and Fiber Laser
+//  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
 //  Copyright (C) 2025-2026 Werner Schweer
 //
@@ -11,14 +11,20 @@
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQuickStyle>
 
 //---------------------------------------------------------
 //   main
 //---------------------------------------------------------
 
-int main(int argc, char* argv[])
-      {
+int main(int argc, char* argv[]) {
+      QCoreApplication::setOrganizationName("zcam");
+      QCoreApplication::setOrganizationDomain("zcam.org");
+      QCoreApplication::setApplicationVersion("0.0.1");
+
       QGuiApplication app(argc, argv);
+
+      QQuickStyle::setStyle("Material");
 
       QQmlApplicationEngine engine;
       engine.loadFromModule("ZCam", "Main");

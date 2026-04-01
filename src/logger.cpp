@@ -1,5 +1,5 @@
 //=============================================================================
-//  nped Program Editor
+//  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
 //  Copyright (C) 2025-2026 Werner Schweer
 //
@@ -49,7 +49,10 @@ Logger::Logger() {
       const char* logfile = getenv("LOGFILE");
       if (!logfile)
             logfile = "/home/ws/LOG";
-      f.open(logfile);
+      // lets create lots of tracefiles:
+      // std::string s = std::format("{}-{}", logfile, getpid());
+      std::string s = std::format("{}", logfile);
+      f.open(s.c_str());
       if (!f) {
             cerr << "cannot open logfile <" << logfile << ">==\n";
             exit(-1);
@@ -72,8 +75,10 @@ void Logger::write(MsgType t, const MsgLogContext& c, const std::string& msg) {
             case MsgType::Fatal:
             case MsgType::Printf: write(std::cerr, t, c, msg); break;
             }
-      if (f)
+      if (f) {
             write(f, t, c, msg);
+            flush(f);
+            }
       if (t == MsgType::Fatal)
             abort();
       }

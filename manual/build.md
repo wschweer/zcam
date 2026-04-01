@@ -34,5 +34,5 @@ cmake --build .
 start the app
 
 ```
-./zcam ../editor.cpp
+./zcam
 ```

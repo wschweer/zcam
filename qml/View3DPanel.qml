@@ -1,7 +1,7 @@
 //=============================================================================
-//  wcam
+//  ZCam
 //
-//  Copyright (C) 2025/2026 Werner Schweer
+//  Copyright (C) 2026 Werner Schweer
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License version 2
@@ -12,15 +12,17 @@
 import QtCore
 import QtQuick
 import QtQuick3D
-import QtQuick3D.Helpers
+import QtQuick.Controls
 import QtQuick.Controls.Material
-import QtQuick.Layouts
-// import ZCam
+import ZCam
 
 Item {
     id: panel
     visible: true
     focus: true
+
+    Material.theme: Material.Dark
+    Material.accent: Material.Teal
 
     signal positionChanged(real x, real y)
     property bool perspectiveCamera: false
@@ -33,47 +35,51 @@ Item {
         renderMode: View3D.Offscreen
 
         environment: SceneEnvironment {
-//            clearColor: ZCam.backgroundColor
+            clearColor: Material.color(Material.BlueGrey, Material.Shade900)
             backgroundMode: SceneEnvironment.Color
             antialiasingQuality: SceneEnvironment.VeryHigh
             }
         Settings {
-//            property alias scale: root.scale
-//            property alias rotation: root.eulerRotation
+            category: "View3D"
+            property alias scale: root.scale
+            property alias projection: panel.perspectiveCamera
+            property alias position1: camera1.position
+            property alias position2: camera2.position
+            property alias rotation: root.eulerRotation
             }
         OrthographicCamera {
-                id: camera1
-                position: Qt.vector3d(0, 0, 1000)
-                clipNear: 0.1
-                clipFar: 10000;
-                }
+            id: camera1
+            position: Qt.vector3d(0, 0, 1000)
+            clipNear: 0.1
+            clipFar: 10000;
+            }
         PerspectiveCamera {
-                id: camera2
-                position: Qt.vector3d(0, 0, 1000)
-                clipNear: 0.1       // zero does not work for perspective
-                clipFar: 10000;
-                }
+            id: camera2
+            position: Qt.vector3d(0, 0, 1000)
+            clipNear: 0.1       // zero does not work for perspective
+            clipFar: 10000;
+            }
         DirectionalLight {
             eulerRotation.x: -30
             eulerRotation.y: -70
             }
-
         DirectionalLight {
             eulerRotation.x: 20
             eulerRotation.y: 40
             }
         Node {
             id: root
-            TestCube {}
+//            TestCube {}
+            ProjectTree {}
             }
-    }
+        }
     SpaceMouse {
         onRotate: v => {
             var r = root.eulerRotation;
             r.x -= v.x;
             r.y += v.y;
             r.z -= v.z;
-        }
+            }
         onTranslate: v => {
             var mag = 0.3
 
@@ -91,12 +97,10 @@ Item {
             let yDirection = root.up;
             velocity = velocity.plus(Qt.vector3d(yDirection.x * delta.y, yDirection.y * delta.y, yDirection.z * delta.y));
 
-//            console.log("velocity "+velocity)
             root.position = root.position.plus(velocity);
-
             root.scale = root.scale.times(1.0 + delta.z);
+            }
         }
-    }
 
     component TButton : Button  {
         hoverEnabled: true
@@ -117,7 +121,7 @@ Item {
         icon.height: ZCam.style.iconSize
         background: Rectangle {
             border.width: 2
-            border.color: "blue"
+            border.color: Material.accentColor
             anchors.fill: parent
             visible: button.checked
             color: "transparent"

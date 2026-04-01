@@ -1,5 +1,5 @@
 //=============================================================================
-//  ZCam - manufactoring tool for G-code machines and Fiber Laser
+//  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
 //  Copyright (C) 2025-2026 Werner Schweer
 //
@@ -10,22 +10,23 @@
 //=============================================================================
 
 #include "zcam.h"
+#include "toplevel.h"
 
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
 
-ZCam::ZCam(QObject* parent)
-   : QObject(parent)
-      {
+ZCam::ZCam(QObject* parent) : QObject(parent) {
       _style = new Style(this);
+      setTopLevel(new TopLevel(this, nullptr));
+
+      emit rootElementChanged(topLevel());
       }
 
 //---------------------------------------------------------
 //   create
 //---------------------------------------------------------
 
-ZCam* ZCam::create(QQmlEngine*, QJSEngine*)
-      {
+ZCam* ZCam::create(QQmlEngine*, QJSEngine*) {
       return new ZCam();
       }
