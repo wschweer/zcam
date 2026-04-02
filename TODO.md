@@ -1,20 +1,43 @@
+### Implement Save/Load project
+
+### Extend App Framework
+
+- Create a new top level layout with a menu bar, a tool bar, a tab bar and an
+  stack widget
+- create tabs "Main" "Config"
+- The tabs switch corresponding stack widget panels
+- move the current main widget into the "main" stack widget
+- populate the menu bar with  a "File" pulldown menu with the usual entries
+  "new" "open" "save" "save as" "import" etc.
+- add an "Edit" pulldown with "undo" and "redo" actions
+- add most important file operations and undo/redo also on the tool bar
+- create actions for the "File" entries.
+- connect File dialogs to the file operations.
+- implement the logic to load/save a project file.
+- on app exit check for a dirty project file and implement the usaual logic as
+  asking the user etc.
+- on loading a project check for existing project and implement the usual logic
+  to prevent accidental data loss
+- implement stubs for reading/writing a project file
+- create/load minimalistic b/w icons for all operations
+
 ### Create Inspector
 
-- [ ] split the main window in Main.qml vertical into a left panel and a right panel
-- [ ] move the View3DPanel into the right panel
-- [ ] split the left panel into an upper and lower part
-- [ ] in the upper part add a TreeView which consists of a tree of Element3d objects with the root in
+- [x] split the main window in Main.qml vertical into a left panel and a right panel
+- [x] move the View3DPanel into the right panel
+- [x] split the left panel into an upper and lower part
+- [x] in the upper part add a TreeView which consists of a tree of Element3d objects with the root in
       ZCam::topLevel()
-- [ ] in Element3d add an QString property "name"
-- [ ] the tree view should show the "name" of every Element3d
-- [ ] make the objects in the tree view selectable
-- [ ] in the lower part add an object called Inspector which shows selected properties of the selected
+- [x] in Element3d add an QString property "name"
+- [x] the tree view should show the "name" of every Element3d
+- [x] make the objects in the tree view selectable
+- [x] in the lower part add an object called Inspector which shows selected properties of the selected
       element in the tree view.
-- [ ] Implement an inspector panel for the "Text" class of Element3d elements
+- [x] Implement an inspector panel for the "Text" class of Element3d elements
       Read the entries to show from the static json object "properties". Use nlohmann::ordered_json
       to preserve the object order. Use first entry "class" together with property "name" for the inspector title
       Fix the json "properties" if necessary.
-- [ ] Construct an entry for every following property item in the properties list. Every property corresponds to
+- [x] Construct an entry for every following property item in the properties list. Every property corresponds to
       an QObject property with same name as defined with the PROP and PROPV macros. The user can edit
       every property. Construct an appropriate qml object and use information from the json properties data.
 

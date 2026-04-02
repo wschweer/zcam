@@ -10,7 +10,7 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_AUTOMOC ON)
 
 find_package(PkgConfig REQUIRED)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Gui Quick Quick3D Qml QuickControls2)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration)
 
 pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(UDEV REQUIRED IMPORTED_TARGET libudev)
@@ -31,6 +31,8 @@ qt_add_qml_module(zcam
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/MainPanel.qml
+        qml/ConfigPanel.qml
         qml/View3DPanel.qml
         qml/TestCube.qml
         qml/ToolRow.qml
@@ -42,6 +44,7 @@ qt_add_qml_module(zcam
         qml/FontFamilyButton.qml
     SOURCES
         src/zcam.cpp src/zcam.h
+        src/projectmanager.cpp src/projectmanager.h
         src/spacemouse.cpp
         src/spacemouse.h
         src/element.cpp src/element.h
@@ -70,6 +73,7 @@ qt_add_qml_module(zcam
       )
 
 qt_add_resources(zcam icons FILES
+      # white icons (used in menus / dark backgrounds)
       icons/view-top.svg
       icons/view-bottom.svg
       icons/view-front.svg
@@ -79,6 +83,21 @@ qt_add_resources(zcam icons FILES
       icons/view-isometric.svg
       icons/view-perspective.svg
       icons/view-fullscreen.svg
+      icons/file-new.svg
+      icons/file-open.svg
+      icons/file-save.svg
+      icons/file-save-as.svg
+      icons/file-import.svg
+      icons/edit-undo.svg
+      icons/edit-redo.svg
+      # dark/black icons (used in main toolbar)
+      icons/dark/file-new.svg
+      icons/dark/file-open.svg
+      icons/dark/file-save.svg
+      icons/dark/file-save-as.svg
+      icons/dark/file-import.svg
+      icons/dark/edit-undo.svg
+      icons/dark/edit-redo.svg
       )
 
 # Bundle the QtQuickControls2 style configuration so Material/Dark is active

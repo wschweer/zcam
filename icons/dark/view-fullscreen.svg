@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#212121" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- fullscreen: four corner arrows pointing outward -->
+  <polyline points="4,16  4,4  16,4"  stroke="#212121" stroke-width="3.5" fill="none"/>
+  <polyline points="48,4  60,4  60,16" stroke="#212121" stroke-width="3.5" fill="none"/>
+  <polyline points="4,48  4,60  16,60" stroke="#212121" stroke-width="3.5" fill="none"/>
+  <polyline points="60,48 60,60 48,60" stroke="#212121" stroke-width="3.5" fill="none"/>
+  <!-- diagonal lines toward corners -->
+  <line x1="4"  y1="4"  x2="22" y2="22" stroke="#212121" stroke-width="2"/>
+  <line x1="60" y1="4"  x2="42" y2="22" stroke="#212121" stroke-width="2"/>
+  <line x1="4"  y1="60" x2="22" y2="42" stroke="#212121" stroke-width="2"/>
+  <line x1="60" y1="60" x2="42" y2="42" stroke="#212121" stroke-width="2"/>
+</svg>

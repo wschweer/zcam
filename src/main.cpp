@@ -20,6 +20,7 @@
 int main(int argc, char* argv[]) {
       QCoreApplication::setOrganizationName("zcam");
       QCoreApplication::setOrganizationDomain("zcam.org");
+      QCoreApplication::setApplicationName("ZCam");
       QCoreApplication::setApplicationVersion("0.0.1");
 
       QGuiApplication app(argc, argv);

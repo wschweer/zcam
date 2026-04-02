@@ -115,11 +115,10 @@ Node {
     //---------------------------------------------------------
 
     function addElement(parent, element) {
-        console.log("addElement: parent =="+parent+"===element=="+element+"=="+element.model+"==");
+//        console.log("addElement: parent =="+parent+"===element=="+element+"=="+element.model+"==");
         element.update();    // ?!
         var shapeComponent = Qt.createComponent(element.model);
         if (shapeComponent.status === Component.Ready) {
-            console.log("shape ready =="+element);
             var instance = shapeComponent.createObject(parent, {
                 position: element.pos
                 });
