@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#212121" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- right view: face on right side highlighted -->
+  <rect x="10" y="14" width="44" height="36" rx="2" fill="#BDBDBD" stroke="#212121" stroke-width="3"/>
+  <!-- right indicator arrow -->
+  <line x1="54" y1="32" x2="62" y2="32" stroke="#212121" stroke-width="2.5"/>
+  <polyline points="58,27 63,32 58,37" stroke="#212121" stroke-width="2.5" fill="none"/>
+  <!-- label "R" hint -->
+  <path d="M24,26 L24,40 M24,26 L32,26 Q36,26 36,30 Q36,34 32,34 L24,34 M32,34 L36,40" stroke="#212121" stroke-width="2" fill="none"/>
+</svg>

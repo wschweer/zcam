@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#212121" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- isometric cube: top face filled, sides outlined -->
+  <!-- top face -->
+  <polygon points="32,5 59,18 32,31 5,18" fill="#9E9E9E" stroke="#212121" stroke-width="3"/>
+  <!-- left face -->
+  <polygon points="5,18 32,31 32,59 5,46" fill="#BDBDBD" stroke="#212121" stroke-width="3"/>
+  <!-- right face -->
+  <polygon points="59,18 32,31 32,59 59,46" fill="#757575" stroke="#212121" stroke-width="3"/>
+</svg>

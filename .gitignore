@@ -1,0 +1,9 @@
+.nped
+.nped.json
+.*,
+*/.*,
+build
+zcam.log*
+.nped-log*
+.nped.log*
+.qmlls.ini

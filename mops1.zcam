@@ -1,0 +1,23 @@
+{
+    "version": "1.0",
+    "application": "zcam",
+    "toplevel": {
+        "children": [
+            {
+                "cad": {
+                    "children": [
+                        {
+                            "text": {
+                                "children": [],
+                                "name": "text-2",
+                                "text": "ZCam-Super"
+                            }
+                        }
+                    ],
+                    "name": "cad-2"
+                }
+            }
+        ],
+        "name": "toplevel-2"
+    }
+}

@@ -1,0 +1,209 @@
+//=============================================================================
+//  ZCam - manufacturing tool for G-code machines and Fiber Laser
+//
+//  Copyright (C) 2025-2026 Werner Schweer
+//
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License version 2
+//  as published by the Free Software Foundation and appearing in
+//  the file LICENCE.GPL
+//=============================================================================
+
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+
+#pragma once
+
+#include <QPointF>
+#include <QRectF>
+#include <QTransform>
+
+#include "clipper2/clipper.h"
+#include "types.h"
+
+class QPolygonF;
+
+//---------------------------------------------------------
+//   Bezier
+//---------------------------------------------------------
+
+class Bezier
+      {
+    public:
+      static Bezier fromPoints(const Vec2d& p1, const Vec2d& p2, const Vec2d& p3, const Vec2d& p4) {
+            return {p1.x(), p1.y(), p2.x(), p2.y(), p3.x(), p3.y(), p4.x(), p4.y()};
+            }
+      static void coefficients(qreal t, qreal& a, qreal& b, qreal& c, qreal& d);
+
+      inline QPointF pointAt(qreal t) const;
+      inline QPointF normalVector(qreal t) const;
+
+      inline QPointF derivedAt(qreal t) const;
+      inline QPointF secondDerivedAt(qreal t) const;
+
+      QPolygonF toPolygon(qreal bezier_flattening_threshold = 0.01) const;
+      void addToPolygon(QPolygonF* p, qreal bezier_flattening_threshold = 0.05) const;
+      void addToPolygon(Path2d&, qreal bezier_flattening_threshold = 0.01) const;
+
+      QRectF bounds() const;
+      qreal length(qreal error = 0.01) const;
+      void addIfClose(qreal* length, qreal error) const;
+
+      qreal tAtLength(qreal len) const;
+
+      int stationaryYPoints(qreal& t0, qreal& t1) const;
+      qreal tForY(qreal t0, qreal t1, qreal y) const;
+      QPointF pt1() const { return QPointF(x1, y1); }
+      QPointF pt2() const { return QPointF(x2, y2); }
+      QPointF pt3() const { return QPointF(x3, y3); }
+      QPointF pt4() const { return QPointF(x4, y4); }
+      Bezier mapBy(const QTransform& transform) const;
+
+      inline QPointF midPoint() const;
+      inline QLineF midTangent() const;
+
+      inline QLineF startTangent() const;
+      inline QLineF endTangent() const;
+
+      inline void parameterSplitLeft(qreal t, Bezier* left);
+      inline std::pair<Bezier, Bezier> split() const;
+
+      int shifted(Bezier* curveSegments, int maxSegmets, qreal offset, float threshold) const;
+
+      Bezier bezierOnInterval(qreal t0, qreal t1) const;
+      Bezier getSubRange(qreal t0, qreal t1) const;
+
+      qreal x1, y1, x2, y2, x3, y3, x4, y4;
+      };
+
+inline QPointF Bezier::midPoint() const {
+      return QPointF((x1 + x4 + 3 * (x2 + x3)) / 8., (y1 + y4 + 3 * (y2 + y3)) / 8.);
+      }
+
+inline QLineF Bezier::midTangent() const {
+      QPointF mid = midPoint();
+      QLineF dir(QLineF(x1, y1, x2, y2).pointAt(0.5), QLineF(x3, y3, x4, y4).pointAt(0.5));
+      return QLineF(mid.x() - dir.dx(), mid.y() - dir.dy(), mid.x() + dir.dx(), mid.y() + dir.dy());
+      }
+
+inline QLineF Bezier::startTangent() const {
+      QLineF tangent(pt1(), pt2());
+      if (tangent.isNull())
+            tangent = QLineF(pt1(), pt3());
+      if (tangent.isNull())
+            tangent = QLineF(pt1(), pt4());
+      return tangent;
+      }
+
+inline QLineF Bezier::endTangent() const {
+      QLineF tangent(pt4(), pt3());
+      if (tangent.isNull())
+            tangent = QLineF(pt4(), pt2());
+      if (tangent.isNull())
+            tangent = QLineF(pt4(), pt1());
+      return tangent;
+      }
+
+inline void Bezier::coefficients(qreal t, qreal& a, qreal& b, qreal& c, qreal& d) {
+      qreal m_t  = 1. - t;
+      b          = m_t * m_t;
+      c          = t * t;
+      d          = c * t;
+      a          = b * m_t;
+      b         *= 3. * t;
+      c         *= 3. * m_t;
+      }
+
+inline QPointF Bezier::pointAt(qreal t) const {
+      // numerically more stable:
+      qreal x, y;
+
+      qreal m_t = 1. - t;
+            {
+            qreal a = x1 * m_t + x2 * t;
+            qreal b = x2 * m_t + x3 * t;
+            qreal c = x3 * m_t + x4 * t;
+            a       = a * m_t + b * t;
+            b       = b * m_t + c * t;
+            x       = a * m_t + b * t;
+            }
+            {
+            qreal a = y1 * m_t + y2 * t;
+            qreal b = y2 * m_t + y3 * t;
+            qreal c = y3 * m_t + y4 * t;
+            a       = a * m_t + b * t;
+            b       = b * m_t + c * t;
+            y       = a * m_t + b * t;
+            }
+      return QPointF(x, y);
+      }
+
+inline QPointF Bezier::normalVector(qreal t) const {
+      qreal m_t = 1. - t;
+      qreal a   = m_t * m_t;
+      qreal b   = t * m_t;
+      qreal c   = t * t;
+
+      return QPointF((y2 - y1) * a + (y3 - y2) * b + (y4 - y3) * c, -(x2 - x1) * a - (x3 - x2) * b - (x4 - x3) * c);
+      }
+
+inline QPointF Bezier::derivedAt(qreal t) const {
+      // p'(t) = 3 * (-(1-2t+t^2) * p0 + (1 - 4 * t + 3 * t^2) * p1 + (2 * t - 3 * t^2) * p2 + t^2 * p3)
+
+      qreal m_t = 1. - t;
+
+      qreal d = t * t;
+      qreal a = -m_t * m_t;
+      qreal b = 1 - 4 * t + 3 * d;
+      qreal c = 2 * t - 3 * d;
+
+      return 3 * QPointF(a * x1 + b * x2 + c * x3 + d * x4, a * y1 + b * y2 + c * y3 + d * y4);
+      }
+
+inline QPointF Bezier::secondDerivedAt(qreal t) const {
+      qreal a = 2. - 2. * t;
+      qreal b = -4 + 6 * t;
+      qreal c = 2 - 6 * t;
+      qreal d = 2 * t;
+
+      return 3 * QPointF(a * x1 + b * x2 + c * x3 + d * x4, a * y1 + b * y2 + c * y3 + d * y4);
+      }
+
+std::pair<Bezier, Bezier> Bezier::split() const {
+      const auto mid = [](QPointF lhs, QPointF rhs) { return (lhs + rhs) * .5; };
+
+      const QPointF mid_12           = mid(pt1(), pt2());
+      const QPointF mid_23           = mid(pt2(), pt3());
+      const QPointF mid_34           = mid(pt3(), pt4());
+      const QPointF mid_12_23        = mid(mid_12, mid_23);
+      const QPointF mid_23_34        = mid(mid_23, mid_34);
+      const QPointF mid_12_23__23_34 = mid(mid_12_23, mid_23_34);
+
+      return {
+         fromPoints(pt1(), mid_12, mid_12_23, mid_12_23__23_34),
+         fromPoints(mid_12_23__23_34, mid_23_34, mid_34, pt4()),
+            };
+      }
+
+inline void Bezier::parameterSplitLeft(qreal t, Bezier* left) {
+      left->x1 = x1;
+      left->y1 = y1;
+
+      left->x2 = x1 + t * (x2 - x1);
+      left->y2 = y1 + t * (y2 - y1);
+
+      left->x3 = x2 + t * (x3 - x2); // temporary holding spot
+      left->y3 = y2 + t * (y3 - y2); // temporary holding spot
+
+      x3 = x3 + t * (x4 - x3);
+      y3 = y3 + t * (y4 - y3);
+
+      x2 = left->x3 + t * (x3 - left->x3);
+      y2 = left->y3 + t * (y3 - left->y3);
+
+      left->x3 = left->x2 + t * (left->x3 - left->x2);
+      left->y3 = left->y2 + t * (left->y3 - left->y2);
+
+      left->x4 = x1 = left->x3 + t * (x2 - left->x3);
+      left->y4 = y1 = left->y3 + t * (y2 - left->y3);
+      }
