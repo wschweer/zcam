@@ -5,5 +5,8 @@
 build
 zcam.log*
 .nped-log*
+<<<<<<< HEAD
 .nped.log*
+=======
+>>>>>>> a69a9d063421fb288747b59150c754495cfe7cae
 .qmlls.ini

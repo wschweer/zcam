@@ -18,8 +18,6 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <QSocketNotifier>
-#include <bitset>
-#include "logger.h"
 
 /* Linux */
 #include <linux/input.h>
