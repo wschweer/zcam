@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="620"
+   height="560"
+   version="1.0"
+   id="svg46"
+   sodipodi:docname="laser-off.svg"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview48"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="0.93060303"
+     inkscape:cx="-79.518331"
+     inkscape:cy="288.52259"
+     inkscape:window-width="3440"
+     inkscape:window-height="1356"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g44" />
+  <defs
+     id="defs10">
+    <g
+       id="raypair">
+      <path
+         d="M -2,0 l -5,-135 h 14 l -5,135"
+         fill="black"
+         stroke="none"
+         id="path2" />
+      <path
+         d="M -2,0 l -3,-90 h 10 l -3,90"
+         fill="black"
+         stroke="none"
+         transform="rotate(15)"
+         id="path4" />
+    </g>
+    <g
+       id="triangle">
+      <path
+         d="M 0,-330 l 280,490 h -560 z"
+         stroke-linejoin="round"
+         id="path7" />
+    </g>
+  </defs>
+  <g
+     transform="translate(310,370)"
+     id="g44">
+    <use
+       xlink:href="#triangle"
+       fill="yellow"
+       stroke="yellow"
+       stroke-width="60"
+       id="use12"
+       style="fill:#ffffff;fill-opacity:1;stroke:#d1d1d1;stroke-opacity:1" />
+    <circle
+       cx="0"
+       cy="0"
+       r="45"
+       fill="black"
+       stroke="none"
+       id="circle14" />
+    <use
+       xlink:href="#raypair"
+       id="use16" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(30)"
+       id="use18" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(60)"
+       id="use20" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(90)"
+       id="use22" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(120)"
+       id="use24" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(150)"
+       id="use26" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(180)"
+       id="use28" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(210)"
+       id="use30" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(240)"
+       id="use32" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(270)"
+       id="use34" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(300)"
+       id="use36" />
+    <use
+       xlink:href="#raypair"
+       transform="rotate(330)"
+       id="use38" />
+    <path
+       d="M 0,0 h 200"
+       fill="none"
+       stroke="black"
+       stroke-width="14"
+       id="path40" />
+    <use
+       xlink:href="#triangle"
+       fill="none"
+       stroke="black"
+       stroke-width="30"
+       id="use42"
+       style="stroke:#000000;stroke-opacity:0.40155441" />
+  </g>
+</svg>

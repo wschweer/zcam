@@ -14,16 +14,18 @@ import QtQuick.Layouts
 
 Item {
     default property alias content: internalLayout.data
-    width:  internalLayout.width
-    height: internalLayout.height
+    implicitWidth:  internalLayout.implicitWidth + 8
+    implicitHeight: internalLayout.implicitHeight + 8
 
     Rectangle {
         anchors.fill: parent
         color: "#30000000"
         radius: 10
-        }
+    }
 
     ColumnLayout {
         id: internalLayout
-        }
+        anchors.fill: parent
+        anchors.margins: 4
     }
+}

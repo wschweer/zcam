@@ -32,7 +32,8 @@ qt_add_qml_module(zcam
     QML_FILES
         qml/Main.qml
         qml/MainPanel.qml
-        qml/ConfigPanel.qml
+        qml/ConfigRecipes.qml
+        qml/ConfigMachines.qml
         qml/View3DPanel.qml
         qml/TestCube.qml
         qml/ToolRow.qml
@@ -42,8 +43,10 @@ qt_add_qml_module(zcam
         qml/TreeViewPanel.qml
         qml/InspectorPanel.qml
         qml/FontFamilyButton.qml
+        qml/LaserPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
+        src/recipe.cpp src/recipe.h
         src/projectmanager.cpp src/projectmanager.h
         src/spacemouse.cpp
         src/spacemouse.h
@@ -57,6 +60,8 @@ qt_add_qml_module(zcam
         src/text.cpp src/text.h
         src/bezier.cpp src/bezier.h
         src/painterpath.cpp src/painterpath.h
+        src/machine.cpp src/machine.h
+        src/laser.cpp src/laser.h
 
         # thirdparty code
         clipper2/src/clipper.engine.cpp
@@ -100,6 +105,8 @@ qt_add_resources(zcam icons FILES
       icons/dark/edit-undo.svg
       icons/dark/edit-redo.svg
       icons/dark/config.svg
+      icons/laser-off.svg
+      icons/laser.svg
       )
 
 # Bundle the QtQuickControls2 style configuration so Material/Dark is active

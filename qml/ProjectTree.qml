@@ -23,14 +23,12 @@ Node {
     id: base
 
     Component.onCompleted: {
-        console.log("===on completed, root:=="+ZCam.rootElement);
         if (ZCam.rootElement) {
             handleRootElementChanged(ZCam.rootElement);
             }
         }
 
     function handleRootElementChanged(e) {
-        console.log("====root element changed ==="+e);
         // destroy old tree
         var n = base.children.length;
         for (var i = 0; i < n; ++i) {

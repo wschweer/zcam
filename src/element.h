@@ -17,46 +17,9 @@
 using json = nlohmann::json;
 
 #include "logger.h"
+#include "macros.h"
 
 class ZCam;
-// In element.h
-#define PROP(T, name)                                                                                                                      \
-      Q_PROPERTY(T name READ name WRITE set_##name NOTIFY name##Changed)                                                                   \
-                                                                                                                                           \
-    public:                                                                                                                                \
-      T name() const {                                                                                                                     \
-            return _##name;                                                                                                                \
-            }                                                                                                                                    \
-      void set_##name(T v) {                                                                                                               \
-            if (v != _##name) {                                                                                                            \
-                  _##name = v;                                                                                                             \
-                  emit name##Changed();                                                                                                    \
-                  }                                                                                                                              \
-            }                                                                                                                                    \
-    Q_SIGNALS:                                                                                                                             \
-      void name##Changed();                                                                                                                \
-                                                                                                                                           \
-    private:                                                                                                                               \
-      T _##name;
-
-#define PROPV(typ, name, value)                                                                                                            \
-      Q_PROPERTY(typ name READ name WRITE set_##name NOTIFY name##Changed)                                                                 \
-                                                                                                                                           \
-    public:                                                                                                                                \
-      typ name() const {                                                                                                                   \
-            return _##name;                                                                                                                \
-            }                                                                                                                                    \
-      void set_##name(typ v) {                                                                                                             \
-            if (v != _##name) {                                                                                                            \
-                  _##name = v;                                                                                                             \
-                  emit name##Changed();                                                                                                    \
-                  }                                                                                                                              \
-            }                                                                                                                                    \
-    Q_SIGNALS:                                                                                                                             \
-      void name##Changed();                                                                                                                \
-                                                                                                                                           \
-    private:                                                                                                                               \
-      typ _##name{value};
 
 //---------------------------------------------------------
 //   Element
@@ -98,7 +61,6 @@ class Element : public QObject
       void addChild(Element* e) {
             _children.push_back(e);
             e->_parent = this;
-            Debug("addChild {} {}", name(), e->name());
             }
       void setName(QString v);
       QString name() const { return _name; }

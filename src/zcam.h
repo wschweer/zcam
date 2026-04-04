@@ -18,10 +18,13 @@
 
 #include "toplevel.h"
 #include "projectmanager.h"
+#include "recipe.h"
+#include "machine.h"
 
 class TopLevel;
 class Element3d;
 class TreeModel;
+class Laser;
 
 //---------------------------------------------------------
 //   Config
@@ -33,22 +36,10 @@ class Style : public QObject
       QML_ELEMENT
       QML_UNCREATABLE("no")
 
-      Q_PROPERTY(int iconSize READ iconSize WRITE setIconSize NOTIFY iconSizeChanged)
-
-      int _iconSize{32};
-
-    signals:
-      void iconSizeChanged();
+      PROPV(int, iconSize, 32)
 
     public:
       explicit Style(QObject* parent = nullptr) : QObject(parent) {}
-      int iconSize() const { return _iconSize; }
-      void setIconSize(int v) {
-            if (v != _iconSize) {
-                  _iconSize = v;
-                  emit iconSizeChanged();
-                  }
-            }
       };
 
 //---------------------------------------------------------
@@ -65,10 +56,15 @@ class ZCam : public QObject
       PROPV (Element3d*, rootElement, nullptr)
       PROPV (Element3d*, currentElement, nullptr)
       PROPV (TreeModel*, treeModel, nullptr)
+      PROPV (Machine*, machine, nullptr)
+      PROPV (Machines*, machines, nullptr)
+      PROPV (Laser*, laser, nullptr)
+      PROPV (Recipes*, recipes, nullptr)
       Q_PROPERTY(ProjectManager* projectManager READ projectManager CONSTANT)
 
       Style* _style{nullptr};
       ProjectManager* _projectManager;
+      void initAssets();
 
     signals:
       void styleChanged();
@@ -85,4 +81,6 @@ class ZCam : public QObject
       static ZCam* create(QQmlEngine*, QJSEngine*);
       void undoChangeProperty(Element*, const char*, QVariant) {}
       ProjectManager* projectManager() const { return _projectManager; }
+      void loadAssets();
+      Q_INVOKABLE void saveAssets();
       };

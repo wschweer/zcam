@@ -1,7 +1,7 @@
 //=============================================================================
 //  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
-//  Copyright (C) 2025-2026 Werner Schweer
+//  Copyright (C) 2026 Werner Schweer
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License version 2

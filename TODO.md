@@ -1,5 +1,20 @@
 ### Implement Save/Load project
 
+### Implement Recipes GUI
+- implement a gui to add/remove/edit the Recipe assets. The gui should be located in the Recipes panel.
+  The panel is split into a left list part showing a list of all available Recipes (names). The
+  user selects a recipe and details are shown on the right side. The right side has a header with
+ informations from Recipe and a body consisting of a left list showing the names of all LaserLayerSettings
+ and an right panel showing details of a LaserLayerSetting. The user can also add and delete
+ LaserLayerSettins.
+
+### Implement Recipes
+- implement the functions ZCam::loadAssets() and ZCam::saveAssets() as defined in zcam.h and the mock
+  in zcam.cpp. Assets should be stored in JSON using the lohmann library.
+  Implement the necessary json functions for LaserLayerSetting, LaserLayersSetting and Recipe (mocks are
+  in recipe.cpp).
+
+
 ### Extend App Framework
 
 - Create a new top level layout with a menu bar, a tool bar, a tab bar and an

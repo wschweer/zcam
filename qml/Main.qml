@@ -180,6 +180,13 @@ Window {
         icon.source: "qrc:/icons/dark/config.svg"
         }
 
+    Action {
+        id: actionShowLaserPanel
+        text: qsTr("Show laser panel");
+        checkable: true
+        icon.source: "qrc:/icons/laser.svg"
+        }
+
     // =========================================================================
     //  File dialogs  (platform-native via Qt Labs)
     // =========================================================================
@@ -338,6 +345,7 @@ Window {
             RowLayout {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 2
+                width: parent.width
 
                 // File operations
                 ToolButton {
@@ -399,9 +407,20 @@ Window {
                     ToolTip.text: qsTr("Redo (Ctrl+Y)")
                     }
 
+                // Spacer
                 Item {
                     Layout.fillWidth: true
-                    }   // spacer
+                    }
+
+                // placed on the right side of the toolbar
+                ToolButton {
+//                    Layout.alignment: Qt.AlignRight
+                    action: actionShowLaserPanel
+                    display: AbstractButton.IconOnly
+                    icon.color: "transparent"
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Show Laser Panel")
+                    }
                 }
             }
 
@@ -415,26 +434,45 @@ Window {
                 width: 120
                 }
             TabButton {
-                text: qsTr("Config")
+                text: qsTr("Recipes")
+                width: 120
+                }
+            TabButton {
+                text: qsTr("Machines")
                 width: 120
                 }
             }
 
-        // ── Stack / content area ──────────────────────────────────────────────
-        StackLayout {
-            id: stack
+        SplitView {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: tabBar.currentIndex
+            Layout.margins: 4
+            Layout.topMargin: 0
+            // ── Stack / content area ──────────────────────────────────────────────
+            StackLayout {
+                SplitView.fillWidth: true
+                id: stack
+                currentIndex: tabBar.currentIndex
 
-            // Tab 0 – Main work panel
-            MainPanel {
-                id: mainPanel
+                // Tab 0 – Main work panel
+                MainPanel {
+                    id: mainPanel
+                    }
+
+                // Tab 1 – Configure Recipes
+                ConfigRecipes {
+                    id: configRecipes
+                    }
+                // Tab 1 – Configure Machines
+                ConfigMachines {
+                    id: configMachines
+                    }
                 }
-
-            // Tab 1 – Configuration panel
-            ConfigPanel {
-                id: configPanel
+            LaserPanel {
+                id: laserPanel
+                visible: actionShowLaserPanel.checked
+                SplitView.minimumWidth: 300
+                SplitView.maximumWidth: 300
                 }
             }
         }
