@@ -16,12 +16,12 @@
 
 #include <thread>
 #include <atomic>
-#include "element.h"
+// #include "element.h"
 #include "laserengine.h"
 
 class ZCam;
 
-enum LaserState { Off, Idle, Framing, FramingAboutToIdle, FramingAboutToMark, Marking, MarkingAboutToIdle, MarkingAboutToFraming };
+enum class LaserState { Off, Idle, Framing, FramingAboutToIdle, FramingAboutToMark, Marking, MarkingAboutToIdle, MarkingAboutToFraming };
 
 //---------------------------------------------------------
 //   Laser

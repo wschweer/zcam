@@ -42,44 +42,44 @@ json LaserLayerSetting::toJson() const {
 
 void LaserLayerSetting::fromJson(const json& data) {
       if (data.contains("name"))
-            _name = QString::fromStdString(data["name"]);
+            _name = QString::fromStdString(data.at("name").get<std::string>());
       if (data.contains("enabled"))
-            _enabled = data["enabled"];
+            _enabled = data.at("enabled");
       if (data.contains("power"))
-            _power = data["power"];
+            _power = data.at("power");
       if (data.contains("speed"))
-            _speed = data["speed"];
+            _speed = data.at("speed");
       if (data.contains("travelSpeed"))
-            _travelSpeed = data["travelSpeed"];
+            _travelSpeed = data.at("travelSpeed");
       if (data.contains("frequency"))
-            _frequency = data["frequency"];
+            _frequency = data.at("frequency");
       if (data.contains("pulseWidth"))
-            _pulseWidth = data["pulseWidth"];
+            _pulseWidth = data.at("pulseWidth");
       if (data.contains("numPasses"))
-            _numPasses = data["numPasses"];
+            _numPasses = data.at("numPasses");
       if (data.contains("interval"))
-            _interval = data["interval"];
+            _interval = data.at("interval");
       if (data.contains("startAngle"))
-            _startAngle = data["startAngle"];
+            _startAngle = data.at("startAngle");
       if (data.contains("angleIncrement"))
-            _angleIncrement = data["angleIncrement"];
+            _angleIncrement = data.at("angleIncrement");
       if (data.contains("zigzag"))
-            _zigzag = data["zigzag"];
+            _zigzag = data.at("zigzag");
       if (data.contains("interleave"))
-            _interleave = data["interleave"];
+            _interleave = data.at("interleave");
       if (data.contains("wobble"))
-            _wobble = data["wobble"];
+            _wobble = data.at("wobble");
       if (data.contains("wobbleStep"))
-            _wobbleStep = data["wobbleStep"];
+            _wobbleStep = data.at("wobbleStep");
       if (data.contains("wobbleSize"))
-            _wobbleSize = data["wobbleSize"];
+            _wobbleSize = data.at("wobbleSize");
       }
 
 //---------------------------------------------------------
-//   LaserLayersSetting
+//   LaserLayersSettings
 //---------------------------------------------------------
 
-json LaserLayersSetting::toJson() const {
+json LaserLayersSettings::toJson() const {
       json data = json::array();
       for (const auto& layer : *this)
             data.push_back(layer.toJson());
@@ -90,7 +90,7 @@ json LaserLayersSetting::toJson() const {
 //   fromJson
 //---------------------------------------------------------
 
-void LaserLayersSetting::fromJson(const json& data) {
+void LaserLayersSettings::fromJson(const json& data) {
       clear();
       if (data.is_array()) {
             for (const auto& jlayer : data) {
@@ -120,13 +120,13 @@ json Recipe::toJson() const {
 
 void Recipe::fromJson(const json& data) {
       if (data.contains("name"))
-            _name = QString::fromStdString(data["name"]);
+            _name = QString::fromStdString(data.at("name").get<std::string>());
       if (data.contains("description"))
-            _description = QString::fromStdString(data["description"]);
+            _description = QString::fromStdString(data.at("description").get<std::string>());
       if (data.contains("numPasses"))
-            _numPasses = data["numPasses"];
+            _numPasses = data.at("numPasses");
       if (data.contains("layer"))
-            layer.fromJson(data["layer"]);
+            layer.fromJson(data.at("layer"));
       }
 
 //---------------------------------------------------------
@@ -138,32 +138,40 @@ void Recipes::updateRecipe(int idx, const Recipe& r) {
             recipes[idx] = r;
             emit recipeModelChanged();
             emit recipeChanged(idx);
+            }
       }
-}
 
 void Recipes::addRecipe(const QString& name) {
       Recipe r;
       r.set_name(name);
       recipes.push_back(r);
       emit recipeModelChanged();
-}
+      }
 
 void Recipes::removeRecipe(int idx) {
       if (idx >= 0 && idx < recipes.size()) {
             recipes.erase(recipes.begin() + idx);
             emit recipeModelChanged();
+            }
       }
-}
 
 LaserLayerSetting Recipes::layer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             const auto& r = recipes[recipeIdx];
-            if (layerIdx >= 0 && layerIdx < r.layer.size()) {
+            if (layerIdx >= 0 && layerIdx < r.layer.size())
                   return r.layer[layerIdx];
             }
-      }
       return LaserLayerSetting();
-}
+      }
+
+LaserLayerSetting* Recipes::layerPtr(int recipeIdx, int layerIdx) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+            auto& r = recipes[recipeIdx];
+            if (layerIdx >= 0 && layerIdx < r.layer.size())
+                  return &r.layer[layerIdx];
+            }
+      return nullptr;
+      }
 
 void Recipes::updateLayer(int recipeIdx, int layerIdx, const LaserLayerSetting& l) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
@@ -171,9 +179,9 @@ void Recipes::updateLayer(int recipeIdx, int layerIdx, const LaserLayerSetting& 
             if (layerIdx >= 0 && layerIdx < r.layer.size()) {
                   r.layer[layerIdx] = l;
                   emit recipeChanged(recipeIdx);
+                  }
             }
       }
-}
 
 void Recipes::addLayer(int recipeIdx, const QString& name) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
@@ -181,8 +189,8 @@ void Recipes::addLayer(int recipeIdx, const QString& name) {
             l.set_name(name);
             recipes[recipeIdx].layer.push_back(l);
             emit recipeChanged(recipeIdx);
+            }
       }
-}
 
 void Recipes::removeLayer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
@@ -190,18 +198,17 @@ void Recipes::removeLayer(int recipeIdx, int layerIdx) {
             if (layerIdx >= 0 && layerIdx < r.layer.size()) {
                   r.layer.erase(r.layer.begin() + layerIdx);
                   emit recipeChanged(recipeIdx);
+                  }
             }
       }
-}
 
 QStringList Recipes::layerModel(int recipeIdx) const {
       QStringList names;
-      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size())
             for (const auto& l : recipes[recipeIdx].layer)
                   names.append(l.name());
-      }
       return names;
-}
+      }
 
 QStringList Recipes::recipeModel() const {
       QStringList names;

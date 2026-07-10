@@ -178,3 +178,51 @@ class PathList : public std::vector<Path2d>
             std::vector<Path2d>::clear();
             }
       };
+//---------------------------------------------------------
+//   Path
+//    represents lines, size must be zero or > 1
+//---------------------------------------------------------
+
+class Path : public std::vector<Vec3d>
+      {
+    public:
+      Path() {}
+      explicit Path(const Clipper2Lib::PathsD&, double z = 0.0);
+
+      Clipper2Lib::PathsD polygon() const;
+      void push_back(const Clipper2Lib::PathsD&, double z = 0.0);
+      void push_back(const Clipper2Lib::PathD&, double z = 0.0);
+      void push_back(const Vec3d& p) { std::vector<Vec3d>::push_back(p); }
+      void push_back(double x, double y, double z) { push_back(Vec3d(x, y, z)); }
+      };
+
+class PathF : public std::vector<QVector3D>
+      {
+    public:
+      PathF() : std::vector<QVector3D>() {}
+      PathF(std::initializer_list<QVector3D> init) : std::vector<QVector3D>(init) {}
+      PathF(const ::Path& path) {
+            for (auto p : path)
+                  push_back(p);
+            }
+      };
+
+using PathI = std::vector<int>;
+
+//---------------------------------------------------------
+//   CamPath
+//    represents lines, size must be zero or > 1
+//---------------------------------------------------------
+
+enum class PathType { Travel, Cut };
+
+class CamPath : public ::Path
+      {
+    public:
+      ::PathType type{::PathType::Cut};
+      double feed;
+      CamPath(const Clipper2Lib::PathsD& p, double z, double f) : Path(p, z), feed(f) {}
+      CamPath() : ::Path() {}
+      };
+
+using CamPathList = std::vector<CamPath>;

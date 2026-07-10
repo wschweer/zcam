@@ -100,13 +100,24 @@ void TessGeometry::setPolygons(const PathList& _pathList) {
             QByteArray indices;
 
             vertices.resize(vertexCount * 3 * sizeof(float));
-            indices.resize(elementCount * 3 * sizeof(quint32));
+            indices.resize(elementCount * 6 * sizeof(quint32));
 
             memcpy(vertices.data(), vert, vertices.size());
 
             quint32* indexPtr = reinterpret_cast<quint32*>(indices.data());
-            for (int i = 0; i < elementCount * 3; ++i)
-                  indexPtr[i] = static_cast<quint32>(elements[i]);
+            for (int i = 0; i < elementCount; ++i) {
+                  quint32 i0 = static_cast<quint32>(elements[i * 3 + 0]);
+                  quint32 i1 = static_cast<quint32>(elements[i * 3 + 1]);
+                  quint32 i2 = static_cast<quint32>(elements[i * 3 + 2]);
+                  
+                  indexPtr[i * 6 + 0] = i0;
+                  indexPtr[i * 6 + 1] = i1;
+                  indexPtr[i * 6 + 2] = i2;
+                  
+                  indexPtr[i * 6 + 3] = i0;
+                  indexPtr[i * 6 + 4] = i2;
+                  indexPtr[i * 6 + 5] = i1;
+                  }
 
             setVertexData(vertices);
             setIndexData(indices);

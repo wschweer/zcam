@@ -34,11 +34,25 @@ class TreeModel : public QAbstractItemModel
       explicit TreeModel(QObject* parent = nullptr);
       Element* root() const { return _root; }
       void setRoot(Element* root);
-
+      /// Returns the Element* stored behind a model index, or nullptr.
+      Q_INVOKABLE Element* elementForIndex(const QModelIndex& idx) const {
+            if (!idx.isValid())
+                  return nullptr;
+            return static_cast<Element*>(idx.internalPointer());
+            }
+      QModelIndex indexForElement(Element* el) const;
+      void notifyChildInserted(Element* parent, int row);
+      void notifyChildRemoved(Element* parent, int row);
+      void beginInsertChild(Element* parent, int row);
+      void endInsertChild();
+      void beginRemoveChild(Element* parent, int row);
+      void endRemoveChild();
+      void notifyElementRenamed(Element* el);
       QModelIndex index(int row, int column, const QModelIndex& parent = QModelIndex()) const override;
       QModelIndex parent(const QModelIndex& child) const override;
       int rowCount(const QModelIndex& parent = QModelIndex()) const override;
       int columnCount(const QModelIndex& parent = QModelIndex()) const override;
       QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
       QHash<int, QByteArray> roleNames() const override;
+      void dump(std::string) const;
       };

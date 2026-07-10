@@ -10,19 +10,22 @@
 //=============================================================================
 
 #include "zcam.h"
-#include "toplevel.h"
+#include "project.h"
 #include "cad.h"
 #include "text.h"
+#include "layer.h"
 #include "treemodel.h"
-#include "machine.h"
+#include "machines.h"
 #include "laser.h"
 #include "recipe.h"
+#include "element.h"
 
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
 #include <QDebug>
+#include <QCoreApplication>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
@@ -38,28 +41,28 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       //    - Element tree
       // Reason: we cannot easily manage the object order in QObject tree
 
-      _machine = new Machine(); // dummy
+      _machine  = new Machine(); // dummy
       _machines = new Machines(this);
-      _laser   = new Laser(this, this);
-      _recipes = new Recipes(this);
+      _laser    = new Laser(this, this);
+      _recipes  = new Recipes(this);
 
       loadAssets();
 
       _treeModel      = new TreeModel(this);
       _projectManager = new ProjectManager(this, this);
-      auto r          = new RootElement(this, nullptr);
-      auto top        = new TopLevel(this, r);
-      set_topLevel(top);
-      auto cad  = new Cad(this, top);
-      auto text = new Text(this, cad);
-      text->set_text("ZCam");
 
-      cad->addChild(text);
-      top->addChild(cad);
-      r->addChild(top);
+      // Create an initial empty project as a valid default state.
+      // The QML layer calls restoreLastProject() from Component.onCompleted
+      // (after all signal handlers are connected) to replace this with the
+      // previously-opened project, if any.
+      //
+      // IMPORTANT: newProject() must NOT clear the persisted lastPath here,
+      // otherwise restoreLastProject() has nothing to read.
+      _projectManager->newProject(false);
 
-      _treeModel->setRoot(r); // update project tree view
-      set_rootElement(top);   // build and show the scene
+      // Automatically save assets (machines, recipes) when the
+      // application is about to quit so changes are not lost.
+      QObject::connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() { saveAssets(); });
       }
 
 //---------------------------------------------------------
@@ -112,11 +115,11 @@ void ZCam::loadAssets() {
             json j = json::parse(data.toStdString());
             if (j.contains("recipes")) {
                   if (_recipes)
-                        _recipes->fromJson(j["recipes"]);
+                        _recipes->fromJson(j.at("recipes"));
                   }
             if (j.contains("machines")) {
                   if (_machines)
-                        _machines->fromJson(j["machines"]);
+                        _machines->fromJson(j.at("machines"));
                   }
             }
       catch (json::parse_error& e) {
@@ -127,6 +130,74 @@ void ZCam::loadAssets() {
 //---------------------------------------------------------
 //   saveAssets
 //    assets are written in json format
+//---------------------------------------------------------
+
+//---------------------------------------------------------
+//   dragged
+//    Called from QML when an element is dragged in the 3D viewport.
+//    Updates the element's position property, routing through the
+//    ProjectManager so the change is recorded for undo/redo and the
+//    project is marked dirty.
+//---------------------------------------------------------
+
+void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
+      if (!element)
+            return;
+      QVector3D newPos = element->pos() + delta;
+      if (_projectManager)
+            _projectManager->changeProperty(element, QStringLiteral("pos"), QVariant::fromValue(newPos));
+      else
+            element->set_pos(newPos);
+      }
+
+//---------------------------------------------------------
+//   rotated
+//    Called from QML when an element is rotated in the 3D viewport.
+//---------------------------------------------------------
+
+void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modifiers) {
+      if (!element)
+            return;
+      QVector3D newRot = element->rot() + deltaRotation;
+      if (_projectManager)
+            _projectManager->changeProperty(element, QStringLiteral("rot"), QVariant::fromValue(newRot));
+      else
+            element->set_rot(newRot);
+      }
+
+//---------------------------------------------------------
+//   scaled
+//    Called from QML when an element is scaled in the 3D viewport.
+//    *scaleFactor* is a multiplicative delta per axis.
+//---------------------------------------------------------
+
+void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers) {
+      if (!element)
+            return;
+      // If scale-locked, scale uniformly using the X component.
+      if (element->scaleLocked()) {
+            double s = element->scale().x() * scaleFactor.x();
+            QVector3D newScale(s, s, s);
+            if (_projectManager)
+                  _projectManager->changeProperty(element, QStringLiteral("scale"),
+                                                  QVariant::fromValue(newScale));
+            else
+                  element->set_scale(newScale);
+            }
+      else {
+            QVector3D cur = element->scale();
+            QVector3D newScale(cur.x() * scaleFactor.x(), cur.y() * scaleFactor.y(),
+                               cur.z() * scaleFactor.z());
+            if (_projectManager)
+                  _projectManager->changeProperty(element, QStringLiteral("scale"),
+                                                  QVariant::fromValue(newScale));
+            else
+                  element->set_scale(newScale);
+            }
+      }
+
+//---------------------------------------------------------
+//   saveAssets
 //---------------------------------------------------------
 
 void ZCam::saveAssets() {
@@ -154,4 +225,107 @@ void ZCam::saveAssets() {
       QTextStream out(&file);
       out << QString::fromStdString(j.dump(4));
       file.close();
+      }
+
+//---------------------------------------------------------
+//   hover
+//---------------------------------------------------------
+
+void ZCam::hover(Element3d* element) {
+      Element3d* oldElement = hoverElement();
+      set_hoverElement(element);
+      // if an element changes its hover status, signal
+      // a color change
+      if (oldElement != element) {
+            if (element)
+                  emit element->curColorChanged();
+            if (oldElement)
+                  emit oldElement->curColorChanged();
+            }
+      }
+
+//---------------------------------------------------------
+//   mousePress
+//---------------------------------------------------------
+
+void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, double y) {
+      Debug("{}", element ? element->name() : "--");
+      Element3d* oldElement = currentElement();
+      set_currentElement(element);
+      // if an element changes its hover status, signal
+      // a color change
+      if (oldElement != element) {
+            if (element)
+                  emit element->curColorChanged();
+            if (oldElement)
+                  emit oldElement->curColorChanged();
+            }
+      }
+
+//---------------------------------------------------------
+//   collectLayers (static helper)
+//    Recursively traverse the element tree and collect all
+//    Layer element names.
+//---------------------------------------------------------
+
+static void collectLayers(Element* root, QStringList& names) {
+      if (!root)
+            return;
+      if (isType<Layer>(root))
+            names.append(root->name());
+      for (Element* child : root->children())
+            collectLayers(child, names);
+      }
+
+//---------------------------------------------------------
+//   layerNames
+//    Collect all Layer element names by traversing the project tree.
+//---------------------------------------------------------
+
+QStringList ZCam::layerNames() const {
+      QStringList names;
+      collectLayers(rootElement(), names);
+      return names;
+      }
+
+//---------------------------------------------------------
+//   layerPtr
+//    Return the Layer* for a given name, or nullptr.
+//---------------------------------------------------------
+
+Layer* ZCam::layerPtr(const QString& name) const {
+      Element* e = Element::byName(name);
+      if (!e)
+            return nullptr;
+      return qobject_cast<Layer*>(e);
+      }
+
+//---------------------------------------------------------
+//   recipeNames
+//    Return all recipe names from ZCam::recipes.
+//---------------------------------------------------------
+
+QStringList ZCam::recipeNames() const {
+      if (!_recipes)
+            return {};
+      return _recipes->recipeModel();
+      }
+
+//---------------------------------------------------------
+//   recipePtr
+//    Return a pointer to the Recipe with the given name.
+//    NOTE: Recipes stores std::vector<Recipe> by value, so we
+//    return a pointer into that vector.  The pointer is valid
+//    until recipeModelChanged is emitted.
+//---------------------------------------------------------
+
+Recipe* ZCam::recipePtr(const QString& name) const {
+      if (!_recipes)
+            return nullptr;
+      for (int i = 0; i < _recipes->recipeCount(); ++i) {
+            Recipe r = _recipes->recipe(i);
+            if (r.name() == name)
+                  return _recipes->recipePtr(i);
+            }
+      return nullptr;
       }

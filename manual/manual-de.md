@@ -1,11 +1,11 @@
-## ZCad
+# ZCad
 ## 3D Panel
 ### Navigation
 
 | Action | Input |
 | :--- | :--- |
-| Scale | `Ctrl` + Mouse wheel |
-| Move | Middle mouse button + drag |
+| Scale  | `Ctrl` + Mouse wheel |
+| Pan    | Middle mouse button + drag |
 | Rotate | Right mouse button + drag |
 
 Eine 3DConnexion "SpaceMouse" wird automatisch erkannt, wenn vorhanden.
@@ -13,17 +13,13 @@ Eine 3DConnexion "SpaceMouse" wird automatisch erkannt, wenn vorhanden.
 
 ### Views
 
-| Icon | Action |
-| :--- | :--- |
-| <img src="../icons/view-top.svg" style="width:18px;"/> | Oben |
-| <img src="../icons/view-bottom.svg" style="width:18px;"/> | Unten |
-| <img src="../icons/view-front.svg" style="width:18px;"/> | Front |
-| <img src="../icons/view-rear.svg" style="width:18px;"/> | Rückseite |
-| <img src="../icons/view-left.svg" style="width:18px;"/> | Links |
-| <img src="../icons/view-right.svg" style="width:18px;"/> | Rechts |
-| <img src="../icons/view-fullscreen.svg" style="width:18px;"/> | Skaliere auf Bildschirm |
-| <img src="../icons/view-isometric.svg" style="width:18px;"/> | Isometrische Projektion |
-| <img src="../icons/view-perspective.svg" style="width:18px;"/> | Perspectivische Projektion |
+| Icon | Action | Icon | Action |
+| :--- | :--- | :--- | :--- |
+<img src="../icons/view-top.svg" style="width:18px;"/>        | Oben                    | <img src="../icons/view-bottom.svg" style="width:18px;"/>      | Unten
+<img src="../icons/view-front.svg" style="width:18px;"/>      | Front                   | <img src="../icons/view-rear.svg" style="width:18px;"/>        | Rückseite
+<img src="../icons/view-left.svg" style="width:18px;"/>       | Links                   | <img src="../icons/view-right.svg" style="width:18px;"/>       | Rechts
+<img src="../icons/view-isometric.svg" style="width:18px;"/>  | Isometrische Projektion | <img src="../icons/view-perspective.svg" style="width:18px;"/> | Perspektivische Projektion
+<img src="../icons/view-fullscreen.svg" style="width:18px;"/> | Skaliere auf Bildschirm |
 
 # Entwicklung
 ## Übersicht

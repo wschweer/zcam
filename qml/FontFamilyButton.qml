@@ -1,5 +1,4 @@
 //=============================================================================
-//  ZCam
 //
 //  Copyright (C) 2026 Werner Schweer
 //
@@ -21,7 +20,7 @@
 //   }
 
 import QtQuick
-import QtQuick.Controls
+// import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Dialogs
@@ -40,13 +39,13 @@ Item {
 
     // ── Layout ────────────────────────────────────────────────────────────────
 
-    implicitWidth:  row.implicitWidth
+    implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
 
     RowLayout {
         id: row
         anchors.fill: parent
-        spacing: 4
+//        spacing: 4
 
         // Family name label – fills available width, clips long names
         Label {
@@ -56,25 +55,26 @@ Item {
             elide: Text.ElideRight
             font.family: root.family   // render in the chosen face for preview
             color: Material.foreground
-            Layout.alignment: Qt.AlignVCenter
-        }
+//            Layout.alignment: Qt.AlignVCenter
+            }
 
         // "…" button opens the dialog
         Button {
             id: pickButton
             text: "…"
             flat: true
-            implicitWidth:  implicitHeight   // square
-            Layout.alignment: Qt.AlignVCenter
-            padding: 4
+            implicitWidth: implicitHeight   // square
+//            Layout.alignment: Qt.AlignVCenter
+//            padding: 4
+            implicitHeight: parent.height
 
             ToolTip.visible: hovered
-            ToolTip.delay:   600
-            ToolTip.text:    "Choose font family"
+            ToolTip.delay: 600
+            ToolTip.text: "Choose font family"
 
             onClicked: fontDialog.open()
+            }
         }
-    }
 
     // ── Font Dialog ───────────────────────────────────────────────────────────
 
@@ -83,16 +83,26 @@ Item {
 
         title: "Choose Font Family"
 
+/*  Material settings have no effect:
+        Material.theme: Material.Light
+        Material.accent: Material.Teal
+        Material.primary: Material.BlueGrey
+        Material.background: Material.color(Material.BlueGrey, Material.Shade900)
+*/
+
         // Pre-select the current family so the dialog opens at the right place.
         // We keep the current point size neutral (12 pt) – only the family matters.
-        currentFont: Qt.font({ family: root.family, pointSize: 12 })
+        currentFont: Qt.font({
+            family: root.family,
+            pointSize: 12
+            })
 
         // ScalableFonts: show only outline fonts (no bitmap raster fonts)
         // MonospacedFonts / ProportionalFonts: show all
         options: FontDialog.ScalableFonts
 
         onAccepted: {
-            root.familySelected(selectedFont.family)
+            root.familySelected(selectedFont.family);
+            }
         }
     }
-}

@@ -52,11 +52,28 @@ Window {
         settings.windowY = y
 
     // ── Close guard ───────────────────────────────────────────────────────────
+    //   closeConfirmed prevents the exit dialog from re-popping when
+    //   Qt.quit() triggers another onClosing event while the project is
+    //   still dirty (e.g. after the user chose "Discard").
+    property bool closeConfirmed: false
     onClosing: function (close) {
-        if (ZCam.projectManager.dirty) {
+        if (ZCam.projectManager.dirty && !closeConfirmed) {
             close.accepted = false;
             exitDialog.open();
             }
+        }
+
+    // ── Restore last project on startup ────────────────────────────────────────
+    //   Use a zero-timer so the call happens after the current event loop
+    //   iteration finishes, i.e. after all child QML components (ProjectTree,
+    //   TreeViewPanel, InspectorPanel, View3DPanel) have completed their
+    //   construction and connected their signal handlers.
+    Component.onCompleted: restoreTimer.start()
+
+    Timer {
+        id: restoreTimer
+        interval: 0
+        onTriggered: ZCam.projectManager.restoreLastProject()
         }
 
     // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -176,13 +193,13 @@ Window {
 
     Action {
         id: actionConfig
-        text: qsTr("Config");
+        text: qsTr("Config")
         icon.source: "qrc:/icons/dark/config.svg"
         }
 
     Action {
         id: actionShowLaserPanel
-        text: qsTr("Show laser panel");
+        text: qsTr("Show laser panel")
         checkable: true
         icon.source: "qrc:/icons/laser.svg"
         }
@@ -232,13 +249,28 @@ Window {
             }
         onAccepted: {   // Save
             if (ZCam.projectManager.projectPath === "")
-                saveAsFileDialog.open();
+                newSaveAsFileDialog.open();
             else {
                 ZCam.projectManager.save();
                 ZCam.projectManager.newProject();
                 }
             }
-        onDiscarded: ZCam.projectManager.newProject()   // Discard
+        onDiscarded: Qt.callLater(function () {
+            ZCam.projectManager.newProject();
+            })   // Discard
+        }
+
+    // Dedicated save-as dialog for the new-project flow
+    FileDialog {
+        id: newSaveAsFileDialog
+        title: qsTr("Save Project As")
+        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "zcam"
+        onAccepted: {
+            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.projectManager.newProject();
+            }
         }
 
     // "Open" guard
@@ -253,13 +285,28 @@ Window {
             }
         onAccepted: {
             if (ZCam.projectManager.projectPath === "")
-                saveAsFileDialog.open();
+                openSaveAsFileDialog.open();
             else {
                 ZCam.projectManager.save();
                 openFileDialog.open();
                 }
             }
-        onDiscarded: openFileDialog.open()
+        onDiscarded: Qt.callLater(function () {
+            openFileDialog.open();
+            })
+        }
+
+    // Dedicated save-as dialog for the open-project flow
+    FileDialog {
+        id: openSaveAsFileDialog
+        title: qsTr("Save Project As")
+        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "zcam"
+        onAccepted: {
+            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            openFileDialog.open();
+            }
         }
 
     // "Exit" guard
@@ -273,14 +320,37 @@ Window {
             text: qsTr("The current project has unsaved changes.\nDo you want to save before quitting?")
             }
         onAccepted: {
+            closeConfirmed = true;
             if (ZCam.projectManager.projectPath === "")
-                saveAsFileDialog.open();
+                exitSaveAsFileDialog.open();
             else {
                 ZCam.projectManager.save();
                 Qt.quit();
                 }
             }
-        onDiscarded: Qt.quit()
+        onDiscarded: {
+            closeConfirmed = true;
+            Qt.callLater(Qt.quit);
+            }
+        onRejected: {
+            closeConfirmed = false;
+            }
+        }
+
+    // Dedicated save-as dialog for the exit flow so we can quit after saving
+    FileDialog {
+        id: exitSaveAsFileDialog
+        title: qsTr("Save Project As")
+        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "zcam"
+        onAccepted: {
+            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            Qt.quit();
+            }
+        onRejected: {
+            closeConfirmed = false;
+            }
         }
 
     // =========================================================================
@@ -395,14 +465,16 @@ Window {
                 ToolButton {
                     action: actionUndo
                     display: AbstractButton.IconOnly
-                    icon.color: "transparent"
+                    icon.color: enabled ? Material.foreground : Material.color(Material.Grey, Material.Shade600)
+                    opacity: enabled ? 1.0 : 0.4
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Undo (Ctrl+Z)")
                     }
                 ToolButton {
                     action: actionRedo
                     display: AbstractButton.IconOnly
-                    icon.color: "transparent"
+                    icon.color: enabled ? Material.foreground : Material.color(Material.Grey, Material.Shade600)
+                    opacity: enabled ? 1.0 : 0.4
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Redo (Ctrl+Y)")
                     }
@@ -414,7 +486,7 @@ Window {
 
                 // placed on the right side of the toolbar
                 ToolButton {
-//                    Layout.alignment: Qt.AlignRight
+                    //                    Layout.alignment: Qt.AlignRight
                     action: actionShowLaserPanel
                     display: AbstractButton.IconOnly
                     icon.color: "transparent"
@@ -441,6 +513,10 @@ Window {
                 text: qsTr("Machines")
                 width: 120
                 }
+            TabButton {
+                text: qsTr("Config")
+                width: 120
+                }
             }
 
         SplitView {
@@ -450,8 +526,8 @@ Window {
             Layout.topMargin: 0
             // ── Stack / content area ──────────────────────────────────────────────
             StackLayout {
-                SplitView.fillWidth: true
                 id: stack
+                SplitView.fillWidth: true
                 currentIndex: tabBar.currentIndex
 
                 // Tab 0 – Main work panel
@@ -463,9 +539,14 @@ Window {
                 ConfigRecipes {
                     id: configRecipes
                     }
-                // Tab 1 – Configure Machines
+
+                // Tab 2 – Configure Machines
                 ConfigMachines {
                     id: configMachines
+                    }
+                // Tab 2 – Configure App
+                ConfigSystem {
+                    id: configSystem
                     }
                 }
             LaserPanel {

@@ -35,29 +35,31 @@ Item {
         renderMode: View3D.Offscreen
 
         environment: SceneEnvironment {
-            clearColor: Material.color(Material.BlueGrey, Material.Shade900)
+            clearColor: Material.color(Material.BlueGrey, Material.Shade500)
             backgroundMode: SceneEnvironment.Color
             antialiasingQuality: SceneEnvironment.VeryHigh
             }
         Settings {
+            id: viewSettings
             category: "View3D"
             property alias scale: root.scale
             property alias projection: panel.perspectiveCamera
             property alias position1: camera1.position
             property alias position2: camera2.position
-            property alias rotation: root.eulerRotation
+            property vector3d rotation
+            Component.onCompleted: root.eulerRotation = rotation
             }
         OrthographicCamera {
             id: camera1
             position: Qt.vector3d(0, 0, 1000)
             clipNear: 0.1
-            clipFar: 10000;
+            clipFar: 10000
             }
         PerspectiveCamera {
             id: camera2
             position: Qt.vector3d(0, 0, 1000)
             clipNear: 0.1       // zero does not work for perspective
-            clipFar: 10000;
+            clipFar: 10000
             }
         DirectionalLight {
             eulerRotation.x: -30
@@ -69,7 +71,8 @@ Item {
             }
         Node {
             id: root
-//            TestCube {}
+            onEulerRotationChanged: viewSettings.rotation = eulerRotation
+            //            TestCube {}
             ProjectTree {}
             }
         }
@@ -79,14 +82,15 @@ Item {
             r.x -= v.x;
             r.y += v.y;
             r.z -= v.z;
+            root.eulerRotation = r;
             }
         onTranslate: v => {
-            var mag = 0.3
+            var mag = 0.3;
 
             let delta = Qt.vector3d(0, 0, 0);
-            delta.x   = (v.x / mag) * 10.0;
-            delta.y   = (-v.y / mag) * 10.0;
-            delta.z   = v.z * -0.1;
+            delta.x = (v.x / mag) * 10.0;
+            delta.y = (-v.y / mag) * 10.0;
+            delta.z = v.z * -0.1;
 
             let velocity = Qt.vector3d(0, 0, 0);
             // X Movement
@@ -102,7 +106,7 @@ Item {
             }
         }
 
-    component TButton : Button  {
+    component TButton: Button {
         hoverEnabled: true
         flat: true
         icon.color: "transparent"
@@ -110,7 +114,7 @@ Item {
         icon.height: ZCam.style.iconSize
         }
 
-    component RButton : Button  {
+    component RButton: Button {
         id: button
         hoverEnabled: true
         flat: true
@@ -133,7 +137,7 @@ Item {
     //  MouseArea
     //-----------------------------------------------------
 
-    MouseArea  {
+    MouseArea {
         id: mouseArea
         anchors.fill: parent
         hoverEnabled: true
@@ -142,14 +146,14 @@ Item {
         property vector2d lastPos: Qt.vector2d(0, 0)
         property vector3d eLastPos: Qt.vector3d(0, 0, 0)
         property vector3d pos3d: Qt.vector3d(0, 0, 0)       // current position on xy plane
-        property real frameDelta: 10;
+        property real frameDelta: 10
         property Node curNode: null
         acceptedButtons: Qt.AllButtons
 
         function pan(delta) {
             // Zugriff auf die aktuell aktive Kamera im View3D
             var cam = view3D.camera;
-            var up  = cam.up;
+            var up = cam.up;
             var right = cam.right;
             var unitsPerPixel = 1.0;
 
@@ -171,16 +175,17 @@ Item {
                 var viewHeightAtDepth = 2 * distance * Math.tan(fovRad / 2);
 
                 unitsPerPixel = viewHeightAtDepth / panel.height;
-                }
+                } else
             // Andernfalls: OrthographicCamera
-            else {
+                {
                 // Bei Ortho bestimmt nur der 'scale' (Zoom) das Verhältnis.
                 // Standard: scale 1.0 => 1 Pixel = 1 Unit
                 // Wir nehmen cam.scale oder 1.0 als Fallback, falls undefined
                 var camScale = (cam.scale) ? cam.scale.y : 1.0;
 
                 // Vermeidung von Division durch Null
-                if (camScale === 0) camScale = 0.001;
+                if (camScale === 0)
+                    camScale = 0.001;
 
                 unitsPerPixel = 1.0 / camScale;
                 }
@@ -192,16 +197,25 @@ Item {
             // Um das Bild "unter der Maus zu greifen", bewegen wir die Kamera entgegengesetzt.
 
             var moveX = -delta.x * unitsPerPixel;
-            var moveY =  delta.y * unitsPerPixel;
+            var moveY = delta.y * unitsPerPixel;
             var moveVec = right.times(moveX).plus(up.times(moveY));
 
             // Falls du stattdessen die KAMERA bewegen willst (klassisches Panning):
             cam.position = cam.position.minus(moveVec);
             }
 
-        onWheel: (mouse) => {
+        onWheel: mouse => {
             if (mouse.modifiers != Qt.ControlModifier)
                 return;
+
+            // If an element is under the cursor, scale that element.
+            // Otherwise, zoom the whole scene.
+            var picked = pickModel(mouse.x, mouse.y);
+            if (picked && picked.element) {
+                var sf = (mouse.angleDelta.y > 0.0) ? 1.1 : 0.9;
+                ZCam.scaled(picked.element, Qt.vector3d(sf, sf, sf), mouse.modifiers);
+                return;
+                }
 
             // view3D.pick() liefert die Position in Szene-Koordinaten (Parent-Space von root).
             // Um den Punkt unter dem Cursor beim Zoomen stabil zu halten, gilt:
@@ -220,75 +234,88 @@ Item {
             // Fallback: screenToScene() projiziert auf die XY-Ebene (z=0 in Root-Local-Space).
 
             var cursorScenePos;
-//            var result = view3D.pick(mouse.x, mouse.y, grid);
-//            if (result && result.hitType !== PickResult.Null) {
-//                cursorScenePos = result.position;
-//                }
-//            else {
-                var localPos = screenToScene(mouse.x, mouse.y);
-                if (!localPos)
-                    return;
-                // screenToScene liefert Root-lokale Koordinaten → in Szene-Koordinaten umrechnen
-                cursorScenePos = root.mapPositionToScene(localPos);
-//                }
+            //            var result = view3D.pick(mouse.x, mouse.y, grid);
+            //            if (result && result.hitType !== PickResult.Null) {
+            //                cursorScenePos = result.position;
+            //                }
+            //            else {
+            var localPos = screenToScene(mouse.x, mouse.y);
+            if (!localPos)
+                return;
+            // screenToScene liefert Root-lokale Koordinaten → in Szene-Koordinaten umrechnen
+            cursorScenePos = root.mapPositionToScene(localPos);
+            //                }
 
             var sd = (mouse.angleDelta.y > 0.0) ? 1.2 : 0.8;
-            root.scale    = root.scale.times(sd);
+            root.scale = root.scale.times(sd);
             // Korrektur: root.position so verschieben, dass cursorScenePos auf dem Bildschirm bleibt
             root.position = root.position.plus(cursorScenePos.minus(root.position).times(1.0 - sd));
             }
 
-        onPressed: (mouse) => {
-            panel.focus = true
-            lastPos  = Qt.vector2d(mouse.x, mouse.y)
-            eLastPos = screenToScene(mouse.x, mouse.y)
-            if (!curNode) {
-                curNode  = pickModel(mouse.x, mouse.y)
-//                ZCam.mousePress(curNode ? curNode.element : null, mouse.buttons, mouse.modifiers, eLastPos.x, eLastPos.y)
-                }
-            else {
-//                ZCam.mousePress(null, mouse.buttons, mouse.modifiers, eLastPos.x, eLastPos.y)
-//                curNode = base.searchBase(ZCam.hoverModel)
-//                console.log("=====curNode=="+curNode+"===="+ZCam.hoverModel);
+        onPressed: mouse => {
+            panel.focus = true;
+            lastPos = Qt.vector2d(mouse.x, mouse.y);
+            eLastPos = screenToScene(mouse.x, mouse.y);
+            if (mouse.button == Qt.LeftButton) {
+                //
+                //  Left button: pick a new element under the cursor.
+                //  This always re-picks so the user can select different elements.
+                //
+                curNode = pickModel(mouse.x, mouse.y);
+                if (curNode && curNode.element)
+                    ZCam.currentElement = curNode.element;
+                ZCam.mousePress(curNode ? curNode.element : null, mouse.buttons, mouse.modifiers, eLastPos.x, eLastPos.y);
+                } else {
+                //
+                //  Right or middle button: use the existing curNode (if any)
+                //  for rotate/pan. If no curNode is set yet, try to pick one.
+                //
+                if (!curNode)
+                    curNode = pickModel(mouse.x, mouse.y);
                 }
             }
 
-        onDoubleClicked: (mouse) => {
-//            console.log("double click");
-            var m = pickModel(mouse.x, mouse.y)
-//            if (m && m.element)
-//                ZCam.doubleClick(m.element);
+        onDoubleClicked: mouse => {
+            //            console.log("double click");
+            var m = pickModel(mouse.x, mouse.y);
+            if (m && m.element)
+                ZCam.doubleClick(m.element);
             }
 
-        onReleased: (mouse) => {
-//            ZCam.mouseRelease();
-//            if (ZCam.currentTool != "line")
-//                curNode = null
+        onReleased: mouse => {
+            //
+            //  Reset curNode on release so the next click can pick a new element.
+            //  In "line" edit mode, keep curNode so the handle can be dragged
+            //  without holding the mouse button.
+            //
+            if (ZCam.currentTool != "line")
+                curNode = null;
             }
 
         function pickModel(x, y) {
             var list = view3D.pickAll(x, y);
-            var area = null
-            var hit = null
-            var pickLevel = 0
-            for (const result of list) {
+            var area = Infinity;
+            var hit = null;
+            var pickLevel = -1;
+            for (var i = 0; i < list.length; ++i) {
+                var result = list[i];
                 if (result.hitType == PickResult.Model) {
                     if (result.objectHit.element) {
                         //
                         // look for the smallest model
                         //
-                        var l = result.objectHit.element.pickLevel
-                        var b = result.objectHit.bounds
+                        var l = result.objectHit.element.pickLevel;
+                        var b = result.objectHit.bounds;
                         var a = (b.maximum.x - b.minimum.x) * (b.maximum.y - b.minimum.y);
                         if (l > pickLevel || (l == pickLevel && a != 0 && (a < area))) {
-                            hit = result.objectHit
+                            hit = result.objectHit;
                             area = a;
                             pickLevel = l;
                             }
                         }
                     }
                 }
-            return hit
+            return hit;
             }
 
         //---------------------------------------------------------
@@ -301,7 +328,7 @@ Item {
             let normX = x / view3D.width;
             let normY = y / view3D.height;
             let nearPos = root.mapPositionFromScene(view3D.camera.mapFromViewport(Qt.vector3d(normX, normY, 0)));
-            let farPos =  root.mapPositionFromScene(view3D.camera.mapFromViewport(Qt.vector3d(normX, normY, 1)));
+            let farPos = root.mapPositionFromScene(view3D.camera.mapFromViewport(Qt.vector3d(normX, normY, 1)));
 
             let direction = farPos.minus(nearPos).normalized();
             if (Math.abs(direction.z) > 0.0001) {
@@ -310,68 +337,86 @@ Item {
                 return r;
                 }
             console.log("overflow: no screen position");
-            return null
+            return null;
             }
 
-        onPositionChanged: (mouse) => {
+        onPositionChanged: mouse => {
             pos3d = screenToScene(mouse.x, mouse.y);
-            panel.positionChanged(pos3d.x, pos3d.y)
-//            var result     = view3D.pick(mouse.x, mouse.y, grid);
+            panel.positionChanged(pos3d.x, pos3d.y);
+            //            var result     = view3D.pick(mouse.x, mouse.y, grid);
             var currentPos = Qt.vector2d(mouse.x, mouse.y);
-            var delta      = Qt.vector2d(lastPos.x - currentPos.x, lastPos.y - currentPos.y);
+            var delta = Qt.vector2d(lastPos.x - currentPos.x, lastPos.y - currentPos.y);
 
             if ((mouse.buttons == Qt.RightButton) && (mouse.modifiers == Qt.NoModifier)) {
-                //*************
-                //  rotate
-                //*************
-                var rotationVector = root.eulerRotation;
+                if (curNode) {
+                    //*******************************
+                    //  rotate selected element
+                    //*******************************
+                    var rotSpeed = 0.05 * frameDelta;
+                    var dRot = Qt.vector3d(delta.y * -mouseArea.ySpeed * rotSpeed, -delta.x * mouseArea.xSpeed * rotSpeed, 0);
+                    ZCam.rotated(curNode.element, dRot, mouse.modifiers);
+                    } else {
+                    //*************
+                    //  rotate scene
+                    //*************
+                    var rotationVector = root.eulerRotation;
 
-                // rotate x
-                var rotateX = -delta.x * mouseArea.xSpeed * frameDelta;
-                rotationVector.y += rotateX;
+                    // rotate x
+                    var rotateX = -delta.x * mouseArea.xSpeed * frameDelta;
+                    rotationVector.y += rotateX;
 
-                // rotate y
-                var rotateY = delta.y * -mouseArea.ySpeed * frameDelta;
-                rotationVector.x += rotateY;
-                root.setEulerRotation(rotationVector);
+                    // rotate y
+                    var rotateY = delta.y * -mouseArea.ySpeed * frameDelta;
+                    rotationVector.x += rotateY;
+                    root.setEulerRotation(rotationVector);
+                    }
                 lastPos = currentPos;
-                }
-            else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
+                } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
                 //*************
                 //  pan
                 //*************
-                pan(delta)
+                pan(delta);
                 lastPos = currentPos;
-                }
-            else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
+                } else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
                 //*******************************
                 //  drag model curNode
                 //*******************************
                 if (curNode) {
                     var eDelta = pos3d.minus(eLastPos);
-                    eLastPos = pos3d
-//                    ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
+                    eLastPos = pos3d;
+                    ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
                     }
-                }
-            else {
+                } else {
                 // in "line" editmode the handle can be dragged without any mouse button pressed:
-/*
                 if (ZCam.currentTool == "line" && curNode) {
                     var eDelta = pos3d.minus(eLastPos);
                     //if (mouse.modifiers == Qt.ShiftModifier)
 
-                    eLastPos = pos3d
+                    eLastPos = pos3d;
                     ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
-                    }
-                else {
+                    } else {
                     //*************
                     //  hover
                     //*************
-                    var m = pickModel(mouse.x, mouse.y)
+                    var m = pickModel(mouse.x, mouse.y);
                     ZCam.hover(m ? m.element : null);
                     }
-*/
                 }
+            }
+        }
+
+    NavigationCube {
+        id: navCube
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: 10
+        anchors.rightMargin: 10
+        z: 10
+
+        sceneRotation: root.eulerRotation
+
+        onViewRequested: rotation => {
+            root.eulerRotation = rotation;
             }
         }
 
@@ -384,32 +429,44 @@ Item {
 
         TButton {
             icon.source: "qrc:////icons/view-top.svg"
-            onClicked: { root.eulerRotation = Qt.vector3d(0, 0, 0) }
+            onClicked: {
+                root.eulerRotation = Qt.vector3d(0, 0, 0);
+                }
             z: 1
             }
         TButton {
             icon.source: "qrc:////icons/view-bottom.svg"
-            onClicked: { root.eulerRotation = Qt.vector3d(180, 0, 0) }
+            onClicked: {
+                root.eulerRotation = Qt.vector3d(180, 0, 0);
+                }
             z: 1
             }
         TButton {
             icon.source: "qrc:////icons/view-front.svg"
-            onClicked: { root.eulerRotation = Qt.vector3d(90, 0, 0) }
+            onClicked: {
+                root.eulerRotation = Qt.vector3d(-90, 0, 0);
+                }
             z: 1
             }
         TButton {
             icon.source: "qrc:////icons/view-rear.svg"
-            onClicked: { root.eulerRotation = Qt.vector3d(-90, 0, 0) }
+            onClicked: {
+                root.eulerRotation = Qt.vector3d(-90, 180, 0);
+                }
             z: 1
             }
         TButton {
             icon.source: "qrc:////icons/view-left.svg"
-            onClicked: { root.eulerRotation = Qt.vector3d(0, 90, 0) }
+            onClicked: {
+                root.eulerRotation = Qt.vector3d(-90, 90, 0);
+                }
             z: 1
             }
         TButton {
             icon.source: "qrc:////icons/view-right.svg"
-            onClicked: { root.eulerRotation = Qt.vector3d(0, -90, 0) }
+            onClicked: {
+                root.eulerRotation = Qt.vector3d(-90, -90, 0);
+                }
             z: 1
             }
         RButton {
@@ -419,7 +476,7 @@ Item {
             icon.source: "qrc:////icons/view-isometric.svg"
             onClicked: {
                 panel.perspectiveCamera = false;
-                pCamera.checked = false
+                pCamera.checked = false;
                 }
             ToolTip.text: qsTr("Isometric Projection")
             ToolTip.delay: 1000
@@ -433,8 +490,8 @@ Item {
             checked: false
             icon.source: "qrc:////icons/view-perspective.svg"
             onClicked: {
-                panel.perspectiveCamera = true
-                iCamera.checked = false
+                panel.perspectiveCamera = true;
+                iCamera.checked = false;
                 }
             ToolTip.text: qsTr("Perspective Projection")
             ToolTip.delay: 1000
@@ -445,15 +502,14 @@ Item {
         TButton {
             icon.source: "qrc:////icons/view-fullscreen.svg"
             onClicked: {
-                root.eulerRotation = Qt.vector3d(0, 0, 0)
-                root.scale         = Qt.vector3d(5.0, 5.0, 5.0)
-                root.position      = Qt.vector3d(0.0, 0.0, 0.0)
+                root.eulerRotation = Qt.vector3d(0, 0, 0);
+                root.scale = Qt.vector3d(5.0, 5.0, 5.0);
+                root.position = Qt.vector3d(0.0, 0.0, 0.0);
                 }
             z: 1
             }
         }
 
-/*
     ToolColumn {
         anchors.top: parent.top
         anchors.topMargin: toolRow.height + 20
@@ -463,35 +519,40 @@ Item {
         RButton {
             icon.source: "qrc:////icons/select.svg"
             checked: ZCam.currentTool == "pointer"
-            onCheckedChanged: if (checked) ZCam.currentTool = "pointer";
+            onCheckedChanged: if (checked)
+                ZCam.currentTool = "pointer"
             z: 1
             }
         RButton {
             icon.source: "qrc:////icons/Draft_Line.svg"
             checked: ZCam.currentTool == "line"
-            onCheckedChanged: if (checked) ZCam.currentTool = "line";
+            onCheckedChanged: if (checked)
+                ZCam.currentTool = "line"
             z: 1
             }
         RButton {
             icon.source: "qrc:////icons/Draft_Polygon.svg"
             checked: ZCam.currentTool == "polygon"
-            onCheckedChanged: if (checked) ZCam.currentTool = "polygon";
+            onCheckedChanged: if (checked)
+                ZCam.currentTool = "polygon"
             }
         RButton {
             icon.source: "qrc:////icons/Draft_Rectangle.svg"
             checked: ZCam.currentTool == "rectangle"
-            onCheckedChanged: if (checked) ZCam.currentTool = "rectangle";
+            onCheckedChanged: if (checked)
+                ZCam.currentTool = "rectangle"
             }
         RButton {
             icon.source: "qrc:////icons/Draft_Circle.svg"
             checked: ZCam.currentTool == "circle"
-            onCheckedChanged: if (checked) ZCam.currentTool = "circle";
+            onCheckedChanged: if (checked)
+                ZCam.currentTool = "circle"
             }
         RButton {
             icon.source: "qrc:////icons/Draft_Text.svg"
             checked: ZCam.currentTool == "text"
-            onCheckedChanged: if (checked) ZCam.currentTool = "text";
+            onCheckedChanged: if (checked)
+                ZCam.currentTool = "text"
             }
         }
-*/
     }

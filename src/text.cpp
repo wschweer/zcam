@@ -65,25 +65,12 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       update(-1);
       }
 
-Text::~Text() {
-      }
-
-//---------------------------------------------------------
-//   toJson
-//---------------------------------------------------------
-
-json Text::toJson() const
-      {
-      nlohmann::json data = Element::toJson();
-      data["text"] = text().toStdString();
-      return data;
-      }
-
-void Text::fromJson(const json& json)
-      {
-      Element::fromJson(json);
-      set_text(QString::fromStdString(json["text"]));
-      }
+//  Text::toJson() and Text::fromJson() are no longer overridden:
+//  Element3d::toJson() and Element3d::fromJson() now use the
+//  properties() JSON definition to serialise all user-editable
+//  properties (text, fill, fontFamily, pointSize, weight, stretch,
+//  letterSpacing, wordSpacing, lineSpacing, align, show, burn, color,
+//  pos, rot, scale, mirrorX, mirrorY) generically.
 
 //---------------------------------------------------------
 //   fontLineSpacing
@@ -155,9 +142,10 @@ void Text::addText(QList<QPolygonF>& polys, const QPointF& gpos, const QList<QGl
                                     break;
                               case QPainterPath::LineToElement: current += p; break;
                               case QPainterPath::CurveToElement: {
-                                    Bezier bezier = Bezier::fromPoints(QPointF(pp.elementAt(i - 1).x, -pp.elementAt(i - 1).y) + pos, p,
-                                                                       QPointF(pp.elementAt(i + 1).x, -pp.elementAt(i + 1).y) + pos,
-                                                                       QPointF(pp.elementAt(i + 2).x, -pp.elementAt(i + 2).y) + pos);
+                                    Bezier bezier = Bezier::fromPoints(
+                                        QPointF(pp.elementAt(i - 1).x, -pp.elementAt(i - 1).y) + pos, p,
+                                        QPointF(pp.elementAt(i + 1).x, -pp.elementAt(i + 1).y) + pos,
+                                        QPointF(pp.elementAt(i + 2).x, -pp.elementAt(i + 2).y) + pos);
                                     bezier.addToPolygon(&current, 0.05);
                                     i += 2;
                                     } break;
@@ -207,8 +195,10 @@ void Text::updateText() {
             geometry()->setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
       else
             geometry()->setPrimitiveType(QQuick3DGeometry::PrimitiveType::LineStrip);
-      geometry()->addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
-      geometry()->addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0, QQuick3DGeometry::Attribute::U32Type);
+      geometry()->addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0,
+                               QQuick3DGeometry::Attribute::F32Type);
+      geometry()->addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0,
+                               QQuick3DGeometry::Attribute::U32Type);
       geometry()->setStride(3 * sizeof(float));
 
       QTextLayout layout;
@@ -265,6 +255,7 @@ void Text::updateText() {
             }
       _pathList.setFill(fill());
       geometry()->setPolygons(_pathList);
+      updateSelectionGeometry();
       }
 
 //---------------------------------------------------------
@@ -273,18 +264,18 @@ void Text::updateText() {
 
 #if 0
 bool Text::setEditMode(bool val)
-            {
+                        {
       _subElements[TextSubelement::BboxSub]->setActive(val);
       _subElements[TextSubelement::CursorSub]->setActive(val);
       return true;
-            }
+                        }
 
 //---------------------------------------------------------
 //   keyEvent
 //---------------------------------------------------------
 
 bool Text::keyEvent(int key, int modifiers, const QString& s)
-            {
+                        {
       Debug("Key Event");
       QStringList sl = text().split('\n');
 
@@ -293,23 +284,23 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                   if (cursorColumn) {
                         --cursorColumn;
                         update(CURSOR_POS);
-                              }
+                                          }
                   else if (cursorRow) {
                         --cursorRow;
                         cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                              }
+                                          }
                   break;
             case Qt::Key_Right:
                   if (cursorColumn < sl[cursorRow].size()) {
                         ++cursorColumn;
                         update(CURSOR_POS);
-                              }
+                                          }
                   else if (cursorRow < (sl.size()-1)) {
                         ++cursorRow;
                         cursorColumn = 0;
                         update(CURSOR_POS);
-                              }
+                                          }
                   break;
             case Qt::Key_Delete:
             case Qt::Key_Backspace:
@@ -317,7 +308,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         sl[cursorRow].removeAt(--cursorColumn);
                         zcam->undoChangeProperty(this, "text", sl.join('\n'));
                         update(CURSOR_POS);
-                              }
+                                          }
                   else  if (cursorRow) {
                         QString rs = sl[cursorRow];
                         sl.removeAt(cursorRow);
@@ -326,7 +317,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         sl[cursorRow] += rs;
                         zcam->undoChangeProperty(this, "text", sl.join('\n'));
                         update(CURSOR_POS);
-                              }
+                                          }
                   break;
             case Qt::Key_Up:
                   if (cursorRow) {
@@ -334,7 +325,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         if (sl[cursorRow].size() < cursorColumn)
                               cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                              }
+                                          }
                   break;
             case Qt::Key_Down:
                   if (cursorRow < sl.size()-1) {
@@ -342,7 +333,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         if (sl[cursorRow].size() < cursorColumn)
                               cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                              }
+                                          }
                   break;
             case Qt::Key_Return: {
                   int n = sl[cursorRow].size();
@@ -350,7 +341,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                   if (n > cursorColumn) {
                         rs = sl[cursorRow].right(n- cursorColumn);
                         sl[cursorRow] = sl[cursorRow].left(cursorColumn);
-                              }
+                                          }
                   if (sl.size() <= cursorRow)
                         sl += rs;
                   else
@@ -359,7 +350,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                   cursorColumn = 0;
                   zcam->undoChangeProperty(this, "text", sl.join('\n'));
                   update(CURSOR_POS);
-                        }
+                                    }
                   break;
 
             default:
@@ -370,9 +361,9 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         cursorColumn += s.size();
                         zcam->undoChangeProperty(this, "text", sl.join('\n'));
                         update();
-                              }
+                                          }
                   break;
-                  }
+                              }
       return true;
-            }
+                        }
 #endif

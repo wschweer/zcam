@@ -12,9 +12,14 @@
 #include <QJSEngine>
 #include "logger.h"
 #include "element.h"
-#include "toplevel.h"
+#include "element3d.h"
+#include "project.h"
 #include "cad.h"
+#include "cam.h"
+#include "layer.h"
+#include "laserlayer.h"
 #include "text.h"
+#include "treemodel.h"
 #include "zcam.h"
 
 QHash<QString, Element*> Element::names;
@@ -30,7 +35,10 @@ Element::Element(ZCam* zc, Element* parent) : QObject(parent) {
 
 Element::~Element() {
       bool rv = names.remove(name());
-      Debug("kill <{}> found: {} size {}", name(), rv, names.size());
+      }
+
+void Element::clearProject() {
+      names.clear();
       }
 
 //---------------------------------------------------------
@@ -41,11 +49,12 @@ json Element::toJson() const {
       json childList = json::array();
       for (const auto& child : children()) {
             json c;
-            c[child->typeName()] = child->toJson();
+            c[child->typeName().toStdString()] = child->toJson();
             childList.push_back(c);
             }
       nlohmann::json data;
       data["name"]     = name().toStdString();
+      data["expanded"] = _expanded;
       data["children"] = childList;
       return data;
       }
@@ -56,15 +65,17 @@ json Element::toJson() const {
 
 void Element::fromJson(const json& data) {
       if (data.contains("name"))
-            setName(QString::fromStdString(data["name"]));
+            setName(QString::fromStdString(data.at("name").get<std::string>()));
+      if (data.contains("expanded"))
+            _expanded = data.at("expanded").get<bool>();
       if (data.contains("children")) {
-            json children = data["children"];
-            for (const auto child : children) {
+            const json& children = data.at("children");
+            for (const auto& child : children) {
                   for (const auto& [key, value] : child.items()) {
                         Element3d* element = nullptr;
                         if (key == "toplevel") {
-                              element = new TopLevel(zcam, this);
-                              zcam->set_topLevel(static_cast<TopLevel*>(element));
+                              element = new Project(zcam, this);
+                              zcam->set_topLevel(static_cast<Project*>(element));
                               element->fromJson(value);
                               }
                         else if (key == "cad") {
@@ -75,12 +86,38 @@ void Element::fromJson(const json& data) {
                               else
                                     Critical("no toplevel");
                               }
+                        else if (key == "cam") {
+                              element = new Cam(zcam, this);
+                              element->fromJson(value);
+                              }
                         else if (key == "text") {
                               element = new Text(zcam, this);
                               element->fromJson(value);
                               }
-                        if (!element)
-                              Critical("no element");
+                        else if (key == "layer") {
+                              element = new Layer(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "stock") {
+                              element = new Stock(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "fixture") {
+                              element = new Fixture(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "framing") {
+                              element = new Framing(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "laserLayer") {
+                              element = new LaserLayer(zcam, this);
+                              element->fromJson(value);
+                              }
+                        if (!element) {
+                              Critical("no element for key: {}", key);
+                              continue; // skip unknown element types instead of crashing
+                              }
                         addChild(element);
                         }
                   }
@@ -93,7 +130,7 @@ void Element::fromJson(const json& data) {
 //---------------------------------------------------------
 
 void Element::setName(QString v) {
-      names.remove(name());   // in case setName is called twice
+      names.remove(name()); // in case setName is called twice
       QString n  = v == "" ? typeName() : v;
       int i      = 1;
       QString nn = n;
@@ -106,6 +143,13 @@ void Element::setName(QString v) {
                   }
             }
       names[nn] = this;
-      _name = nn;
+      _name     = nn;
       emit nameChanged();
+
+      // notify the TreeModel so the TreeView updates its display
+      if (zcam) {
+            TreeModel* tm = zcam->treeModel();
+            if (tm)
+                  tm->notifyElementRenamed(this);
+            }
       }

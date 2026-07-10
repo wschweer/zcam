@@ -5,6 +5,8 @@ project(zcam LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(QT_QML_GENERATE_QMLLS_INI On)
+
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_AUTOMOC ON)
@@ -42,28 +44,50 @@ qt_add_qml_module(zcam
         qml/Shape.qml
         qml/TreeViewPanel.qml
         qml/InspectorPanel.qml
+        qml/PropertyEditor.qml
         qml/FontFamilyButton.qml
         qml/LaserPanel.qml
+        qml/ConfigSystem.qml
+        qml/ConfigGuiPanel.qml
+        qml/ConfigColorsPanel.qml
+        qml/ConfigColor.qml
+        qml/NavigationCube.qml
     SOURCES
         src/zcam.cpp src/zcam.h
+        src/machine.cpp src/machine.h
+        src/machines.cpp src/machines.h
+        src/machinemodel.cpp src/machinemodel.h
+        src/layersettingmodel.cpp src/layersettingmodel.h
+        src/propertyjson.cpp src/propertyjson.h
         src/recipe.cpp src/recipe.h
         src/projectmanager.cpp src/projectmanager.h
         src/spacemouse.cpp
         src/spacemouse.h
-        src/element.cpp src/element.h
-        src/element3d.cpp src/element3d.h
-        src/treemodel.cpp src/treemodel.h
-        src/inspector_model.cpp src/inspector_model.h
-        src/toplevel.cpp src/toplevel.h
-        src/cad.cpp src/cad.h
         src/tessgeometry.cpp src/tessgeometry.h
-        src/text.cpp src/text.h
         src/bezier.cpp src/bezier.h
         src/painterpath.cpp src/painterpath.h
-        src/machine.cpp src/machine.h
+        src/element.cpp src/element.h
+        src/element3d.cpp src/element3d.h
+        src/text.cpp src/text.h
+        src/line.cpp src/line.h
+        src/rectangle.cpp src/rectangle.h
+        src/treemodel.cpp src/treemodel.h
+        src/inspector_model.cpp src/inspector_model.h
+        src/project.cpp src/project.h
+        src/cad.cpp src/cad.h
+        src/cam.cpp src/cam.h
+        src/fixture.cpp src/fixture.h
+        src/stock.cpp src/stock.h
+        src/framing.cpp src/framing.h
         src/laser.cpp src/laser.h
+        src/laserlayer.cpp src/laserlayer.h
+        src/laserengine.cpp src/laserengine.h
+        src/usb.cpp src/usb.h
+        src/clipper.cpp src/clipper.h
+        src/layer.cpp src/layer.h
+        src/undo.h
+        src/truncatedcubegeometry.cpp src/truncatedcubegeometry.h
 
-        # thirdparty code
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp
         clipper2/src/clipper.rectclip.cpp
@@ -76,6 +100,8 @@ qt_add_qml_module(zcam
         tess2/sweep.cpp
         tess2/tess.cpp
       )
+
+target_compile_options(zcam PRIVATE -DUSINGZ)
 
 qt_add_resources(zcam icons FILES
       # white icons (used in menus / dark backgrounds)
@@ -107,6 +133,16 @@ qt_add_resources(zcam icons FILES
       icons/dark/config.svg
       icons/laser-off.svg
       icons/laser.svg
+
+      icons/visible.svg
+      icons/invisible.svg
+      icons/select.svg
+      icons/Draft_Line.svg
+      icons/Draft_Polygon.svg
+      icons/Draft_Rectangle.svg
+      icons/Draft_Circle.svg
+      icons/Draft_Text.svg
+      qml/Main.qml
       )
 
 # Bundle the QtQuickControls2 style configuration so Material/Dark is active

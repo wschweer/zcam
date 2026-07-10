@@ -26,7 +26,7 @@ Rectangle {
 
         Label {
             Layout.alignment: Qt.AlignCenter
-            text: ZCam.machine.name
+            text: ZCam.machine && ZCam.machine.name ? ZCam.machine.name : ""
             color: Material.foreground
             }
         ToolButton {

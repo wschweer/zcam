@@ -148,7 +148,7 @@ Node {
                 return element.rot;
                 });
             instance.visible = Qt.binding(function () {
-                return element.active;
+                return element.show && element.ancestorsShow;
                 });
             if (element.curColor)
                 instance.color = Qt.binding(function () {

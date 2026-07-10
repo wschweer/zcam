@@ -12,12 +12,13 @@
 #pragma once
 
 #include <QObject>
-// #include <QQmlEngine>
-// #include <QJSEngine>
 #include <QString>
 #include <QUrl>
+#include <memory>
+#include <vector>
 #include <QtQml/qqmlregistration.h>
 #include <nlohmann/json.hpp>
+#include "undo.h"
 using json = nlohmann::json;
 
 class ZCam;
@@ -37,13 +38,30 @@ class ProjectManager : public QObject
       QML_ELEMENT
       QML_UNCREATABLE("no")
 
-      Q_PROPERTY(bool   dirty       READ dirty       NOTIFY dirtyChanged)
+      Q_PROPERTY(bool dirty READ dirty NOTIFY dirtyChanged)
       Q_PROPERTY(QString projectPath READ projectPath NOTIFY projectPathChanged)
       Q_PROPERTY(QString projectName READ projectName NOTIFY projectPathChanged)
-      Q_PROPERTY(bool   canUndo     READ canUndo     NOTIFY undoStateChanged)
-      Q_PROPERTY(bool   canRedo     READ canRedo     NOTIFY undoStateChanged)
+      Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoStateChanged)
+      Q_PROPERTY(bool canRedo READ canRedo NOTIFY undoStateChanged)
 
+      // ── Internal helpers ──────────────────────────────────────────────────
+      bool writeProjectFile(const std::string& path);
+      bool readProjectFile(const std::string& path);
+      void clearUndoStack();
+      void setDirty(bool v);
+      void setProjectPath(const QString& v);
+      void saveLastProjectPath(const QString& path);
+      QString lastProjectPath() const;
+
+      // ── State ─────────────────────────────────────────────────────────────
       ZCam* zcam;
+      bool _dirty {false};
+      QString _projectPath {}; ///< empty = no file yet
+
+      /// Command-based undo stack.
+      std::vector<std::unique_ptr<UndoCommand>> _undoStack {};
+      int _undoIndex {0};
+      void update();
 
     signals:
       void dirtyChanged();
@@ -59,18 +77,19 @@ class ProjectManager : public QObject
 
     public:
       explicit ProjectManager(ZCam*, QObject* parent = nullptr);
-
       // ── Properties ────────────────────────────────────────────────────────
-      bool    dirty()       const { return _dirty; }
+      bool dirty() const { return _dirty; }
       QString projectPath() const { return _projectPath; }
       QString projectName() const;
-      bool    canUndo()     const { return _undoIndex > 0; }
-      bool    canRedo()     const { return _undoIndex < static_cast<int>(_undoStack.size()); }
-
+      bool canUndo() const { return _undoIndex > 0; }
+      bool canRedo() const { return _undoIndex < static_cast<int>(_undoStack.size()); }
       // ── QML-callable API ──────────────────────────────────────────────────
 
       /// Start a fresh, unnamed project.  Returns false if user cancelled.
-      Q_INVOKABLE bool newProject();
+      /// When *clearPersistedPath* is true (default), the persisted lastPath
+      /// in QSettings is cleared.  Pass false during startup so that
+      /// restoreLastProject() can still read the old value afterwards.
+      Q_INVOKABLE bool newProject(bool clearPersistedPath = true);
 
       /// Open a project from *path*.  Pass an empty string to trigger the
       /// file-dialog logic from C++ (alternatively drive the dialog from QML).
@@ -99,23 +118,14 @@ class ProjectManager : public QObject
       /// QML can display it asynchronously.
       Q_INVOKABLE bool checkUnsavedChanges();
 
-      // ── Singleton factory ─────────────────────────────────────────────────
-//      static ProjectManager* create(QQmlEngine*, QJSEngine*);
+      /// Record a property change on *element* so that it flows through the
+      /// undo/redo stack and marks the project dirty.
+      Q_INVOKABLE void changeProperty(QObject* element, const QString& propName, const QVariant& newValue);
 
-    private:
-      // ── Internal helpers ──────────────────────────────────────────────────
-      bool writeProjectFile(const std::string& path);
-      bool readProjectFile(const std::string& path);
-      void clearUndoStack();
-      void setDirty(bool v);
-      void setProjectPath(const QString& v);
+      /// Try to restore the last-opened project at application startup.
+      /// Returns true when a project was successfully loaded.
+      Q_INVOKABLE bool restoreLastProject();
 
-      // ── State ─────────────────────────────────────────────────────────────
-      bool    _dirty        { false };
-      QString _projectPath  {};              ///< empty = no file yet
-
-      /// Minimal undo stack: each entry is an opaque serialised snapshot.
-      /// Replace with a proper Command pattern as the app grows.
-      QList<QByteArray> _undoStack {};
-      int               _undoIndex { 0 };
+      /// Push a command onto the undo/redo stack.
+      void pushCommand(std::unique_ptr<UndoCommand> cmd);
       };

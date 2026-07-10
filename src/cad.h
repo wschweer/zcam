@@ -25,9 +25,23 @@ class Cad : public Element3d
 
       //      Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged);
 
+      inline static constexpr std::string_view _properties {R"({
+            "class": "Cad",
+            "items": [
+                  { "row": { "show": { "label": "Show",     "type": "bool", "default": true },
+                              "burn": { "label": "Burn",     "type": "bool", "default": true } },
+                    "label": "Visibility" },
+                  { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
+                  { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
+                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] }
+                  ]
+                        })"};
+
     protected:
 
     public:
       Cad(ZCam*, Element* parent = nullptr);
-      virtual const char* typeName() override { return "cad"; }
+      virtual QString typeName() override { return QStringLiteral("cad"); }
+      virtual const std::string_view properties() const override { return _properties; }
+      Q_INVOKABLE virtual bool visible() const override { return true; }
       };

@@ -28,14 +28,14 @@ Item {
         category: "MainPanel"
         property var outerSplitState
         property var innerSplitState
-    }
+        }
 
     Component.onCompleted: {
         if (panelSettings.outerSplitState)
-            outerSplit.restoreState(panelSettings.outerSplitState)
+            outerSplit.restoreState(panelSettings.outerSplitState);
         if (panelSettings.innerSplitState)
-            innerSplit.restoreState(panelSettings.innerSplitState)
-    }
+            innerSplit.restoreState(panelSettings.innerSplitState);
+        }
 
     // ── Outer horizontal split: left panel | 3-D viewport ────────────────────
     SplitView {
@@ -43,44 +43,52 @@ Item {
         anchors.fill: parent
         orientation: Qt.Horizontal
 
-        onResizingChanged: if (!resizing) panelSettings.outerSplitState = saveState()
+        onResizingChanged: if (!resizing)
+            panelSettings.outerSplitState = saveState()
 
         // ── Left panel ────────────────────────────────────────────────────────
         SplitView {
             id: innerSplit
             SplitView.preferredWidth: 360
-            SplitView.minimumWidth:   180
+            SplitView.minimumWidth: 180
             orientation: Qt.Vertical
 
-            onResizingChanged: if (!resizing) panelSettings.innerSplitState = saveState()
+            onResizingChanged: if (!resizing)
+                panelSettings.innerSplitState = saveState()
 
             // Upper half: scene tree
-            Rectangle {
-                SplitView.preferredHeight: 300
-                SplitView.minimumHeight:   80
-                color: Material.color(Material.BlueGrey, Material.Shade900)
-
-                TreeViewPanel {
+            Flickable {
+                    SplitView.preferredHeight: 300
+                    SplitView.minimumHeight: 80
+                Rectangle {
                     anchors.fill: parent
+                    color: Material.color(Material.BlueGrey, Material.Shade900)
+
+                    TreeViewPanel {
+                        anchors.fill: parent
+                        }
+                    }
                 }
-            }
 
             // Lower half: inspector
-            Rectangle {
-                SplitView.fillHeight:    true
-                SplitView.minimumHeight: 80
-                color: Material.color(Material.BlueGrey, Material.Shade800)
-
-                InspectorPanel {
+            Flickable {
+                    SplitView.fillHeight: true
+                    SplitView.minimumHeight: 80
+                Rectangle {
                     anchors.fill: parent
+                    color: Material.color(Material.BlueGrey, Material.Shade800)
+
+                    InspectorPanel {
+                        anchors.fill: parent
+                        }
+                    }
                 }
             }
-        }
 
         // ── Right panel: 3-D viewport ─────────────────────────────────────────
         View3DPanel {
-            SplitView.fillWidth:    true
+            SplitView.fillWidth: true
             SplitView.minimumWidth: 200
+            }
         }
     }
-}
