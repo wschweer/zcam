@@ -21,18 +21,19 @@ struct libusb_device_handle;
 //   Usb
 //---------------------------------------------------------
 
-class Usb {
-      int timeout { 1000 };      // was 100 (ms)
-      libusb_context* ctx          { nullptr };
-      libusb_device** list         { nullptr };
-      libusb_device* device        { nullptr };
-      libusb_device_handle* handle { nullptr };
+class Usb
+      {
+      int timeout {1000}; // was 100 (ms)
+      libusb_context* ctx {nullptr};
+      libusb_device** list {nullptr};
+      libusb_device* device {nullptr};
+      libusb_device_handle* handle {nullptr};
 
       bool mock;
 
       bool readWrite(u_char* data, size_t count, int endpoint);
 
-   public:
+    public:
       Usb();
       ~Usb();
       bool lookupDevice(int vendor, int product);
@@ -40,4 +41,5 @@ class Usb {
       bool close();
       bool write(const u_char* data, size_t count);
       bool read(u_char* data, size_t count);
+      bool isOpen() const { return mock || handle != nullptr; }
       };

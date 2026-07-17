@@ -6,7 +6,7 @@
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License version 2
 //  as published by the Free Software Foundation and appearing in
-//  the file LICENCE.GPL
+//  the file LICENSE.GPL
 //=============================================================================
 
 import QtQuick
@@ -37,8 +37,8 @@ Model {
     Model {
         id: bboxOverlay
         parent: model
-        geometry: element ? element.selectionGeometry : null
-        visible: element && ZCam.currentElement === element
+        geometry: model.element ? model.element.selectionGeometry : null
+        visible: model.element && ZCam.currentElement === model.element
         pickable: false
         materials: [
             PrincipledMaterial {

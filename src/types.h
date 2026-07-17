@@ -132,12 +132,11 @@ inline Vec2d Vec2d::operator-(const Vec3d& p) const {
 
 class Path2d : public std::vector<Vec2d>
       {
-
     public:
       Path2d() {}
       Path2d(const Clipper2Lib::PathD& path) {
-            for (const auto& p : path)
-                  push_back(Vec2d(p.x, p.y));
+            for (auto p = path.begin(); p != path.end(); ++p)
+                  push_back({p->x, p->y});
             }
       };
 
@@ -150,6 +149,14 @@ class PathList : public std::vector<Path2d>
       bool _fill{false};
 
     public:
+      PathList() {}
+      PathList(const Clipper2Lib::PathsD& pl) {
+            for (const auto& p : pl)
+                  push_back(p);
+            }
+      PathList(const Clipper2Lib::PathD& pl) {
+            push_back(pl);
+            }
       void push_back(const Clipper2Lib::PathD& pg) { std::vector<Path2d>::push_back(Path2d(pg)); }
       void push_back(const Path2d& p) { std::vector<Path2d>::push_back(p); }
       Clipper2Lib::PathsD clipper() const {
@@ -162,15 +169,6 @@ class PathList : public std::vector<Path2d>
                   }
             return p;
             }
-      PathList(const Clipper2Lib::PathsD& pl) {
-            for (const auto& p : pl) {
-                  Path2d v;
-                  for (const auto& pt : p)
-                        v.push_back(Vec2d(pt.x, pt.y));
-                  push_back(p);
-                  }
-            }
-      PathList() {}
       bool fill() const { return _fill; }
       void setFill(bool v) { _fill = v; }
       void clear() {
@@ -178,6 +176,7 @@ class PathList : public std::vector<Path2d>
             std::vector<Path2d>::clear();
             }
       };
+
 //---------------------------------------------------------
 //   Path
 //    represents lines, size must be zero or > 1

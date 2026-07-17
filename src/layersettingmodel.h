@@ -42,15 +42,34 @@ class LayerSettingModel : public QAbstractListModel
       {
       Q_OBJECT
       QML_ELEMENT
-      Q_PROPERTY(
-          LaserLayerSetting* layerSetting READ layerSetting WRITE setLayerSetting NOTIFY layerSettingChanged)
+      Q_PROPERTY(LaserPass* pass READ pass WRITE setPass NOTIFY passChanged)
       Q_PROPERTY(QString title READ title NOTIFY titleChanged)
       Q_PROPERTY(QString propertiesJson READ propertiesJson NOTIFY propertiesJsonChanged)
 
+      LaserPass* _pass = nullptr;
+      QString _title;
+      QString _propertiesJson;
+
+      QStringList _propertyNames;
+      QList<bool> _propertyIsRow;
+      QList<bool> _propertyIsColumns;
+      QList<int> _columnCounts;
+      QList<QList<LayerSettingColumnItem>> _columnItems;
+      QList<QStringList> _subPropNames;
+      QStringList _rowLabels;
+
+      void parseProperties();
+
+    signals:
+      void passChanged();
+      void titleChanged();
+      void propertiesJsonChanged();
+      void layerDataChanged();
+
     public:
       explicit LayerSettingModel(QObject* parent = nullptr);
-      LaserLayerSetting* layerSetting() const { return _layerSetting; }
-      void setLayerSetting(LaserLayerSetting* layerSetting);
+      LaserPass* pass() const { return _pass; }
+      void setPass(LaserPass* pass);
       QString title() const { return _title; }
       QString propertiesJson() const { return _propertiesJson; }
       enum Roles {
@@ -71,25 +90,4 @@ class LayerSettingModel : public QAbstractListModel
 
       Q_INVOKABLE bool setSubProperty(int row, const QString& subName, const QVariant& value);
       Q_INVOKABLE bool setColumnProperty(int modelRow, const QString& propName, const QVariant& value);
-
-    signals:
-      void layerSettingChanged();
-      void titleChanged();
-      void propertiesJsonChanged();
-      void layerDataChanged();
-
-    private:
-      void parseProperties();
-
-      LaserLayerSetting* _layerSetting = nullptr;
-      QString _title;
-      QString _propertiesJson;
-
-      QStringList _propertyNames;
-      QList<bool> _propertyIsRow;
-      QList<bool> _propertyIsColumns;
-      QList<int> _columnCounts;
-      QList<QList<LayerSettingColumnItem>> _columnItems;
-      QList<QStringList> _subPropNames;
-      QStringList _rowLabels;
       };

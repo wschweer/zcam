@@ -42,18 +42,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define TRUE 1
+#define TRUE  1
 #define FALSE 0
 
 #define Dot(u, v) (u[0] * v[0] + u[1] * v[1] + u[2] * v[2])
 
 #if defined(FOR_TRITE_TEST_PROGRAM) || defined(TRUE_PROJECT)
-static void Normalize(TESSreal v[3])
-{
+static void Normalize(TESSreal v[3]) {
       TESSreal len = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 
       assert(len > 0);
-      len = sqrtf(len);
+      len   = sqrtf(len);
       v[0] /= len;
       v[1] /= len;
       v[2] /= len;
@@ -61,35 +60,25 @@ static void Normalize(TESSreal v[3])
 #endif
 
 #define ABS(x) ((x) < 0 ? -(x) : (x))
-
-static int LongAxis(TESSreal v[3])
-{
+static int LongAxis(TESSreal v[3]) {
       int i = 0;
 
-      if (ABS(v[1]) > ABS(v[0])) {
+      if (ABS(v[1]) > ABS(v[0]))
             i = 1;
-      }
-      if (ABS(v[2]) > ABS(v[i])) {
+      if (ABS(v[2]) > ABS(v[i]))
             i = 2;
-      }
       return i;
 }
-
-static int ShortAxis(TESSreal v[3])
-{
+static int ShortAxis(TESSreal v[3]) {
       int i = 0;
 
-      if (ABS(v[1]) < ABS(v[0])) {
+      if (ABS(v[1]) < ABS(v[0]))
             i = 1;
-      }
-      if (ABS(v[2]) < ABS(v[i])) {
+      if (ABS(v[2]) < ABS(v[i]))
             i = 2;
-      }
       return i;
 }
-
-void Tesselator::ComputeNormal(TESSreal norm[3])
-      {
+void Tesselator::ComputeNormal(TESSreal norm[3]) {
       TESSvertex *v, *v1, *v2;
       TESSreal c, tLen2, maxLen2;
       TESSreal maxVal[3], minVal[3], d1[3], d2[3], tNorm[3];
@@ -106,10 +95,10 @@ void Tesselator::ComputeNormal(TESSreal norm[3])
             return;
       }
       for (i = 0; i < 3; ++i) {
-            c = v->coords[i];
-            minVal[i] = c;
+            c          = v->coords[i];
+            minVal[i]  = c;
             minVert[i] = v;
-            maxVal[i] = c;
+            maxVal[i]  = c;
             maxVert[i] = v;
       }
 
@@ -117,11 +106,11 @@ void Tesselator::ComputeNormal(TESSreal norm[3])
             for (i = 0; i < 3; ++i) {
                   c = v->coords[i];
                   if (c < minVal[i]) {
-                        minVal[i] = c;
+                        minVal[i]  = c;
                         minVert[i] = v;
                   }
                   if (c > maxVal[i]) {
-                        maxVal[i] = c;
+                        maxVal[i]  = c;
                         maxVert[i] = v;
                   }
             }
@@ -147,19 +136,19 @@ void Tesselator::ComputeNormal(TESSreal norm[3])
        * (Length of normal == twice the triangle area)
        */
       maxLen2 = 0;
-      v1 = minVert[i];
-      v2 = maxVert[i];
-      d1[0] = v1->coords[0] - v2->coords[0];
-      d1[1] = v1->coords[1] - v2->coords[1];
-      d1[2] = v1->coords[2] - v2->coords[2];
+      v1      = minVert[i];
+      v2      = maxVert[i];
+      d1[0]   = v1->coords[0] - v2->coords[0];
+      d1[1]   = v1->coords[1] - v2->coords[1];
+      d1[2]   = v1->coords[2] - v2->coords[2];
       for (v = vHead->next; v != vHead; v = v->next) {
-            d2[0] = v->coords[0] - v2->coords[0];
-            d2[1] = v->coords[1] - v2->coords[1];
-            d2[2] = v->coords[2] - v2->coords[2];
+            d2[0]    = v->coords[0] - v2->coords[0];
+            d2[1]    = v->coords[1] - v2->coords[1];
+            d2[2]    = v->coords[2] - v2->coords[2];
             tNorm[0] = d1[1] * d2[2] - d1[2] * d2[1];
             tNorm[1] = d1[2] * d2[0] - d1[0] * d2[2];
             tNorm[2] = d1[0] * d2[1] - d1[1] * d2[0];
-            tLen2 = tNorm[0] * tNorm[0] + tNorm[1] * tNorm[1] + tNorm[2] * tNorm[2];
+            tLen2    = tNorm[0] * tNorm[0] + tNorm[1] * tNorm[1] + tNorm[2] * tNorm[2];
             if (tLen2 > maxLen2) {
                   maxLen2 = tLen2;
                   norm[0] = tNorm[0];
@@ -171,18 +160,16 @@ void Tesselator::ComputeNormal(TESSreal norm[3])
       if (maxLen2 <= 0) {
             /* All points lie on a single line -- any decent normal will do */
             norm[0] = norm[1] = norm[2] = 0;
-            norm[ShortAxis(d1)] = 1;
+            norm[ShortAxis(d1)]         = 1;
       }
 }
-
 //---------------------------------------------------------
 //   CheckOrientation
 //---------------------------------------------------------
 
-void Tesselator::CheckOrientation()
-      {
+void Tesselator::CheckOrientation() {
       TESSreal area;
-      TESSface *f, *fHead = &_mesh->fHead;
+      TESSface *f, *fHead   = &_mesh->fHead;
       TESSvertex *v, *vHead = &_mesh->vHead;
       TESShalfEdge* e;
 
@@ -196,20 +183,18 @@ void Tesselator::CheckOrientation()
                   continue;
             do {
                   area += (e->Org->s - e->Dst->s) * (e->Org->t + e->Dst->t);
-                  e = e->Lnext;
+                  e     = e->Lnext;
             } while (e != f->anEdge);
       }
       if (area < 0) {
             /* Reverse the orientation by flipping all the t-coordinates */
-            for (v = vHead->next; v != vHead; v = v->next) {
+            for (v = vHead->next; v != vHead; v = v->next)
                   v->t = -v->t;
-            }
             _tUnit[0] = -_tUnit[0];
             _tUnit[1] = -_tUnit[1];
             _tUnit[2] = -_tUnit[2];
-            }
       }
-
+}
 #ifdef FOR_TRITE_TEST_PROGRAM
 #include <stdlib.h>
 extern int RandomSweep;
@@ -233,12 +218,10 @@ extern int RandomSweep;
 #define S_UNIT_Y (TESSreal)0.0
 #endif
 #endif
-
 /* Determine the polygon normal and project vertices onto the plane
  * of the polygon.
  */
-void Tesselator::tessProjectPolygon()
-      {
+void Tesselator::tessProjectPolygon() {
       TESSvertex* v;
       TESSvertex* vHead = &_mesh->vHead;
       TESSreal norm[3];
@@ -251,7 +234,7 @@ void Tesselator::tessProjectPolygon()
       if (norm[0] == 0 && norm[1] == 0 && norm[2] == 0) {
             ComputeNormal(norm);
             computedNormal = TRUE;
-            }
+      }
       sUnit = _sUnit;
       tUnit = _tUnit;
       int i = LongAxis(norm);
@@ -262,12 +245,12 @@ void Tesselator::tessProjectPolygon()
        */
       Normalize(norm);
 
-      sUnit[i] = 0;
+      sUnit[i]           = 0;
       sUnit[(i + 1) % 3] = S_UNIT_X;
       sUnit[(i + 2) % 3] = S_UNIT_Y;
 
       /* Now make it exactly perpendicular */
-      w = Dot(sUnit, norm);
+      w         = Dot(sUnit, norm);
       sUnit[0] -= w * norm[0];
       sUnit[1] -= w * norm[1];
       sUnit[2] -= w * norm[2];
@@ -280,11 +263,11 @@ void Tesselator::tessProjectPolygon()
       Normalize(tUnit);
 #else
       /* Project perpendicular to a coordinate axis -- better numerically */
-      sUnit[i] = 0;
+      sUnit[i]           = 0;
       sUnit[(i + 1) % 3] = S_UNIT_X;
       sUnit[(i + 2) % 3] = S_UNIT_Y;
 
-      tUnit[i] = 0;
+      tUnit[i]           = 0;
       tUnit[(i + 1) % 3] = (norm[i] > 0) ? -S_UNIT_Y : S_UNIT_Y;
       tUnit[(i + 2) % 3] = (norm[i] > 0) ? S_UNIT_X : -S_UNIT_X;
 #endif
@@ -293,7 +276,7 @@ void Tesselator::tessProjectPolygon()
       for (v = vHead->next; v != vHead; v = v->next) {
             v->s = Dot(v->coords, sUnit);
             v->t = Dot(v->coords, tUnit);
-            }
+      }
       if (computedNormal)
             CheckOrientation();
 
@@ -303,7 +286,7 @@ void Tesselator::tessProjectPolygon()
             if (first) {
                   _bmin[0] = _bmax[0] = v->s;
                   _bmin[1] = _bmax[1] = v->t;
-                  first = 0;
+                  first               = 0;
             }
             else {
                   if (v->s < _bmin[0])
@@ -317,9 +300,7 @@ void Tesselator::tessProjectPolygon()
             }
       }
 }
-
 #define AddWinding(eDst, eSrc) (eDst->winding += eSrc->winding, eDst->Sym->winding += eSrc->Sym->winding)
-
 /* tessMeshTessellateMonoRegion( face ) tessellates a monotone region
  * (what else would it do??)  The region must consist of a single
  * loop of half-edges (see mesh.h) oriented CCW.  "Monotone" in this
@@ -347,8 +328,7 @@ void Tesselator::tessProjectPolygon()
  * to the fan is a simple orientation test.  By making the fan as large
  * as possible, we restore the invariant (check it yourself).
  */
-int tessMeshTessellateMonoRegion(TESSmesh* mesh, TESSface* face)
-{
+int tessMeshTessellateMonoRegion(TESSmesh* mesh, TESSface* face) {
       TESShalfEdge *up, *lo;
 
       /* All edges are oriented CCW around the boundary of the region.
@@ -371,7 +351,8 @@ int tessMeshTessellateMonoRegion(TESSmesh* mesh, TESSface* face)
                    * The EdgeGoesLeft test guarantees progress even when some triangles
                    * are CW, given that the upper and lower chains are truly monotone.
                    */
-                  while (lo->Lnext != up && (EdgeGoesLeft(lo->Lnext) || EdgeSign(lo->Org, lo->Dst, lo->Lnext->Dst) <= 0)) {
+                  while (lo->Lnext != up &&
+                         (EdgeGoesLeft(lo->Lnext) || EdgeSign(lo->Org, lo->Dst, lo->Lnext->Dst) <= 0)) {
                         TESShalfEdge* tempHalfEdge = tessMeshConnect(mesh, lo->Lnext, lo);
                         if (tempHalfEdge == NULL)
                               return 0;
@@ -381,7 +362,8 @@ int tessMeshTessellateMonoRegion(TESSmesh* mesh, TESSface* face)
             }
             else {
                   /* lo->Org is on the left.  We can make CCW triangles from up->Dst. */
-                  while (lo->Lnext != up && (EdgeGoesRight(up->Lprev) || EdgeSign(up->Dst, up->Org, up->Lprev->Org) >= 0)) {
+                  while (lo->Lnext != up &&
+                         (EdgeGoesRight(up->Lprev) || EdgeSign(up->Dst, up->Org, up->Lprev->Org) >= 0)) {
                         TESShalfEdge* tempHalfEdge = tessMeshConnect(mesh, up, up->Lprev);
                         if (tempHalfEdge == NULL)
                               return 0;
@@ -404,13 +386,11 @@ int tessMeshTessellateMonoRegion(TESSmesh* mesh, TESSface* face)
 
       return 1;
 }
-
 /* tessMeshTessellateInterior( mesh ) tessellates each region of
  * the mesh which is marked "inside" the polygon.  Each such region
  * must be monotone.
  */
-int tessMeshTessellateInterior(TESSmesh* mesh)
-{
+int tessMeshTessellateInterior(TESSmesh* mesh) {
       TESSface *f, *next;
 
       /*LINTED*/
@@ -427,36 +407,26 @@ int tessMeshTessellateInterior(TESSmesh* mesh)
 
 typedef struct EdgeStackNode EdgeStackNode;
 typedef struct EdgeStack EdgeStack;
-
 struct EdgeStackNode {
       TESShalfEdge* edge;
       EdgeStackNode* next;
 };
-
 struct EdgeStack {
       EdgeStackNode* top;
       struct BucketAlloc* nodeBucket;
 };
-
-int stackInit(EdgeStack* stack, TESSalloc* alloc)
-{
-      stack->top = NULL;
+int stackInit(EdgeStack* stack, TESSalloc* alloc) {
+      stack->top        = NULL;
       stack->nodeBucket = createBucketAlloc(alloc, "CDT nodes", sizeof(EdgeStackNode), 512);
       return stack->nodeBucket != NULL;
 }
-
-void stackDelete(EdgeStack* stack)
-{
+void stackDelete(EdgeStack* stack) {
       deleteBucketAlloc(stack->nodeBucket);
 }
-
-int stackEmpty(EdgeStack* stack)
-{
+int stackEmpty(EdgeStack* stack) {
       return stack->top == NULL;
 }
-
-void stackPush(EdgeStack* stack, TESShalfEdge* e)
-{
+void stackPush(EdgeStack* stack, TESShalfEdge* e) {
       EdgeStackNode* node = (EdgeStackNode*)bucketAlloc(stack->nodeBucket);
       if (!node)
             return;
@@ -464,23 +434,19 @@ void stackPush(EdgeStack* stack, TESShalfEdge* e)
       node->next = stack->top;
       stack->top = node;
 }
-
-TESShalfEdge* stackPop(EdgeStack* stack)
-{
-      TESShalfEdge* e = NULL;
+TESShalfEdge* stackPop(EdgeStack* stack) {
+      TESShalfEdge* e     = NULL;
       EdgeStackNode* node = stack->top;
       if (node) {
             stack->top = node->next;
-            e = node->edge;
+            e          = node->edge;
             bucketFree(stack->nodeBucket, node);
       }
       return e;
 }
-
 //    Starting with a valid triangulation, uses the Edge Flip algorithm to
 //    refine the triangulation into a Constrained Delaunay Triangulation.
-void tessMeshRefineDelaunay(TESSmesh* mesh, TESSalloc* alloc)
-{
+void tessMeshRefineDelaunay(TESSmesh* mesh, TESSalloc* alloc) {
       // At this point, we have a valid, but not optimal, triangulation.
       // We refine the triangulation using the Edge Flip algorithm
       //
@@ -516,7 +482,7 @@ void tessMeshRefineDelaunay(TESSmesh* mesh, TESSalloc* alloc)
       // Flip the reversed edge, and insert any of the four opposite edges
       // which are internal and not already in the stack (!marked)
       while (!stackEmpty(&stack) && iter < maxIter) {
-            e = stackPop(&stack);
+            e       = stackPop(&stack);
             e->mark = e->Sym->mark = 0;
             if (!tesedgeIsLocallyDelaunay(e)) {
                   TESShalfEdge* edges[4];
@@ -539,26 +505,22 @@ void tessMeshRefineDelaunay(TESSmesh* mesh, TESSalloc* alloc)
 
       stackDelete(&stack);
 }
-
 /* tessMeshDiscardExterior( mesh ) zaps (ie. sets to NULL) all faces
  * which are not marked "inside" the polygon.  Since further mesh operations
  * on NULL faces are not allowed, the main purpose is to clean up the
  * mesh so that exterior loops are not represented in the data structure.
  */
-void tessMeshDiscardExterior(TESSmesh* mesh)
-{
+void tessMeshDiscardExterior(TESSmesh* mesh) {
       TESSface *f, *next;
 
       /*LINTED*/
       for (f = mesh->fHead.next; f != &mesh->fHead; f = next) {
             /* Since f will be destroyed, save its next pointer. */
             next = f->next;
-            if (!f->inside) {
+            if (!f->inside)
                   tessMeshZapFace(mesh, f);
-            }
       }
 }
-
 /* tessMeshSetWindingNumber( mesh, value, keepOnlyBoundary ) resets the
  * winding numbers on all edges so that regions marked "inside" the
  * polygon have a winding number of "value", and regions outside
@@ -567,8 +529,7 @@ void tessMeshDiscardExterior(TESSmesh* mesh)
  * If keepOnlyBoundary is TRUE, it also deletes all edges which do not
  * separate an interior region from an exterior one.
  */
-int tessMeshSetWindingNumber(TESSmesh* mesh, int value, int keepOnlyBoundary)
-{
+int tessMeshSetWindingNumber(TESSmesh* mesh, int value, int keepOnlyBoundary) {
       TESShalfEdge *e, *eNext;
 
       for (e = mesh->eHead.next; e != &mesh->eHead; e = eNext) {
@@ -581,42 +542,30 @@ int tessMeshSetWindingNumber(TESSmesh* mesh, int value, int keepOnlyBoundary)
             else {
 
                   /* Both regions are interior, or both are exterior. */
-                  if (!keepOnlyBoundary) {
+                  if (!keepOnlyBoundary)
                         e->winding = 0;
-                  }
-                  else {
-                        if (!tessMeshDelete(mesh, e))
-                              return 0;
-                  }
+                  else if (!tessMeshDelete(mesh, e))
+                        return 0;
             }
       }
       return 1;
 }
-
-void* heapAlloc(void* userData, unsigned int size)
-{
+void* heapAlloc(void* userData, unsigned int size) {
       TESS_NOTUSED(userData);
       return malloc(size);
 }
-
-void* heapRealloc(void* userData, void* ptr, unsigned int size)
-{
+void* heapRealloc(void* userData, void* ptr, unsigned int size) {
       TESS_NOTUSED(userData);
       return realloc(ptr, size);
 }
-
-void heapFree(void* userData, void* ptr)
-{
+void heapFree(void* userData, void* ptr) {
       TESS_NOTUSED(userData);
       free(ptr);
 }
-
 static TESSalloc defaulAlloc = {
-    heapAlloc, heapRealloc, heapFree, 0, 0, 0, 0, 0, 0, 0,
+   heapAlloc, heapRealloc, heapFree, 0, 0, 0, 0, 0, 0, 0,
 };
-
-Tesselator::Tesselator()
-      {
+Tesselator::Tesselator() {
       alloc = defaulAlloc;
 
       /* Only initialize fields which can be changed by the api.  Other fields
@@ -647,7 +596,7 @@ Tesselator::Tesselator()
       reverseContours = 0;
 
       windingRule = TESS_WINDING_ODD;
-      processCDT = 0;
+      processCDT  = 0;
 
       if (alloc.regionBucketSize < 16)
             alloc.regionBucketSize = 16;
@@ -658,49 +607,39 @@ Tesselator::Tesselator()
       // Initialize to begin polygon.
       _mesh = NULL;
 
-      _status = TESS_STATUS_OK;
+      _status            = TESS_STATUS_OK;
       vertexIndexCounter = 0;
 
-      _vertices = 0;
+      _vertices      = 0;
       _vertexIndices = 0;
-      _vertexCount = 0;
-      _elements = 0;
-      _elementCount = 0;
-      }
-
-Tesselator::~Tesselator()
-      {
+      _vertexCount   = 0;
+      _elements      = 0;
+      _elementCount  = 0;
+}
+Tesselator::~Tesselator() {
       deleteBucketAlloc(regionPool);
 
-      if (_mesh) {
+      if (_mesh)
             tessMeshDeleteMesh(&alloc, _mesh);
-            }
-      if (_vertices) {
+      if (_vertices)
             alloc.memfree(alloc.userData, _vertices);
-            }
-      if (_vertexIndices) {
+      if (_vertexIndices)
             alloc.memfree(alloc.userData, _vertexIndices);
-            }
-      if (_elements) {
+      if (_elements)
             alloc.memfree(alloc.userData, _elements);
-            }
-      }
-
-static TESSindex GetNeighbourFace(TESShalfEdge* edge)
-{
+}
+static TESSindex GetNeighbourFace(TESShalfEdge* edge) {
       if (!edge->Rface)
             return TESS_UNDEF;
       if (!edge->Rface->inside)
             return TESS_UNDEF;
       return edge->Rface->n;
 }
-
-void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, int vertexSize)
-{
-      TESSvertex* v = 0;
-      TESSface* f = 0;
+void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, int vertexSize) {
+      TESSvertex* v      = 0;
+      TESSface* f        = 0;
       TESShalfEdge* edge = 0;
-      int maxFaceCount = 0;
+      int maxFaceCount   = 0;
       int maxVertexCount = 0;
       int faceVerts, i;
       TESSindex* elements = 0;
@@ -726,7 +665,7 @@ void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, i
             if (!f->inside)
                   continue;
 
-            edge = f->anEdge;
+            edge      = f->anEdge;
             faceVerts = 0;
             do {
                   v = edge->Org;
@@ -755,7 +694,7 @@ void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, i
       }
 
       _vertexCount = maxVertexCount;
-      _vertices = (TESSreal*)alloc.memalloc(alloc.userData, sizeof(TESSreal) * _vertexCount * vertexSize);
+      _vertices    = (TESSreal*)alloc.memalloc(alloc.userData, sizeof(TESSreal) * _vertexCount * vertexSize);
       if (!_vertices) {
             _status = TESS_STATUS_OUT_OF_MEMORY;
             Debug("out of memory");
@@ -773,7 +712,7 @@ void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, i
       for (v = mesh->vHead.next; v != &mesh->vHead; v = v->next) {
             if (v->n != TESS_UNDEF) {
                   // Store coordinate
-                  vert = &_vertices[v->n * vertexSize];
+                  vert    = &_vertices[v->n * vertexSize];
                   vert[0] = v->coords[0];
                   vert[1] = v->coords[1];
                   if (vertexSize > 2)
@@ -790,10 +729,10 @@ void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, i
                   continue;
 
             // Store polygon
-            edge = f->anEdge;
+            edge      = f->anEdge;
             faceVerts = 0;
             do {
-                  v = edge->Org;
+                  v           = edge->Org;
                   *elements++ = v->n;
                   faceVerts++;
                   edge = edge->Lnext;
@@ -807,7 +746,7 @@ void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, i
                   edge = f->anEdge;
                   do {
                         *elements++ = GetNeighbourFace(edge);
-                        edge = edge->Lnext;
+                        edge        = edge->Lnext;
                   } while (edge != f->anEdge);
                   // Fill unused.
                   for (i = faceVerts; i < polySize; ++i)
@@ -815,23 +754,21 @@ void Tesselator::OutputPolymesh(TESSmesh* mesh, int elementType, int polySize, i
             }
       }
 }
-
 //---------------------------------------------------------
 //   OutputContours
 //---------------------------------------------------------
 
-void Tesselator::OutputContours(TESSmesh* mesh, int vertexSize)
-      {
-      TESSface* f = 0;
-      TESShalfEdge* edge = 0;
+void Tesselator::OutputContours(TESSmesh* mesh, int vertexSize) {
+      TESSface* f         = 0;
+      TESShalfEdge* edge  = 0;
       TESShalfEdge* start = 0;
-      TESSreal* verts = 0;
+      TESSreal* verts     = 0;
       TESSindex* elements = 0;
       TESSindex* vertInds = 0;
-      int startVert = 0;
-      int vertCount = 0;
+      int startVert       = 0;
+      int vertCount       = 0;
 
-      _vertexCount = 0;
+      _vertexCount  = 0;
       _elementCount = 0;
 
       for (f = mesh->fHead.next; f != &mesh->fHead; f = f->next) {
@@ -890,25 +827,21 @@ void Tesselator::OutputContours(TESSmesh* mesh, int vertexSize)
                   edge = edge->Lnext;
             } while (edge != start);
 
-            elements[0] = startVert;
-            elements[1] = vertCount;
-            elements += 2;
+            elements[0]  = startVert;
+            elements[1]  = vertCount;
+            elements    += 2;
 
             startVert += vertCount;
       }
 }
-
-int IsValidCoord(TESSreal coord)
-      {
+int IsValidCoord(TESSreal coord) {
       return coord <= TESS_MAX_VALID_INPUT_VALUE && coord >= TESS_MIN_VALID_INPUT_VALUE;
-      }
-
+}
 //---------------------------------------------------------
 //   addContour
 //---------------------------------------------------------
 
-void Tesselator::addContour(int size, const void* vertices, int stride, int numVertices)
-      {
+void Tesselator::addContour(int size, const void* vertices, int stride, int numVertices) {
       const unsigned char* src = (const unsigned char*)vertices;
       TESShalfEdge* e;
       int i;
@@ -919,7 +852,8 @@ void Tesselator::addContour(int size, const void* vertices, int stride, int numV
             _status = TESS_STATUS_OUT_OF_MEMORY;
             Debug("out of memory");
             return;
-            }
+      }
+      _status = TESS_STATUS_OK;
 
       if (size < 2)
             size = 2;
@@ -928,13 +862,14 @@ void Tesselator::addContour(int size, const void* vertices, int stride, int numV
 
       e = NULL;
       for (i = 0; i < numVertices; ++i) {
-            const TESSreal* coords = (const TESSreal*)src;
-            src += stride;
-            if (!IsValidCoord(coords[0]) || !IsValidCoord(coords[1]) || (size > 2 && !IsValidCoord(coords[2]))) {
+            const TESSreal* coords  = (const TESSreal*)src;
+            src                    += stride;
+            if (!IsValidCoord(coords[0]) || !IsValidCoord(coords[1]) ||
+                (size > 2 && !IsValidCoord(coords[2]))) {
                   _status = TESS_STATUS_INVALID_INPUT;
                   Debug("invalid input {} {} {}", coords[0], coords[1], coords[2]);
                   return;
-                  }
+            }
             if (e == NULL) {
                   /* Make a self-loop (one vertex, one edge). */
                   e = tessMeshMakeEdge(_mesh);
@@ -973,52 +908,49 @@ void Tesselator::addContour(int size, const void* vertices, int stride, int numV
              * vertices in such an order that a CCW contour will add +1 to
              * the winding number of the region inside the contour.
              */
-            e->winding = reverseContours ? -1 : 1;
+            e->winding      = reverseContours ? -1 : 1;
             e->Sym->winding = reverseContours ? 1 : -1;
       }
 }
-
 //---------------------------------------------------------
 //   tessSetOption
 //---------------------------------------------------------
 
-void Tesselator::tessSetOption(int option, int value)
-      {
+void Tesselator::tessSetOption(int option, int value) {
       switch (option) {
-            case TESS_CONSTRAINED_DELAUNAY_TRIANGULATION:  this->processCDT = value > 0 ? 1 : 0; break;
+            case TESS_CONSTRAINED_DELAUNAY_TRIANGULATION: this->processCDT = value > 0 ? 1 : 0; break;
             case TESS_REVERSE_CONTOURS: this->reverseContours = value > 0 ? 1 : 0; break;
-            }
       }
-
+}
 //---------------------------------------------------------
 //   tesselate
 //---------------------------------------------------------
 
-int Tesselator::tesselate(int wr, int elementType, int polySize, int vertexSize, const TESSreal* n)
-      {
+int Tesselator::tesselate(int wr, int elementType, int polySize, int vertexSize, const TESSreal* n) {
       TESSmesh* mesh;
       int rc = 1;
 
       if (_vertices) {
             alloc.memfree(alloc.userData, _vertices);
             _vertices = 0;
-            }
+      }
       if (_elements) {
             alloc.memfree(alloc.userData, _elements);
             _elements = 0;
-            }
+      }
       if (_vertexIndices) {
             alloc.memfree(alloc.userData, _vertexIndices);
             _vertexIndices = 0;
-            }
+      }
 
       vertexIndexCounter = 0;
+      _status            = TESS_STATUS_OK;
 
       if (n) {
             _normal[0] = n[0];
             _normal[1] = n[1];
             _normal[2] = n[2];
-            }
+      }
 
       windingRule = wr;
 
@@ -1030,11 +962,10 @@ int Tesselator::tesselate(int wr, int elementType, int polySize, int vertexSize,
       if (setjmp(env) != 0) {
             /* come back here if out of memory */
             return 0;
-            }
+      }
 
-      if (_status != TESS_STATUS_OK || !mesh) {
+      if (_status != TESS_STATUS_OK || !_mesh)
             return 0;
-            }
 
       /* Determine the polygon normal and project vertices onto the plane
        * of the polygon.
@@ -1047,9 +978,8 @@ int Tesselator::tesselate(int wr, int elementType, int polySize, int vertexSize,
        * to the polygon, according to the rule given by tess->windingRule.
        * Each interior region is guaranteed be monotone.
        */
-      if (!tessComputeInterior(this)) {
+      if (!tessComputeInterior(this))
             longjmp(env, 1); /* could've used a label */
-            }
 
       mesh = _mesh;
 
@@ -1059,15 +989,14 @@ int Tesselator::tesselate(int wr, int elementType, int polySize, int vertexSize,
        */
       if (elementType == TESS_BOUNDARY_CONTOURS) {
             rc = tessMeshSetWindingNumber(mesh, 1, TRUE);
-            }
+      }
       else {
             rc = tessMeshTessellateInterior(mesh);
             if (rc != 0 && this->processCDT != 0)
                   tessMeshRefineDelaunay(mesh, &alloc);
-            }
-      if (rc == 0) {
+      }
+      if (rc == 0)
             longjmp(env, 1); /* could've used a label */
-            }
 
       tessMeshCheckMesh(mesh);
 
@@ -1079,4 +1008,4 @@ int Tesselator::tesselate(int wr, int elementType, int polySize, int vertexSize,
       tessMeshDeleteMesh(&alloc, mesh);
       _mesh = NULL;
       return _status == TESS_STATUS_OK;
-      }
+}

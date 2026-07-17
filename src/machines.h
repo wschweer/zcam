@@ -34,7 +34,7 @@ class Machines : public QObject
       Q_PROPERTY(QStringList machinesModel READ machinesModel NOTIFY machinesModelChanged)
       Q_PROPERTY(MachineModel* machineModel READ machineModel CONSTANT)
 
-      std::vector<Machine> machines;
+      std::vector<Machine*> machines;
       MachineModel* _machineModel;
 
     signals:
@@ -45,7 +45,7 @@ class Machines : public QObject
       ~Machines();
 
       Q_INVOKABLE Machine* machine(int idx);
-      Q_INVOKABLE void updateMachine(int idx, const Machine& r);
+      Q_INVOKABLE void updateMachine(int idx, Machine* r);
       Q_INVOKABLE void addMachine(const QString& name);
       Q_INVOKABLE void removeMachine(int idx);
 

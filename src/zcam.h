@@ -16,7 +16,9 @@
 #include <QJSEngine>
 #include <QVector3D>
 #include <QFont>
+#include <QColor>
 #include <QtQml/qqmlregistration.h>
+#include <nlohmann/json.hpp>
 
 #include "project.h"
 #include "projectmanager.h"
@@ -33,18 +35,168 @@ class TreeModel;
 //   Config
 //---------------------------------------------------------
 
-class Style : public QObject
+class Config : public QObject
       {
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no")
 
       PROPV(int, iconSize, 32)
-      PROPV(QFont, font, QFont("arial"))
+      PROPV(int, navCubeSize, 200)
+      PROPV(double, handleSize, 0.02)
+      PROPV(QFont, font, QFont("NotoSans"))
+      PROPV(int, fontSize, 12)
       PROPV(QColor, panelBG, QColor("darkGray"))
+      PROPV(QColor, accentColor, QColor("teal"))
+      PROPV(QColor, gridColor, QColor("#808080"))
+      PROPV(QColor, markColor, QColor("#000000"))
+      PROPV(QColor, moveColor, QColor("#0000ff"))
+      PROPV(QColor, framingColor, QColor("#00ff00"))
+      PROPV(bool, showGrid, true)
+      PROPV(double, gridSpacing, 10.0)
+      PROPV(QString, defaultMachine, QString())
+
+      inline static constexpr std::string_view _properties {
+         R"json({
+                  "class": "Config",
+                  "items": [
+                    {
+                      "columns": {
+                        "count": 2,
+                        "cat": "GUI",
+                        "items": [
+                          {
+                            "name": "iconSize",
+                            "label": "Icon Size",
+                            "type": "int",
+                            "cat": "GUI",
+                            "min": 16,
+                            "max": 128,
+                            "default": 32
+                          },
+                          {
+                            "name": "navCubeSize",
+                            "label": "Nav Cube Size",
+                            "type": "int",
+                            "cat": "GUI",
+                            "min": 80,
+                            "max": 400,
+                            "default": 200
+                          },
+                          {
+                            "name": "handleSize",
+                            "label": "Handle Size",
+                            "type": "float",
+                            "cat": "GUI",
+                            "min": 0.01,
+                            "max": 1.0,
+                            "default": 0.2,
+                            "precision": 2,
+                            "step": 0.05,
+                            "bigStep": 0.5
+                          },
+                          {
+                            "row": {
+                              "font": {
+                                "label": "Font",
+                                "type": "font",
+                                "cat": "GUI",
+                                "default": "NotoSans"
+                              },
+                              "fontSize": {
+                                "label": "Font Size",
+                                "type": "int",
+                                "cat": "GUI",
+                                "min": 6,
+                                "max": 72,
+                                "default": 12
+                              }
+                            },
+                            "label": "Font",
+                            "colSpan": 2
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "showGrid",
+                      "label": "Show Grid",
+                      "type": "bool",
+                      "cat": "View",
+                      "default": true
+                    },
+                    {
+                      "name": "gridSpacing",
+                      "label": "Grid Spacing",
+                      "type": "float",
+                      "cat": "View",
+                      "unit": "mm",
+                      "min": 1.0,
+                      "max": 100.0,
+                      "default": 10.0,
+                      "precision": 1,
+                      "step": 0.5,
+                      "bigStep": 5.0
+                    },
+                    {
+                      "columns": {
+                        "count": 2,
+                        "cat": "Colors",
+                        "items": [
+                          {
+                            "name": "panelBG",
+                            "label": "Panel BG",
+                            "type": "color",
+                            "cat": "Colors"
+                          },
+                          {
+                            "name": "accentColor",
+                            "label": "Accent Color",
+                            "type": "color",
+                            "cat": "Colors"
+                          },
+                          {
+                            "name": "gridColor",
+                            "label": "Grid Color",
+                            "type": "color",
+                            "cat": "Colors"
+                          },
+                          {
+                            "name": "framingColor",
+                            "label": "Framing Color",
+                            "type": "color",
+                            "cat": "Colors"
+                          },
+                          {
+                            "name": "markColor",
+                            "label": "Mark Color",
+                            "type": "color",
+                            "cat": "Colors"
+                          },
+                          {
+                            "name": "moveColor",
+                            "label": "Move Color",
+                            "type": "color",
+                            "cat": "Colors"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "defaultMachine",
+                      "label": "Default Machine",
+                      "type": "machineName",
+                      "cat": "Project",
+                      "default": ""
+                    }
+                  ]
+                      })json"};
 
     public:
-      explicit Style(QObject* parent = nullptr) : QObject(parent) {}
+      explicit Config(QObject* parent = nullptr) : QObject(parent) {}
+      const std::string_view properties() const { return _properties; }
+      nlohmann::json toJson() const;
+      bool fromJson(const nlohmann::json&);
       };
 
 //---------------------------------------------------------
@@ -57,26 +209,55 @@ class ZCam : public QObject
       QML_ELEMENT
       QML_SINGLETON
 
-      Q_PROPERTY(Style* style READ style NOTIFY styleChanged)
       Q_PROPERTY(ProjectManager* projectManager READ projectManager CONSTANT)
+      Q_PROPERTY(bool camDirty READ camDirty NOTIFY camDirtyChanged)
 
-      PROPV(Project*, topLevel, nullptr)
+      PROPV(Config*, config, nullptr)
+      PROPV(Project*, project, nullptr)
       PROPV(Element3d*, rootElement, nullptr)
-      PROPV(Element3d*, currentElement, nullptr)
+
+      // currentElement: custom setter so that curColorChanged is emitted
+      // on the old and new element whenever the selection changes,
+      // regardless of whether the change originates from QML (TreeView)
+      // or from C++ (3D canvas pick).
+      Q_PROPERTY(
+          Element3d* currentElement READ currentElement WRITE setCurrentElement NOTIFY currentElementChanged)
+
       PROPV(Element3d*, hoverElement, nullptr)
       PROPV(TreeModel*, treeModel, nullptr)
-      PROPV(Machine*, machine, nullptr)
       PROPV(Machines*, machines, nullptr)
       PROPV(Laser*, laser, nullptr)
       PROPV(Recipes*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
 
-      Style* _style {nullptr};
       ProjectManager* _projectManager;
       void initAssets();
+      void parseAssetsData(const QByteArray& data);
+
+      bool _camDirty {false};
+
+      Element3d* _currentElement {nullptr};
+
+      // State for handle drag undo
+      QPointer<Element3d> _vertexDragElement;
+      int _vertexDragIndex {-1};
+      QVector3D _vertexDragOrigPos;
+
+      // State for element drag/rotate/scale undo
+      QPointer<Element3d> _elementDragElement;
+      QVector3D _elementDragOrigPos;
+      QVector3D _elementDragOrigRot;
+      QVector3D _elementDragOrigScale;
+
+    public:
+      bool camDirty() const { return _camDirty; }
+      void setCamDirty(bool v);
+      Element3d* currentElement() const { return _currentElement; }
+      void setCurrentElement(Element3d* el);
 
     signals:
-      void styleChanged();
+      void camDirtyChanged();
+      void currentElementChanged();
       void remove3dElement(Element3d*); // signal 3d gui to remove an element from the scene graph
       void add3dElement(Element3d*);    // signal 3d gui to add a new element into the scene graph
       void addSubElement(Element3d*,
@@ -86,12 +267,22 @@ class ZCam : public QObject
 
     public:
       explicit ZCam(QObject* parent = nullptr);
-      Style* style() const { return _style; }
       static ZCam* create(QQmlEngine*, QJSEngine*);
       void undoChangeProperty(Element*, const char*, QVariant) {}
       ProjectManager* projectManager() const { return _projectManager; }
       void loadAssets();
       Q_INVOKABLE void saveAssets();
+
+      /// Save current assets (recipes, machines, config) to a backup
+      /// file named "assets-bu" in the application data directory.
+      /// This allows restoring known-good assets if they become
+      /// corrupted during development.
+      Q_INVOKABLE bool saveAssetsBackup();
+
+      /// Restore assets from the backup file named "assets-bu" in
+      /// the application data directory.  Returns false if the
+      /// backup file does not exist or cannot be parsed.
+      Q_INVOKABLE bool restoreAssetsBackup();
 
       /// Called from QML when an element is dragged in the 3D viewport.
       Q_INVOKABLE void dragged(Element3d* element, const QVector3D& delta, int modifiers);
@@ -102,10 +293,43 @@ class ZCam : public QObject
       /// Called from QML when an element is scaled in the 3D viewport.
       Q_INVOKABLE void scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers);
 
+      /// Called from QML when the user starts dragging an element.
+      /// Records the original transform for the undo command.
+      Q_INVOKABLE void startElementDrag(Element3d* element);
+
+      /// Called from QML when the user finishes dragging an element.
+      /// Creates and pushes a single undo command with the original and final transforms.
+      Q_INVOKABLE void endElementDrag();
+
       /// Called from QML when an element is hovered
       Q_INVOKABLE void hover(Element3d* element);
       Q_INVOKABLE void doubleClick(Element3d* element) {}
       Q_INVOKABLE void mousePress(Element3d* element, int buttons, int modifiers, double x, double y);
+
+      /// Called from QML when the user starts dragging a handle.
+      /// Records the original handle position for the undo command.
+      Q_INVOKABLE void startVertexDrag(Element3d* element, int vertexIndex);
+
+      /// Called from QML during dragging a handle.
+      /// Sets the handle to the given world position (live update, no undo).
+      Q_INVOKABLE void dragVertexTo(Element3d* element, int vertexIndex, const QVector3D& worldPos);
+
+      /// Called from QML when the user finishes dragging a handle.
+      /// Creates and pushes the undo command with the original and final positions.
+      Q_INVOKABLE void endVertexDrag(Element3d* element, int vertexIndex);
+
+      /// Select a segment of a Polygon element by segment index.
+      /// The segment is highlighted in the 3D viewport and only its
+      /// endpoint vertices show handles.  Pass -1 to clear the selection.
+      Q_INVOKABLE void selectSegment(Element3d* element, int segmentIndex);
+
+      /// Clear the current segment selection on the given element (if any).
+      Q_INVOKABLE void clearSegmentSelection(Element3d* element);
+
+      /// Find and select the segment of the given Polygon element that is
+      /// closest to the given world position.  Returns the selected segment
+      /// index, or -1 if the element has no segments.
+      Q_INVOKABLE int selectNearestSegment(Element3d* element, const QVector3D& worldPos);
 
       /// Returns a list of all Layer element names in the current project.
       Q_INVOKABLE QStringList layerNames() const;
@@ -116,4 +340,40 @@ class ZCam : public QObject
       Q_INVOKABLE QStringList recipeNames() const;
       /// Returns the Recipe* pointer for a given recipe name, or nullptr.
       Q_INVOKABLE Recipe* recipePtr(const QString& name) const;
+
+      /// Create a new Rectangle element at the given world position
+      /// and add it to the first visible Layer.  Returns the new
+      /// Rectangle or nullptr if no layer is available.
+      Q_INVOKABLE Element3d* createRectangle(double x, double y);
+
+      /// Create a new Polygon element at the given world position
+      /// and add it to the first visible Layer.  Returns the new
+      /// Polygon or nullptr if no layer is available.
+      Q_INVOKABLE Element3d* createPolygon(double x, double y);
+
+      /// Create a new Ellipse element at the given world position
+      /// and add it to the first visible Layer.  Returns the new
+      /// Ellipse or nullptr if no layer is available.
+      Q_INVOKABLE Element3d* createEllipse(double x, double y);
+
+      /// Delete the current element if it is deletable.
+      /// The operation is undoable.
+      Q_INVOKABLE void deleteCurrentElement();
+
+      /// Center the given element on the workspace midpoint.
+      /// The workspace size is determined by the current machine's
+      /// maxTravel (X and Y).  Only Text, Polygon, Ellipse and
+      /// Rectangle elements are accepted; Z is always set to zero.
+      /// The operation is undoable.
+      Q_INVOKABLE void centerOnWorkspace(Element3d* element);
+
+      /// Recalculate cam data and clear the dirty flag.
+      Q_INVOKABLE void refreshCam();
+
+      Q_INVOKABLE void createMaterialTest();
+      Q_INVOKABLE void createGalvoTest();
+      void importSvg(const QString& path);
+
+    private:
+      Layer* findFirstVisibleLayer(Element* root) const;
       };

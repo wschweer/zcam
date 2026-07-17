@@ -105,6 +105,10 @@ Window {
         sequence: [StandardKey.Redo]
         onActivated: actionRedo.trigger()
         }
+    Shortcut {
+        sequence: "Delete"
+        onActivated: ZCam.deleteCurrentElement()
+        }
 
     // =========================================================================
     //  Actions
@@ -167,6 +171,24 @@ Window {
         }
 
     Action {
+        id: actionSaveAssetsBu
+        text: qsTr("Save Assets Backup")
+        onTriggered: {
+            if (ZCam.saveAssetsBackup())
+                assetsBuDialog.open()
+            }
+        }
+
+    Action {
+        id: actionRestoreAssetsBu
+        text: qsTr("Restore Assets Backup")
+        onTriggered: {
+            if (ZCam.restoreAssetsBackup())
+                assetsBuDialog.open()
+            }
+        }
+
+    Action {
         id: actionQuit
         text: qsTr("&Quit")
         shortcut: StandardKey.Quit
@@ -195,6 +217,30 @@ Window {
         id: actionConfig
         text: qsTr("Config")
         icon.source: "qrc:/icons/dark/config.svg"
+        }
+
+    Action {
+        id: actionMaterialTest
+        text: qsTr("Material Test")
+        onTriggered: {
+            if (ZCam.projectManager.dirty) {
+                materialTestGuard.open();
+                } else {
+                ZCam.createMaterialTest();
+                }
+            }
+        }
+
+    Action {
+        id: actionGalvoTest
+        text: qsTr("Galvo Test")
+        onTriggered: {
+            if (ZCam.projectManager.dirty) {
+                galvoTestGuard.open();
+                } else {
+                ZCam.createGalvoTest();
+                }
+            }
         }
 
     Action {
@@ -231,6 +277,18 @@ Window {
         nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
         onAccepted: ZCam.projectManager.importFile(selectedFile.toString().replace("file://", ""))
+        }
+
+    // Feedback dialog for save/restore assets backup
+    Dialog {
+        id: assetsBuDialog
+        title: qsTr("Assets Backup")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Ok
+        Label {
+            text: qsTr("Assets backup operation completed.")
+            }
         }
 
     // =========================================================================
@@ -353,6 +411,76 @@ Window {
             }
         }
 
+    // "Material Test" guard
+    Dialog {
+        id: materialTestGuard
+        title: qsTr("Unsaved Changes")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
+        Label {
+            text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a Material Test?")
+            }
+        onAccepted: {   // Save
+            if (ZCam.projectManager.projectPath === "")
+                materialTestSaveAsFileDialog.open();
+            else {
+                ZCam.projectManager.save();
+                ZCam.createMaterialTest();
+                }
+            }
+        onDiscarded: Qt.callLater(function () {
+            ZCam.createMaterialTest();
+            })
+        }
+
+    FileDialog {
+        id: materialTestSaveAsFileDialog
+        title: qsTr("Save Project As")
+        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "zcam"
+        onAccepted: {
+            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.createMaterialTest();
+            }
+        }
+
+    // "Galvo Test" guard
+    Dialog {
+        id: galvoTestGuard
+        title: qsTr("Unsaved Changes")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
+        Label {
+            text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?")
+            }
+        onAccepted: {   // Save
+            if (ZCam.projectManager.projectPath === "")
+                galvoTestSaveAsFileDialog.open();
+            else {
+                ZCam.projectManager.save();
+                ZCam.createGalvoTest();
+                }
+            }
+        onDiscarded: Qt.callLater(function () {
+            ZCam.createGalvoTest();
+            })
+        }
+
+    FileDialog {
+        id: galvoTestSaveAsFileDialog
+        title: qsTr("Save Project As")
+        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "zcam"
+        onAccepted: {
+            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.createGalvoTest();
+            }
+        }
+
     // =========================================================================
     //  Layout: MenuBar / ToolBar / TabBar / StackLayout
     // =========================================================================
@@ -388,6 +516,13 @@ Window {
                     }
                 MenuSeparator {}
                 MenuItem {
+                    action: actionSaveAssetsBu
+                    }
+                MenuItem {
+                    action: actionRestoreAssetsBu
+                    }
+                MenuSeparator {}
+                MenuItem {
                     action: actionQuit
                     }
                 }
@@ -403,6 +538,17 @@ Window {
                     }
                 MenuItem {
                     action: actionConfig
+                    }
+                }
+
+            // Tools menu
+            Menu {
+                title: qsTr("&Tools")
+                MenuItem {
+                    action: actionMaterialTest
+                    }
+                MenuItem {
+                    action: actionGalvoTest
                     }
                 }
             }
@@ -496,26 +642,104 @@ Window {
                 }
             }
 
-        // ── Tab bar ───────────────────────────────────────────────────────────
-        TabBar {
-            id: tabBar
+        // ── Tab bar with Cam refresh button ──────────────────────────────────
+        // Light-grey bar behind tab buttons and Cam button.
+        Rectangle {
             Layout.fillWidth: true
+            Layout.preferredHeight: tabBar.implicitHeight
+            color: Material.color(Material.Grey, Material.Shade500)
 
-            TabButton {
-                text: qsTr("Main")
-                width: 120
-                }
-            TabButton {
-                text: qsTr("Recipes")
-                width: 120
-                }
-            TabButton {
-                text: qsTr("Machines")
-                width: 120
-                }
-            TabButton {
-                text: qsTr("Config")
-                width: 120
+            RowLayout {
+                anchors.fill: parent
+                spacing: 0
+
+                TabBar {
+                    id: tabBar
+                    background: Rectangle { color: "transparent" }
+
+                    component TabBtn: TabButton {
+                        width: 120
+                        background: Rectangle {
+                            color: "transparent"
+                            }
+                        contentItem: Text {
+                            text: parent.text
+                            color: "white"
+                            font: parent.font
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+
+                    TabBtn { text: qsTr("Main") }
+                    TabBtn { text: qsTr("Recipes") }
+                    TabBtn { text: qsTr("Machines") }
+                    TabBtn { text: qsTr("Config") }
+                    }
+
+                // Spacer pushes the Cam button to the right edge
+                Item { Layout.fillWidth: true }
+
+                // Fixture selector — choose the active fixture for Cam
+                ComboBox {
+                    id: fixtureComboBox
+                    Layout.preferredWidth: 160
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.rightMargin: 6
+                    flat: true
+                    // Model: prepend a "---" (no fixture) entry to the fixture list
+                    model: {
+                        var fixtures = (ZCam.project ? ZCam.project.fixtures : [])
+                        var items = [{ "name": "---" }]
+                        for (var i = 0; i < fixtures.length; ++i)
+                            items.push(fixtures[i])
+                        return items
+                    }
+                    textRole: "name"
+                    currentIndex: {
+                        if (!ZCam.project || !ZCam.project.fixture)
+                            return 0  // the "---" entry
+                        var idx = ZCam.project.fixtures.indexOf(ZCam.project.fixture)
+                        return idx >= 0 ? idx + 1 : 0  // +1 to account for "---"
+                    }
+                    onActivated: function(index) {
+                        if (!ZCam.project)
+                            return
+                        if (index === 0) {
+                            // "---" selected — no fixture
+                            // Only allow this if there are fixtures to deselect
+                            // (otherwise there's nothing to change)
+                            if (ZCam.project.fixture)
+                                ZCam.project.fixture = null
+                        } else {
+                            var fixtures = ZCam.project.fixtures
+                            var fi = index - 1  // offset for "---" entry
+                            if (fi >= 0 && fi < fixtures.length)
+                                ZCam.project.fixture = fixtures[fi]
+                        }
+                    }
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Select active fixture")
+                    }
+
+                // Cam refresh button — not a TabButton so it does not
+                // change the active panel / StackLayout index.
+                Button {
+                    id: camRefreshButton
+                    text: qsTr("Cam")
+                    icon.source: "qrc:///icons/cam-refresh.svg"
+                    icon.color: camRefreshButton.enabled ? "white" : camRefreshButton.Material.color(Material.Grey, Material.Shade600)
+                    display: AbstractButton.TextBesideIcon
+                    enabled: ZCam.camDirty
+                    flat: true
+                    Layout.preferredWidth: 120
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.rightMargin: 10
+                    background: null
+                    onClicked: ZCam.refreshCam()
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Recalculate CAM data")
+                    }
                 }
             }
 

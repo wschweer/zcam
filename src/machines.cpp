@@ -21,6 +21,8 @@ Machines::Machines(QObject* parent) : QObject(parent) {
       }
 
 Machines::~Machines() {
+      // Machines are children of this QObject, so they are automatically
+      // deleted by the QObject destructor.  No manual cleanup needed.
       }
 
 //---------------------------------------------------------
@@ -32,29 +34,34 @@ Machines::~Machines() {
 Machine* Machines::machine(int idx) {
       if (idx < 0 || idx >= static_cast<int>(machines.size()))
             return nullptr;
-      return &machines[idx];
+      return machines[idx];
       }
 
 //---------------------------------------------------------
 //   updateMachine
 //---------------------------------------------------------
 
-void Machines::updateMachine(int idx, const Machine& r) {
+void Machines::updateMachine(int idx, Machine* r) {
       if (idx >= 0 && idx < static_cast<int>(machines.size())) {
+            if (r)
+                  r->setParent(this);
+            if (machines[idx])
+                  delete machines[idx];
             machines[idx] = r;
             emit machinesModelChanged();
             }
       }
 
 void Machines::addMachine(const QString& name) {
-      Machine m;
-      m.set_name(name);
+      Machine* m = new Machine(this);
+      m->set_name(name);
       machines.push_back(m);
       emit machinesModelChanged();
       }
 
 void Machines::removeMachine(int idx) {
       if (idx >= 0 && idx < static_cast<int>(machines.size())) {
+            delete machines[idx];
             machines.erase(machines.begin() + idx);
             emit machinesModelChanged();
             }
@@ -63,7 +70,7 @@ void Machines::removeMachine(int idx) {
 QStringList Machines::machinesModel() const {
       QStringList names;
       for (const auto& m : machines)
-            names.append(m.name());
+            names.append(m->name());
       return names;
       }
 
@@ -74,7 +81,7 @@ QStringList Machines::machinesModel() const {
 json Machines::toJson() const {
       json data = json::array();
       for (const auto& m : machines)
-            data.push_back(m.toJson());
+            data.push_back(m->toJson());
       return data;
       }
 
@@ -83,11 +90,12 @@ json Machines::toJson() const {
 //---------------------------------------------------------
 
 void Machines::fromJson(const json& data) {
+      qDeleteAll(machines);
       machines.clear();
       if (data.is_array()) {
             for (const auto& jm : data) {
-                  Machine m;
-                  m.fromJson(jm);
+                  Machine* m = new Machine(this);
+                  m->fromJson(jm);
                   machines.push_back(m);
                   }
             }

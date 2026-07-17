@@ -29,9 +29,8 @@ class Text : public Element3d
       {
       Q_OBJECT
 
-      PROPV(bool, fill, true)
       PROPV(int, weight, 600)
-      PROPV(QString, text, "Mops")
+      PROPV(QString, text, "ZCam")
       PROPV(QString, fontFamily, "NotoSans")
       PROPV(double, pointSize, 24.0)
       PROPV(int, stretch, 100)
@@ -40,64 +39,186 @@ class Text : public Element3d
       PROPV(double, lineSpacing, 100.0)
       PROPV(int, align, Qt::AlignLeft)
 
-      inline static constexpr std::string_view _properties {R"({
-            "class": "Text",
-            "items": [
-                  { "row":
-                        {
-                              "show": { "label": "Show",     "type": "bool", "default": true },
-                              "burn": { "label": "Burn",     "type": "bool", "default": true }
+      inline static constexpr std::string_view _properties {
+         R"json({
+                  "class": "Text",
+                  "items": [
+                    {
+                      "row": {
+                        "show": {
+                          "label": "Show",
+                          "type": "bool",
+                          "default": true
                         },
-                        "label": "State"
-                     },
-                  { "name": "color",         "label": "Color",    "type": "color","default": "green" },
-                  { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
-                  { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
-                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
-                  { "row":
-                        {
-                              "mirrorX": { "label": "X", "type": "bool", "default": false },
-                              "mirrorY": { "label": "Y", "type": "bool", "default": false }
+                        "burn": {
+                          "label": "Burn",
+                          "type": "bool",
+                          "default": true
+                        }
+                      },
+                      "label": "State"
+                    },
+                    {
+                      "name": "color",
+                      "label": "Color",
+                      "type": "color",
+                      "default": "green"
+                    },
+                    {
+                      "name": "pos",
+                      "label": "Pos.",
+                      "type": "vector3d",
+                      "unit": "mm",
+                      "default": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    {
+                      "name": "rot",
+                      "label": "Rot.",
+                      "type": "vector3d",
+                      "unit": "°",
+                      "min": 0.0,
+                      "max": 360,
+                      "default": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    {
+                      "name": "scale",
+                      "label": "Scale",
+                      "type": "vector3d",
+                      "min": 0.001,
+                      "max": 1000,
+                      "default": [
+                        1.0,
+                        1.0,
+                        1.0
+                      ]
+                    },
+                    {
+                      "name": "lockScale",
+                      "label": "Lock",
+                      "type": "lockScale",
+                      "default": 2
+                    },
+                    {
+                      "row": {
+                        "mirrorX": {
+                          "label": "X",
+                          "type": "bool",
+                          "default": false
                         },
-                        "label": "Mirror"
-                     },
-                  { "name": "line", "type": "line" },
-                  { "name": "text",          "label": "Text",     "type": "multiline", "default": "Mops" },
-                  { "name": "fontFamily",    "label": "Font",     "type": "font", "default": "NotoSans" },
-                  { "row":
-                        {
-                              "pointSize": { "label": "Size",     "type": "float", "unit": "pt", "min": 1.0,   "max": 1000.0, "default": 24.0 },
-                              "weight":    { "label": "Weight",   "type": "int",   "min": 100,   "max": 900, "default": 600 }
+                        "mirrorY": {
+                          "label": "Y",
+                          "type": "bool",
+                          "default": false
+                        }
+                      },
+                      "label": "Mirror"
+                    },
+                    {
+                      "name": "line",
+                      "type": "line"
+                    },
+                    {
+                      "name": "text",
+                      "label": "Text",
+                      "type": "multiline",
+                      "default": "ZCam"
+                    },
+                    {
+                      "name": "fontFamily",
+                      "label": "Font",
+                      "type": "font",
+                      "default": "NotoSans"
+                    },
+                    {
+                      "row": {
+                        "pointSize": {
+                          "label": "Size",
+                          "type": "float",
+                          "unit": "pt",
+                          "min": 1.0,
+                          "max": 1000.0,
+                          "default": 24.0
                         },
-                        "label": " "
-                     },
-                  { "row":
-                        {
-                              "stretch":       { "label": "Stretch",  "type": "int",   "unit": "%",  "min": 25,    "max": 400, "default": 100 },
-                              "letterSpacing": { "label": "Letter", "type": "float", "unit": "%",  "min": 1.0,   "max": 500.0, "default": 100.0 }
+                        "weight": {
+                          "label": "Weight",
+                          "type": "int",
+                          "min": 100,
+                          "max": 900,
+                          "default": 600
+                        }
+                      },
+                      "label": " "
+                    },
+                    {
+                      "row": {
+                        "stretch": {
+                          "label": "Stretch",
+                          "type": "int",
+                          "unit": "%",
+                          "min": 25,
+                          "max": 400,
+                          "default": 100
                         },
-                        "label": "Spacing"
-                     },
-                  { "row":
-                        {
-                              "wordSpacing":   { "label": "Word",   "type": "float", "unit": "pxl", "min": -100.0, "max": 100.0, "default": 0.0 },
-                              "lineSpacing":   { "label": "Line",   "type": "float", "unit": "%",  "min": 0.0,   "max": 500.0, "default": 100.0 }
+                        "letterSpacing": {
+                          "label": "Letter",
+                          "type": "float",
+                          "unit": "%",
+                          "min": 1.0,
+                          "max": 500.0,
+                          "default": 100.0
+                        }
+                      },
+                      "label": "Spacing"
+                    },
+                    {
+                      "row": {
+                        "wordSpacing": {
+                          "label": "Word",
+                          "type": "float",
+                          "unit": "pxl",
+                          "min": -100.0,
+                          "max": 100.0,
+                          "default": 0.0
                         },
-                        "label": " "
-                     },
+                        "lineSpacing": {
+                          "label": "Line",
+                          "type": "float",
+                          "unit": "%",
+                          "min": 0.0,
+                          "max": 500.0,
+                          "default": 100.0
+                        }
+                      },
+                      "label": " "
+                    },
 
-                  { "row":
-                        {
-                              "fill":          { "label": "Fill",     "type": "bool", "default": true },
-                              "align":         { "label": "Align",    "type": "halign", "default": 4 }
+                    {
+                      "row": {
+                        "fill": {
+                          "label": "Fill",
+                          "type": "bool",
+                          "default": true
                         },
-                        "label": " "
-                     }
+                        "align": {
+                          "label": "Align",
+                          "type": "halign",
+                          "default": 4
+                        }
+                      },
+                      "label": " "
+                    }
                   ]
-                        })"};
+                      })json"};
 
       QFont font;
-      QFontMetricsF* fontMetrics {nullptr};
       std::vector<double> lineOffsets;
 
       int cursorRow {0};
@@ -119,4 +240,6 @@ class Text : public Element3d
       Q_INVOKABLE bool nameEditable() const override { return true; }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool visible() const override { return true; }
+      Q_INVOKABLE bool draggable() const override { return true; }
+      Q_INVOKABLE bool deletable() const override { return true; }
       };

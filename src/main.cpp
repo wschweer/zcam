@@ -13,6 +13,9 @@
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QPalette>
+#include <QElapsedTimer>
+#include <QDebug>
+#include <cstdlib>
 #include "zcam.h"
 
 //---------------------------------------------------------
@@ -46,9 +49,19 @@ int main(int argc, char* argv[]) {
       QQuickStyle::setStyle("Material");
 
       QQmlApplicationEngine engine;
-//      engine.addImportPath(QCoreApplication::applicationDirPath());
+      //      engine.addImportPath(QCoreApplication::applicationDirPath());
 
       engine.loadFromModule("ZCam", "Main");
 
-      return app.exec();
+      int ret = app.exec();
+
+      // All critical cleanup (assets save, laser shutdown, geometry worker
+      // shutdown) has already been done in the aboutToQuit handler.
+      //
+      // The ~QQmlApplicationEngine destructor (stack unwinding) and the
+      // static singleton destructors (~GeometryWorker, ~ZCam, etc.) are
+      // very slow because they tear down hundreds of QML objects.
+      // We skip them entirely by calling _exit(), which terminates the
+      // process immediately without running destructors.
+      std::_Exit(ret);
       }

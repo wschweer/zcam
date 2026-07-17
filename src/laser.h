@@ -21,7 +21,16 @@
 
 class ZCam;
 
-enum class LaserState { Off, Idle, Framing, FramingAboutToIdle, FramingAboutToMark, Marking, MarkingAboutToIdle, MarkingAboutToFraming };
+enum class LaserState {
+      Off,
+      Idle,
+      Framing,
+      FramingAboutToIdle,
+      FramingAboutToMark,
+      Marking,
+      MarkingAboutToIdle,
+      MarkingAboutToFraming
+      };
 
 //---------------------------------------------------------
 //   Laser
@@ -48,14 +57,21 @@ class Laser : public QObject
       PROPV(LaserEngine*, engine, nullptr)
 
       LaserState state;
-      std::thread* framingThread{nullptr};
-      std::thread* markingThread{nullptr};
+      std::thread* framingThread {nullptr};
+      std::thread* markingThread {nullptr};
       std::atomic<bool> framingRunning;
       std::atomic<bool> stopFraming;
       std::atomic<bool> markingRunning;
       std::atomic<bool> stopMarking;
 
       void changeState(LaserState newState);
+
+      // Refresh cam data and rebuild the framing contour so the
+      // laser follows the current geometry.  Called before every
+      // framing start to ensure the convex hull / bounding box is
+      // up to date even if the user edited shapes without pressing
+      // the manual Cam refresh button.
+      void refreshCamAndFraming();
 
       // framing/marking threads
       bool doStartFraming();
@@ -70,10 +86,12 @@ class Laser : public QObject
     public slots:
       void init();
       void exit();
+      void shutdown();
       void stop();
       void startFraming();
       void startMarking();
 
     public:
       Laser(ZCam*, QObject* parent = nullptr);
+      ~Laser();
       };

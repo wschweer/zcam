@@ -152,12 +152,161 @@ Item {
             }
         }
 
+    // ── Sync TreeView selection with ZCam.currentElement ─────────────────
+    //   Called when currentElement changes from outside the TreeView
+    //   (e.g. clicking on an element in the 3D canvas).  Finds the
+    //   model index for the current element, expands all parent nodes
+    //   so the row is visible, and sets the selection.
+    function syncSelection() {
+        var tm = ZCam.treeModel;
+        if (!tm || !tm.root || !ZCam.currentElement)
+            return;
+        var el = ZCam.currentElement;
+        var idx = tm.indexForElement(el);
+        if (!idx || !idx.valid)
+            return;
+        // Build the chain of parent indices from root to the element.
+        var chain = [];
+        var p = idx.parent;
+        while (p && p.valid) {
+            chain.unshift(p);
+            p = p.parent;
+            }
+        // Expand each ancestor in the TreeView by walking visible rows.
+        // After each expand, child rows appear at higher row numbers,
+        // so we call forceLayout() to make them immediately available.
+        for (var i = 0; i < chain.length; ++i) {
+            var ancestorIdx = chain[i];
+            var ancestorEl = tm.elementForIndex(ancestorIdx);
+            if (ancestorEl && !ancestorEl.expanded) {
+                ancestorEl.expanded = true;
+                // Find the visible row for this ancestor and expand it.
+                var row = treeView.rowAtIndex(ancestorIdx);
+                if (row >= 0) {
+                    treeView.expand(row);
+                    treeView.forceLayout();
+                    }
+                }
+            }
+        // Re-query the index after potential model layout changes.
+        idx = tm.indexForElement(el);
+        if (!idx || !idx.valid)
+            return;
+        treeView.selectionModel.setCurrentIndex(idx, ItemSelectionModel.ClearAndSelect);
+        }
+
     TreeView {
         id: treeView
         anchors.fill: parent
         anchors.margins: 4
         model: ZCam.treeModel
         clip: true
+
+        // ── Drag & drop state ───────────────────────────────────────────────
+        //   The currently dragged element (set when drag starts,
+        //   cleared when drag ends).  Used to prevent self-drop.
+        property var draggedElement: null
+        //   The currently hovered drop target element (for visual feedback).
+        property var dropTargetElement: null
+        //   Drop position relative to the target row: "before", "on", "after"
+        property string dropPosition: ""
+
+        // ── Helper: find the element at a given Y position in the tree ────
+        //   Returns { element, row, yRel } or null.
+        //   Iterates visible delegates and checks which one contains y.
+        function elementAtY(y) {
+            var tm = ZCam.treeModel;
+            if (!tm)
+                return null;
+            var row = 0;
+            while (true) {
+                var idx = treeView.index(row, 0);
+                if (!idx || !idx.valid)
+                    break;
+                var item = treeView.itemAtIndex(idx);
+                if (item) {
+                    var itemY = item.y;
+                    var itemH = item.height;
+                    if (y >= itemY && y < itemY + itemH) {
+                        var el = tm.elementForIndex(idx);
+                        return { element: el, row: row, yRel: y - itemY, itemH: itemH };
+                        }
+                    }
+                row++;
+                }
+            return null;
+            }
+
+        // ── Helper: perform the drop ─────────────────────────────────────
+        function performDrop(yInContent) {
+            var dragged = treeView.draggedElement;
+            if (!dragged)
+                return;
+            var hit = treeView.elementAtY(yInContent);
+            if (!hit || !hit.element)
+                return;
+            var target = hit.element;
+            if (dragged === target)
+                return;
+            // Prevent dropping into a descendant
+            var p = target;
+            while (p) {
+                if (p === dragged)
+                    return;
+                p = p.parent();
+                }
+            // Determine drop position
+            var tn = target.typeName();
+            var isContainer = (tn === "layer" || tn === "cad" || tn === "fixture" || tn === "cam" || tn === "project");
+            var pos;
+            if (isContainer && hit.yRel > hit.itemH * 0.33 && hit.yRel < hit.itemH * 0.67)
+                pos = "on";
+            else if (hit.yRel < hit.itemH * 0.5)
+                pos = "before";
+            else
+                pos = "after";
+            // Determine new parent and row
+            var newParent;
+            var newRow;
+            if (pos === "on") {
+                newParent = target;
+                newRow = target.children.length;
+                }
+            else {
+                newParent = target.parent();
+                if (!newParent)
+                    return;
+                var targetRow = 0;
+                for (var i = 0; i < newParent.children.length; ++i) {
+                    if (newParent.children[i] === target)
+                        break;
+                    ++targetRow;
+                    }
+                newRow = (pos === "before") ? targetRow : targetRow + 1;
+                }
+            if (ZCam.project)
+                ZCam.project.moveElement(dragged, newParent, newRow);
+            // Expand the target container after a drop "on" so the
+            // newly inserted child becomes visible immediately.
+            if (pos === "on" && target.children.length > 0) {
+                target.expanded = true;
+                var idx = ZCam.treeModel.indexForElement(target);
+                if (idx && idx.valid) {
+                    var visRow = treeView.rowAtIndex(idx);
+                    if (visRow >= 0 && !treeView.isExpanded(visRow))
+                        treeView.expand(visRow);
+                    }
+                }
+            }
+
+        // Handle Delete key directly on the TreeView so the
+        // shortcut works even when the tree has keyboard focus.
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Delete) {
+                ZCam.deleteCurrentElement()
+                event.accepted = true
+                }
+            }
 
         ScrollBar.vertical: ScrollBar {
             policy: ScrollBar.AsNeeded
@@ -179,12 +328,13 @@ Item {
                 }
             }
 
-        // Track current element changes for persistence
+        // Track current element changes for persistence and selection sync
         Connections {
             target: ZCam
             function onCurrentElementChanged() {
                 if (ZCam.currentElement)
                     treeSettings.currentElement = ZCam.currentElement.name;
+                root.syncSelection();
                 }
             }
 
@@ -225,6 +375,41 @@ Item {
             rightPadding: 8
             topPadding: 2
             bottomPadding: 2
+
+            // ── Drop indicator line ─────────────────────────────────────────
+            //   A thin accent-colored line shown at the top or bottom of
+            //   the row when the row is a valid drop target for "before" or
+            //   "after" insertion.
+            Rectangle {
+                id: dropLineTop
+                visible: treeView.dropTargetElement === model.element && treeView.dropPosition === "before"
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 2
+                color: Material.accentColor
+                z: 100
+                }
+            Rectangle {
+                id: dropLineBottom
+                visible: treeView.dropTargetElement === model.element && treeView.dropPosition === "after"
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 2
+                color: Material.accentColor
+                z: 100
+                }
+            // Highlight the full row when dropping "on" (into a container)
+            Rectangle {
+                id: dropHighlightOn
+                visible: treeView.dropTargetElement === model.element && treeView.dropPosition === "on"
+                anchors.fill: parent
+                color: Material.accentColor
+                opacity: 0.2
+                z: -1
+                radius: 3
+                }
 
             // Custom content: optional chevron + element name
             contentItem: RowLayout {
@@ -328,15 +513,27 @@ Item {
                 //  When any ancestor has show == false the icon is greyed out
                 //  (low opacity). Clicking still toggles show, but the effect
                 //  only becomes visible once all ancestors are shown again.
-                Image {
-                    id: visibilityIcon
+                //
+                //  The icon is wrapped in an Item that is wider than the 16 px
+                //  image so the TapHandler has a generous hit area covering the
+                //  full row height.  This prevents the "right half of the icon
+                //  does nothing" problem.
+                Item {
+                    id: visibilityToggle
                     visible: model.element ? model.element.visible() : false
-                    source: (model.element && model.element.visible()) ? (model.element.show ? "qrc:///icons/visible.svg" : "qrc:///icons/invisible.svg") : ""
-                    opacity: (model.element && model.element.ancestorsShow) ? 1.0 : 0.3
-                    Layout.preferredWidth: 16
-                    Layout.preferredHeight: 16
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
                     Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-                    fillMode: Image.PreserveAspectFit
+
+                    Image {
+                        id: visibilityIcon
+                        anchors.centerIn: parent
+                        width: 16
+                        height: 16
+                        source: (model.element && model.element.visible()) ? (model.element.show ? "qrc:///icons/visible.svg" : "qrc:///icons/invisible.svg") : ""
+                        opacity: (model.element && model.element.ancestorsShow) ? 1.0 : 0.3
+                        fillMode: Image.PreserveAspectFit
+                        }
 
                     TapHandler {
                         onTapped: {
@@ -396,6 +593,86 @@ Item {
                     root.showContextMenu(model.element, global.x, global.y);
                     }
                 }
+
+            // ── Drag handler ─────────────────────────────────────────────────
+            //   Uses DragHandler with target: null so it only tracks the
+            //   gesture without visually moving the delegate.  On drag end
+            //   we manually find the target row at the release position and
+            //   call Project.moveElement().
+            DragHandler {
+                id: dragHandler
+                target: null
+                margin: 5
+
+                onActiveChanged: {
+                    if (active) {
+                        if (model.element) {
+                            treeView.draggedElement = model.element;
+                            delegateItem.opacity = 0.5;
+                            }
+                        }
+                    else {
+                        // Drag ended: find the drop target from the release position
+                        delegateItem.opacity = 1.0;
+                        // Convert the pointer's scene position to treeView content Y
+                        var pos = dragHandler.centroid.scenePosition;
+                        var local = treeView.mapFromItem(null, pos.x, pos.y);
+                        // Adjust for scroll (contentY)
+                        var yInContent = local.y + treeView.contentY;
+                        treeView.performDrop(yInContent);
+                        // Clear drag state
+                        treeView.draggedElement = null;
+                        treeView.dropTargetElement = null;
+                        treeView.dropPosition = "";
+                        }
+                    }
+
+                // Update visual drop feedback while dragging
+                onCentroidChanged: {
+                    if (!active || !model.element)
+                        return;
+                    var pos = dragHandler.centroid.scenePosition;
+                    var local = treeView.mapFromItem(null, pos.x, pos.y);
+                    var yInContent = local.y + treeView.contentY;
+                    var hit = treeView.elementAtY(yInContent);
+                    if (!hit || !hit.element) {
+                        treeView.dropTargetElement = null;
+                        treeView.dropPosition = "";
+                        return;
+                        }
+                    var dragged = treeView.draggedElement;
+                    var target = hit.element;
+                    if (dragged === target) {
+                        treeView.dropTargetElement = null;
+                        treeView.dropPosition = "";
+                        return;
+                        }
+                    // Prevent dropping into a descendant
+                    var p = target;
+                    while (p) {
+                        if (p === dragged) {
+                            treeView.dropTargetElement = null;
+                            treeView.dropPosition = "";
+                            return;
+                            }
+                        p = p.parent();
+                        }
+                    var tn = target.typeName();
+                    var isContainer = (tn === "layer" || tn === "cad" || tn === "fixture" || tn === "cam" || tn === "project");
+                    if (isContainer && hit.yRel > hit.itemH * 0.33 && hit.yRel < hit.itemH * 0.67) {
+                        treeView.dropTargetElement = target;
+                        treeView.dropPosition = "on";
+                        }
+                    else if (hit.yRel < hit.itemH * 0.5) {
+                        treeView.dropTargetElement = target;
+                        treeView.dropPosition = "before";
+                        }
+                    else {
+                        treeView.dropTargetElement = target;
+                        treeView.dropPosition = "after";
+                        }
+                    }
+                }
             }
         }
 
@@ -422,8 +699,17 @@ Item {
         if (tn === "cad") {
             cadMenu.popup(x, y);
             }
-        else if (tn === "layer") {
-            layerMenu.popup(x, y);
+        else if (tn === "cam") {
+            camMenu.popup(x, y);
+            }
+        else if (tn === "fixture") {
+            fixtureMenu.popup(x, y);
+            }
+        else if (tn === "text" || tn === "polygon" || tn === "ellipse" || tn === "rectangle") {
+            shapeMenu.popup(x, y);
+            }
+        else if (element.deletable()) {
+            deleteMenu.popup(x, y);
             }
         }
 
@@ -434,21 +720,74 @@ Item {
         MenuItem {
             text: "Add Layer"
             onTriggered: {
-                if (ZCam.topLevel)
-                    ZCam.topLevel.addLayer();
+                if (ZCam.project)
+                    ZCam.project.addLayer();
                 }
             }
         }
 
-    // Menu for Layer elements: "Remove"
+    // Menu for Cam elements: "Add Fixture"
     Menu {
-        id: layerMenu
+        id: camMenu
         Material.theme: Material.Dark
         MenuItem {
-            text: "Remove"
+            text: "Add Fixture"
             onTriggered: {
-                if (ZCam.topLevel)
-                    ZCam.topLevel.removeElement(ZCam.currentElement);
+                if (ZCam.project)
+                    ZCam.project.addFixtureCmd();
+                }
+            }
+        }
+
+    // Menu for Fixture elements: "Add Laserlayer" + "Delete"
+    Menu {
+        id: fixtureMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: "Add Laserlayer"
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.addLaserLayerCmd(ZCam.currentElement);
+                }
+            }
+        MenuItem {
+            text: "Delete"
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
+                }
+            }
+        }
+
+    // Menu for deletable elements (Text, LaserLayer, Fixture, Layer): "Delete"
+    Menu {
+        id: deleteMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: "Delete"
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
+                }
+            }
+        }
+
+    // Menu for shape elements (Text, Polygon, Ellipse, Rectangle):
+    // "Center on Workspace" + "Delete"
+    Menu {
+        id: shapeMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: qsTr("Center &P")
+            onTriggered: {
+                ZCam.centerOnWorkspace(ZCam.currentElement);
+                }
+            }
+        MenuItem {
+            text: qsTr("Delete")
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
                 }
             }
         }

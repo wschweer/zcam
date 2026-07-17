@@ -1,0 +1,493 @@
+{
+    "config": {
+        "accentColor": {
+            "b": 0.501960813999176,
+            "g": 0.501960813999176,
+            "r": 0.0
+        },
+        "font": "NotoSans,12,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0",
+        "fontSize": 12,
+        "framingColor": {
+            "b": 0.0,
+            "g": 1.0,
+            "r": 0.0
+        },
+        "gridColor": {
+            "b": 0.501960813999176,
+            "g": 0.501960813999176,
+            "r": 0.501960813999176
+        },
+        "gridSpacing": 10.0,
+        "handleSize": 0.016,
+        "iconSize": 32,
+        "markColor": {
+            "b": 0.0,
+            "g": 0.0,
+            "r": 0.0
+        },
+        "moveColor": {
+            "b": 1.0,
+            "g": 0.0,
+            "r": 0.0
+        },
+        "navCubeSize": 200,
+        "panelBG": {
+            "b": 0.6627451181411743,
+            "g": 0.6627451181411743,
+            "r": 0.6627451181411743
+        },
+        "showGrid": true
+    },
+    "machines": [
+        {
+            "circlePrecision": 1.0,
+            "description": "test test test",
+            "framingSpeed": 0.0,
+            "galvoP1": 6.9527421570272e-310,
+            "galvoP2": 5.3232850249375e-310,
+            "galvoP3": 5.32329429843577e-310,
+            "galvoRotate": 5.32329429843577e-310,
+            "galvoScale": [
+                0.0,
+                0.0
+            ],
+            "galvoShearX": 6.9527421570288e-310,
+            "galvoShearY": 5.3232850249355e-310,
+            "galvoSwapxy": false,
+            "maxAcceleration": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "maxFeed": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "maxSpindle": 0.0,
+            "maxTravel": [
+                112.0,
+                100.0,
+                100.0
+            ],
+            "minSpindle": 0.0,
+            "name": "mopimax",
+            "ncPrecision": 1.0,
+            "precision": 1.0,
+            "safeDist1": 0.0,
+            "safeDist2": 0.0,
+            "travelSpeed": 0.0,
+            "type": "Fiber Laser"
+        },
+        {
+            "circlePrecision": 6.9465201705915e-310,
+            "description": "",
+            "framingSpeed": 6.9465026048894e-310,
+            "galvoP1": 6.946525657745e-310,
+            "galvoP2": -6.913626420789355e+215,
+            "galvoP3": 0.0,
+            "galvoRotate": 5.4248883252093e-310,
+            "galvoScale": [
+                0.0,
+                0.0
+            ],
+            "galvoShearX": 6.9528738125386e-310,
+            "galvoShearY": 5.4248881709707e-310,
+            "galvoSwapxy": true,
+            "maxAcceleration": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "maxFeed": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "maxSpindle": 8.0,
+            "maxTravel": [
+                100.0,
+                100.0,
+                100.0
+            ],
+            "minSpindle": -6.913626420789355e+215,
+            "name": "UV-LaserTest",
+            "ncPrecision": 6.9465201705915e-310,
+            "precision": 5.4248877593128e-310,
+            "safeDist1": 5.4248877593128e-310,
+            "safeDist2": 6.94652017059227e-310,
+            "travelSpeed": 6.94650252973136e-310,
+            "type": ""
+        }
+    ],
+    "recipes": [
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 1000.0,
+                    "interleave": 1,
+                    "interval": 0.2,
+                    "name": "SubLayer-1",
+                    "numPasses": 1,
+                    "power": 20.0,
+                    "pulseWidth": 60,
+                    "speed": 2000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 1.0,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "cbBlackTest",
+            "numPasses": 1
+        },
+        {
+            "description": "Mark black cardboard",
+            "layer": [
+                {
+                    "angleIncrement": 0.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.1,
+                    "name": "SubLayer-1",
+                    "numPasses": 1,
+                    "power": 20.0,
+                    "pulseWidth": 200,
+                    "speed": 2000.0,
+                    "startAngle": 45.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.2,
+                    "wobbleStep": 0.1,
+                    "zigzag": true
+                }
+            ],
+            "name": "cbBlackMark",
+            "numPasses": 1
+        },
+        {
+            "description": "Cut black cardboard",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "SubLayer-1",
+                    "numPasses": 1,
+                    "power": 20.0,
+                    "pulseWidth": 200,
+                    "speed": 100.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "cbBlackCut",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 400.0,
+                    "interleave": 1,
+                    "interval": 0.1,
+                    "name": "SubLayer-1",
+                    "numPasses": 2,
+                    "power": 80.12,
+                    "pulseWidth": 60,
+                    "speed": 2000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 2000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "Cleanup",
+            "numPasses": 1
+        },
+        {
+            "description": "- Copper\n",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 45.0,
+                    "interleave": 1,
+                    "interval": 0.01,
+                    "name": "Copper",
+                    "numPasses": 2,
+                    "power": 80.0,
+                    "pulseWidth": 200,
+                    "speed": 2300.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 2300.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "PCB-Copper",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 0.0,
+                    "enabled": true,
+                    "frequency": 45.0,
+                    "interleave": 1,
+                    "interval": 0.05,
+                    "name": "Drill",
+                    "numPasses": 20,
+                    "power": 90.0,
+                    "pulseWidth": 200,
+                    "speed": 500.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 500.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "PCB-ddd",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 200.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "sl-1",
+                    "numPasses": 2,
+                    "power": 80.0,
+                    "pulseWidth": 60,
+                    "speed": 1000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 1000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                },
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 200.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "sl-2",
+                    "numPasses": 2,
+                    "power": 80.0,
+                    "pulseWidth": 60,
+                    "speed": 1000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 1000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "Cleanup-1",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "sl-1",
+                    "numPasses": 4,
+                    "power": 85.0,
+                    "pulseWidth": 200,
+                    "speed": 200.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 200.0,
+                    "wobble": true,
+                    "wobbleSize": 0.14,
+                    "wobbleStep": 0.02,
+                    "zigzag": true
+                }
+            ],
+            "name": "PCB-Cut",
+            "numPasses": 1
+        },
+        {
+            "description": "wobble test:\nGroße Kreise mit großem Abstand um Wobble Feature visuell zu testen.\nZum Lasern auf schwarze Pappe.\n",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "sl-1",
+                    "numPasses": 1,
+                    "power": 10.0,
+                    "pulseWidth": 200,
+                    "speed": 1000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 1000.0,
+                    "wobble": true,
+                    "wobbleSize": 1.0,
+                    "wobbleStep": 1.0,
+                    "zigzag": true
+                }
+            ],
+            "name": "wobbletest",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "sublayer1",
+                    "numPasses": 1,
+                    "power": 50.0,
+                    "pulseWidth": 200,
+                    "speed": 1500.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "Edelstahl Test1",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.05,
+                    "name": "sublayer1",
+                    "numPasses": 1,
+                    "power": 50.0,
+                    "pulseWidth": 200,
+                    "speed": 1000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "Edelstahl Text",
+            "numPasses": 1
+        },
+        {
+            "description": "Business Card\nAlu (schwarz lackiert?)",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.05,
+                    "name": "sublayer1",
+                    "numPasses": 1,
+                    "power": 50.0,
+                    "pulseWidth": 200,
+                    "speed": 5000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 6000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "bc-Alu-Text",
+            "numPasses": 1
+        },
+        {
+            "description": "schwarz lackierte Alu Visitenkarte",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": true,
+                    "frequency": 2000.0,
+                    "interleave": 1,
+                    "interval": 0.05,
+                    "name": "sublayer1",
+                    "numPasses": 1,
+                    "power": 20.0,
+                    "pulseWidth": 6,
+                    "speed": 2000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "bc-Alu Test",
+            "numPasses": 1
+        },
+        {
+            "description": "",
+            "layer": [
+                {
+                    "angleIncrement": 90.0,
+                    "enabled": false,
+                    "frequency": 40.0,
+                    "interleave": 1,
+                    "interval": 0.02,
+                    "name": "sublayer1",
+                    "numPasses": 1,
+                    "power": 20.0,
+                    "pulseWidth": 200,
+                    "speed": 1000.0,
+                    "startAngle": 0.0,
+                    "travelSpeed": 4000.0,
+                    "wobble": false,
+                    "wobbleSize": 0.1,
+                    "wobbleStep": 0.05,
+                    "zigzag": true
+                }
+            ],
+            "name": "PCB-Drill",
+            "numPasses": 1
+        }
+    ]
+}

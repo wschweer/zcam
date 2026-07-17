@@ -14,6 +14,7 @@
 #include "usb.h"
 #include "layer.h"
 #include "zcam.h"
+#include "project.h"
 #include "types.h"
 //#include "clipper.h"
 // #include "cal.h"
@@ -29,7 +30,7 @@ static const int PRODUCT = 0x9899;
 //   LaserParameterSet
 //---------------------------------------------------------
 
-LaserParameterSet::LaserParameterSet(const LaserLayerSetting* s) {
+LaserParameterSet::LaserParameterSet(const LaserPass* s) {
       power       = s->power();
       speed       = s->speed();
       travelSpeed = s->travelSpeed();
@@ -64,104 +65,103 @@ struct LaserCmd {
 
 using LaserCmdList = std::vector<LaserCmd>;
 
-
 //---------------------------------------------------------
 //   LaserCmdList
 //---------------------------------------------------------
 
-static const LaserCmdList commandLookup{
-   LaserCmd{             listJumpTo,              "listJumpTo"},
-   LaserCmd{          listEndOfList,           "listEndOfList"},
+static const LaserCmdList commandLookup {
+   LaserCmd {             listJumpTo,              "listJumpTo"},
+   LaserCmd {          listEndOfList,           "listEndOfList"},
 
-   LaserCmd{       listLaserOnPoint,        "listLaserOnPoint"},
-   LaserCmd{          listDelayTime,           "listDelayTime"},
+   LaserCmd {       listLaserOnPoint,        "listLaserOnPoint"},
+   LaserCmd {          listDelayTime,           "listDelayTime"},
 
-   LaserCmd{             listMarkTo,              "listMarkTo"},
-   LaserCmd{          listJumpSpeed,           "listJumpSpeed"},
-   LaserCmd{       listLaserOnDelay,        "listLaserOnDelay"},
-   LaserCmd{      listLaserOffDelay,       "listLaserOffDelay"},
-   LaserCmd{           listMarkFreq,            "listMarkFreq"},
-   LaserCmd{     listMarkPowerRatio,      "listMarkPowerRatio"},
+   LaserCmd {             listMarkTo,              "listMarkTo"},
+   LaserCmd {          listJumpSpeed,           "listJumpSpeed"},
+   LaserCmd {       listLaserOnDelay,        "listLaserOnDelay"},
+   LaserCmd {      listLaserOffDelay,       "listLaserOffDelay"},
+   LaserCmd {           listMarkFreq,            "listMarkFreq"},
+   LaserCmd {     listMarkPowerRatio,      "listMarkPowerRatio"},
 
-   LaserCmd{          listMarkSpeed,           "listMarkSpeed"},
-   LaserCmd{          listJumpDelay,           "listJumpDelay"},
-   LaserCmd{       listPolygonDelay,        "listPolygonDelay"},
-   LaserCmd{          listWritePort,           "listWritePort"},
-   LaserCmd{        listMarkCurrent,         "listMarkCurrent"},
-   LaserCmd{          listMarkFreq2,           "listMarkFreq2"},
-   LaserCmd{          listFlyEnable,           "listFlyEnable"},
-   LaserCmd{      listQSwitchPeriod,       "listQSwitchPeriod"},
-   LaserCmd{  listDirectLaserSwitch,   "listDirectLaserSwitch"},
-   LaserCmd{           listFlyDelay,            "listFlyDelay"},
+   LaserCmd {          listMarkSpeed,           "listMarkSpeed"},
+   LaserCmd {          listJumpDelay,           "listJumpDelay"},
+   LaserCmd {       listPolygonDelay,        "listPolygonDelay"},
+   LaserCmd {          listWritePort,           "listWritePort"},
+   LaserCmd {        listMarkCurrent,         "listMarkCurrent"},
+   LaserCmd {          listMarkFreq2,           "listMarkFreq2"},
+   LaserCmd {          listFlyEnable,           "listFlyEnable"},
+   LaserCmd {      listQSwitchPeriod,       "listQSwitchPeriod"},
+   LaserCmd {  listDirectLaserSwitch,   "listDirectLaserSwitch"},
+   LaserCmd {           listFlyDelay,            "listFlyDelay"},
 
-   LaserCmd{          listSetCo2FPK,           "listSetCo2FPK"},
-   LaserCmd{       listFlyWaitInput,        "listFlyWaitInput"},
-   LaserCmd{        listFiberOpenMO,         "listFiberOpenMO"},
-   LaserCmd{       listWaitForInput,        "listWaitForInput"},
-   LaserCmd{    listChangeMarkCount,     "listChangeMarkCount"},
-   LaserCmd{   listSetWeldPowerWave,    "listSetWeldPowerWave"},
-   LaserCmd{listEnableWeldPowerWave, "listEnableWeldPowerWave"},
-   LaserCmd{listFiberYLPMPulseWidth, "listFiberYLPMPulseWidth"},
-   LaserCmd{    listFlyEncoderCount,     "listFlyEncoderCount"},
-   LaserCmd{         listSetDaZWord,          "listSetDaZWord"},
+   LaserCmd {          listSetCo2FPK,           "listSetCo2FPK"},
+   LaserCmd {       listFlyWaitInput,        "listFlyWaitInput"},
+   LaserCmd {        listFiberOpenMO,         "listFiberOpenMO"},
+   LaserCmd {       listWaitForInput,        "listWaitForInput"},
+   LaserCmd {    listChangeMarkCount,     "listChangeMarkCount"},
+   LaserCmd {   listSetWeldPowerWave,    "listSetWeldPowerWave"},
+   LaserCmd {listEnableWeldPowerWave, "listEnableWeldPowerWave"},
+   LaserCmd {listFiberYLPMPulseWidth, "listFiberYLPMPulseWidth"},
+   LaserCmd {    listFlyEncoderCount,     "listFlyEncoderCount"},
+   LaserCmd {         listSetDaZWord,          "listSetDaZWord"},
 
-   LaserCmd{        listJptSetParam,         "listJptSetParam"},
-   LaserCmd{          listReadyMark,           "listReadyMark"},
+   LaserCmd {        listJptSetParam,         "listJptSetParam"},
+   LaserCmd {          listReadyMark,           "listReadyMark"},
 
-   LaserCmd{           DisableLaser,            "DisableLaser"},
-   LaserCmd{            EnableLaser,             "EnableLaser"},
-   LaserCmd{            ExecuteList,             "ExecuteList"},
-   LaserCmd{       SetPwmPulseWidth,        "SetPwmPulseWidth"},
-   LaserCmd{              GetStatus,               "GetStatus"},
-   LaserCmd{            GetSerialNo,             "GetSerialNo"},
-   LaserCmd{          GetListStatus,           "GetListStatus"},
-   LaserCmd{          GetPositionXY,           "GetPositionXY"},
-   LaserCmd{                 GotoXY,                  "GotoXY"},
-   LaserCmd{         LaserSignalOff,          "LaserSignalOff"},
-   LaserCmd{          LaserSignalOn,           "LaserSignalOn"},
-   LaserCmd{           WriteCorLine,            "WriteCorLine"},
-   LaserCmd{              ResetList,               "ResetList"},
-   LaserCmd{            RestartList,             "RestartList"},
-   LaserCmd{          WriteCorTable,           "WriteCorTable"},
-   LaserCmd{         SetControlMode,          "SetControlMode"},
-   LaserCmd{           SetDelayMode,            "SetDelayMode"},
-   LaserCmd{        SetMaxPolyDelay,         "SetMaxPolyDelay"},
-   LaserCmd{           SetEndOfList,            "SetEndOfList"},
-   LaserCmd{    SetFirstPulseKiller,     "SetFirstPulseKiller"},
-   LaserCmd{           SetLaserMode,            "SetLaserMode"},
-   LaserCmd{              SetTiming,               "SetTiming"},
-   LaserCmd{             SetStandby,              "SetStandby"},
-   LaserCmd{       SetPwmHalfPeriod,        "SetPwmHalfPeriod"},
-   LaserCmd{            StopExecute,             "StopExecute"},
-   LaserCmd{               StopList,                "StopList"},
-   LaserCmd{              WritePort,               "WritePort"},
-   LaserCmd{       WriteAnalogPort1,        "WriteAnalogPort1"},
-   LaserCmd{       WriteAnalogPort2,        "WriteAnalogPort2"},
-   LaserCmd{       WriteAnalogPortX,        "WriteAnalogPortX"},
-   LaserCmd{               ReadPort,                "ReadPort"},
-   LaserCmd{     SetAxisMotionParam,      "SetAxisMotionParam"},
-   LaserCmd{     SetAxisOriginParam,      "SetAxisOriginParam"},
-   LaserCmd{           AxisGoOrigin,            "AxisGoOrigin"},
-   LaserCmd{             MoveAxisTo,              "MoveAxisTo"},
-   LaserCmd{             GetAxisPos,              "GetAxisPos"},
-   LaserCmd{        GetFlyWaitCount,         "GetFlyWaitCount"},
-   LaserCmd{           GetMarkCount,            "GetMarkCount"},
-   LaserCmd{           SetFpkParam2,            "SetFpkParam2"},
-   LaserCmd{            Fiber_SetMo,             "Fiber_SetMo"},
-   LaserCmd{       Fiber_GetStMO_AP,        "Fiber_GetStMO_AP"},
-   LaserCmd{                EnableZ,                 "EnableZ"},
-   LaserCmd{               DisableZ,                "DisableZ"},
-   LaserCmd{               SetZData,                "SetZData"},
-   LaserCmd{    SetSPISimmerCurrent,     "SetSPISimmerCurrent"},
-   LaserCmd{            SetFpkParam,             "SetFpkParam"},
-   LaserCmd{                  Reset,                   "Reset"},
-   LaserCmd{            GetFlySpeed,             "GetFlySpeed"},
-   LaserCmd{        FiberPulseWidth,         "FiberPulseWidth"},
-   LaserCmd{   FiberGetConfigExtend,    "FiberGetConfigExtend"},
-   LaserCmd{              InputPort,               "InputPort"},
-   LaserCmd{            GetMarkTime,             "GetMarkTime"},
-   LaserCmd{            GetUserData,             "GetUserData"},
-   LaserCmd{              SetFlyRes,               "SetFlyRes"}
+   LaserCmd {           DisableLaser,            "DisableLaser"},
+   LaserCmd {            EnableLaser,             "EnableLaser"},
+   LaserCmd {            ExecuteList,             "ExecuteList"},
+   LaserCmd {       SetPwmPulseWidth,        "SetPwmPulseWidth"},
+   LaserCmd {              GetStatus,               "GetStatus"},
+   LaserCmd {            GetSerialNo,             "GetSerialNo"},
+   LaserCmd {          GetListStatus,           "GetListStatus"},
+   LaserCmd {          GetPositionXY,           "GetPositionXY"},
+   LaserCmd {                 GotoXY,                  "GotoXY"},
+   LaserCmd {         LaserSignalOff,          "LaserSignalOff"},
+   LaserCmd {          LaserSignalOn,           "LaserSignalOn"},
+   LaserCmd {           WriteCorLine,            "WriteCorLine"},
+   LaserCmd {              ResetList,               "ResetList"},
+   LaserCmd {            RestartList,             "RestartList"},
+   LaserCmd {          WriteCorTable,           "WriteCorTable"},
+   LaserCmd {         SetControlMode,          "SetControlMode"},
+   LaserCmd {           SetDelayMode,            "SetDelayMode"},
+   LaserCmd {        SetMaxPolyDelay,         "SetMaxPolyDelay"},
+   LaserCmd {           SetEndOfList,            "SetEndOfList"},
+   LaserCmd {    SetFirstPulseKiller,     "SetFirstPulseKiller"},
+   LaserCmd {           SetLaserMode,            "SetLaserMode"},
+   LaserCmd {              SetTiming,               "SetTiming"},
+   LaserCmd {             SetStandby,              "SetStandby"},
+   LaserCmd {       SetPwmHalfPeriod,        "SetPwmHalfPeriod"},
+   LaserCmd {            StopExecute,             "StopExecute"},
+   LaserCmd {               StopList,                "StopList"},
+   LaserCmd {              WritePort,               "WritePort"},
+   LaserCmd {       WriteAnalogPort1,        "WriteAnalogPort1"},
+   LaserCmd {       WriteAnalogPort2,        "WriteAnalogPort2"},
+   LaserCmd {       WriteAnalogPortX,        "WriteAnalogPortX"},
+   LaserCmd {               ReadPort,                "ReadPort"},
+   LaserCmd {     SetAxisMotionParam,      "SetAxisMotionParam"},
+   LaserCmd {     SetAxisOriginParam,      "SetAxisOriginParam"},
+   LaserCmd {           AxisGoOrigin,            "AxisGoOrigin"},
+   LaserCmd {             MoveAxisTo,              "MoveAxisTo"},
+   LaserCmd {             GetAxisPos,              "GetAxisPos"},
+   LaserCmd {        GetFlyWaitCount,         "GetFlyWaitCount"},
+   LaserCmd {           GetMarkCount,            "GetMarkCount"},
+   LaserCmd {           SetFpkParam2,            "SetFpkParam2"},
+   LaserCmd {            Fiber_SetMo,             "Fiber_SetMo"},
+   LaserCmd {       Fiber_GetStMO_AP,        "Fiber_GetStMO_AP"},
+   LaserCmd {                EnableZ,                 "EnableZ"},
+   LaserCmd {               DisableZ,                "DisableZ"},
+   LaserCmd {               SetZData,                "SetZData"},
+   LaserCmd {    SetSPISimmerCurrent,     "SetSPISimmerCurrent"},
+   LaserCmd {            SetFpkParam,             "SetFpkParam"},
+   LaserCmd {                  Reset,                   "Reset"},
+   LaserCmd {            GetFlySpeed,             "GetFlySpeed"},
+   LaserCmd {        FiberPulseWidth,         "FiberPulseWidth"},
+   LaserCmd {   FiberGetConfigExtend,    "FiberGetConfigExtend"},
+   LaserCmd {              InputPort,               "InputPort"},
+   LaserCmd {            GetMarkTime,             "GetMarkTime"},
+   LaserCmd {            GetUserData,             "GetUserData"},
+   LaserCmd {              SetFlyRes,               "SetFlyRes"}
       };
 
 //---------------------------------------------------------
@@ -244,7 +244,7 @@ bool LaserEngine::init(bool _dryRun) {
             return false;
             }
 
-      Machine* machine = zcam->machine();
+      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
       if (!machine) {
             Critical("no laser machine configured");
             usb->close();
@@ -254,25 +254,26 @@ bool LaserEngine::init(bool _dryRun) {
       // galvo range -32768  --  32767
       double xScale = machine->galvoScale().x() / 100.0; // m->scale() is in %
       double yScale = machine->galvoScale().y() / 100.0;
-//      double rotate = machine->galvoRotate();
-      xScale        = xScale * 0x10000 / machine->maxTravel().x();
-      yScale        = yScale * 0x10000 / machine->maxTravel().y();
+      //      double rotate = machine->galvoRotate();
+      xScale = xScale * 0x10000 / machine->maxTravel().x();
+      yScale = yScale * 0x10000 / machine->maxTravel().y();
 
-/*      transform = QTransform();
+      /*      transform = QTransform();
       if (machine->swapxy()) {
             rotate    += -90.0;
             xScale    *= -1;
             transform.rotate(rotate);
             transform.scale(yScale, xScale);
-            }
+                              }
       else {
             transform.scale(xScale, yScale);
-            }
+                              }
       transform.translate(0x8000, 0x8000);
   */
       // for correct speed calculation:
       galvos = (abs(xScale) + abs(yScale)) * .5;
-      Debug("native scale {:.2f} {:.2f} galvos(scale): {}", xScale, yScale, galvos); // was wrong: 595.78, should be 411.25?
+      Debug("native scale {:.2f} {:.2f} galvos(scale): {}", xScale, yScale,
+            galvos); // was wrong: 595.78, should be 411.25?
 
       getSerialNumber();
       port_bits = 0;
@@ -344,14 +345,16 @@ Packet4 LaserEngine::getSerialNumber() {
 //---------------------------------------------------------
 
 Packet4 LaserEngine::command(Packet6 data, bool read) const {
+      if (aborting)
+            return {0xffff, 0xffff, 0xffff, 0xffff};
       if (!send(data))
             return {0xffff, 0xffff, 0xffff, 0xffff};
       if (read) {
             Packet4 rv;
             if (!usb->read((uchar*)rv.data(), sizeof(rv)))
                   Critical("usb receive failed");
-//            if (rv[0] != 0xffff || rv[1] != 0xffff || rv[2] != 0xffff || rv[3] != 0xffff)
-//                  Debug("************<{}> return {:04x} {:04x} {:04x} {:04x}", cmdName(data[0]), rv[0], rv[1], rv[2], rv[3]);
+            //            if (rv[0] != 0xffff || rv[1] != 0xffff || rv[2] != 0xffff || rv[3] != 0xffff)
+            //                  Debug("************<{}> return {:04x} {:04x} {:04x} {:04x}", cmdName(data[0]), rv[0], rv[1], rv[2], rv[3]);
             return rv;
             }
       return {0xffff, 0xffff, 0xffff, 0xffff};
@@ -362,6 +365,8 @@ Packet4 LaserEngine::command(Packet6 data, bool read) const {
 //---------------------------------------------------------
 
 bool LaserEngine::send(const CmdList& data) const {
+      if (aborting)
+            return false;
       if (!usb->write((uchar*)data[0].data(), LIST_SIZE * 12)) {
             Critical("usb send failed");
             return false;
@@ -374,6 +379,8 @@ bool LaserEngine::send(const CmdList& data) const {
 //---------------------------------------------------------
 
 bool LaserEngine::send(const Packet6& data) const {
+      if (aborting)
+            return false;
       if (!usb->write((uchar*)data.data(), sizeof(Packet6))) {
             Critical("usb send failed");
             return false;
@@ -495,6 +502,8 @@ void LaserEngine::list_end() {
       if (list.empty()) // if list is empty
             return;
       for (int i = 0; !is_ready(); ++i) {
+            if (aborting)
+                  return;
             usleep(1000 * 10); // 10ms
             if (!(i % 200) && i > 0)
                   Critical("busy...{}", i / 200);
@@ -543,6 +552,8 @@ void LaserEngine::light_on(bool use_list) {
 
 void LaserEngine::wait_finished() const {
       for (int i = 0;; ++i) {
+            if (aborting)
+                  return;
             auto data   = command({GetStatus});
             auto status = LaserStatusFlags(data[3]);
             if (status.isReady() && !status.isBusy())
@@ -792,8 +803,8 @@ QStringList LaserEngine::laserPulseList() const {
 void LaserEngine::setLaser(const LaserParameterSet& l) {
       set_pulse_width(l.pulseWidth);
 
-      Debug("{}% markSpeed {} travelSpeed {} {}kHz {}ns delay {} {} {}", l.power, l.speed, l.travelSpeed, l.frequency, l.pulseWidth,
-            delay_laser_on, delay_laser_off, delay_polygon);
+      Debug("{}% markSpeed {} travelSpeed {} {}kHz {}ns delay {} {} {}", l.power, l.speed, l.travelSpeed,
+            l.frequency, l.pulseWidth, delay_laser_on, delay_laser_off, delay_polygon);
 
       if (l.speed == 0)
             Fatal("zero speed");
@@ -828,8 +839,10 @@ bool LaserEngine::startFraming() {
 
       list_jump_delay(0);
       set_delay_polygon(0);
-      Machine* m = zcam->machine();
-      int speed  = m->framingSpeed();
+      Machine* m = zcam->project() ? zcam->project()->machine() : nullptr;
+      if (!m)
+            return true;
+      int speed = m->framingSpeed();
       set_travel_speed(speed);
       return true;
       }
@@ -845,7 +858,7 @@ void LaserEngine::stopFraming() {
       aborting = true;
       Debug("=========== set aborting to true");
       LaserEngine::abort(false);
-//      stop();
+      //      stop();
       }
 
 //---------------------------------------------------------
@@ -939,27 +952,39 @@ void LaserEngine::move(double x, double y) {
 //---------------------------------------------------------
 
 LaserPosition LaserEngine::mapToGalvo(double x, double y) {
-      Machine* machine = zcam->machine();
+      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
+      if (!machine)
+            return LaserPosition(0, 0);
       double xScale = machine->galvoScale().x() / 100.0; // m->scale() is in %
       double yScale = machine->galvoScale().y() / 100.0;
-      xScale        = xScale * 0x10000 / machine->maxTravel().x();
-      yScale        = yScale * 0x10000 / machine->maxTravel().y();
+      double maxX   = machine->maxTravel().x();
+      double maxY   = machine->maxTravel().y();
+      xScale        = xScale * 0x10000 / maxX;
+      yScale        = yScale * 0x10000 / maxY;
 
-      LaserPosition pos;
+      // Input coordinates are in [0, maxTravel] range (corner origin).
+      // Shift to centered range [-maxTravel/2, +maxTravel/2] then scale
+      // and add galvo center offset (0x8000) to map to [0, 0xffff].
+      double xc = x - maxX / 2.0;
+      double yc = y - maxY / 2.0;
 
+      double rawX, rawY;
       if (machine->galvoSwapxy()) {
-            pos.x = trunc(y * yScale + 0xffff*.5);
-            pos.y = trunc(x * xScale + 0xffff*.5);
+            rawX = trunc(yc * yScale + 0x8000);
+            rawY = trunc(xc * xScale + 0x8000);
             }
       else {
-            pos.x = trunc(x * xScale + 0xffff*.5);
-            pos.y = trunc(y * yScale + 0xffff*.5);
+            rawX = trunc(xc * xScale + 0x8000);
+            rawY = trunc(yc * yScale + 0x8000);
             }
-      if (pos.x > 0xffff || pos.y > 0xffff) {
-            Critical("position out of range 0x{:04x} {} ----  0x{:04x} {}", pos.x, x, pos.y, y);
-            return LaserPosition(std::clamp(pos.x, 0u, 0xffffu), std::clamp(pos.y, 0u, 0xffffu));
+      if (rawX < 0.0 || rawX > 0xffff || rawY < 0.0 || rawY > 0xffff) {
+            Critical("position out of range 0x{:04x} {} ----  0x{:04x} {}",
+                     (unsigned)std::clamp(rawX, 0.0, (double)0xffff), x,
+                     (unsigned)std::clamp(rawY, 0.0, (double)0xffff), y);
+            return LaserPosition((unsigned)std::clamp(rawX, 0.0, (double)0xffff),
+                                 (unsigned)std::clamp(rawY, 0.0, (double)0xffff));
             }
-      return pos;
+      return LaserPosition((unsigned)rawX, (unsigned)rawY);
       }
 
 //---------------------------------------------------------
@@ -1024,7 +1049,7 @@ void LaserEngine::markLayer(const LaserPath& path, const LaserParameterSet& sl) 
 //---------------------------------------------------------
 
 void LaserEngine::writeCorrectionTable() {
-      Machine* machine = zcam->machine();
+      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
 #if 0
       QString corFile = machine->corfile();
       CalData corData(zcam);
@@ -1037,7 +1062,7 @@ void LaserEngine::writeCorrectionTable() {
       else {
             Critical("error reading cor file <{}>", corFile);
             errorReadingCorFile = true;
-            }
+                              }
       if (corFile.isEmpty() || errorReadingCorFile) {
             Debug("no cor file for laser <{}> available", machine->name());
 
@@ -1045,7 +1070,7 @@ void LaserEngine::writeCorrectionTable() {
             //    create correction table from lens properties
             //*******************************************************
 
-            QVector2D barrel = zcam->machine()->barrel();
+            QVector2D barrel = (zcam->project() && zcam->project()->machine()) ? zcam->project()->machine()->barrel() : QVector2D();
             double kx = barrel.x();
             double ky = barrel.y();
 
@@ -1057,11 +1082,11 @@ void LaserEngine::writeCorrectionTable() {
                         if (abs(corrX) >= 0x8000 || abs(corrY) >= 0x8000) {
                               Critical("{}:{} overflow {:x} {:x}   {}*{} {}*{}", x, y, corrX, corrY, y, r2 * kx, x, r2 * ky);
                               return;
-                              }
+                                                }
                         corData.setValue(x, y, { corrX, corrY });
-                        }
-                  }
-            }
+                                          }
+                                    }
+                              }
       write_cor_table(true);
       bool first = true;
       for (auto pt : corData) {
@@ -1075,6 +1100,6 @@ void LaserEngine::writeCorrectionTable() {
                   y = 0;
             write_cor_line(x, y, !first);
             first = false;
-            }
+                              }
 #endif
       }

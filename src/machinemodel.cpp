@@ -46,9 +46,11 @@ static void parseMachineColumnsBlock(const nlohmann::ordered_json& block, QList<
             if (item.contains("row") && item["row"].is_object()) {
                   const auto& rowObj = item["row"];
                   MachineColumnItem ci;
-                  ci.isRow = true;
-                  ci.name = "row";
-                  ci.colSpan = item.contains("colSpan") && item["colSpan"].is_number_integer() ? item["colSpan"].get<int>() : 1;
+                  ci.isRow          = true;
+                  ci.name           = "row";
+                  ci.colSpan        = item.contains("colSpan") && item["colSpan"].is_number_integer()
+                                          ? item["colSpan"].get<int>()
+                                          : 1;
                   bool allHaveLabel = true;
                   for (auto subIt = rowObj.begin(); subIt != rowObj.end(); ++subIt) {
                         if (!subIt.value().contains("label")) {
@@ -65,9 +67,12 @@ static void parseMachineColumnsBlock(const nlohmann::ordered_json& block, QList<
                   }
             else if (item.contains("name")) {
                   MachineColumnItem ci;
-                  ci.name = QString::fromStdString(item["name"].get<std::string>());
-                  ci.colSpan = item.contains("colSpan") && item["colSpan"].is_number_integer() ? item["colSpan"].get<int>() : 1;
-                  if (item.contains("type") && item["type"].is_string() && item["type"].get<std::string>() == "line")
+                  ci.name    = QString::fromStdString(item["name"].get<std::string>());
+                  ci.colSpan = item.contains("colSpan") && item["colSpan"].is_number_integer()
+                                   ? item["colSpan"].get<int>()
+                                   : 1;
+                  if (item.contains("type") && item["type"].is_string() &&
+                      item["type"].get<std::string>() == "line")
                         ci.isLine = true;
                   items.append(ci);
                   }
@@ -116,7 +121,10 @@ void MachineModel::parseProperties() {
                   for (const auto& item : j["items"]) {
                         if (item.contains("columns") && item["columns"].is_object()) {
                               const auto& colsBlock = item["columns"];
-                              int colCount = colsBlock.contains("count") && colsBlock["count"].is_number_integer() ? colsBlock["count"].get<int>() : 2;
+                              int colCount =
+                                  colsBlock.contains("count") && colsBlock["count"].is_number_integer()
+                                      ? colsBlock["count"].get<int>()
+                                      : 2;
                               QList<MachineColumnItem> cols;
                               parseMachineColumnsBlock(colsBlock, cols);
                               if (!cols.isEmpty()) {
@@ -190,7 +198,7 @@ int MachineModel::rowCount(const QModelIndex& parent) const {
 //---------------------------------------------------------
 //   data
 //    Read property values from the Machine via the Qt meta-object
-//    system, using readOnGadget() since Machine is a Q_GADGET.
+//    system, using read() since Machine is a QObject.
 //---------------------------------------------------------
 
 QVariant MachineModel::data(const QModelIndex& index, int role) const {
@@ -210,7 +218,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                   if (idx < 0)
                         return {};
                   QMetaProperty mp = meta->property(idx);
-                  return mp.readOnGadget(_machine);
+                  return mp.read(_machine);
                   }
             case IsRowRole: return isRow;
             case SubPropsRole: {
@@ -228,7 +236,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                         int idx = meta->indexOfProperty(s.toUtf8().constData());
                         if (idx >= 0) {
                               QMetaProperty mp = meta->property(idx);
-                              list.append(mp.readOnGadget(_machine));
+                              list.append(mp.read(_machine));
                               }
                         else
                               list.append(QVariant());
@@ -239,20 +247,18 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                   if (index.row() < _rowLabels.size())
                         return _rowLabels[index.row()];
                   return QString();
-            case IsColumnsRole:
-                  return _propertyIsColumns.value(index.row(), false);
-            case ColumnCountRole:
-                  return _columnCounts.value(index.row(), 0);
+            case IsColumnsRole: return _propertyIsColumns.value(index.row(), false);
+            case ColumnCountRole: return _columnCounts.value(index.row(), 0);
             case ColumnItemsRole: {
                   QVariantList list;
                   if (index.row() < _columnItems.size() && _machine) {
                         const QMetaObject* meta = &Machine::staticMetaObject;
                         for (const MachineColumnItem& ci : _columnItems[index.row()]) {
                               QVariantMap m;
-                              m["name"] = ci.name;
-                              m["isRow"] = ci.isRow;
-                              m["isLine"] = ci.isLine;
-                              m["colSpan"] = ci.colSpan;
+                              m["name"]     = ci.name;
+                              m["isRow"]    = ci.isRow;
+                              m["isLine"]   = ci.isLine;
+                              m["colSpan"]  = ci.colSpan;
                               m["rowLabel"] = ci.rowLabel;
                               QVariantList subProps;
                               for (const QString& s : ci.subProps)
@@ -264,7 +270,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                                           int idx = meta->indexOfProperty(s.toUtf8().constData());
                                           if (idx >= 0) {
                                                 QMetaProperty mp = meta->property(idx);
-                                                subVals.append(mp.readOnGadget(_machine));
+                                                subVals.append(mp.read(_machine));
                                                 }
                                           else
                                                 subVals.append(QVariant());
@@ -275,7 +281,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                                     int idx = meta->indexOfProperty(ci.name.toUtf8().constData());
                                     if (idx >= 0) {
                                           QMetaProperty mp = meta->property(idx);
-                                          m["propValue"] = mp.readOnGadget(_machine);
+                                          m["propValue"]   = mp.read(_machine);
                                           }
                                     }
                               list.append(m);
@@ -290,7 +296,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
 //---------------------------------------------------------
 //   setData
 //    Write a property value back to the Machine using
-//    writeOnGadget() and emit dataChanged.
+//    write() and emit dataChanged.
 //---------------------------------------------------------
 
 bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int role) {
@@ -312,8 +318,17 @@ bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int 
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
-      if (!mp.writeOnGadget(_machine, value))
+      if (!mp.write(_machine, value))
             return false;
+
+      // When the machine "type" property changes, the properties() JSON
+      // description changes too — rebuild the entire model so the QML
+      // panel refreshes with the new property set.
+      if (name == "type") {
+            parseProperties();
+            emit machineDataChanged();
+            return true;
+            }
 
       emit dataChanged(index, index, {role});
       emit machineDataChanged();
@@ -335,8 +350,17 @@ bool MachineModel::setSubProperty(int row, const QString& subName, const QVarian
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
-      if (!mp.writeOnGadget(_machine, value))
+      if (!mp.write(_machine, value))
             return false;
+
+      // When the machine "type" property changes, the properties() JSON
+      // description changes too — rebuild the entire model so the QML
+      // panel refreshes with the new property set.
+      if (subName == "type") {
+            parseProperties();
+            emit machineDataChanged();
+            return true;
+            }
 
       QModelIndex qi = index(row, 0);
       emit dataChanged(qi, qi, {SubValuesRole});
@@ -359,8 +383,17 @@ bool MachineModel::setColumnProperty(int modelRow, const QString& propName, cons
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
-      if (!mp.writeOnGadget(_machine, value))
+      if (!mp.write(_machine, value))
             return false;
+
+      // When the machine "type" property changes, the properties() JSON
+      // description changes too — rebuild the entire model so the QML
+      // panel refreshes with the new property set.
+      if (propName == "type") {
+            parseProperties();
+            emit machineDataChanged();
+            return true;
+            }
 
       QModelIndex qi = index(modelRow, 0);
       emit dataChanged(qi, qi, {ColumnItemsRole});
@@ -374,13 +407,13 @@ bool MachineModel::setColumnProperty(int modelRow, const QString& propName, cons
 
 QHash<int, QByteArray> MachineModel::roleNames() const {
       QHash<int, QByteArray> roles;
-      roles[PropNameRole]  = "propName";
-      roles[PropValueRole] = "propValue";
-      roles[IsRowRole]     = "isRow";
-      roles[SubPropsRole]  = "subProps";
-      roles[SubValuesRole] = "subValues";
-      roles[RowLabelRole]  = "rowLabel";
-      roles[IsColumnsRole] = "isColumns";
+      roles[PropNameRole]    = "propName";
+      roles[PropValueRole]   = "propValue";
+      roles[IsRowRole]       = "isRow";
+      roles[SubPropsRole]    = "subProps";
+      roles[SubValuesRole]   = "subValues";
+      roles[RowLabelRole]    = "rowLabel";
+      roles[IsColumnsRole]   = "isColumns";
       roles[ColumnCountRole] = "columnCount";
       roles[ColumnItemsRole] = "columnItems";
       return roles;

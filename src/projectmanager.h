@@ -46,7 +46,7 @@ class ProjectManager : public QObject
 
       // ── Internal helpers ──────────────────────────────────────────────────
       bool writeProjectFile(const std::string& path);
-      bool readProjectFile(const std::string& path);
+      bool readProjectFile(const std::string& path, bool skipCamUpdate = false);
       void clearUndoStack();
       void setDirty(bool v);
       void setProjectPath(const QString& v);
@@ -61,7 +61,6 @@ class ProjectManager : public QObject
       /// Command-based undo stack.
       std::vector<std::unique_ptr<UndoCommand>> _undoStack {};
       int _undoIndex {0};
-      void update();
 
     signals:
       void dirtyChanged();
@@ -89,11 +88,15 @@ class ProjectManager : public QObject
       /// When *clearPersistedPath* is true (default), the persisted lastPath
       /// in QSettings is cleared.  Pass false during startup so that
       /// restoreLastProject() can still read the old value afterwards.
-      Q_INVOKABLE bool newProject(bool clearPersistedPath = true);
+      Q_INVOKABLE void newProject(bool clearPersistedPath = true);
+      void startNewProject(bool clearPersistedPath = true);
+      void endNewProject();
 
       /// Open a project from *path*.  Pass an empty string to trigger the
       /// file-dialog logic from C++ (alternatively drive the dialog from QML).
-      Q_INVOKABLE bool openProject(const QString& path);
+      /// When *skipCamUpdate* is true, the expensive Cam::updateCam() call
+      /// is skipped — used at startup so the last project loads quickly.
+      Q_INVOKABLE bool openProject(const QString& path, bool skipCamUpdate = false);
 
       /// Save to the current path; falls through to saveAs if none is set.
       Q_INVOKABLE bool save();
@@ -104,10 +107,7 @@ class ProjectManager : public QObject
       /// Import an external file into the current project.
       Q_INVOKABLE bool importFile(const QString& path);
 
-      /// Undo the last command.
       Q_INVOKABLE void undo();
-
-      /// Redo the previously undone command.
       Q_INVOKABLE void redo();
 
       /// Mark the project as modified (called by edit operations).
@@ -128,4 +128,6 @@ class ProjectManager : public QObject
 
       /// Push a command onto the undo/redo stack.
       void pushCommand(std::unique_ptr<UndoCommand> cmd);
+
+      void update(); // update 3d canvas and project tree
       };

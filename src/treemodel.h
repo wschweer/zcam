@@ -40,7 +40,7 @@ class TreeModel : public QAbstractItemModel
                   return nullptr;
             return static_cast<Element*>(idx.internalPointer());
             }
-      QModelIndex indexForElement(Element* el) const;
+      Q_INVOKABLE QModelIndex indexForElement(Element* el) const;
       void notifyChildInserted(Element* parent, int row);
       void notifyChildRemoved(Element* parent, int row);
       void beginInsertChild(Element* parent, int row);
@@ -48,6 +48,11 @@ class TreeModel : public QAbstractItemModel
       void beginRemoveChild(Element* parent, int row);
       void endRemoveChild();
       void notifyElementRenamed(Element* el);
+      /// Reset the model without changing the root element.
+      /// Calls beginResetModel()/endResetModel() so the view
+      /// refreshes after bulk structural changes (e.g. children
+      /// of an element were added/removed outside the model).
+      void resetModel();
       QModelIndex index(int row, int column, const QModelIndex& parent = QModelIndex()) const override;
       QModelIndex parent(const QModelIndex& child) const override;
       int rowCount(const QModelIndex& parent = QModelIndex()) const override;

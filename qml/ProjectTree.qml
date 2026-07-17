@@ -46,7 +46,7 @@ Node {
             base.removeElement(base, e);
             }
         function onAdd3dElement(e) {
-            if (!e.parent) {
+            if (!e.parent()) {
                 console.log("onAdd3eElement: no parent");
                 return;
                 }
@@ -54,7 +54,8 @@ Node {
             if (be) {
                 base.addElement(be, e);
                 } else
-                console.log("onAdd3dElement: searchBase: for <" + e.parent().name + "> not found");
+                console.log("onAdd3dElement: searchBase: <" + e.parent().name + "> for <"
+                 + e.name + "> not found");
             }
         function onAddSubElement(e, parent) {
             //                        console.log("onAddSubElement <"+e.name+"> base <"+parent.name+">");
@@ -120,7 +121,12 @@ Node {
     //---------------------------------------------------------
 
     function addElement(parent, element) {
-//        console.log("addElement: parent =="+parent+"===element=="+element+"=="+element.model+"==");
+        // Skip Grid elements — they are rendered in a separate
+        // background View3D layer, not in the main scene graph.
+        if (element.typeName() === "grid")
+            return;
+
+        //        console.log("addElement: parent =="+parent+"===element=="+element+"=="+element.model+"==");
         element.update();    // ?!
         var shapeComponent = Qt.createComponent(element.model);
         if (shapeComponent.status === Component.Ready) {
@@ -150,16 +156,15 @@ Node {
             instance.visible = Qt.binding(function () {
                 return element.show && element.ancestorsShow;
                 });
-            if (element.curColor)
+            if (element.curColor && instance.color !== undefined)
                 instance.color = Qt.binding(function () {
                     return element.curColor;
                     });
             var n = element.children.length;
             for (var i = 0; i < n; ++i)
                 addElement(instance, element.children[i]);
-            }
-        else if (shapeComponent.status === Component.Error) {
-            console.log("shape error =="+shapeComponent.errorString()+"===");
+            } else if (shapeComponent.status === Component.Error) {
+            console.log("shape error ==" + shapeComponent.errorString() + "===");
             }
         }
     }

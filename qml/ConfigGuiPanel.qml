@@ -17,25 +17,4 @@ import ZCam
 
 Item {
     id: panel
-//    property Element element: ZCam.config()
-
-    Item {
-        width: 400
-        height: parent.height
-/*
-        ElementView {
-            id: guiConfig
-            wstyle: panel.wstyle
-            element: panel.element
-            anchors.topMargin: 20
-
-            PropertyValue {
-                wstyle: guiConfig.wstyle
-                prop: {
-                    panel.element.prop("handleSize")
-                    }
-                }
-            }
-*/
-        }
     }

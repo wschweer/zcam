@@ -10,6 +10,7 @@
 //=============================================================================
 
 #include "laser.h"
+#include "laserlayer.h"
 #include "zcam.h"
 
 //---------------------------------------------------------
@@ -42,7 +43,7 @@ Laser::Laser(ZCam* zc, QObject* parent) : QObject(parent) {
                       changeState(LaserState::Idle);
                 else
                       Debug("unhandled event: framingStopped");
-          },
+                },
           Qt::QueuedConnection);
 
       //
@@ -59,18 +60,31 @@ Laser::Laser(ZCam* zc, QObject* parent) : QObject(parent) {
                       changeState(LaserState::Idle);
                       }
                 else if (state == LaserState::MarkingAboutToFraming) {
+                      refreshCamAndFraming();
                       doStartFraming();
                       changeState(LaserState::Framing);
                       }
                 else if (state == LaserState::Marking) {
                       // switch back to framing
+                      refreshCamAndFraming();
                       changeState(LaserState::Framing);
                       doStartFraming();
                       }
                 else
                       Debug("unhandled event: markingStopped");
-          },
+                },
           Qt::QueuedConnection);
+      }
+
+//---------------------------------------------------------
+//   ~Laser
+//    Ensure background threads are stopped and joined before
+//    the object is destroyed.  This prevents use-after-free
+//    when the QML engine tears down the singleton hierarchy.
+//---------------------------------------------------------
+
+Laser::~Laser() {
+      shutdown();
       }
 
 //---------------------------------------------------------
@@ -175,6 +189,21 @@ void Laser::startMarking() {
       }
 
 //---------------------------------------------------------
+//   refreshCamAndFraming
+//    Refresh cam data and rebuild the framing contour so the
+//    laser follows the current geometry.  Called before every
+//    framing start to ensure the convex hull / bounding box
+//    is up to date even if the user edited shapes without
+//    pressing the manual Cam refresh button.
+//---------------------------------------------------------
+
+void Laser::refreshCamAndFraming() {
+      zcam->refreshCam();
+      if (zcam->project() && zcam->project()->fixture() && zcam->project()->fixture()->framing())
+            zcam->project()->fixture()->framing()->update();
+      }
+
+//---------------------------------------------------------
 //   startFraming
 //---------------------------------------------------------
 
@@ -186,6 +215,12 @@ void Laser::startFraming() {
                   doStopFraming(); // toggle framing state
                   break;
             case LaserState::Idle:
+                  // Refresh cam data and rebuild the framing contour before
+                  // starting framing so the laser follows the current
+                  // geometry.  The user may have edited shapes since the
+                  // last cam update, and camDirty only flags that a refresh
+                  // is pending — it does not trigger one automatically.
+                  refreshCamAndFraming();
                   if (doStartFraming())
                         changeState(LaserState::Framing);
                   break;
@@ -203,18 +238,17 @@ void Laser::startFraming() {
 //---------------------------------------------------------
 
 void Laser::doStartMarking() {
-/*      if (!zcam->topLevel() || !zcam->topLevel()->fixture()) {
+      if (!zcam->project() || !zcam->project()->fixture()) {
             Critical("incomplete project");
             return;
             }
-*/
+
       markingThread = new std::thread([this] {
             //
             // marking happens in this background task
             //
-#if 0
-            TopLevel* topLevel = zcam->topLevel();
-            Fixture* fixture   = topLevel->fixture();
+            Project* topLevel = zcam->project();
+            Fixture* fixture  = topLevel->fixture();
             engine()->startMarking();
             markingRunning = true;
             stopMarking    = false;
@@ -223,35 +257,36 @@ void Laser::doStartMarking() {
                   if (!isType<LaserLayer>(e))
                         continue;
                   auto ll = toType<LaserLayer>(e);
-                  if (!ll->active())
+                  if (!ll->burn())
                         continue;
-                  LaserPath spl                           = ll->collectLaserPath();
-                  const LaserLayerSettings* layerSettings = ll->laserLayer();
-                  if (!layerSettings)
-                        Fatal("no laser settings for <{}>", ll->name());
+                  LaserPath spl        = ll->collectLaserPath();
+                  const Recipe* recipe = ll->recipe();
+                  if (!recipe)
+                        Fatal("no recipe for <{}>", ll->name());
 
-                  for (int i = 0; i < layerSettings->numPasses(); ++i) { // global passes
+                  for (int i = 0; i < recipe->numPasses(); ++i) { // global passes
                         if (stopMarking)
                               break;
                         // mark every sublayer
-                        for (int i = 0; i < layerSettings->rowCount(); ++i) { // for every FiberLaserSubLayer
-                              auto s = layerSettings->settings(i);
+                        for (int i = 0; i < recipe->layers()->size(); ++i) { // for every FiberLaserSubLayer
+                              auto s            = recipe->layer(i);
                               auto parameterSet = LaserParameterSet(s);
-                              parameterSet.setOverride(ParameterType(ll->overrideType1()), ll->overrideValue1());
-                              parameterSet.setOverride(ParameterType(ll->overrideType2()), ll->overrideValue2());
+                              parameterSet.setOverride(ParameterType(ll->overrideType1()),
+                                                       ll->overrideValue1());
+                              parameterSet.setOverride(ParameterType(ll->overrideType2()),
+                                                       ll->overrideValue2());
                               if (stopMarking)
                                     break;
                               if (s->enabled()) {
                                     spl.check();
-//TODO                                    engine()->markLayer(spl, parameterSet);
+                                    engine()->markLayer(spl, parameterSet);
                                     }
                               }
                         }
                   }
-#endif
             // HACK:
-//            for (int i = 0; i < 32; ++i)
-//                  engine()->move(i*2, i*2);
+            //            for (int i = 0; i < 32; ++i)
+            //                  engine()->move(i*2, i*2);
 
             engine()->endMarking();
             markingRunning = false;
@@ -273,16 +308,14 @@ void Laser::doStopMarking() {
 //---------------------------------------------------------
 
 bool Laser::doStartFraming() {
-/*      if (!zcam->topLevel() || !zcam->topLevel()->fixture()) {
+      if (!zcam->project() || !zcam->project()->fixture()) {
             Critical("incomplete project");
             return false;
             }
-*/
+
       framingThread = new std::thread([this] {
-#if 0
-            TopLevel* topLevel         = zcam->topLevel();
-            Fixture* fixture           = topLevel->fixture();
-            Clipper2Lib::PathD polygon = fixture->convexHull();
+            Project* project           = zcam->project();
+            Clipper2Lib::PathD polygon = project->cam()->convexHull();
             framingRunning             = true;
             stopFraming                = false;
             engine()->startFraming();
@@ -293,7 +326,6 @@ bool Laser::doStartFraming() {
                         engine()->move(p.x, p.y);
                         }
                   }
-#endif
             framingRunning = false;
             engine()->stop();
             emit framingStopped();
@@ -309,4 +341,49 @@ bool Laser::doStartFraming() {
 void Laser::doStopFraming() {
       stopFraming = true;
       engine()->stopFraming();
+      }
+
+//---------------------------------------------------------
+//   shutdown
+//    Synchronously stop all background threads and join them.
+//    This is called from aboutToQuit (before the event loop stops)
+//    and from the destructor.  It sets the stop flags, calls the
+//    engine stop methods, then joins both threads directly
+//    (instead of relying on QueuedConnection signal handlers
+//    which may never fire after the event loop has stopped).
+//---------------------------------------------------------
+
+void Laser::shutdown() {
+      // Signal both threads to stop and tell the engine to abort
+      // any blocking USB operations.
+      stopFraming = true;
+      stopMarking = true;
+
+      if (engine())
+            engine()->setAbortFlag();
+
+      // Join the framing thread directly (the QueuedConnection
+      // handler that normally joins it won't fire once the
+      // event loop has stopped).
+      if (framingThread) {
+            if (framingThread->joinable())
+                  framingThread->join();
+            delete framingThread;
+            framingThread = nullptr;
+            }
+
+      // Join the marking thread directly.
+      if (markingThread) {
+            if (markingThread->joinable())
+                  markingThread->join();
+            delete markingThread;
+            markingThread = nullptr;
+            }
+
+      // Put the laser in a clean Off state.  Only call engine()->exit()
+      // if the laser was actually initialized (state != Off) to avoid
+      // sending USB commands to a device that was never opened.
+      if (engine() && state != LaserState::Off)
+            engine()->exit();
+      changeState(LaserState::Off);
       }

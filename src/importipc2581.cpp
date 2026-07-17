@@ -22,7 +22,7 @@
 #include "cad.h"
 #include "layer.h"
 #include "laserlayer.h"
-#include "line.h"
+#include "polygon.h"
 #include "fixture.h"
 #include "projecttree.h"
 #include "undo.h"

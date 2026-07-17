@@ -25,7 +25,7 @@
 
 #include "cad.h"
 #include "layer.h"
-#include "line.h"
+#include "polygon.h"
 #include "circle.h"
 #include "logger.h"
 #include "projecttree.h"

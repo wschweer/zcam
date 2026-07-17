@@ -60,7 +60,7 @@ Item {
 
             // Update the layer setting model pointer
             if (currentLayerIdx >= 0 && currentLayerIdx < layerList.model.length) {
-                layerSettingModel.layerSetting = ZCam.recipes.layerPtr(currentRecipeIdx, currentLayerIdx);
+                layerSettingModel.pass = ZCam.recipes.layerPtr(currentRecipeIdx, currentLayerIdx);
                 } else {
                 layerSettingModel.layerSetting = null;
                 }
@@ -69,7 +69,7 @@ Item {
             recipeDescField.text = "";
             layerList.model = [];
             currentLayerIdx = -1;
-            layerSettingModel.layerSetting = null;
+            layerSettingModel.pass = null;
             }
         }
 
@@ -82,7 +82,7 @@ Item {
         function onLayerDataChanged() {
             ZCam.recipes.recipeChanged(currentRecipeIdx);
             // Refresh layer list names in case the layer name changed
-            layerList.model = ZCam.recipes.layerModel(currentRecipeIdx);
+            layerList.model = ZCam.recipes.pass(currentRecipeIdx);
         }
     }
 

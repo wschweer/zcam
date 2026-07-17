@@ -50,7 +50,7 @@ Item {
         SplitView {
             id: innerSplit
             SplitView.preferredWidth: 360
-            SplitView.minimumWidth: 180
+            SplitView.minimumWidth: 300
             orientation: Qt.Vertical
 
             onResizingChanged: if (!resizing)

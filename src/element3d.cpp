@@ -15,10 +15,16 @@
 #include "propertyjson.h"
 #include "layer.h"
 #include "recipe.h"
+#include "machine.h"
+#include "machines.h"
+#include "geometryworker.h"
 #include <limits>
+#include <cmath>
 #include <QMetaProperty>
 #include <QColor>
 #include <QVector3D>
+#include <QQuaternion>
+#include <QPointer>
 
 //---------------------------------------------------------
 //   Element3d
@@ -35,6 +41,49 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
             connect(p, &Element3d::showChanged, this, &Element3d::ancestorsShowChanged);
             connect(p, &Element3d::ancestorsShowChanged, this, &Element3d::ancestorsShowChanged);
             }
+
+      // Invalidate the cached matrix whenever position, rotation or scale changes.
+      // During batch updates, suppress vertexRevisionChanged to avoid
+      // redundant signal cascades; endBatchUpdate() will emit it once.
+      connect(this, &Element3d::posChanged, this, [this] {
+            _matrixDirty = true;
+            if (!_batching) {
+                  ++_vertexRevision;
+                  emit vertexRevisionChanged();
+                  }
+            });
+      connect(this, &Element3d::rotChanged, this, [this] {
+            _matrixDirty = true;
+            if (!_batching) {
+                  ++_vertexRevision;
+                  emit vertexRevisionChanged();
+                  }
+            });
+      connect(this, &Element3d::scaleChanged, this, [this] {
+            _matrixDirty = true;
+            if (!_batching) {
+                  ++_vertexRevision;
+                  emit vertexRevisionChanged();
+                  }
+            });
+      connect(this, &Element3d::mirrorXChanged, this, [this] {
+            _matrixDirty = true;
+            if (!_batching) {
+                  ++_vertexRevision;
+                  emit vertexRevisionChanged();
+                  }
+            });
+      connect(this, &Element3d::mirrorYChanged, this, [this] {
+            _matrixDirty = true;
+            if (!_batching) {
+                  ++_vertexRevision;
+                  emit vertexRevisionChanged();
+                  }
+            });
+      connect(this, &Element3d::fillChanged, [this] { update(); });
+      connect(this, &Element3d::lineWidthChanged, [this] { update(); });
+      connect(this, &Element3d::endTypeChanged, [this] { update(); });
+      connect(this, &Element3d::joinTypeChanged, [this] { update(); });
       }
 
 //---------------------------------------------------------
@@ -44,8 +93,8 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
 //    Returns true if the property was handled.
 //---------------------------------------------------------
 
-static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element,
-                               const std::string& name, const std::string& type) {
+static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, const std::string& name,
+                               const std::string& type) {
       const QMetaObject* meta = element->metaObject();
       QByteArray propName     = QByteArray::fromStdString(name);
       int idx                 = meta->indexOfProperty(propName.constData());
@@ -64,6 +113,16 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element,
             data[name]     = recipe ? recipe->name().toStdString() : "";
             return true;
             }
+      else if (type == "machine") {
+            // machine is stored as a Machine*, serialized as its name string.
+            // A null pointer is serialized as JSON null.
+            Machine* machine = value.value<Machine*>();
+            if (machine)
+                  data[name] = machine->name().toStdString();
+            else
+                  data[name] = nullptr;
+            return true;
+            }
       return false;
       }
 
@@ -74,8 +133,8 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element,
 //    Returns true if the property was handled.
 //---------------------------------------------------------
 
-static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element,
-                              const std::string& name, const std::string& type) {
+static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, const std::string& name,
+                              const std::string& type) {
       if (!data.contains(name))
             return false;
       const nlohmann::json& jval = data.at(name);
@@ -85,6 +144,12 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element,
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
+
+      // A null JSON value means the property was not set (e.g. no
+      // machine assigned).  Skip gracefully instead of throwing a
+      // nlohmann::json::type_error which would abort fromJson().
+      if (jval.is_null())
+            return true;
 
       if (type == "layer") {
             QString layerName = QString::fromStdString(jval.get<std::string>());
@@ -96,6 +161,20 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element,
             QString recipeName = QString::fromStdString(jval.get<std::string>());
             Recipe* recipe     = element->zcamInstance()->recipePtr(recipeName);
             mp.write(element, QVariant::fromValue(recipe));
+            return true;
+            }
+      else if (type == "machine") {
+            // machine is stored as a Machine* pointer; resolve from name
+            QString machineName = QString::fromStdString(jval.get<std::string>());
+            Machine* machine    = nullptr;
+            ZCam* zc            = element->zcamInstance();
+            if (zc && zc->machines() && !machineName.isEmpty()) {
+                  QStringList model = zc->machines()->machinesModel();
+                  int idx           = model.indexOf(machineName);
+                  if (idx >= 0)
+                        machine = zc->machines()->machine(idx);
+                  }
+            mp.write(element, QVariant::fromValue(machine));
             return true;
             }
       return false;
@@ -125,12 +204,11 @@ json Element3d::toJson() const {
             }
 
       const QMetaObject* meta = this->metaObject();
-      for (const auto& [name, type] : propNames) {
-            if (type == "layer" || type == "recipe")
+      for (const auto& [name, type] : propNames)
+            if (type == "layer" || type == "recipe" || type == "machine")
                   writeLayerOrRecipe(data, this, name, type);
             else
                   propjson::writePropertyToJson(data, this, meta, false, name, type);
-            }
 
       return data;
       }
@@ -143,28 +221,41 @@ json Element3d::toJson() const {
 //---------------------------------------------------------
 
 void Element3d::fromJson(const json& json) {
+      // Process children in their own try-catch block so that an
+      // exception in a child does NOT prevent this element's own
+      // properties (e.g. show, burn) from being read.  Previously,
+      // a single try-catch wrapped both steps; if a child threw,
+      // the parent's show property was never restored from JSON,
+      // leaving it at the constructor default (e.g. false for Cam).
       try {
             Element::fromJson(json);
+            }
+      catch (const nlohmann::json::parse_error& err) {
+            Warning("Element3d::fromJson: JSON parse error in children: {}", err.what());
+            }
+      catch (...) {
+            Warning("====json bug in children");
+            }
 
+      try {
             std::string_view propStr = properties();
             if (propStr.empty())
                   return;
 
-            auto propNames = propjson::parseAllPropertyNames(propStr);
+            auto propNames          = propjson::parseAllPropertyNames(propStr);
             const QMetaObject* meta = this->metaObject();
 
-            for (const auto& [name, type] : propNames) {
-                  if (type == "layer" || type == "recipe")
+            for (const auto& [name, type] : propNames)
+                  if (type == "layer" || type == "recipe" || type == "machine")
                         readLayerOrRecipe(json, this, name, type);
                   else
                         propjson::readPropertyFromJson(json, this, meta, false, name, type);
-                  }
             }
       catch (const nlohmann::json::parse_error& err) {
-            Warning("Element3d::fromJson: JSON parse error: {}", err.what());
+            Warning("Element3d::fromJson: JSON parse error in properties: {}", err.what());
             }
       catch (...) {
-            Warning("====json bug");
+            Warning("====json bug in properties");
             }
       }
 
@@ -264,4 +355,165 @@ void Element3d::setColor(const QColor& c) {
             emit colorChanged();
             emit curColorChanged();
             }
+      }
+
+//---------------------------------------------------------
+//   set_scale
+//    Custom setter for the scale property that enforces the
+//    lockScale mode:
+//      Off    – accept the value as-is
+//      Lock   – preserve the current aspect ratio; the axis
+//               that changed the most drives the others
+//      Square – force x == y == z using the most-changed axis
+//---------------------------------------------------------
+void Element3d::set_scale(QVector3D v) {
+      if (v == _scale)
+            return;
+      auto mode = static_cast<LockScaleMode>(lockScale());
+      if (mode == LockScaleMode::Square) {
+            // Determine which axis changed the most and use its
+            // new value for all three axes.
+            double dx = std::abs(v.x() - _scale.x());
+            double dy = std::abs(v.y() - _scale.y());
+            double dz = std::abs(v.z() - _scale.z());
+            double s;
+            if (dx >= dy && dx >= dz)
+                  s = v.x();
+            else if (dy >= dz)
+                  s = v.y();
+            else
+                  s = v.z();
+            v = QVector3D(s, s, s);
+            }
+      else if (mode == LockScaleMode::Lock) {
+            // Preserve the current aspect ratio: the axis that
+            // changed the most determines a uniform scale factor
+            // that is applied to all three axes.
+            double dx = std::abs(v.x() - _scale.x());
+            double dy = std::abs(v.y() - _scale.y());
+            double dz = std::abs(v.z() - _scale.z());
+            double factor;
+            if (dx >= dy && dx >= dz) {
+                  if ((qAbs(_scale.x()) < 1e-12))
+                        return;
+                  factor = v.x() / _scale.x();
+                  }
+            else if (dy >= dz) {
+                  if ((qAbs(_scale.y()) < 1e-12))
+                        return;
+                  factor = v.y() / _scale.y();
+                  }
+            else {
+                  if ((qAbs(_scale.z()) < 1e-12))
+                        return;
+                  factor = v.z() / _scale.z();
+                  }
+            v = QVector3D(_scale.x() * factor, _scale.y() * factor, _scale.z() * factor);
+            }
+      if (v == _scale)
+            return;
+      _scale       = v;
+      _matrixDirty = true;
+      if (!_batching) {
+            ++_vertexRevision;
+            emit vertexRevisionChanged();
+            }
+      emit scaleChanged();
+      }
+
+//---------------------------------------------------------
+//   matrix
+//    Returns the cached local transformation matrix.
+//    The matrix is recomputed lazily from pos, rot and scale
+//    whenever the matrixDirty flag is set (i.e. after any
+//    change to position, rotation or scale).
+//---------------------------------------------------------
+
+const QMatrix4x4& Element3d::matrix() const {
+      if (_matrixDirty) {
+            _matrix.setToIdentity();
+            _matrix.translate(_pos);
+            _matrix.rotate(QQuaternion::fromEulerAngles(_rot));
+            // Apply mirror as negative scale to match the QML
+            // visualisation in ProjectTree.qml which multiplies
+            // scale by (mirrorX ? -1 : 1) and (mirrorY ? -1 : 1).
+            // Without this, globalMatrix() would not reflect the
+            // actual on-screen transform, causing incorrect world-
+            // to-local conversions (e.g. drag direction reversal).
+            QVector3D s(_scale);
+            if (_mirrorX)
+                  s.setX(-s.x());
+            if (_mirrorY)
+                  s.setY(-s.y());
+            _matrix.scale(s);
+            _matrixDirty = false;
+            }
+      return _matrix;
+      }
+
+//---------------------------------------------------------
+//   globalMatrix
+//    Returns the full transformation matrix from this element's
+//    local coordinate system to the root coordinate system.
+//    The parent matrices are multiplied left-to-right so that
+//    a point in local space is transformed by:
+//       v_root = globalMatrix * v_local
+//    This implements the standard scene-graph convention where
+//    the outermost (parent) transform is applied last:
+//       v_root = rootMatrix * ... * parentMatrix * localMatrix * v_local
+//---------------------------------------------------------
+
+QMatrix4x4 Element3d::globalMatrix() const {
+      QMatrix4x4 result = matrix();
+      Element* p        = parent();
+      while (p) {
+            if (auto* e3d = qobject_cast<Element3d*>(p))
+                  result = e3d->matrix() * result;
+            p = p->parent();
+            }
+      return result;
+      }
+
+//---------------------------------------------------------
+//   strokeAndFill
+//    if lineWidth != 0 then stroke _pathList
+//---------------------------------------------------------
+
+void Element3d::strokeAndFill() {
+      double lw     = lineWidth();
+      bool doStroke = !qFuzzyCompare(lw, 0.0);
+
+      if (doStroke) {
+            // Offload the expensive InflatePaths computation to a
+            // background thread.  The result (inflated PathList) is
+            // applied on the main thread, then setPolygons is called.
+            lw                     *= .5;
+            Clipper2Lib::PathsD cl  = _pathList.clipper();
+            int jt                  = joinType();
+            int et                  = endType();
+            bool f                  = fill();
+
+            QPointer<Element3d> guard(this);
+            GeometryWorker::instance().requestStroke(cl, lw, jt, et, f,
+                                                     [this, guard](const GeometryWorker::StrokeResult& r) {
+                                                           if (!guard || !r.valid)
+                                                                 return;
+                                                           _pathList = r.pathList;
+                                                           _geometry->setPolygons(_pathList);
+                                                           });
+            }
+      else {
+            _pathList.setFill(fill());
+            _geometry->setPolygons(_pathList);
+            }
+      }
+
+//---------------------------------------------------------
+//   closePath
+//---------------------------------------------------------
+
+void closePath(PathList& pl) {
+      for (auto& p : pl)
+            if (p.size() > 2 && p.front() != p.back())
+                  p.push_back(p.front());
       }

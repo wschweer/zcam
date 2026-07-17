@@ -19,6 +19,7 @@
 #include "text.h"
 #include "layer.h"
 #include "recipe.h"
+#include "machine.h"
 
 //---------------------------------------------------------
 //   ColumnItem
@@ -93,6 +94,48 @@ class InspectorModel : public QAbstractListModel
 
       // Resolve a name back to a Recipe* pointer.
       Q_INVOKABLE Recipe* nameToRecipe(const QString& name) const;
+
+      // Called from QML delegates for "override" type properties: returns
+      // the list of available ParameterType names from laserengine.h.
+      Q_INVOKABLE QStringList overrideTypeNames() const;
+
+      // Called from QML delegates for "pulsewidth" type properties: returns
+      // the list of pulse width values from LaserEngine::pulseTable().
+      Q_INVOKABLE QStringList pulsewidthNames() const;
+
+      // Called from QML delegates for "lineJoin" type properties: returns
+      // the list of Clipper2Lib::JoinType names.
+      Q_INVOKABLE QStringList joinTypeNames() const;
+
+      // Called from QML delegates for "lineEnd" type properties: returns
+      // the list of Clipper2Lib::EndType names.
+      Q_INVOKABLE QStringList endTypeNames() const;
+
+      // Called from QML delegates for "lockScale" type properties: returns
+      // the list of LockScaleMode names.  The order matches the enum values
+      // so the QML delegate can use the index directly.
+      Q_INVOKABLE QStringList lockScaleNames() const;
+
+      // Called from QML delegates for "framingType" properties: returns
+      // the list of FramingType names.  The order matches the enum values
+      // so the QML delegate can use the index directly.
+      Q_INVOKABLE QStringList framingTypeNames() const;
+
+      // Called from QML delegates for "lockSize" type properties: returns
+      // the list of LockScaleMode names (same modes as lockScale).
+      // The order matches the enum values so the QML delegate can use
+      // the index directly.
+      Q_INVOKABLE QStringList lockSizeNames() const;
+
+      // Called from QML delegates for "machine" type properties: returns
+      // the list of available Machine names from ZCam::machines.
+      Q_INVOKABLE QStringList machineNames() const;
+
+      // Resolve a Machine* pointer to its name (for display in ComboBox).
+      Q_INVOKABLE QString machineToName(Machine* machine) const;
+
+      // Resolve a name back to a Machine* pointer.
+      Q_INVOKABLE Machine* nameToMachine(const QString& name) const;
 
     signals:
       void elementChanged();

@@ -10,6 +10,8 @@
 //=============================================================================
 
 #include "cad.h"
+#include "project.h"
+#include "zcam.h"
 #include "text.h"
 
 //---------------------------------------------------------
@@ -18,4 +20,5 @@
 
 Cad::Cad(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
       setName("");
+      zcam->project()->set_cad(this);
       }

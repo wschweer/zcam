@@ -40,7 +40,8 @@ PathList PainterPath::toPathList() const {
                   case PPType::LineTo: path.emplace_back(ppe.x(), ppe.y()); break;
 
                   case PPType::CurveTo: {
-                        Bezier bezier = Bezier::fromPoints((*this)[i - 1].pos, ppe.pos, (*this)[i + 1].pos, (*this)[i + 2].pos);
+                        Bezier bezier = Bezier::fromPoints((*this)[i - 1].pos, ppe.pos, (*this)[i + 1].pos,
+                                                           (*this)[i + 2].pos);
                         bezier.addToPolygon(path);
                         i += 2;
                         } break;
@@ -110,44 +111,6 @@ void PainterPath::addText(const QPointF& gpos, const QFont& f, const QString& te
                   }
             }
       }
-
-#if 0
-
-//---------------------------------------------------------
-//   read
-//---------------------------------------------------------
-
-void PainterPath::read(XmlReader& r)
-            {
-      clear();
-      while (r.readNextStartElement()) {
-            const auto& n = r.name();
-            if (n == u"p") {
-                  Vec2d p(r.doubleAttribute("x"), r.doubleAttribute("y"));
-                  auto t = PPType(r.intAttribute("t"));
-                  if (t == PPType::CurveToData1 && back().type == PPType::CurveToData1)
-                        push_back({PPType::CurveToData2, p});  // fix bad data
-                  else
-                        push_back({t, p});
-                  r.readNext();
-                        }
-            else
-                  r.unknown();
-                  }
-            }
-
-//---------------------------------------------------------
-//   write
-//---------------------------------------------------------
-
-void PainterPath::write(XmlWriter& w) const
-            {
-      w.stag("Path");
-      for (const auto& p : (*this))
-            w.tagE("p", "t=\"{}\" x=\"{}\" y=\"{}\"", int(p.type), p.x(), p.y());
-      w.etag();
-            }
-#endif
 
 //---------------------------------------------------------
 //   remove
@@ -239,17 +202,19 @@ qreal qt_t_for_arc_angle(qreal angle) {
       // do some iterations of newton's method to approximate cosAngle
       // finds the zero of the function b.pointAt(tc).x() - cosAngle
       tc -= ((((2 - 3 * QT_PATH_KAPPA) * tc + 3 * (QT_PATH_KAPPA - 1)) * tc) * tc + 1 - cosAngle) // value
-            / (((6 - 9 * QT_PATH_KAPPA) * tc + 6 * (QT_PATH_KAPPA - 1)) * tc);                    // derivative
+            / (((6 - 9 * QT_PATH_KAPPA) * tc + 6 * (QT_PATH_KAPPA - 1)) * tc); // derivative
       tc -= ((((2 - 3 * QT_PATH_KAPPA) * tc + 3 * (QT_PATH_KAPPA - 1)) * tc) * tc + 1 - cosAngle) // value
-            / (((6 - 9 * QT_PATH_KAPPA) * tc + 6 * (QT_PATH_KAPPA - 1)) * tc);                    // derivative
+            / (((6 - 9 * QT_PATH_KAPPA) * tc + 6 * (QT_PATH_KAPPA - 1)) * tc); // derivative
 
       // initial guess
       qreal ts = tc;
       // do some iterations of newton's method to approximate sinAngle
       // finds the zero of the function b.pointAt(tc).y() - sinAngle
-      ts -= ((((3 * QT_PATH_KAPPA - 2) * ts - 6 * QT_PATH_KAPPA + 3) * ts + 3 * QT_PATH_KAPPA) * ts - sinAngle) /
+      ts -= ((((3 * QT_PATH_KAPPA - 2) * ts - 6 * QT_PATH_KAPPA + 3) * ts + 3 * QT_PATH_KAPPA) * ts -
+             sinAngle) /
             (((9 * QT_PATH_KAPPA - 6) * ts + 12 * QT_PATH_KAPPA - 6) * ts + 3 * QT_PATH_KAPPA);
-      ts -= ((((3 * QT_PATH_KAPPA - 2) * ts - 6 * QT_PATH_KAPPA + 3) * ts + 3 * QT_PATH_KAPPA) * ts - sinAngle) /
+      ts -= ((((3 * QT_PATH_KAPPA - 2) * ts - 6 * QT_PATH_KAPPA + 3) * ts + 3 * QT_PATH_KAPPA) * ts -
+             sinAngle) /
             (((9 * QT_PATH_KAPPA - 6) * ts + 12 * QT_PATH_KAPPA - 6) * ts + 3 * QT_PATH_KAPPA);
 
       // use the average of the t that best approximates cosAngle
@@ -262,7 +227,8 @@ qreal qt_t_for_arc_angle(qreal angle) {
 //   qt_find_ellipse_coords
 //---------------------------------------------------------
 
-void qt_find_ellipse_coords(const QRectF& r, qreal angle, qreal length, QPointF* startPoint, QPointF* endPoint) {
+void qt_find_ellipse_coords(const QRectF& r, qreal angle, qreal length, QPointF* startPoint,
+                            QPointF* endPoint) {
       if (r.isNull()) {
             if (startPoint)
                   *startPoint = QPointF();
@@ -320,13 +286,14 @@ void qt_find_ellipse_coords(const QRectF& r, qreal angle, qreal length, QPointF*
     3 points pr curve.
 */
 
-static QPointF qt_curves_for_arc(const QRectF& rect, qreal startAngle, qreal sweepLength, QPointF* curves, int* point_count) {
+static QPointF qt_curves_for_arc(const QRectF& rect, qreal startAngle, qreal sweepLength, QPointF* curves,
+                                 int* point_count) {
       Assert(point_count);
       Assert(curves);
 
       *point_count = 0;
-      if (std::isnan(rect.x()) || std::isnan(rect.y()) || std::isnan(rect.width()) || std::isnan(rect.height()) || std::isnan(startAngle) ||
-          std::isnan(sweepLength)) {
+      if (std::isnan(rect.x()) || std::isnan(rect.y()) || std::isnan(rect.width()) ||
+          std::isnan(rect.height()) || std::isnan(startAngle) || std::isnan(sweepLength)) {
             Critical("QPainterPath::arcTo: Adding arc where a parameter is NaN, results are undefined");
             return QPointF();
             }
@@ -348,7 +315,8 @@ static QPointF qt_curves_for_arc(const QRectF& rect, qreal startAngle, qreal swe
                             QPointF(x + w, y + h2),
 
                             // 0 -> 270 degrees
-                            QPointF(x + w, y + h2 + h2k), QPointF(x + w2 + w2k, y + h), QPointF(x + w2, y + h),
+                            QPointF(x + w, y + h2 + h2k), QPointF(x + w2 + w2k, y + h),
+                            QPointF(x + w2, y + h),
 
                             // 270 -> 180 degrees
                             QPointF(x + w2 - w2k, y + h), QPointF(x, y + h2 + h2k), QPointF(x, y + h2),
@@ -470,7 +438,29 @@ void PainterPath::arcTo(const QRectF& rect, double startAngle, double sweepLengt
 
       lineTo(curve_start);
       for (int i = 0; i < point_count; i += 3)
-            cubicTo({pts[i].x(), pts[i].y()}, {pts[i + 1].x(), pts[i + 1].y()}, {pts[i + 2].x(), pts[i + 2].y()});
+            cubicTo({pts[i].x(), pts[i].y()}, {pts[i + 1].x(), pts[i + 1].y()},
+                          {pts[i + 2].x(), pts[i + 2].y()});
+      }
+
+//---------------------------------------------------------
+//   addArc
+//    Like arcTo, but starts a new sub-path with moveTo instead
+//    of connecting with a lineTo from the previous position.
+//    Used by Ellipse to draw partial arcs.
+//---------------------------------------------------------
+
+void PainterPath::addArc(const QRectF& rect, double startAngle, double sweepLength) {
+      if (rect.isNull())
+            return;
+
+      int point_count;
+      QPointF pts[15];
+      QPointF start = qt_curves_for_arc(rect, startAngle, sweepLength, pts, &point_count);
+
+      moveTo(start);
+      for (int i = 0; i < point_count; i += 3)
+            cubicTo({pts[i].x(), pts[i].y()}, {pts[i + 1].x(), pts[i + 1].y()},
+                          {pts[i + 2].x(), pts[i + 2].y()});
       }
 
 //---------------------------------------------------------
@@ -500,7 +490,8 @@ bool PainterPath::isClosed() const {
             return false;
       const PPElement& first = front();
       const PPElement& last  = back();
-      return qFuzzyCompare(first.pos.x(), last.pos.x()) && qFuzzyCompare(first.pos.y(), last.pos.y());
+      return std::abs(first.pos.x() - last.pos.x()) < 0.0001 &&
+             std::abs(first.pos.y() - last.pos.y()) < 0.0001;
       }
 
 //---------------------------------------------------------
@@ -511,7 +502,7 @@ void PainterPath::closeSubpath() {
       const PPElement& first = front();
       PPElement& last        = back();
       if (!isClosed() && size() >= 2) {
-            if (qFuzzyCompare(first.x(), last.x()) && qFuzzyCompare(first.y(), last.y()))
+            if (std::abs(first.x() - last.x()) < 0.0001 && std::abs(first.y() - last.y()) < 0.0001)
                   last.pos = first.pos;
             else
                   push_back({PPType::LineTo, first.pos});

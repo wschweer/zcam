@@ -36,19 +36,9 @@ enum TextUpdateFlags { FONT = 1, CURSOR_POS = 2, TEXT = 4 };
 
 Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("");
-#if 0
-      Dictionary* d = new Dictionary;
-      d->push_back(   {  "left",   Qt::AlignLeft  });
-      d->push_back(   {  "center",  Qt::AlignCenter });
-      d->push_back(   {  "right",   Qt::AlignRight  });
-      alignProperty->setDictionary(d);
-#endif
-
+      _fill = true;
       set_geometry(new TessGeometry(this));
       QJSEngine::setObjectOwnership(geometry(), QJSEngine::CppOwnership);
-
-      //      _subElements.push_back(new Bbox(zcam, this, TextSubelement::BboxSub, nullptr));
-      //      _subElements.push_back(new Cursor(zcam, this, TextSubelement::CursorSub, nullptr));
 
       connect(this, &Text::textChanged, [this]() { update(TEXT); });
       connect(this, &Text::fontFamilyChanged, [this]() { update(FONT); });
@@ -60,9 +50,6 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       connect(this, &Text::lineSpacingChanged, [this]() { update(FONT); });
       connect(this, &Text::fillChanged, [this]() { update(TEXT); });
       connect(this, &Text::alignChanged, [this]() { update(TEXT); });
-
-      //      setEditMode(false);
-      update(-1);
       }
 
 //  Text::toJson() and Text::fromJson() are no longer overridden:
@@ -77,7 +64,7 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
 //---------------------------------------------------------
 
 double Text::fontLineSpacing() const {
-      return fontMetrics->lineSpacing() * lineSpacing() * 0.01 * FONT_SCALE;
+      return QFontMetrics(font).lineSpacing() * lineSpacing() * 0.01 * FONT_SCALE;
       }
 
 //---------------------------------------------------------
@@ -86,18 +73,19 @@ double Text::fontLineSpacing() const {
 
 void Text::updateCursor() {
       double x = 0.0;
+            QFontMetrics fm(font);
       if (!text().isEmpty()) {
             QStringList sl = text().split('\n');
             QString s      = sl[cursorRow].left(cursorColumn);
             QTextOption to;
             to.setUseDesignMetrics(true);
-            x  = fontMetrics->horizontalAdvance(s, to) * FONT_SCALE;
+            x  = fm.horizontalAdvance(s, to) * FONT_SCALE;
             x += lineOffsets[cursorRow] * FONT_SCALE;
             }
       double y       = -cursorRow * fontLineSpacing();
-      double ascent  = -fontMetrics->ascent() * .7 * FONT_SCALE;
+      double ascent  = -fm.ascent() * .7 * FONT_SCALE;
       double descent = ascent * .1;
-      double w2      = fontMetrics->averageCharWidth() * .2 * FONT_SCALE;
+      double w2      = fm.averageCharWidth() * .2 * FONT_SCALE;
 
       Clipper2Lib::PathsD lines;
       Clipper2Lib::PathD line1;
@@ -163,7 +151,6 @@ void Text::addText(QList<QPolygonF>& polys, const QPointF& gpos, const QList<QGl
 //---------------------------------------------------------
 
 void Text::update(int updateFlags) {
-      updateFlags = -1;
       if (updateFlags & FONT) {
             font = QFont(fontFamily());
             font.setPointSizeF(pointSize() * FONT_SCALE_UP);
@@ -172,10 +159,6 @@ void Text::update(int updateFlags) {
             font.setStretch(stretch());
             font.setLetterSpacing(QFont::PercentageSpacing, letterSpacing());
             font.setWordSpacing(wordSpacing());
-            if (fontMetrics)
-                  delete fontMetrics;
-            fontMetrics  = new QFontMetricsF(font);
-            QFontInfo fi = QFontInfo(font);
             updateText();
             updateCursor();
             updateFlags &= ~(FONT | CURSOR_POS | TEXT);
@@ -224,9 +207,10 @@ void Text::updateText() {
             glyphRuns += line.glyphRuns();
             }
 
+      QFontMetrics fm(font);
       QList<QPolygonF> poly;
-      double y  = -fontMetrics->ascent();
-      double ls = -fontMetrics->lineSpacing() * lineSpacing() * 0.01;
+      double y  = -fm.ascent();
+      double ls = -fm.lineSpacing() * lineSpacing() * 0.01;
       int i     = 0;
       lineOffsets.clear();
       for (auto t : sl) {
@@ -256,26 +240,16 @@ void Text::updateText() {
       _pathList.setFill(fill());
       geometry()->setPolygons(_pathList);
       updateSelectionGeometry();
+      emit geometryChanged();
       }
-
-//---------------------------------------------------------
-//   setEditMode
-//---------------------------------------------------------
-
-#if 0
-bool Text::setEditMode(bool val)
-                        {
-      _subElements[TextSubelement::BboxSub]->setActive(val);
-      _subElements[TextSubelement::CursorSub]->setActive(val);
-      return true;
-                        }
 
 //---------------------------------------------------------
 //   keyEvent
 //---------------------------------------------------------
 
+#if 0
 bool Text::keyEvent(int key, int modifiers, const QString& s)
-                        {
+                              {
       Debug("Key Event");
       QStringList sl = text().split('\n');
 
@@ -284,23 +258,23 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                   if (cursorColumn) {
                         --cursorColumn;
                         update(CURSOR_POS);
-                                          }
+                                                }
                   else if (cursorRow) {
                         --cursorRow;
                         cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                                          }
+                                                }
                   break;
             case Qt::Key_Right:
                   if (cursorColumn < sl[cursorRow].size()) {
                         ++cursorColumn;
                         update(CURSOR_POS);
-                                          }
+                                                }
                   else if (cursorRow < (sl.size()-1)) {
                         ++cursorRow;
                         cursorColumn = 0;
                         update(CURSOR_POS);
-                                          }
+                                                }
                   break;
             case Qt::Key_Delete:
             case Qt::Key_Backspace:
@@ -308,7 +282,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         sl[cursorRow].removeAt(--cursorColumn);
                         zcam->undoChangeProperty(this, "text", sl.join('\n'));
                         update(CURSOR_POS);
-                                          }
+                                                }
                   else  if (cursorRow) {
                         QString rs = sl[cursorRow];
                         sl.removeAt(cursorRow);
@@ -317,7 +291,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         sl[cursorRow] += rs;
                         zcam->undoChangeProperty(this, "text", sl.join('\n'));
                         update(CURSOR_POS);
-                                          }
+                                                }
                   break;
             case Qt::Key_Up:
                   if (cursorRow) {
@@ -325,7 +299,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         if (sl[cursorRow].size() < cursorColumn)
                               cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                                          }
+                                                }
                   break;
             case Qt::Key_Down:
                   if (cursorRow < sl.size()-1) {
@@ -333,7 +307,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         if (sl[cursorRow].size() < cursorColumn)
                               cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                                          }
+                                                }
                   break;
             case Qt::Key_Return: {
                   int n = sl[cursorRow].size();
@@ -341,7 +315,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                   if (n > cursorColumn) {
                         rs = sl[cursorRow].right(n- cursorColumn);
                         sl[cursorRow] = sl[cursorRow].left(cursorColumn);
-                                          }
+                                                }
                   if (sl.size() <= cursorRow)
                         sl += rs;
                   else
@@ -350,7 +324,7 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                   cursorColumn = 0;
                   zcam->undoChangeProperty(this, "text", sl.join('\n'));
                   update(CURSOR_POS);
-                                    }
+                                          }
                   break;
 
             default:
@@ -361,9 +335,9 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         cursorColumn += s.size();
                         zcam->undoChangeProperty(this, "text", sl.join('\n'));
                         update();
-                                          }
+                                                }
                   break;
-                              }
+                                    }
       return true;
-                        }
+                              }
 #endif

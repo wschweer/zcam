@@ -23,6 +23,10 @@ t:
 d:
 	gdb build/${PROJECT} core*
 
+profile:
+	valgrind --tool=callgrind build/${PROJECT}
+	valgrind --tool=callgrind callgrind.out.*
+
 #
 #     "install" target
 #     copies project into HOME/bin for local use

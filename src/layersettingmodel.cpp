@@ -22,14 +22,14 @@ LayerSettingModel::LayerSettingModel(QObject* parent) : QAbstractListModel(paren
       }
 
 //---------------------------------------------------------
-//   setLayerSetting
+//   setPass
 //---------------------------------------------------------
 
-void LayerSettingModel::setLayerSetting(LaserLayerSetting* layerSetting) {
-      if (_layerSetting == layerSetting)
+void LayerSettingModel::setPass(LaserPass* pass) {
+      if (_pass == pass)
             return;
-      _layerSetting = layerSetting;
-      emit layerSettingChanged();
+      _pass = pass;
+      emit passChanged();
       parseProperties();
       }
 
@@ -93,16 +93,16 @@ void LayerSettingModel::parseProperties() {
       _title.clear();
       _propertiesJson.clear();
 
-      if (!_layerSetting) {
+      if (!_pass) {
             endResetModel();
             emit titleChanged();
             emit propertiesJsonChanged();
             return;
             }
 
-      std::string_view propStr = _layerSetting->properties();
+      std::string_view propStr = _pass->properties();
       if (propStr.empty()) {
-            _title = _layerSetting->name();
+            _title = _pass->name();
             endResetModel();
             emit titleChanged();
             emit propertiesJsonChanged();
@@ -117,7 +117,7 @@ void LayerSettingModel::parseProperties() {
             if (j.contains("class") && j["class"].is_string())
                   _title = QString::fromStdString(j["class"].get<std::string>());
             else
-                  _title = _layerSetting->name();
+                  _title = _pass->name();
 
             if (j.contains("items") && j["items"].is_array()) {
                   for (const auto& item : j["items"]) {
@@ -211,14 +211,14 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
       switch (role) {
             case PropNameRole: return name;
             case PropValueRole: {
-                  if (!_layerSetting)
+                  if (!_pass)
                         return {};
-                  const QMetaObject* meta = &LaserLayerSetting::staticMetaObject;
+                  const QMetaObject* meta = &LaserPass::staticMetaObject;
                   int idx                 = meta->indexOfProperty(name.toUtf8().constData());
                   if (idx < 0)
                         return {};
                   QMetaProperty mp = meta->property(idx);
-                  return mp.readOnGadget(_layerSetting);
+                  return mp.readOnGadget(_pass);
                   }
             case IsRowRole: return isRow;
             case SubPropsRole: {
@@ -228,15 +228,15 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
                   return list;
                   }
             case SubValuesRole: {
-                  if (!_layerSetting)
+                  if (!_pass)
                         return {};
                   QVariantList list;
-                  const QMetaObject* meta = &LaserLayerSetting::staticMetaObject;
+                  const QMetaObject* meta = &LaserPass::staticMetaObject;
                   for (const QString& s : _subPropNames[index.row()]) {
                         int idx = meta->indexOfProperty(s.toUtf8().constData());
                         if (idx >= 0) {
                               QMetaProperty mp = meta->property(idx);
-                              list.append(mp.readOnGadget(_layerSetting));
+                              list.append(mp.readOnGadget(_pass));
                               }
                         else
                               list.append(QVariant());
@@ -251,8 +251,8 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
             case ColumnCountRole: return _columnCounts.value(index.row(), 0);
             case ColumnItemsRole: {
                   QVariantList list;
-                  if (index.row() < _columnItems.size() && _layerSetting) {
-                        const QMetaObject* meta = &LaserLayerSetting::staticMetaObject;
+                  if (index.row() < _columnItems.size() && _pass) {
+                        const QMetaObject* meta = &LaserPass::staticMetaObject;
                         for (const LayerSettingColumnItem& ci : _columnItems[index.row()]) {
                               QVariantMap m;
                               m["name"]     = ci.name;
@@ -270,7 +270,7 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
                                           int idx = meta->indexOfProperty(s.toUtf8().constData());
                                           if (idx >= 0) {
                                                 QMetaProperty mp = meta->property(idx);
-                                                subVals.append(mp.readOnGadget(_layerSetting));
+                                                subVals.append(mp.readOnGadget(_pass));
                                                 }
                                           else
                                                 subVals.append(QVariant());
@@ -281,7 +281,7 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
                                     int idx = meta->indexOfProperty(ci.name.toUtf8().constData());
                                     if (idx >= 0) {
                                           QMetaProperty mp = meta->property(idx);
-                                          m["propValue"]   = mp.readOnGadget(_layerSetting);
+                                          m["propValue"]   = mp.readOnGadget(_pass);
                                           }
                                     }
                               list.append(m);
@@ -300,7 +300,7 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
 bool LayerSettingModel::setData(const QModelIndex& index, const QVariant& value, int role) {
       if (!index.isValid() || index.row() >= static_cast<int>(_propertyNames.size()))
             return false;
-      if (role != PropValueRole || !_layerSetting)
+      if (role != PropValueRole || !_pass)
             return false;
       if (_propertyIsRow[index.row()])
             return false;
@@ -309,12 +309,12 @@ bool LayerSettingModel::setData(const QModelIndex& index, const QVariant& value,
             return false;
 
       const QString& name     = _propertyNames[index.row()];
-      const QMetaObject* meta = &LaserLayerSetting::staticMetaObject;
+      const QMetaObject* meta = &LaserPass::staticMetaObject;
       int idx                 = meta->indexOfProperty(name.toUtf8().constData());
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
-      if (!mp.writeOnGadget(_layerSetting, value))
+      if (!mp.writeOnGadget(_pass, value))
             return false;
 
       emit dataChanged(index, index, {role});
@@ -327,17 +327,17 @@ bool LayerSettingModel::setData(const QModelIndex& index, const QVariant& value,
 //---------------------------------------------------------
 
 bool LayerSettingModel::setSubProperty(int row, const QString& subName, const QVariant& value) {
-      if (!_layerSetting || row < 0 || row >= _propertyNames.size())
+      if (!_pass || row < 0 || row >= _propertyNames.size())
             return false;
       if (!_propertyIsRow[row])
             return false;
 
-      const QMetaObject* meta = &LaserLayerSetting::staticMetaObject;
+      const QMetaObject* meta = &LaserPass::staticMetaObject;
       int idx                 = meta->indexOfProperty(subName.toUtf8().constData());
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
-      if (!mp.writeOnGadget(_layerSetting, value))
+      if (!mp.writeOnGadget(_pass, value))
             return false;
 
       QModelIndex qi = index(row, 0);
@@ -351,17 +351,17 @@ bool LayerSettingModel::setSubProperty(int row, const QString& subName, const QV
 //---------------------------------------------------------
 
 bool LayerSettingModel::setColumnProperty(int modelRow, const QString& propName, const QVariant& value) {
-      if (!_layerSetting || modelRow < 0 || modelRow >= _propertyNames.size())
+      if (!_pass || modelRow < 0 || modelRow >= _propertyNames.size())
             return false;
       if (!_propertyIsColumns.value(modelRow, false))
             return false;
 
-      const QMetaObject* meta = &LaserLayerSetting::staticMetaObject;
+      const QMetaObject* meta = &LaserPass::staticMetaObject;
       int idx                 = meta->indexOfProperty(propName.toUtf8().constData());
       if (idx < 0)
             return false;
       QMetaProperty mp = meta->property(idx);
-      if (!mp.writeOnGadget(_layerSetting, value))
+      if (!mp.writeOnGadget(_pass, value))
             return false;
 
       QModelIndex qi = index(modelRow, 0);

@@ -53,8 +53,11 @@ class PainterPath : public std::vector<PPElement>
             return at(idx);
             }
       void addText(const QPointF&, const QFont&, const QString&);
-      void addEllipse(const QPointF& center, double rx, double ry) { addEllipse(QRectF(center.x() - rx, center.y() - ry, 2 * rx, 2 * ry)); }
+      void addEllipse(const QPointF& center, double rx, double ry) {
+            addEllipse(QRectF(center.x() - rx, center.y() - ry, 2 * rx, 2 * ry));
+            }
       void addEllipse(const QRectF& boundingRect);
+      void addArc(const QRectF& rect, double startAngle, double sweepLength);
       void lineTo(const Vec2d& p) { push_back({PPType::LineTo, p}); }
       void arcTo(const QRectF&, double startAngle, double sweepLength);
       void moveTo(const Vec2d& p) { push_back({PPType::MoveTo, p}); }

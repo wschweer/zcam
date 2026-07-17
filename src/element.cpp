@@ -16,9 +16,15 @@
 #include "project.h"
 #include "cad.h"
 #include "cam.h"
+#include "framing.h"
+#include "grid.h"
 #include "layer.h"
 #include "laserlayer.h"
 #include "text.h"
+#include "rectangle.h"
+#include "polygon.h"
+#include "ellipse.h"
+#include "materialtest.h"
 #include "treemodel.h"
 #include "zcam.h"
 
@@ -75,16 +81,12 @@ void Element::fromJson(const json& data) {
                         Element3d* element = nullptr;
                         if (key == "toplevel") {
                               element = new Project(zcam, this);
-                              zcam->set_topLevel(static_cast<Project*>(element));
+                              zcam->set_project(static_cast<Project*>(element));
                               element->fromJson(value);
                               }
                         else if (key == "cad") {
                               element = new Cad(zcam, this);
                               element->fromJson(value);
-                              if (zcam->topLevel())
-                                    zcam->topLevel()->set_cad(static_cast<Cad*>(element));
-                              else
-                                    Critical("no toplevel");
                               }
                         else if (key == "cam") {
                               element = new Cam(zcam, this);
@@ -110,8 +112,28 @@ void Element::fromJson(const json& data) {
                               element = new Framing(zcam, this);
                               element->fromJson(value);
                               }
+                        else if (key == "grid") {
+                              element = new Grid(zcam, this);
+                              element->fromJson(value);
+                              }
                         else if (key == "laserLayer") {
                               element = new LaserLayer(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "rectangle") {
+                              element = new Rectangle(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "polygon") {
+                              element = new Polygon(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "ellipse") {
+                              element = new Ellipse(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "materialtest") {
+                              element = new MaterialTest(zcam, this);
                               element->fromJson(value);
                               }
                         if (!element) {

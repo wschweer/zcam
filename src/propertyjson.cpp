@@ -33,7 +33,7 @@ static void collectPropertyNames(const nlohmann::json& items, PropNameList& out)
                   for (auto it = item["row"].begin(); it != item["row"].end(); ++it) {
                         std::string type =
                             it.value().contains("type") ? it.value().at("type").get<std::string>() : "";
-                        if (type == "line")
+                        if (type == "line" || type == "empty")
                               continue;
                         out.emplace_back(it.key(), type);
                         }
@@ -41,7 +41,7 @@ static void collectPropertyNames(const nlohmann::json& items, PropNameList& out)
             else if (item.contains("name") && item.contains("type")) {
                   std::string name = item["name"].get<std::string>();
                   std::string type = item["type"].get<std::string>();
-                  if (type == "line")
+                  if (type == "line" || type == "empty")
                         continue;
                   out.emplace_back(name, type);
                   }
@@ -86,7 +86,7 @@ PropNameList parseAllPropertyNames(std::string_view propStr) {
             if (isRow) {
                   for (auto sub = val.begin(); sub != val.end(); ++sub) {
                         std::string type = jsonGetString(sub.value(), "type");
-                        if (type == "line")
+                        if (type == "line" || type == "empty")
                               continue;
                         propNames.emplace_back(sub.key(), type);
                         }
@@ -165,7 +165,7 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
       else if (type == "bool") {
             data[name] = value.toBool();
             }
-      else if (type == "int" || type == "halign") {
+      else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize") {
             int tid = static_cast<QMetaType::Type>(value.typeId());
             if (tid == QMetaType::Double || tid == QMetaType::Float)
                   data[name] = value.toDouble();
@@ -229,7 +229,7 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
       else if (type == "bool") {
             return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<bool>()));
             }
-      else if (type == "int" || type == "halign") {
+      else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize") {
             int tid = mp.metaType().id();
             if (tid == QMetaType::Double || tid == QMetaType::Float)
                   return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<double>()));

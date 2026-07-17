@@ -17,33 +17,40 @@
 //   Fixture
 //---------------------------------------------------------
 
-class Fixture : public Element3d {
+class Fixture : public Element3d
+      {
       Q_OBJECT
 
       PROPV(Framing*, framing, nullptr);
       inline static constexpr std::string_view _properties {R"({
             "class": "Fixture",
             "items": [
+                  { "row": { "show": { "label": "Show",     "type": "bool", "default": true },
+                              "burn": { "label": "Burn",     "type": "bool", "default": true } },
+                    "label": "Visibility" },
                   { "name": "color",         "label": "Color",    "type": "color","default": "green" },
                   { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
                   { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
-                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] }
+                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
+                  { "name": "lockScale",     "label": "Lock", "type": "lockScale", "default": 2 }
                   ]
-            })"};
+                              })"};
 
-
-   signals:
+    signals:
       void transformChanged();
 
     public:
       Fixture(ZCam*, Element* parent = nullptr);
       ~Fixture() {}
-
       virtual QString typeName() override { return QStringLiteral("fixture"); }
       virtual const std::string_view properties() const override { return _properties; }
       void genPath();
 
       Clipper2Lib::RectD size(double& width, double& height) const;
-      Clipper2Lib::PathD convexHull() const;
-      void update(int flags = ~0) override;
+      /// No-op: Fixture no longer fills its own _geometry or triggers
+      /// LaserLayer::update().  All geometry collection is done by Cam.
+      void update(int flags = ~0) override {}
+      // Fixture elements can be deleted from the project tree.
+      static constexpr bool s_deletable = true;
+      Q_INVOKABLE bool deletable() const override { return s_deletable; }
       };

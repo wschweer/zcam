@@ -34,7 +34,7 @@ static void libusbError(int error) {
 
 Usb::Usb() {
       std::srand(std::time(nullptr));
-//      Info("libusb api version: {}", LIBUSB_API_VERSION);
+      //      Info("libusb api version: {}", LIBUSB_API_VERSION);
       auto rc = libusb_init(&ctx);
       if (rc)
             libusbError(rc);
@@ -57,7 +57,8 @@ bool Usb::lookupDevice(int vendor, int product) {
             libusb_get_device_descriptor(list[i], &dd);
             if (dd.idVendor == vendor && dd.idProduct == product) {
                   device = list[i];
-                  Debug("usb device found bus {} port {}", libusb_get_bus_number(device), libusb_get_port_number(device));
+                  Debug("usb device found bus {} port {}", libusb_get_bus_number(device),
+                        libusb_get_port_number(device));
                   return true;
                   }
             }
@@ -91,9 +92,14 @@ bool Usb::open(bool _mock) {
 //---------------------------------------------------------
 
 bool Usb::close() {
-      if (mock)
+      if (mock) {
+            mock = false;
             return true;
-      libusb_close(handle);
+            }
+      if (handle) {
+            libusb_close(handle);
+            handle = nullptr;
+            }
       return true;
       }
 
@@ -108,8 +114,11 @@ bool Usb::write(const u_char* data, size_t count) {
             Packet6* p = (Packet6*)(data);
             dump(p, count == 0xc);
             }
-      if (!mock)
+      if (!mock) {
+            if (!handle)
+                  return false;
             return readWrite(const_cast<u_char*>(data), count, WRITE_ENDPOINT);
+            }
       return true;
       }
 
@@ -119,8 +128,11 @@ bool Usb::write(const u_char* data, size_t count) {
 
 bool Usb::read(u_char* data, size_t count) {
       bool rv = true;
-      if (!mock)
+      if (!mock) {
+            if (!handle)
+                  return false;
             rv = readWrite(data, count, READ_ENDPOINT);
+            }
       else
             for (int i = 0; i < count; ++i)
                   data[i] = std::rand();
@@ -137,6 +149,10 @@ bool Usb::read(u_char* data, size_t count) {
 //---------------------------------------------------------
 
 bool Usb::readWrite(u_char* data, size_t count, int endpoint) {
+      if (!handle) {
+            Debug("usb readWrite: handle is null, device not opened");
+            return false;
+            }
       int transferred;
       int error = libusb_bulk_transfer(handle, endpoint, data, count, &transferred, timeout);
       if (error) {

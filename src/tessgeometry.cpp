@@ -1,8 +1,6 @@
 //=============================================================================
 //  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
-//  Copyright (C) 2025-2026 Werner Schweer
-//
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License version 2
 //  as published by the Free Software Foundation and appearing in
@@ -13,12 +11,20 @@
 #include "tesselator.h"
 #include "element3d.h"
 #include "types.h"
+#include "geometryworker.h"
+
+#include <QPointer>
 
 //---------------------------------------------------------
-//   minMax
+//   minMax (kept for synchronous fallback in applyTessResult)
 //---------------------------------------------------------
 
 static void minMax(const float* vert, int len, QVector3D& min, QVector3D& max) {
+      if (len <= 0) {
+            min = QVector3D();
+            max = QVector3D();
+            return;
+            }
       min = QVector3D(vert[0], vert[1], vert[2]);
       max = min;
       for (int i = 1; i < len; ++i) {
@@ -52,121 +58,86 @@ TessGeometry::~TessGeometry() {
       }
 
 //---------------------------------------------------------
-//   setPolygons
-//    create Geometry for screen from _pathList
+//   applyTessResult
+//    Apply tesselation result to QQuick3DGeometry on the main thread.
 //---------------------------------------------------------
 
-void TessGeometry::setPolygons(const PathList& _pathList) {
-      clear();
-      if (_pathList.empty())
+void TessGeometry::applyTessResult(const GeometryWorker::TessResult& r) {
+      if (!r.valid) {
+            Debug("tess result invalid");
             return;
-      addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
-      setStride(3 * sizeof(float));
-
-      bool fill = _pathList.fill();
-      if (fill) {
-            setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
-            addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0, QQuick3DGeometry::Attribute::U32Type);
-            for (const auto& polygon : _pathList) {
-                  std::vector<float> pg;
-                  for (auto pp : polygon) {
-                        pg.push_back(pp.x());
-                        pg.push_back(pp.y());
-                        pg.push_back(0.0);
-                        }
-                  if (fill && polygon.front() != polygon.back()) {
-                        pg.push_back(polygon.front().x());
-                        pg.push_back(polygon.front().y());
-                        pg.push_back(0.0);
-                        }
-                  tess->addContour(3, pg.data(), sizeof(float) * 3, polygon.size());
-                  }
-            float normal[3]{0.0, 0.0, 1.0};
-            if (!tess->tesselate(TESS_WINDING_NONZERO, TESS_POLYGONS, 3, 3, normal)) {
-                  if (tess->status() != TESSstatus::TESS_STATUS_OK)
-                        Debug("tesselate failed: {}", int(tess->status()));
-                  }
-            auto vertexCount  = tess->vertexCount();
-            auto elementCount = tess->elementCount();
-            auto vert         = tess->vertices();
-            auto elements     = tess->elements();
-
-            if (!vert) {
-                  Debug("no vertices");
-                  return;
-                  }
-
-            QByteArray vertices;
-            QByteArray indices;
-
-            vertices.resize(vertexCount * 3 * sizeof(float));
-            indices.resize(elementCount * 6 * sizeof(quint32));
-
-            memcpy(vertices.data(), vert, vertices.size());
-
-            quint32* indexPtr = reinterpret_cast<quint32*>(indices.data());
-            for (int i = 0; i < elementCount; ++i) {
-                  quint32 i0 = static_cast<quint32>(elements[i * 3 + 0]);
-                  quint32 i1 = static_cast<quint32>(elements[i * 3 + 1]);
-                  quint32 i2 = static_cast<quint32>(elements[i * 3 + 2]);
-                  
-                  indexPtr[i * 6 + 0] = i0;
-                  indexPtr[i * 6 + 1] = i1;
-                  indexPtr[i * 6 + 2] = i2;
-                  
-                  indexPtr[i * 6 + 3] = i0;
-                  indexPtr[i * 6 + 4] = i2;
-                  indexPtr[i * 6 + 5] = i1;
-                  }
-
-            setVertexData(vertices);
-            setIndexData(indices);
-
-            QVector3D minBound;
-            QVector3D maxBound;
-            minMax(vertices, minBound, maxBound);
-            setBounds(minBound, maxBound);
             }
-      else {
-            setPrimitiveType(QQuick3DGeometry::PrimitiveType::LineStrip);
-
-            int vertexCount = 0;
-            for (const auto& polygon : _pathList)
-                  vertexCount += polygon.size();
-
-            QByteArray vertices;
-            vertices.resize(vertexCount * 3 * sizeof(float));
-            float* data = reinterpret_cast<float*>(vertices.data());
-
-            int offset = 0;
-            //
-            //  create a subset for every polygon
-            //
-            for (const auto& polygon : _pathList) {
-                  float* vert = data;
-                  for (auto vertex : polygon) {
-                        *data++ = vertex.x();
-                        *data++ = vertex.y();
-                        *data++ = 0.0;
-                        }
-                  QVector3D min;
-                  QVector3D max;
-                  int len = polygon.size();
-                  minMax(vert, len, min, max);
-                  addSubset(offset, len, min, max);
-                  offset += len;
-                  }
-            setVertexData(vertices);
-            Clipper2Lib::RectD bounds = Clipper2Lib::GetBounds(_pathList.clipper());
-            QVector3D minBound        = QVector3D(bounds.left, bounds.top, -1);
-            QVector3D maxBound        = QVector3D(bounds.right, bounds.bottom, 1);
-            setBounds(minBound, maxBound);
-            }
+      setVertexData(r.vertices);
+      setIndexData(r.indices);
+      setBounds(r.minBound, r.maxBound);
       update();
       }
 
 //---------------------------------------------------------
-//   setLines
+//   applyLineResult
+//    Apply line-stripping result to QQuick3DGeometry on the main thread.
+//---------------------------------------------------------
+
+void TessGeometry::applyLineResult(const GeometryWorker::LineResult& r) {
+      if (!r.valid)
+            return;
+      setVertexData(r.vertices);
+      setBounds(r.minBound, r.maxBound);
+      for (const auto& s : r.subsets)
+            addSubset(s.offset, s.length, s.min, s.max);
+      update();
+      }
+
+//---------------------------------------------------------
+//   setPolygons
+//    Create Geometry for screen from _pathList.
+//    Filled polygons are tesselated in a background thread;
+//    non-filled polygons have their vertex data built in a
+//    background thread.  Results are applied on the main thread.
+//---------------------------------------------------------
+
+void TessGeometry::setPolygons(const PathList& _pathList) {
+      clear();
+      if (_pathList.empty()) {
+            update();
+            return;
+            }
+      addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
+      setStride(3 * sizeof(float));
+
+      bool fill = _pathList.fill();
+      int rev = ++m_revision;
+
+      if (fill) {
+            setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
+            addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0, QQuick3DGeometry::Attribute::U32Type);
+
+            QPointer<TessGeometry> guard(this);
+            GeometryWorker::instance().requestTesselation(_pathList,
+                  [this, guard, rev](const GeometryWorker::TessResult& r) {
+                        if (!guard || rev != m_revision.load())
+                              return;
+                        applyTessResult(r);
+                        });
+            }
+      else {
+            setPrimitiveType(QQuick3DGeometry::PrimitiveType::LineStrip);
+
+            // Convert PathList to Clipper2 PathsD for background processing
+            Clipper2Lib::PathsD paths = _pathList.clipper();
+
+            QPointer<TessGeometry> guard(this);
+            GeometryWorker::instance().requestLines(paths,
+                  [this, guard, rev](const GeometryWorker::LineResult& r) {
+                        if (!guard || rev != m_revision.load())
+                              return;
+                        applyLineResult(r);
+                        });
+            }
+      }
+
+//---------------------------------------------------------
+//   setLines (single path)
 //---------------------------------------------------------
 
 void TessGeometry::setLines(const Clipper2Lib::PathD& lines) {
@@ -178,7 +149,7 @@ void TessGeometry::setLines(const Clipper2Lib::PathD& lines) {
 
       setPrimitiveType(PrimitiveType::Lines);
 
-      int vertexCount = lines.size();
+      int vertexCount = static_cast<int>(lines.size());
       QByteArray vertices;
       vertices.resize(vertexCount * 3 * sizeof(float));
       float* data = reinterpret_cast<float*>(vertices.data());
@@ -198,7 +169,7 @@ void TessGeometry::setLines(const Clipper2Lib::PathD& lines) {
       }
 
 //---------------------------------------------------------
-//   setLines
+//   setLines (multiple paths with subsets)
 //---------------------------------------------------------
 
 void TessGeometry::setLines(const Clipper2Lib::PathsD& lines) {
@@ -211,7 +182,9 @@ void TessGeometry::setLines(const Clipper2Lib::PathsD& lines) {
       setPrimitiveType(PrimitiveType::Lines);
       int vertexCount = 0;
       for (const auto& polygon : lines)
-            vertexCount += polygon.size();
+            vertexCount += static_cast<int>(polygon.size());
+      if (vertexCount == 0)
+            return;
 
       QByteArray vertices;
       vertices.resize(vertexCount * 3 * sizeof(float));
@@ -230,7 +203,7 @@ void TessGeometry::setLines(const Clipper2Lib::PathsD& lines) {
                   }
             QVector3D min;
             QVector3D max;
-            int len = polygon.size();
+            int len = static_cast<int>(polygon.size());
             minMax(vert, len, min, max);
             addSubset(offset, len, min, max);
             offset += len;

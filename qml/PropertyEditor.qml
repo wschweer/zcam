@@ -10,10 +10,13 @@
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Controls.Material
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import ZCam
+
+pragma ComponentBehavior: Bound
 
 // Reusable property editor that builds its GUI from a propertiesJson
 // definition and a QAbstractListModel with the standard roles
@@ -32,7 +35,7 @@ Item {
     property string propertiesJson: ""
 
     // Optional label width
-    property int labelWidth: 70
+    property int labelWidth: 75
 
     // Signals forwarded from the model
     signal modelDataChanged()
@@ -151,6 +154,17 @@ Item {
 
         background: Item {}
 
+        contentItem: TextInput {
+            text: _sb.displayText
+            color: "#ffffff"
+            font.bold: true
+            horizontalAlignment: Text.AlignRight
+            verticalAlignment: Text.AlignVCenter
+            readOnly: !_sb.editable
+            validator: _sb.validator
+            inputMethodHints: Qt.ImhFormattedNumbersOnly
+        }
+
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
@@ -197,6 +211,17 @@ Item {
 
         background: Item {}
 
+        contentItem: TextInput {
+            text: _dsb.displayText
+            color: "#ffffff"
+            font.bold: true
+            horizontalAlignment: Text.AlignRight
+            verticalAlignment: Text.AlignVCenter
+            readOnly: !_dsb.editable
+            validator: _dsb.validator
+            inputMethodHints: Qt.ImhFormattedNumbersOnly
+        }
+
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
@@ -204,12 +229,16 @@ Item {
 
             onWheel: event => {
                 event.accepted = true;
-                let step = _dsb.stepSize > 0 ? _dsb.stepSize : 1.0;
-                if (event.angleDelta.y > 0)
+                let step;
+                if (event.modifiers & Qt.ControlModifier)
+                    step = _dsb.bigStep > 0 ? _dsb.bigStep : (_dsb.stepSize > 0 ? _dsb.stepSize * 10.0 : 10.0);
+                else
+                    step = _dsb.stepSize > 0 ? _dsb.stepSize : 1.0;
+                                if (event.angleDelta.y > 0)
                     _dsb.value = Math.min(_dsb.to, _dsb.value + step);
                 else
                     _dsb.value = Math.max(_dsb.from, _dsb.value - step);
-                }
+                                }
 
             onClicked: mouse => {
                 if (_dsb.contentItem) {
@@ -225,7 +254,8 @@ Item {
                 }
             }
 
-        property real resetValue: 0.0
+        property real resetValue
+        property real bigStep
         }
 
     // ── ValueBox ─────────────────────────────────────────────────────────────
@@ -247,7 +277,7 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.leftMargin: 6
-            anchors.rightMargin: vbox.unitText.length > 0 ? unitLabel.width + unitLabel.anchors.rightMargin + 4 : 6
+            anchors.rightMargin: vbox.unitText.length > 0 ? 14 : 6
             }
 
         Text {
@@ -261,16 +291,23 @@ Item {
             anchors.bottomMargin: 1
             }
 
-        Text {
-            id: unitLabel
+        Item {
+            id: unitContainer
             visible: vbox.unitText.length > 0
-            text: vbox.unitText
-            font.pixelSize: 9
-            color: "#333333"
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: 4
-            anchors.bottomMargin: 1
+            anchors.verticalCenter: parent.verticalCenter
+            width: 12
+            height: parent.height
+
+            Text {
+                id: unitLabel
+                text: vbox.unitText
+                font.pixelSize: 9
+                color: "#333333"
+                rotation: 90
+                transformOrigin: Item.Center
+                anchors.centerIn: parent
+                }
             }
         }
 
@@ -299,11 +336,11 @@ Item {
                 width: delegateRoot.width
 
                 sourceComponent: {
-                    if (model.isRow)
+                    if (delegateRoot.model.isRow)
                         return rowDelegate
-                    if (model.isColumns)
+                    if (delegateRoot.model.isColumns)
                         return columnsDelegate
-                    const m = root.metaFor(model.propName)
+                    const m = root.metaFor(delegateRoot.model.propName)
                     if (!m) return null
                     const t = m.type || "string"
                     switch (t) {
@@ -320,40 +357,50 @@ Item {
                         case "color":     return colorDelegate
                         case "layer":     return layerDelegate
                         case "recipe":    return recipeDelegate
+                        case "machine":   return machineDelegate
+                        case "machineName": return machineNameDelegate
                         case "machineType": return machineTypeDelegate
+                        case "override":  return overrideDelegate
+                        case "pulsewidth": return pulsewidthDelegate
+                        case "lineJoin":  return lineJoinDelegate
+                        case "lineEnd":    return lineEndDelegate
+                        case "lockScale":  return lockScaleDelegate
+                        case "lockSize":   return lockSizeDelegate
+                        case "framingType": return framingTypeDelegate
+                        case "empty":      return emptyDelegate
                         default:          return stringDelegate
                         }
                     }
 
                 onLoaded: {
-                    if (model.isRow) {
-                        item.propName   = model.propName
-                        item.subProps   = model.subProps
-                        item.subValues  = Qt.binding(() => model.subValues)
-                        item.rowLabel   = model.rowLabel ?? ""
-                        item.propIndex  = index
+                    if (delegateRoot.model.isRow) {
+                        item.propName   = delegateRoot.model.propName
+                        item.subProps   = delegateRoot.model.subProps
+                        item.subValues  = Qt.binding(() => delegateRoot.model.subValues)
+                        item.rowLabel   = delegateRoot.model.rowLabel ?? ""
+                        item.propIndex  = delegateRoot.index
                         item.setSubValue = function(subName, v) {
-                            root.model.setSubProperty(index, subName, v)
+                            root.model.setSubProperty(delegateRoot.index, subName, v)
                             }
                         }
-                    else if (model.isColumns) {
-                        item.propIndex   = index
-                        item.columnCount = model.columnCount
-                        item.columnItems = Qt.binding(() => model.columnItems)
+                    else if (delegateRoot.model.isColumns) {
+                        item.propIndex   = delegateRoot.index
+                        item.columnCount = delegateRoot.model.columnCount
+                        item.columnItems = Qt.binding(() => delegateRoot.model.columnItems)
                         item.setModelValue = function(propName, v) {
-                            root.model.setColumnProperty(index, propName, v)
+                            root.model.setColumnProperty(delegateRoot.index, propName, v)
                             }
                         item.setSubValue = function(rowItem, subName, v) {
-                            root.model.setColumnProperty(index, subName, v)
+                            root.model.setColumnProperty(delegateRoot.index, subName, v)
                             }
                         }
                     else {
-                        item.propName  = model.propName
-                        item.propValue = Qt.binding(() => model.propValue)
-                        item.meta      = root.metaFor(model.propName)
-                        item.propIndex = index
+                        item.propName  = delegateRoot.model.propName
+                        item.propValue = Qt.binding(() => delegateRoot.model.propValue)
+                        item.meta      = root.metaFor(delegateRoot.model.propName)
+                        item.propIndex = delegateRoot.index
                         item.setModelValue = function(v) {
-                            model.propValue = v
+                            delegateRoot.model.propValue = v
                             }
                         }
                     }
@@ -382,6 +429,38 @@ Item {
                     color: Material.accentColor
                     opacity: 0.3
                     }
+                }
+            }
+
+        // ── empty: placeholder that takes space but renders nothing ────
+        Component {
+            id: emptyDelegate
+
+            Item {
+                width: parent ? parent.width : 0
+                implicitHeight: 28
+
+                property string propName
+                property var propValue
+                property var meta
+                property int propIndex
+                property var setModelValue: function(v) {}
+                }
+            }
+
+        // ── subEmpty: empty placeholder for row entries ─────────────────
+        Component {
+            id: subEmptyDelegate
+
+            Item {
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                implicitHeight: 28
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
                 }
             }
 
@@ -436,7 +515,15 @@ Item {
                                 case "float":     return subFloatDelegate
                                 case "halign":    return subHalignDelegate
                                 case "machineType": return subMachineTypeDelegate
+                                case "override":  return subOverrideDelegate
+                                case "pulsewidth": return subPulsewidthDelegate
+                                case "lineJoin":  return subLineJoinDelegate
+                                case "lineEnd":    return subLineEndDelegate
+                                case "lockScale":  return subLockScaleDelegate
+                                case "lockSize":   return subLockSizeDelegate
+                                case "framingType": return subFramingTypeDelegate
                                 case "singleline":return subSinglelineDelegate
+                                case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
                                 default:          return subStringDelegate
                                 }
@@ -564,7 +651,16 @@ Item {
                                         case "color":     return colorDelegate
                                         case "layer":     return layerDelegate
                                         case "recipe":    return recipeDelegate
+                                        case "machine":   return machineDelegate
                                         case "machineType": return machineTypeDelegate
+                                        case "override":  return overrideDelegate
+                                        case "pulsewidth": return pulsewidthDelegate
+                                        case "lineJoin":  return lineJoinDelegate
+                                        case "lineEnd":    return lineEndDelegate
+                                        case "lockScale":  return lockScaleDelegate
+                                        case "lockSize":   return lockSizeDelegate
+                                        case "framingType": return framingTypeDelegate
+                                        case "empty":      return emptyDelegate
                                         default:          return stringDelegate
                                         }
                                     }
@@ -585,8 +681,17 @@ Item {
                                         }
                                     else {
                                         item.propName  = d.name
-                                        item.propValue = Qt.binding(() => d.propValue)
-                                        item.meta      = root.metaFor(d.name)
+                                        item.propValue = Qt.binding(() => {
+                                            // Read directly from the model's columnItems for live updates
+                                            const ci = colsContainer.columnItems
+                                            if (!ci) return undefined
+                                            for (let i = 0; i < ci.length; ++i) {
+                                                if (ci[i].name === d.name)
+                                                    return ci[i].propValue
+                                                }
+                                            return undefined
+                                            })
+                                        // meta is auto-bound to root.metaFor(propName) in the delegate
                                         item.propIndex = colsContainer.propIndex
                                         item.setModelValue = function(v) {
                                             colsContainer.setModelValue(d.name, v)
@@ -677,7 +782,15 @@ Item {
                                 case "float":     return subFloatDelegate
                                 case "halign":    return subHalignDelegate
                                 case "machineType": return subMachineTypeDelegate
+                                case "override":  return subOverrideDelegate
+                                case "pulsewidth": return subPulsewidthDelegate
+                                case "lineJoin":  return subLineJoinDelegate
+                                case "lineEnd":    return subLineEndDelegate
+                                case "lockScale":  return subLockScaleDelegate
+                                case "lockSize":   return subLockSizeDelegate
+                                case "framingType": return subFramingTypeDelegate
                                 case "singleline":return subSinglelineDelegate
+                                case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
                                 default:          return subStringDelegate
                                 }
@@ -751,16 +864,6 @@ Item {
                             subInt.setSub(value);
                         }
 
-                    contentItem: TextInput {
-                        text: subIntSpin.textFromValue(subIntSpin.value)
-                        color: "#ffffff"
-                        font.bold: true
-                        horizontalAlignment: Text.AlignRight
-                        verticalAlignment: Text.AlignVCenter
-                        readOnly: !subIntSpin.editable
-                        validator: subIntSpin.validator
-                        inputMethodHints: Qt.ImhFormattedNumbersOnly
-                        }
                     }
                 }
             }
@@ -785,6 +888,10 @@ Item {
                     anchors.fill: parent
                     from: subFloat.subMeta && subFloat.subMeta.min !== undefined ? subFloat.subMeta.min : -1000000.0
                     to: subFloat.subMeta && subFloat.subMeta.max !== undefined ? subFloat.subMeta.max : 1000000.0
+                    stepSize: subFloat.subMeta && subFloat.subMeta.step !== undefined ? subFloat.subMeta.step : 1.0
+                    bigStep: subFloat.subMeta && subFloat.subMeta.bigStep !== undefined ? subFloat.subMeta.bigStep : (subFloat.subMeta && subFloat.subMeta.step !== undefined ? subFloat.subMeta.step * 10.0 : 10.0)
+
+                    decimals: subFloat.subMeta && subFloat.subMeta.precision !== undefined ? subFloat.subMeta.precision : 2
 
                     property real modelValue: subFloat.subValue !== undefined ? Number(subFloat.subValue) : 0.0
                     value: modelValue
@@ -795,16 +902,6 @@ Item {
                             subFloat.setSub(value);
                         }
 
-                    contentItem: TextInput {
-                        text: subFloatSpin.textFromValue(subFloatSpin.value)
-                        color: "#ffffff"
-                        font.bold: true
-                        horizontalAlignment: Text.AlignRight
-                        verticalAlignment: Text.AlignVCenter
-                        readOnly: !subFloatSpin.editable
-                        validator: subFloatSpin.validator
-                        inputMethodHints: Qt.ImhFormattedNumbersOnly
-                        }
                     }
                 }
             }
@@ -961,6 +1058,198 @@ Item {
             }
         }
 
+        // ── Sub-delegate for override type in row entries ──────────────────
+        Component {
+            id: subOverrideDelegate
+
+            ValueBox {
+                id: subOverride
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subOverride.subMeta ? subOverride.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subOverrideCombo
+                    anchors.fill: parent
+                    model: root.model.overrideTypeNames ? root.model.overrideTypeNames() : []
+
+                    property int modelValue: subOverride.subValue !== undefined ? Number(subOverride.subValue) : 0
+                    currentIndex: {
+                        if (subOverrideCombo.modelValue >= 0 && subOverrideCombo.modelValue < subOverrideCombo.model.length)
+                            return subOverrideCombo.modelValue
+                        return 0
+                    }
+
+                    onActivated: index => {
+                        subOverride.setSub(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subOverrideCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+
+        // ── Sub-delegate for pulsewidth type in row entries ───────────────
+        Component {
+            id: subPulsewidthDelegate
+
+            ValueBox {
+                id: subPulsewidth
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                unitText: subPulsewidth.subMeta ? subPulsewidth.subMeta.unit ?? "" : ""
+                subLabelText: subPulsewidth.subMeta ? subPulsewidth.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                function freqModel() {
+                    if (root.model.pulsewidthNames)
+                        return root.model.pulsewidthNames()
+                    if (ZCam.laser && ZCam.laser.engine)
+                        return ZCam.laser.engine.laserPulseList
+                    return []
+                    }
+
+                ComboBox {
+                    id: subFreqCombo
+                    anchors.fill: parent
+                    model: subPulsewidth.freqModel()
+
+                    property string freqValue: subPulsewidth.subValue !== undefined ? String(Math.round(Number(subPulsewidth.subValue))) : ""
+                    currentIndex: {
+                        let idx = subFreqCombo.find(subFreqCombo.freqValue)
+                        return idx >= 0 ? idx : -1
+                        }
+
+                    onActivated: index => {
+                        subPulsewidth.setSub(Number(subFreqCombo.model[index]))
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subFreqCombo.freqValue.length > 0 ? subFreqCombo.freqValue : ""
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+
+        // ── Sub-delegate for lineJoin type in row entries ────────────────
+        Component {
+            id: subLineJoinDelegate
+
+            ValueBox {
+                id: subLineJoin
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subLineJoin.subMeta ? subLineJoin.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subLineJoinCombo
+                    anchors.fill: parent
+                    model: root.model.joinTypeNames ? root.model.joinTypeNames() : []
+
+                    property int modelValue: subLineJoin.subValue !== undefined ? Number(subLineJoin.subValue) : 0
+                    currentIndex: {
+                        if (subLineJoinCombo.modelValue >= 0 && subLineJoinCombo.modelValue < subLineJoinCombo.model.length)
+                            return subLineJoinCombo.modelValue
+                        return 0
+                    }
+
+                    onActivated: index => {
+                        subLineJoin.setSub(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subLineJoinCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+
+        // ── Sub-delegate for lineEnd type in row entries ─────────────────
+        Component {
+            id: subLineEndDelegate
+
+            ValueBox {
+                id: subLineEnd
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subLineEnd.subMeta ? subLineEnd.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subLineEndCombo
+                    anchors.fill: parent
+                    model: root.model.endTypeNames ? root.model.endTypeNames() : []
+
+                    property int modelValue: subLineEnd.subValue !== undefined ? Number(subLineEnd.subValue) : 0
+                    currentIndex: {
+                        if (subLineEndCombo.modelValue >= 0 && subLineEndCombo.modelValue < subLineEndCombo.model.length)
+                            return subLineEndCombo.modelValue
+                        return 0
+                    }
+
+                    onActivated: index => {
+                        subLineEnd.setSub(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subLineEndCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+
         // ── bool: CheckBox ────────────────────────────────────────────────
         Component {
             id: boolDelegate
@@ -1043,16 +1332,6 @@ Item {
                                 rowInt.setModelValue(value);
                             }
 
-                        contentItem: TextInput {
-                            text: intSpinBox.textFromValue(intSpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !intSpinBox.editable
-                            validator: intSpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
                 }
@@ -1069,7 +1348,7 @@ Item {
 
                 property string propName
                 property var propValue
-                property var meta
+                property var meta: root.metaFor(propName)
                 property int propIndex
                 property var setModelValue: function(v) {}
 
@@ -1092,27 +1371,23 @@ Item {
                         anchors.fill: parent
                         from: rowFloat.meta && rowFloat.meta.min !== undefined ? rowFloat.meta.min : -1000000.0
                         to: rowFloat.meta && rowFloat.meta.max !== undefined ? rowFloat.meta.max : 1000000.0
+                        stepSize: rowFloat.meta && rowFloat.meta.step !== undefined ? rowFloat.meta.step : 1.0
+                        bigStep: rowFloat.meta && rowFloat.meta.bigStep !== undefined ? rowFloat.meta.bigStep : (rowFloat.meta && rowFloat.meta.step !== undefined ? rowFloat.meta.step * 10.0 : 10.0)
                         resetValue: root.defaultScalar(rowFloat.propName, 0)
+
+                        decimals: rowFloat.meta && rowFloat.meta.precision !== undefined ? rowFloat.meta.precision : 2
 
                         property real modelValue: rowFloat.propValue !== undefined ? Number(rowFloat.propValue) : 0.0
                         value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
+                        onModelValueChanged: {
+                            if (value !== modelValue) value = modelValue
+                        }
 
                         onValueChanged: {
                             if (rowFloat.propValue !== value)
                                 rowFloat.setModelValue(value);
                             }
 
-                        contentItem: TextInput {
-                            text: floatSpinBox.textFromValue(floatSpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !floatSpinBox.editable
-                            validator: floatSpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
                 }
@@ -1129,7 +1404,7 @@ Item {
 
                 property string propName
                 property var propValue
-                property var meta
+                property var meta: root.metaFor(propName)
                 property int propIndex
                 property var setModelValue: function(v) {}
 
@@ -1153,7 +1428,11 @@ Item {
                         anchors.fill: parent
                         from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
                         to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
+                        stepSize: rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step : 1.0
+                        bigStep: rowVec3.meta && rowVec3.meta.bigStep !== undefined ? rowVec3.meta.bigStep : (rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step * 10.0 : 10.0)
                         resetValue: root.defaultScalar(rowVec3.propName, 0)
+
+                        decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
 
                         property real modelValue: rowVec3.propValue !== undefined && rowVec3.propValue.x !== undefined ? Number(rowVec3.propValue.x) : 0.0
                         value: modelValue
@@ -1166,16 +1445,6 @@ Item {
                                 }
                             }
 
-                        contentItem: TextInput {
-                            text: vec3xSpinBox.textFromValue(vec3xSpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !vec3xSpinBox.editable
-                            validator: vec3xSpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
 
@@ -1190,7 +1459,11 @@ Item {
                         anchors.fill: parent
                         from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
                         to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
+                        stepSize: rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step : 1.0
+                        bigStep: rowVec3.meta && rowVec3.meta.bigStep !== undefined ? rowVec3.meta.bigStep : (rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step * 10.0 : 10.0)
                         resetValue: root.defaultScalar(rowVec3.propName, 1)
+
+                        decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
 
                         property real modelValue: rowVec3.propValue !== undefined && rowVec3.propValue.y !== undefined ? Number(rowVec3.propValue.y) : 0.0
                         value: modelValue
@@ -1203,16 +1476,6 @@ Item {
                                 }
                             }
 
-                        contentItem: TextInput {
-                            text: vec3ySpinBox.textFromValue(vec3ySpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !vec3ySpinBox.editable
-                            validator: vec3ySpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
 
@@ -1227,7 +1490,11 @@ Item {
                         anchors.fill: parent
                         from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
                         to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
+                        stepSize: rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step : 1.0
+                        bigStep: rowVec3.meta && rowVec3.meta.bigStep !== undefined ? rowVec3.meta.bigStep : (rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step * 10.0 : 10.0)
                         resetValue: root.defaultScalar(rowVec3.propName, 2)
+
+                        decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
 
                         property real modelValue: rowVec3.propValue !== undefined && rowVec3.propValue.z !== undefined ? Number(rowVec3.propValue.z) : 0.0
                         value: modelValue
@@ -1240,16 +1507,6 @@ Item {
                                 }
                             }
 
-                        contentItem: TextInput {
-                            text: vec3zSpinBox.textFromValue(vec3zSpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !vec3zSpinBox.editable
-                            validator: vec3zSpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
                 }
@@ -1266,7 +1523,7 @@ Item {
 
                 property string propName
                 property var propValue
-                property var meta
+                property var meta: root.metaFor(propName)
                 property int propIndex
                 property var setModelValue: function(v) {}
 
@@ -1290,7 +1547,11 @@ Item {
                         anchors.fill: parent
                         from: rowVec2.meta && rowVec2.meta.min !== undefined ? rowVec2.meta.min : -1000000.0
                         to: rowVec2.meta && rowVec2.meta.max !== undefined ? rowVec2.meta.max : 1000000.0
+                        stepSize: rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step : 1.0
+                        bigStep: rowVec2.meta && rowVec2.meta.bigStep !== undefined ? rowVec2.meta.bigStep : (rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step * 10.0 : 10.0)
                         resetValue: root.defaultScalar(rowVec2.propName, 0)
+
+                        decimals: rowVec2.meta && rowVec2.meta.precision !== undefined ? rowVec2.meta.precision : 2
 
                         property real modelValue: rowVec2.propValue !== undefined && rowVec2.propValue.x !== undefined ? Number(rowVec2.propValue.x) : 0.0
                         value: modelValue
@@ -1303,16 +1564,6 @@ Item {
                                 }
                             }
 
-                        contentItem: TextInput {
-                            text: vec2xSpinBox.textFromValue(vec2xSpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !vec2xSpinBox.editable
-                            validator: vec2xSpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
 
@@ -1327,7 +1578,11 @@ Item {
                         anchors.fill: parent
                         from: rowVec2.meta && rowVec2.meta.min !== undefined ? rowVec2.meta.min : -1000000.0
                         to: rowVec2.meta && rowVec2.meta.max !== undefined ? rowVec2.meta.max : 1000000.0
+                        stepSize: rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step : 1.0
+                        bigStep: rowVec2.meta && rowVec2.meta.bigStep !== undefined ? rowVec2.meta.bigStep : (rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step * 10.0 : 10.0)
                         resetValue: root.defaultScalar(rowVec2.propName, 1)
+
+                        decimals: rowVec2.meta && rowVec2.meta.precision !== undefined ? rowVec2.meta.precision : 2
 
                         property real modelValue: rowVec2.propValue !== undefined && rowVec2.propValue.y !== undefined ? Number(rowVec2.propValue.y) : 0.0
                         value: modelValue
@@ -1340,16 +1595,6 @@ Item {
                                 }
                             }
 
-                        contentItem: TextInput {
-                            text: vec2ySpinBox.textFromValue(vec2ySpinBox.value)
-                            color: "#ffffff"
-                            font.bold: true
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                            readOnly: !vec2ySpinBox.editable
-                            validator: vec2ySpinBox.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            }
                         }
                     }
                 }
@@ -1888,5 +2133,644 @@ Item {
                 }
             }
         }
+
+        // ── machine: ComboBox for Machine selection ───────────────────────
+        Component {
+            id: machineDelegate
+
+            RowLayout {
+                id: rowMachine
+                width: parent ? parent.width : 0
+                spacing: 6
+
+                property string propName
+                property var propValue
+                property var meta
+                property int propIndex
+                property var setModelValue: function(v) {}
+
+                Label {
+                    text: rowMachine.meta ? rowMachine.meta.label ?? "" : ""
+                    Layout.preferredWidth: root.labelWidth
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
+                    color: Material.foreground
+                    opacity: 0.75
+                    }
+
+                ValueBox {
+                    Layout.fillWidth: true
+
+                    ComboBox {
+                        id: machineCombo
+                        anchors.fill: parent
+                        model: root.model.machineNames ? root.model.machineNames() : []
+
+                        property string currentName: {
+                            if (rowMachine.propValue === undefined || rowMachine.propValue === null)
+                                return ""
+                            // For "machine" type, the value is a Machine* pointer
+                            return root.model.machineToName ? root.model.machineToName(rowMachine.propValue) : ""
+                            }
+
+                        currentIndex: {
+                            let idx = machineCombo.find(machineCombo.currentName)
+                            return idx >= 0 ? idx : -1
+                            }
+
+                        onActivated: index => {
+                            let name = machineCombo.model[index]
+                            let ptr = root.model.nameToMachine ? root.model.nameToMachine(name) : null
+                            rowMachine.setModelValue(ptr)
+                            }
+
+                        background: Item {}
+                        padding: 2
+                        contentItem: Text {
+                            text: machineCombo.currentName
+                            font.bold: true
+                            color: "#ffffff"
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            }
+                        indicator: Item {}
+                        }
+                    }
+                }
+            }
+        }
+
+    // ── machineName: ComboBox for machine name (string) selection ────
+    Component {
+        id: machineNameDelegate
+
+        RowLayout {
+            id: rowMachineName
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowMachineName.meta ? rowMachineName.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: machineNameCombo
+                    anchors.fill: parent
+                    model: root.model.machineNames ? root.model.machineNames() : []
+
+                    property string currentName: rowMachineName.propValue !== undefined ? rowMachineName.propValue : ""
+                    currentIndex: {
+                        let idx = machineNameCombo.find(machineNameCombo.currentName)
+                        return idx >= 0 ? idx : -1
+                        }
+
+                    onActivated: index => {
+                        rowMachineName.setModelValue(machineNameCombo.model[index])
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: machineNameCombo.currentName
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── override: ComboBox for ParameterType selection ────────────────
+    Component {
+        id: overrideDelegate
+
+        RowLayout {
+            id: rowOverride
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowOverride.meta ? rowOverride.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: overrideCombo
+                    anchors.fill: parent
+                    model: root.model.overrideTypeNames ? root.model.overrideTypeNames() : []
+
+                    property int modelValue: rowOverride.propValue !== undefined ? Number(rowOverride.propValue) : 0
+                    currentIndex: {
+                        if (overrideCombo.modelValue >= 0 && overrideCombo.modelValue < overrideCombo.model.length)
+                            return overrideCombo.modelValue
+                        return 0
+                    }
+
+                    onActivated: index => {
+                        rowOverride.setModelValue(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: overrideCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── pulsewidth: ComboBox for pulseTable frequency selection ─────────
+    Component {
+        id: pulsewidthDelegate
+
+        RowLayout {
+            id: rowPulsewidth
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            function freqModel() {
+                if (root.model.pulsewidthNames)
+                    return root.model.pulsewidthNames()
+                if (ZCam.laser && ZCam.laser.engine)
+                    return ZCam.laser.engine.laserPulseList
+                return []
+                }
+
+            Label {
+                text: rowPulsewidth.meta ? rowPulsewidth.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+                unitText: rowPulsewidth.meta ? rowPulsewidth.meta.unit ?? "" : ""
+
+                ComboBox {
+                    id: freqCombo
+                    anchors.fill: parent
+                    model: rowPulsewidth.freqModel()
+
+                    property string freqValue: rowPulsewidth.propValue !== undefined ? String(Math.round(Number(rowPulsewidth.propValue))) : ""
+                    currentIndex: {
+                        let idx = freqCombo.find(freqCombo.freqValue)
+                        return idx >= 0 ? idx : -1
+                        }
+
+                    onActivated: index => {
+                        rowPulsewidth.setModelValue(Number(freqCombo.model[index]))
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: freqCombo.freqValue.length > 0 ? freqCombo.freqValue : ""
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── lineJoin: ComboBox for Clipper2Lib::JoinType selection ────────
+    Component {
+        id: lineJoinDelegate
+
+        RowLayout {
+            id: rowLineJoin
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowLineJoin.meta ? rowLineJoin.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: lineJoinCombo
+                    anchors.fill: parent
+                    model: root.model.joinTypeNames ? root.model.joinTypeNames() : []
+
+                    property int modelValue: rowLineJoin.propValue !== undefined ? Number(rowLineJoin.propValue) : 0
+                    currentIndex: {
+                        if (lineJoinCombo.modelValue >= 0 && lineJoinCombo.modelValue < lineJoinCombo.model.length)
+                            return lineJoinCombo.modelValue
+                        return 0
+                    }
+
+                    onActivated: index => {
+                        rowLineJoin.setModelValue(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: lineJoinCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── lineEnd: ComboBox for Clipper2Lib::EndType selection ──────────
+    Component {
+        id: lineEndDelegate
+
+        RowLayout {
+            id: rowLineEnd
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowLineEnd.meta ? rowLineEnd.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: lineEndCombo
+                    anchors.fill: parent
+                    model: root.model.endTypeNames ? root.model.endTypeNames() : []
+
+                    property int modelValue: rowLineEnd.propValue !== undefined ? Number(rowLineEnd.propValue) : 0
+                    currentIndex: {
+                        if (lineEndCombo.modelValue >= 0 && lineEndCombo.modelValue < lineEndCombo.model.length)
+                            return lineEndCombo.modelValue
+                        return 0
+                    }
+
+                    onActivated: index => {
+                        rowLineEnd.setModelValue(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: lineEndCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── framingType: ComboBox for FramingType selection ────────────────
+    Component {
+        id: framingTypeDelegate
+
+        RowLayout {
+            id: rowFramingType
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowFramingType.meta ? rowFramingType.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: framingTypeCombo
+                    anchors.fill: parent
+                    model: root.model.framingTypeNames ? root.model.framingTypeNames() : ["BoundingBox", "ConvexHull"]
+
+                    property int modelValue: rowFramingType.propValue !== undefined ? Number(rowFramingType.propValue) : 1
+                    currentIndex: {
+                        if (framingTypeCombo.modelValue >= 0 && framingTypeCombo.modelValue < framingTypeCombo.model.length)
+                            return framingTypeCombo.modelValue
+                        return 1
+                    }
+
+                    onActivated: index => {
+                        rowFramingType.setModelValue(index)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: framingTypeCombo.currentText
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── subFramingType: ComboBox for FramingType in row entries ──────
+    Component {
+        id: subFramingTypeDelegate
+
+        ValueBox {
+            id: subFramingType
+            Layout.fillWidth: true
+            width: parent ? parent.width : 0
+            subLabelText: subFramingType.subMeta ? subFramingType.subMeta.label ?? "" : ""
+
+            property string subName
+            property var subValue
+            property var subMeta
+            property var setSub: function(v) {}
+
+            ComboBox {
+                id: subFramingTypeCombo
+                anchors.fill: parent
+                model: root.model.framingTypeNames ? root.model.framingTypeNames() : ["BoundingBox", "ConvexHull"]
+
+                property int modelValue: subFramingType.subValue !== undefined ? Number(subFramingType.subValue) : 1
+                currentIndex: {
+                    if (subFramingTypeCombo.modelValue >= 0 && subFramingTypeCombo.modelValue < subFramingTypeCombo.model.length)
+                        return subFramingTypeCombo.modelValue
+                    return 1
+                }
+
+                onActivated: index => {
+                    subFramingType.setSub(index)
+                }
+
+                background: Item {}
+                padding: 2
+                contentItem: Text {
+                    text: subFramingTypeCombo.currentText
+                    font.bold: true
+                    color: "#ffffff"
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                    }
+                indicator: Item {}
+                }
+            }
+        }
+
+// ── lockScale: three CheckBoxes (Off / Lock / Square) ──────────
+    Component {
+        id: lockScaleDelegate
+
+        RowLayout {
+            id: rowLockScale
+            width: parent ? parent.width : 0
+            spacing: 4
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            readonly property var modeNames: root.model.lockScaleNames ? root.model.lockScaleNames() : ["Off", "Lock", "Square"]
+
+            Label {
+                text: rowLockScale.meta ? rowLockScale.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            Repeater {
+                model: rowLockScale.modeNames
+
+                delegate: ValueBox {
+                    required property string modelData
+                    required property int index
+
+                    Layout.fillWidth: true
+                    subLabelText: modelData
+
+                    LockCheckBox {
+                        modeIndex: index
+                        modeValue: rowLockScale.propValue
+                        onActivated: idx => rowLockScale.setModelValue(idx)
+                    }
+                    }
+                }
+            }
+        }
+
+    // ── subLockScale: three CheckBoxes for row entries ─────────────
+    Component {
+        id: subLockScaleDelegate
+
+        Row {
+            id: subLockScaleRow
+            width: parent ? parent.width : 0
+            spacing: 4
+
+            property string subName
+            property var subValue
+            property var subMeta
+            property var setSub: function(v) {}
+
+            readonly property var modeNames: root.model.lockScaleNames ? root.model.lockScaleNames() : ["Off", "Lock", "Square"]
+
+            Repeater {
+                model: subLockScaleRow.modeNames
+
+                delegate: ValueBox {
+                    required property string modelData
+                    required property int index
+
+                    Layout.fillWidth: true
+                    subLabelText: modelData
+
+                    LockCheckBox {
+                        modeIndex: index
+                        modeValue: subLockScaleRow.subValue
+                        onActivated: idx => subLockScaleRow.setSub(idx)
+                    }
+                    }
+                }
+            }
+        }
+
+    // ── lockSize: three CheckBoxes (Off / Lock / Square) ──────────
+    //    Analogous to lockScale but for the 2D size property.
+    Component {
+        id: lockSizeDelegate
+
+        RowLayout {
+            id: rowLockSize
+            width: parent ? parent.width : 0
+            spacing: 4
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            readonly property var modeNames: root.model.lockSizeNames ? root.model.lockSizeNames() : ["Off", "Lock", "Square"]
+
+            Label {
+                text: rowLockSize.meta ? rowLockSize.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            Repeater {
+                model: rowLockSize.modeNames
+
+                delegate: ValueBox {
+                    required property string modelData
+                    required property int index
+
+                    Layout.fillWidth: true
+                    subLabelText: modelData
+
+                    LockCheckBox {
+                        modeIndex: index
+                        modeValue: rowLockSize.propValue
+                        onActivated: idx => rowLockSize.setModelValue(idx)
+                    }
+                    }
+                }
+            }
+        }
+
+    // ── subLockSize: three CheckBoxes for row entries ─────────────
+    //    Analogous to subLockScale but for the 2D size property.
+    Component {
+        id: subLockSizeDelegate
+
+        Row {
+            id: subLockSizeRow
+            width: parent ? parent.width : 0
+            spacing: 4
+
+            property string subName
+            property var subValue
+            property var subMeta
+            property var setSub: function(v) {}
+
+            readonly property var modeNames: root.model.lockSizeNames ? root.model.lockSizeNames() : ["Off", "Lock", "Square"]
+
+            Repeater {
+                model: subLockSizeRow.modeNames
+
+                delegate: ValueBox {
+                    required property string modelData
+                    required property int index
+
+                    Layout.fillWidth: true
+                    subLabelText: modelData
+
+                    LockCheckBox {
+                        modeIndex: index
+                        modeValue: subLockSizeRow.subValue
+                        onActivated: idx => subLockSizeRow.setSub(idx)
+                    }
+                    }
+                }
+            }
         }
     }

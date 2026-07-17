@@ -13,6 +13,7 @@
 
 #include <QObject>
 #include <QVariant>
+#include <QVector3D>
 #include <QByteArray>
 #include <QPointer>
 #include <QString>
@@ -21,10 +22,15 @@
 
 class ZCam;
 class Cad;
+class Cam;
 class Layer;
 class Element;
+class Element3d;
 class Fixture;
 class LaserLayer;
+class Rectangle;
+class Polygon;
+class Ellipse;
 
 //---------------------------------------------------------
 //   UndoCommand
@@ -119,6 +125,143 @@ class AddLayerCommand : public UndoCommand
       QString description() const override;
       };
 
+class AddFixtureCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Cam> _cam;
+      QPointer<Fixture> _fixture;
+      int _row {-1}; ///< position within cam's children
+
+    public:
+      AddFixtureCommand(ZCam* zcam, Cam* cam);
+
+      void undo() override;
+      void redo() override;
+      QString description() const override;
+      };
+
+//---------------------------------------------------------
+//   AddLaserLayerCommand
+//    Undoable command that creates a new LaserLayer and inserts
+//    it as a child of a Fixture element.  The LaserLayer is
+//    auto-linked to the first available Cad Layer (if any).
+//    undo() removes the LaserLayer from the tree (and scene);
+//    redo() re-inserts it.
+//---------------------------------------------------------
+
+class AddLaserLayerCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Fixture> _fixture;
+      QPointer<LaserLayer> _laserLayer;
+      int _row {-1}; ///< position within fixture's children
+
+    public:
+      AddLaserLayerCommand(ZCam* zcam, Fixture* fixture);
+
+      void undo() override;
+      void redo() override;
+      QString description() const override;
+      };
+
+//---------------------------------------------------------
+//   AddRectangleCommand
+//    Undoable command that creates a new Rectangle, inserts it
+//    as a child of a Layer, updates the tree model and notifies
+//    the 3D scene.
+//    undo() removes the Rectangle from the tree (and scene);
+//    redo() re-inserts it.
+//---------------------------------------------------------
+
+class AddRectangleCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Layer> _layer;
+      QPointer<Rectangle> _rect;
+      int _row {-1}; ///< position within layer's children
+
+    public:
+      AddRectangleCommand(ZCam* zcam, Layer* layer, double x, double y);
+
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Add Rectangle"); }
+      Rectangle* rectangle() const;
+      };
+
+//---------------------------------------------------------
+//   AddPolygonCommand
+//    Undoable command that creates a new Polygon, inserts it
+//    as a child of a Layer, updates the tree model and notifies
+//    the 3D scene.
+//    undo() removes the Polygon from the tree (and scene);
+//    redo() re-inserts it.
+//---------------------------------------------------------
+
+class AddPolygonCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Layer> _layer;
+      QPointer<Polygon> _poly;
+      int _row {-1}; ///< position within layer's children
+
+    public:
+      AddPolygonCommand(ZCam* zcam, Layer* layer, double x, double y);
+
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Add Polygon"); }
+      Polygon* polygon() const;
+      };
+
+//---------------------------------------------------------
+//   AddEllipseCommand
+//    Undoable command that creates a new Ellipse, inserts it
+//    as a child of a Layer, updates the tree model and notifies
+//    the 3D scene.
+//    undo() removes the Ellipse from the tree (and scene);
+//    redo() re-inserts it.
+//---------------------------------------------------------
+
+class AddEllipseCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Layer> _layer;
+      QPointer<Ellipse> _ellipse;
+      int _row {-1}; ///< position within layer's children
+
+    public:
+      AddEllipseCommand(ZCam* zcam, Layer* layer, double x, double y);
+
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Add Ellipse"); }
+      Ellipse* ellipse() const;
+      };
+
+//---------------------------------------------------------
+//   HandleDragCommand
+//    Records a single handle position change on any Element3d
+//    (Polygon vertex, Rectangle corner, etc.) so that it can
+//    be reverted (undo) or re-applied (redo) via the
+//    setVertexPos() virtual method.
+//---------------------------------------------------------
+
+class HandleDragCommand : public UndoCommand
+      {
+      QPointer<Element3d> _element;
+      int _handleIndex;
+      QVector3D _oldPos;
+      QVector3D _newPos;
+
+    public:
+      HandleDragCommand(Element3d* el, int idx, const QVector3D& oldPos, const QVector3D& newPos)
+          : _element(el), _handleIndex(idx), _oldPos(oldPos), _newPos(newPos) {}
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Drag handle"); }
+      };
+
 //---------------------------------------------------------
 //   RemoveElementCommand
 //    Undoable command that removes an Element from its parent.
@@ -143,9 +286,64 @@ class RemoveElementCommand : public UndoCommand
             int row {-1};
             };
       std::vector<LinkedLaserLayer> _linkedLaserLayers;
+      /// If the removed element is a Fixture, this stores the pointer so
+      /// that redo() can remove it from the project fixture list and
+      /// undo() can re-add it.
+      QPointer<Fixture> _removedFixture;
       RemoveElementCommand(ZCam* zcam, Element* parent, Element* child, int row)
           : _parent(parent), _child(child), _zcam(zcam), _row(row) {}
       void undo() override;
       void redo() override;
       QString description() const override;
+      };
+
+//---------------------------------------------------------
+//   MoveElementCommand
+//    Undoable command that moves an Element from one parent
+//    to another (or to a different position within the same
+//    parent).  undo() moves it back; redo() moves it again.
+//    Both operations update the tree model and, when the parent
+//    actually changes, notify the 3D scene.
+//---------------------------------------------------------
+
+class MoveElementCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Element> _element;
+      QPointer<Element> _oldParent;
+      QPointer<Element> _newParent;
+      int _oldRow {-1}; ///< original position within old parent
+      int _newRow {-1}; ///< target position within new parent
+
+    public:
+      MoveElementCommand(ZCam* zcam, Element* element, Element* oldParent, int oldRow, Element* newParent,
+                         int newRow)
+          : _zcam(zcam), _element(element), _oldParent(oldParent), _newParent(newParent), _oldRow(oldRow),
+            _newRow(newRow) {}
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Move Element"); }
+      };
+
+//---------------------------------------------------------
+//   InsertElementCommand
+//    Undoable command that inserts a pre-created Element into
+//    a parent at a given row (or at the end when row == -1).
+//    undo() removes it; redo() re-inserts it.  Both operations
+//    update the tree model and notify the 3D scene.
+//---------------------------------------------------------
+
+class InsertElementCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Element> _parent;
+      QPointer<Element> _element;
+      int _row {-1};
+
+    public:
+      InsertElementCommand(ZCam* zcam, Element* parent, Element* element, int row)
+          : _zcam(zcam), _parent(parent), _element(element), _row(row) {}
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Insert Element"); }
       };

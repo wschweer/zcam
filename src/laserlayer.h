@@ -33,7 +33,11 @@ class LaserLayer : public Element3d
       QML_UNCREATABLE("no")
 
       PROPV(Layer*, baseElement, nullptr)
-      PROPV(Recipe*, recipe, nullptr)
+      PROPV(const Recipe*, recipe, nullptr)
+
+      // override types are defined in laserengine.h
+      // as ParameterType
+
       PROPV(int, overrideType1, 0)
       PROPV(int, overrideType2, 0)
       PROPV(double, overrideValue1, 0.0)
@@ -62,24 +66,52 @@ class LaserLayer : public Element3d
                   { "name": "kerfOffset",  "label": "Kerf",   "type": "float", "min": 0.0, "max": 0.001, "default": 0.03 },
                   { "row":
                         {
+                              "overrideType1": { "label": "type", "type": "override" },
+                              "overrideValue1": { "label": "value", "type": "float", "default": 0.0 }
+                        },
+                        "label": "Ovr1"
+                     },
+                  { "row":
+                        {
+                              "overrideType2": { "label": "type", "type": "override" },
+                              "overrideValue2": { "label": "value", "type": "float", "default": 0.0 }
+                        },
+                        "label": "Ovr2"
+                     },
+                  { "row":
+                        {
                               "showMarks": { "label": "marks", "type": "bool", "default": true },
                               "showMoves": { "label": "moves", "type": "bool", "default": true }
                         },
                         "label": "Show"
                      }
                   ]
-                  })"};
+                              })"};
+
+      /// Process one tile's geometry through the recipe (fill, wobble, lines)
+      /// and return raw line segments without panel-grid offsets.
+      Clipper2Lib::PathsD processTileLines() const;
 
     public:
       LaserLayer(ZCam*, Element* parent = nullptr);
       ~LaserLayer();
-      void update(int flags = -1) override;
+      /// No-op: LaserLayer no longer fills its own _geometry.
+      /// Display geometry is collected by Cam::updateCam().
+      void update(int flags = -1) override {}
       virtual QString typeName() override { return QStringLiteral("laserLayer"); }
       virtual const std::string_view properties() const override { return _properties; }
+      // LaserLayer elements can be deleted from the project tree.
+      static constexpr bool s_deletable = true;
+      Q_INVOKABLE bool deletable() const override { return s_deletable; }
       PathsD spl;
       PathD glLines;
       Clipper2Lib::PathsD createFill(Clipper2Lib::PathsD& spdi) const;
 
+      /// Return polygon list for a single tile (no panel-grid offsets).
+      /// Used by Cam for the convex-hull / framing computation.
       PathsD collectLayerPath();
+      /// Return display line segments (mark + move subsets) for a single tile.
+      /// Used by Cam to build the combined panel-grid geometry.
+      Clipper2Lib::PathsD collectDisplayLines() const;
       LaserPath collectLaserPath() const;
       };

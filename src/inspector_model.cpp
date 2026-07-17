@@ -12,10 +12,12 @@
 #include "inspector_model.h"
 #include <QMetaProperty>
 #include "zcam.h"
+#include "machines.h"
 #include "projectmanager.h"
 #include "element.h"
 #include "layer.h"
 #include "recipe.h"
+#include "laserengine.h"
 #include <nlohmann/json.hpp>
 
 //---------------------------------------------------------
@@ -754,4 +756,143 @@ Recipe* InspectorModel::nameToRecipe(const QString& name) const {
       if (!zc)
             return nullptr;
       return zc->recipePtr(name);
+      }
+
+//---------------------------------------------------------
+//   overrideTypeNames
+//    Return the list of ParameterType names from laserengine.h
+//    as strings. The order matches the enum values so the
+//    QML ComboBox can use the index directly as the enum value.
+//---------------------------------------------------------
+
+QStringList InspectorModel::overrideTypeNames() const {
+      return {QStringLiteral("None"),     QStringLiteral("Speed"),     QStringLiteral("Power"),
+              QStringLiteral("Interval"), QStringLiteral("Frequency"), QStringLiteral("Count"),
+              QStringLiteral("Pulse")};
+      }
+
+//---------------------------------------------------------
+//   pulsewidthNames
+//    Return the list of pulse width values from
+//    LaserEngine::pulseTable() as strings for use in a QML ComboBox.
+//---------------------------------------------------------
+
+QStringList InspectorModel::pulsewidthNames() const {
+      if (!_element)
+            return {};
+      ZCam* zc    = nullptr;
+      Element* el = qobject_cast<Element*>(_element);
+      if (el)
+            zc = el->zcamInstance();
+      if (!zc || !zc->laser() || !zc->laser()->engine())
+            return {};
+      QStringList sl;
+      for (const auto& p : zc->laser()->engine()->pulseTable())
+            sl << QString::number(p.pulseWidth);
+      return sl;
+      }
+
+//---------------------------------------------------------
+//   joinTypeNames
+//    Return the list of Clipper2Lib::JoinType names.
+//    The order matches the enum values so the QML ComboBox
+//    can use the index directly as the enum value.
+//---------------------------------------------------------
+
+QStringList InspectorModel::joinTypeNames() const {
+      return {QStringLiteral("Square"), QStringLiteral("Bevel"), QStringLiteral("Round"),
+              QStringLiteral("Miter")};
+      }
+
+//---------------------------------------------------------
+//   endTypeNames
+//    Return the list of Clipper2Lib::EndType names.
+//    The order matches the enum values so the QML ComboBox
+//    can use the index directly as the enum value.
+//---------------------------------------------------------
+
+QStringList InspectorModel::endTypeNames() const {
+      return {QStringLiteral("Polygon"), QStringLiteral("Joined"), QStringLiteral("Butt"),
+              QStringLiteral("Square"), QStringLiteral("Round")};
+      }
+
+//---------------------------------------------------------
+//   lockScaleNames
+//    Return the list of LockScaleMode names.
+//    The order matches the enum values so the QML delegate
+//    can use the index directly as the enum value.
+//---------------------------------------------------------
+
+QStringList InspectorModel::lockScaleNames() const {
+      return {QStringLiteral("Off"), QStringLiteral("Lock"), QStringLiteral("Square")};
+      }
+
+//---------------------------------------------------------
+//   framingTypeNames
+//    Return the list of FramingType names.
+//    The order matches the enum values so the QML ComboBox
+//    can use the index directly as the enum value.
+//---------------------------------------------------------
+
+QStringList InspectorModel::framingTypeNames() const {
+      return {QStringLiteral("BoundingBox"), QStringLiteral("ConvexHull")};
+      }
+
+//---------------------------------------------------------
+//   lockSizeNames
+//    Return the list of LockScaleMode names for lockSize properties.
+//    Uses the same enum values as lockScale.
+//---------------------------------------------------------
+
+QStringList InspectorModel::lockSizeNames() const {
+      return {QStringLiteral("Off"), QStringLiteral("Lock"), QStringLiteral("Square")};
+      }
+
+//---------------------------------------------------------
+//   machineNames
+//    Return all Machine names from ZCam::machines.
+//---------------------------------------------------------
+
+QStringList InspectorModel::machineNames() const {
+      if (!_element)
+            return {};
+      ZCam* zc    = nullptr;
+      Element* el = qobject_cast<Element*>(_element);
+      if (el)
+            zc = el->zcamInstance();
+      if (!zc || !zc->machines())
+            return {};
+      return zc->machines()->machinesModel();
+      }
+
+//---------------------------------------------------------
+//   machineToName
+//    Resolve a Machine* pointer to its name string.
+//---------------------------------------------------------
+
+QString InspectorModel::machineToName(Machine* machine) const {
+      if (!machine)
+            return {};
+      return machine->name();
+      }
+
+//---------------------------------------------------------
+//   nameToMachine
+//    Resolve a name string back to a Machine* pointer.
+//---------------------------------------------------------
+
+Machine* InspectorModel::nameToMachine(const QString& name) const {
+      if (!_element || name.isEmpty())
+            return nullptr;
+      ZCam* zc    = nullptr;
+      Element* el = qobject_cast<Element*>(_element);
+      if (el)
+            zc = el->zcamInstance();
+      if (!zc || !zc->machines())
+            return nullptr;
+      QStringList model = zc->machines()->machinesModel();
+      int idx           = model.indexOf(name);
+      if (idx < 0)
+            return nullptr;
+      return zc->machines()->machine(idx);
       }

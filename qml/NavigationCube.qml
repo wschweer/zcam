@@ -34,7 +34,7 @@ Item {
 
     width: cubeSize
     height: cubeSize
-    property int cubeSize: 230
+    property int cubeSize: ZCam.config ? ZCam.config.navCubeSize : 200
 
     // ── Visual constants ──────────────────────────────────────────
     readonly property color faceColor: "#81d4fa"       // Light Blue 300
@@ -42,8 +42,7 @@ Item {
     readonly property color faceBorderColor: "#4fc3f7" // Light Blue 400
     readonly property color cornerColor: "#29b6f6"     // Light Blue 400
     readonly property color cornerHoverColor: "#81d4fa"// Light Blue 300 (lighter)
-    //    readonly property color textColor: "#ffeb00"       // bright yellow
-    readonly property color textColor: "#000000"       // bright yellow
+    readonly property color textColor: "#000000"       // black
     readonly property real camDist: 260
 
     // ── Subset index → face name (must match C++ order) ───────────
@@ -439,7 +438,7 @@ Item {
     ArrowButton {
         iconText: "▲"
         dx: 0
-        dy: -45
+        dy: -40
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
         z: 1
@@ -447,14 +446,14 @@ Item {
     ArrowButton {
         iconText: "▼"
         dx: 0
-        dy: 45
+        dy: 40
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         z: 1
         }
     ArrowButton {
         iconText: "◀"
-        dx: -45
+        dx: -40
         dy: 0
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
@@ -462,7 +461,7 @@ Item {
         }
     ArrowButton {
         iconText: "▶"
-        dx: 45
+        dx: 40
         dy: 0
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter

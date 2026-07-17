@@ -16,6 +16,7 @@
 #include <QVector3D>
 #include <QVector2D>
 #include <QtQml/qqmlregistration.h>
+#include <atomic>
 #include "clipper2/clipper.h"
 #include "logger.h"
 
@@ -23,8 +24,23 @@ class Tesselator;
 class Element3d;
 class PathList;
 
+#include "geometryworker.h"  // for TessResult, LineResult definitions
+
+
 //---------------------------------------------------------
 //   TessGeometry
+//    Renders polygon and line geometry for Qt Quick 3D.
+//
+//    Thread-safety:
+//      CPU-intensive tesselation and vertex conversion are offloaded
+//      to GeometryWorker background threads.  The QQuick3DGeometry
+//      API (setVertexData, setIndexData, update, etc.) is only called
+//      on the main thread from the async callback.
+//
+//      A revision counter prevents stale results from overwriting
+//      newer geometry: each request increments m_revision, and the
+//      callback checks whether it matches the current value before
+//      applying results.
 //---------------------------------------------------------
 
 class TessGeometry : public QQuick3DGeometry
@@ -38,8 +54,15 @@ class TessGeometry : public QQuick3DGeometry
       Tesselator* tess{nullptr};
       Element3d* _element{nullptr};
 
+      // Revision counter for async result validation.
+      std::atomic<int> m_revision{0};
+
     signals:
       void elementChanged();
+
+    private:
+      void applyTessResult(const GeometryWorker::TessResult& r);
+      void applyLineResult(const GeometryWorker::LineResult& r);
 
     public:
       explicit TessGeometry(Element3d* e, QQuick3DObject* parent = nullptr);

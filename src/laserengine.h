@@ -36,7 +36,7 @@ class ZCam;
 using PathsD = Clipper2Lib::PathsD;
 using PathD  = Clipper2Lib::PathD;
 
- //-------------------------------------------------------------------
+//-------------------------------------------------------------------
 //   LaserPathElement
 //    This is a line segment of the LaserPath. Traveling along
 //    the path either with laser on ("marking") or
@@ -44,11 +44,9 @@ using PathD  = Clipper2Lib::PathD;
 //-------------------------------------------------------------------
 
 enum class LaserPathElementType { MoveTo, MarkTo };
-
 struct LaserPathElement {
-      LaserPathElementType type { LaserPathElementType::MoveTo };
+      LaserPathElementType type {LaserPathElementType::MoveTo};
       Vec2d p;
-
       LaserPathElement() {}
       LaserPathElement(LaserPathElementType t, Vec2d v) : type(t), p(v) {}
       LaserPathElement(LaserPathElementType type, double x, double y) : LaserPathElement(type, {x, y}) {}
@@ -62,20 +60,20 @@ struct LaserPathElement {
 //    laser has to travel along.
 //---------------------------------------------------------
 
-class LaserPath : public std::vector<LaserPathElement> {
-   public:
+class LaserPath : public std::vector<LaserPathElement>
+      {
+    public:
       void moveTo(double x, double y) { push_back({LaserPathElementType::MoveTo, x, y}); }
       void markTo(double x, double y) { push_back({LaserPathElementType::MarkTo, x, y}); }
       void append(Clipper2Lib::PathD p) {
             bool first = true;
-            for (const auto& pt : p) {
+            for (const auto& pt : p)
                   if (first) {
                         moveTo(pt.x, pt.y);
                         first = false;
                         }
                   else
                         markTo(pt.x, pt.y);
-                  }
             }
       bool check();
       };
@@ -85,19 +83,19 @@ class LaserPath : public std::vector<LaserPathElement> {
 //---------------------------------------------------------
 
 struct LineSegment {
-      Vec2d p1;   // start position of Line
-      Vec2d p2;   // end position of Line
+      Vec2d p1; // start position of Line
+      Vec2d p2; // end position of Line
       };
 
 //---------------------------------------------------------
 //   LineSegments
 //---------------------------------------------------------
 
-class LineSegments : public std::vector<LineSegment> {
-   public:
+class LineSegments : public std::vector<LineSegment>
+      {
+    public:
       LaserPath toLaserPath();
       };
-
 
 //---------------------------------------------------------
 //   LaserPosition
@@ -124,9 +122,8 @@ struct LaserParameterSet {
       double travelSpeed;
       double frequency;
       double pulseWidth;
-
       LaserParameterSet() {}
-      LaserParameterSet(const LaserLayerSetting* s);
+      LaserParameterSet(const LaserPass* s);
       void setOverride(ParameterType t, double val);
       };
 
@@ -309,19 +306,20 @@ enum Command : uint16_t {
       SetFpkParam2         = 0x002E,
       FiberPulseWidth      = 0x002F,
       FiberGetConfigExtend = 0x0030,
-      InputPort            = 0x0031, //  ClearLockInputPort calls 0x04, then if EnableLockInputPort 0x02 else 0x01, GetLockInputPort
-      SetFlyRes            = 0x0032,
-      Fiber_SetMo          = 0x0033, // open and close set by value
-      Fiber_GetStMO_AP     = 0x0034,
-      GetUserData          = 0x0036,
-      GetFlySpeed          = 0x0038,
-      DisableZ             = 0x0039,
-      EnableZ              = 0x003A,
-      SetZData             = 0x003B,
-      SetSPISimmerCurrent  = 0x003C,
-      Reset                = 0x0040,
-      GetMarkTime          = 0x0041,
-      SetFpkParam          = 0x0062
+      InputPort =
+          0x0031, //  ClearLockInputPort calls 0x04, then if EnableLockInputPort 0x02 else 0x01, GetLockInputPort
+      SetFlyRes           = 0x0032,
+      Fiber_SetMo         = 0x0033, // open and close set by value
+      Fiber_GetStMO_AP    = 0x0034,
+      GetUserData         = 0x0036,
+      GetFlySpeed         = 0x0038,
+      DisableZ            = 0x0039,
+      EnableZ             = 0x003A,
+      SetZData            = 0x003B,
+      SetSPISimmerCurrent = 0x003C,
+      Reset               = 0x0040,
+      GetMarkTime         = 0x0041,
+      SetFpkParam         = 0x0062
       };
 
 //---------------------------------------------------------
@@ -341,7 +339,8 @@ class Packet6 : public std::array<uint16_t, 6>
       {
     public:
       // Default: NOP command
-      Packet6(uint16_t cmd = Command::listEndOfList, uint16_t a = 0, uint16_t b = 0, uint16_t c = 0, uint16_t d = 0, uint16_t e = 0) {
+      Packet6(uint16_t cmd = Command::listEndOfList, uint16_t a = 0, uint16_t b = 0, uint16_t c = 0,
+              uint16_t d = 0, uint16_t e = 0) {
             data()[0] = cmd;
             data()[1] = a;
             data()[2] = b;
@@ -358,7 +357,7 @@ class Packet6 : public std::array<uint16_t, 6>
 static const int LIST_SIZE = 256; // number of Packet6 structures
 class CmdList : public std::array<Packet6, LIST_SIZE>
       {
-      int index{0};
+      int index {0};
       LaserEngine* laser;
 
     public:
@@ -392,25 +391,40 @@ class LaserEngine : public QObject
       Q_PROPERTY(bool dryRun READ dryRun WRITE setDryRun NOTIFY dryRunChanged)
       Q_PROPERTY(int estimatedEnd READ estimatedEnd WRITE setEstimatedEnd NOTIFY estimatedEndChanged)
 
-   protected:
-      bool _testMode=false;
-      bool _dryRun=false;
-      int _estimatedEnd=0;
+    protected:
+      bool _testMode    = false;
+      bool _dryRun      = false;
+      int _estimatedEnd = 0;
 
-   signals:
+    signals:
       void testModeChanged();
       void dryRunChanged();
       void estimatedEndChanged();
 
-   public:
-      void setTestMode(bool v) { if (v != testMode()) { _testMode = v; emit testModeChanged(); } }
-      void setDryRun(bool v) { if (v != dryRun()) { _dryRun = v; emit dryRunChanged(); } }
-      void setEstimatedEnd(int v) { if (v != estimatedEnd()) { _estimatedEnd = v; emit estimatedEndChanged(); } }
-      bool testMode() const { return _testMode;}
-      bool dryRun() const { return _dryRun;}
-      int estimatedEnd() const { return _estimatedEnd;}
+    public:
+      void setTestMode(bool v) {
+            if (v != testMode()) {
+                  _testMode = v;
+                  emit testModeChanged();
+                  }
+            }
+      void setDryRun(bool v) {
+            if (v != dryRun()) {
+                  _dryRun = v;
+                  emit dryRunChanged();
+                  }
+            }
+      void setEstimatedEnd(int v) {
+            if (v != estimatedEnd()) {
+                  _estimatedEnd = v;
+                  emit estimatedEndChanged();
+                  }
+            }
+      bool testMode() const { return _testMode; }
+      bool dryRun() const { return _dryRun; }
+      int estimatedEnd() const { return _estimatedEnd; }
 
-   public:
+    public:
 
     public:
       enum class FramingType { Bbox, Contour };
@@ -426,61 +440,61 @@ class LaserEngine : public QObject
       //      double p3 = 0.0;
       //      double p4 = 1;
       //      double d;
-//      QTransform transform;
+      //      QTransform transform;
 
       FiberLaserState laserState;
 
-      std::string source{"fiber"};
+      std::string source {"fiber"};
       //      double travel_speed           { 4000.0   };
       //      double framing_speed          { 6000.0   };
 
-      int laser_pin{0};
-      int light_pin{8};
-      int foot_pin{15};
+      int laser_pin {0};
+      int light_pin {8};
+      int foot_pin {15};
       double galvos;
 
-      int pwm_pulse_width{2}; // 125  -  2
-      int pwm_half_period{2}; // 125  -  2
-      int standby_p1{2000};   // 2000
-      int standby_p2{20};
-      int timing_mode{1};
-      int delay_mode{1};
-      int laser_mode{1};
-      int control_mode{0};
-      bool fpk{false};
+      int pwm_pulse_width {2}; // 125  -  2
+      int pwm_half_period {2}; // 125  -  2
+      int standby_p1 {2000};   // 2000
+      int standby_p2 {20};
+      int timing_mode {1};
+      int delay_mode {1};
+      int laser_mode {1};
+      int control_mode {0};
+      bool fpk {false};
 
-      int fpk_max_voltage{4091}; // 0xffb
-      int fpk_min_voltage{1};
-      int fpk_t1{409};
-      int fpk_t2{100};
+      int fpk_max_voltage {4091}; // 0xffb
+      int fpk_min_voltage {1};
+      int fpk_t1 {409};
+      int fpk_t2 {100};
 
-      double fly_resolution_1{0};
-      double fly_resolution_2{94}; // 94
-      double fly_resolution_3{1000};
-      double fly_resolution_4{24}; // 25
+      double fly_resolution_1 {0};
+      double fly_resolution_2 {94}; // 94
+      double fly_resolution_3 {1000};
+      double fly_resolution_4 {24}; // 25
 
-      double delay_laser_on{100.0};       // balor: 100g
-      double delay_laser_off{180.0};      // balor: 100
+      double delay_laser_on {100.0};  // balor: 100g
+      double delay_laser_off {180.0}; // balor: 100
 
-      double delay_polygon{20.0}; // too low will round corners (balor: 100)
-      double jump_delay{200.0};
+      double delay_polygon {20.0}; // too low will round corners (balor: 100)
+      double jump_delay {200.0};
 
-      double delay_open_mo{8.0};
+      double delay_open_mo {8.0};
 
-//      int timeout{1000};
-      Usb* usb{nullptr};
+      //      int timeout{1000};
+      Usb* usb {nullptr};
 
       CmdList list;
-      bool list_executing{false};
-      bool canSend{true};
-      int number_of_list_packets{0};
-      uint16_t port_bits{0};
+      bool list_executing {false};
+      bool canSend {true};
+      int number_of_list_packets {0};
+      uint16_t port_bits {0};
 
-      volatile bool aborting{false};
+      volatile bool aborting {false};
 
       QTimer markTimer;
 
-      double _currentPower{50.0};
+      double _currentPower {50.0};
 
       Packet4 getSerialNumber();
       Packet4 getStatus() const;
@@ -503,21 +517,31 @@ class LaserEngine : public QObject
       void list_jump_speed(uint16_t speed);
       void list_jump(int x, int y, int angle = 0);
       void list_mark(uint16_t x, uint16_t y, uint16_t angle = 0);
-      void list_jump_delay(double delay) { list_write({listJumpDelay, uint16_t(fabs(delay)), uint16_t(delay > 0.0 ? 0 : 0x8000)}); }
+      void list_jump_delay(double delay) {
+            list_write({listJumpDelay, uint16_t(fabs(delay)), uint16_t(delay > 0.0 ? 0 : 0x8000)});
+            }
       void list_fiber_ylpm_pulse_width(uint16_t w) { list_write({listFiberYLPMPulseWidth, 0, w}); }
       void list_write_port() { list_write({listWritePort, port_bits}); }
       void list_laser_on_point(uint16_t dwell_time) { list_write({listLaserOnPoint, dwell_time}); }
       void list_delay_time(double time);
-      void list_laser_on_delay(double delay) { list_write({listLaserOnDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)}); }
-      void list_laser_off_delay(double delay) { list_write({listLaserOffDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)}); }
+      void list_laser_on_delay(double delay) {
+            list_write({listLaserOnDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)});
+            }
+      void list_laser_off_delay(double delay) {
+            list_write({listLaserOffDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)});
+            }
       void list_mark_frequency(uint16_t frequency) { list_write({listMarkFreq, frequency}); }
       void list_mark_power_ratio(uint16_t power_ratio) { list_write({listMarkPowerRatio, power_ratio}); }
-      void list_polygon_delay(double delay) { list_write({listPolygonDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)}); }
+      void list_polygon_delay(double delay) {
+            list_write({listPolygonDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)});
+            }
       void list_mark_current(uint16_t current) { list_write({listMarkCurrent, current}); }
       void list_mark_frequency_2(int frequency) { Fatal("not implemented"); }
       void list_fly_enable(uint16_t enabled = 1) { list_write({listFlyEnable, enabled}); }
       void list_direct_laser_switch() { Fatal("not implemented"); }
-      void list_fly_delay(double delay) { list_write({listFlyDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)}); }
+      void list_fly_delay(double delay) {
+            list_write({listFlyDelay, uint16_t(fabs(delay)), uint16_t(delay > 0 ? 0 : 0x8000)});
+            }
       void list_set_co2_fpk(uint16_t fpk1, uint16_t fpk2 = 0) { list_write({listSetCo2FPK, fpk1, fpk2}); }
       void list_fly_wait_input() { list_write({listFlyWaitInput}); }
       void list_fiber_open_mo(uint16_t open_mo) { list_write({listFiberOpenMO, open_mo}); }
@@ -583,7 +607,9 @@ class LaserEngine : public QObject
       Packet4 set_laser_mode(uint16_t mode) { return command({SetLaserMode, mode}); }
       Packet4 set_timing(uint16_t timing) { return command({SetTiming, timing}); }
       Packet4 set_standby(uint16_t a, uint16_t b) { return command({SetStandby, a, b}); }
-      Packet4 set_pwm_half_period(uint16_t pwm_half_period) { return command({SetPwmHalfPeriod, pwm_half_period}); }
+      Packet4 set_pwm_half_period(uint16_t pwm_half_period) {
+            return command({SetPwmHalfPeriod, pwm_half_period});
+            }
       Packet4 stop_execute() { return command({StopExecute}); }
       Packet4 stop_list() { return command({StopList}); }
       Packet4 write_port() { return command({WritePort, port_bits}); }
@@ -613,9 +639,15 @@ class LaserEngine : public QObject
       Packet4 get_input_port() { return command({InputPort}); }
       Packet4 get_mark_time() { return command({GetMarkTime, 3}); }
       Packet4 get_user_data() { return command({GetUserData}); }
-      Packet4 move_axis_to(uint16_t p0, uint16_t p1 = 0, uint16_t p2 = 0, uint16_t p3 = 0) { return command({MoveAxisTo, p0, p1, p2, p3}); }
-      Packet4 set_pfk_param_2(uint16_t p1, uint16_t p2, uint16_t p3, uint16_t p4) { return command({SetFpkParam2, p1, p2, p3, p4}); }
-      Packet4 set_fly_res(uint16_t f1, uint16_t f2, uint16_t f3, uint16_t f4) { return command({SetFlyRes, f1, f2, f3, f4}); }
+      Packet4 move_axis_to(uint16_t p0, uint16_t p1 = 0, uint16_t p2 = 0, uint16_t p3 = 0) {
+            return command({MoveAxisTo, p0, p1, p2, p3});
+            }
+      Packet4 set_pfk_param_2(uint16_t p1, uint16_t p2, uint16_t p3, uint16_t p4) {
+            return command({SetFpkParam2, p1, p2, p3, p4});
+            }
+      Packet4 set_fly_res(uint16_t f1, uint16_t f2, uint16_t f3, uint16_t f4) {
+            return command({SetFlyRes, f1, f2, f3, f4});
+            }
       Packet4 write_cor_line(uint16_t dx, uint16_t dy, uint16_t non_first) {
             return command({WriteCorLine, dx, dy, non_first, 0, 0}, false);
             }
@@ -636,23 +668,23 @@ class LaserEngine : public QObject
 
       void initPosition();
 
-      std::vector<Pulse33> _pulseTable{
-         {  2, 1950, 4000},
-         {  4, 1350, 4000},
-         {  6,  975, 4000},
-         {  9,  600, 4000},
-         { 13,  412, 3000},
-         { 20,  225, 3000},
-         { 30,  187, 3000},
-         { 45,  150, 2000},
-         { 60,  135, 2000},
-         { 80,  112, 2000},
-         {100,  105, 1000},
-         {150,   57, 1000},
-         {200,   45, 1000},
-         {250,   42,  900},
-         {350,   40,  600},
-         {500,   30,  500},
+      std::vector<Pulse33> _pulseTable {
+               {  2, 1950, 4000},
+               {  4, 1350, 4000},
+               {  6,  975, 4000},
+               {  9,  600, 4000},
+               { 13,  412, 3000},
+               { 20,  225, 3000},
+               { 30,  187, 3000},
+               { 45,  150, 2000},
+               { 60,  135, 2000},
+               { 80,  112, 2000},
+               {100,  105, 1000},
+               {150,   57, 1000},
+               {200,   45, 1000},
+               {250,   42,  900},
+               {350,   40,  600},
+               {500,   30,  500},
             };
 
     protected:
@@ -670,6 +702,7 @@ class LaserEngine : public QObject
       void exit();
 
       void abort(bool dummyPacket = true);
+      void setAbortFlag() { aborting = true; }
 
       friend class CmdList;
       friend class FiberLaserState;

@@ -27,6 +27,210 @@ Item {
     signal positionChanged(real x, real y)
     property bool perspectiveCamera: false
 
+    // Polygon drawing state
+    property var _drawingPolygon: null   // the Polygon being drawn (null when idle)
+
+    //─────────────────────────────────────────────────────────────
+    //  Vertex handle management
+    //─────────────────────────────────────────────────────────────
+
+    // The component for a single vertex handle sphere.
+    // When the mouse hovers over a handle, _hovered is set to true
+    // and the baseColor becomes lighter (brighter orange/yellow).
+    // Bezier control-point handles are rendered in dark red.
+    Component {
+        id: handleComponent
+        Model {
+            property int _vertexIndex: -1
+            property var _poly: null
+            property bool _hovered: false
+            property bool _isControlPoint: false
+            // Only show handles when the associated element is visible.
+            visible: _poly ? (_poly.show && _poly.ancestorsShow) : false
+            source: "#Sphere"
+            // Compensate for root.scale so handles keep a constant
+            // on-screen size regardless of scene zoom level.
+            scale: {
+                var s = ZCam.config ? ZCam.config.handleSize : 0.02;
+                var rs = root.scale;
+                var sx = rs.x !== 0 ? s / rs.x : s;
+                var sy = rs.y !== 0 ? s / rs.y : s;
+                var sz = rs.z !== 0 ? s / rs.z : s;
+                return Qt.vector3d(sx, sy, sz);
+                }
+            pickable: true
+            materials: [
+                PrincipledMaterial {
+                    cullMode: PrincipledMaterial.NoCulling
+                    lighting: PrincipledMaterial.NoLighting
+                    baseColor: _isControlPoint
+                        ? (_hovered ? Qt.rgba(0.9, 0.3, 0.3, 1.0)   // lighter red (hovered control point)
+                                    : Qt.rgba(0.6, 0.0, 0.0, 1.0))  // dark red (control point)
+                        : (_hovered ? Qt.rgba(1.0, 0.75, 0.3, 1.0)   // lighter orange (hovered)
+                                    : Qt.rgba(1.0, 0.4, 0.0, 1.0))  // orange (normal)
+                    }
+            ]
+            }
+        }
+
+    // Tracks the current polygon and its handles.
+    property var _handlePolygon: null
+    property var _handleList: []
+    property var _hoveredHandle: null   // currently hovered vertex handle Model
+
+    // Rebuild all vertex handles.  Called when the current element
+    // changes (selection) or when the scene graph is rebuilt.
+    function rebuildVertexHandles() {
+        // destroy old handles
+        for (var i = 0; i < _handleList.length; ++i) {
+            if (_handleList[i])
+                _handleList[i].destroy();
+            }
+        _handleList = [];
+        _handlePolygon = null;
+        _hoveredHandle = null;
+
+        var poly = ZCam.currentElement;
+        if (!poly || !poly.hasHandles)
+            return;
+
+        // Defer to allow ProjectTree to rebuild the scene graph first
+        Qt.callLater(doRebuildVertexHandles);
+        }
+
+    function doRebuildVertexHandles() {
+        var poly = ZCam.currentElement;
+        if (!poly || !poly.hasHandles)
+            return;
+        _handlePolygon = poly;
+
+        var n = poly.vertexCount();
+        for (var idx = 0; idx < n; ++idx) {
+            if (!poly.isVertex(idx))
+                continue;
+            var p = poly.vertexWorldPos(idx);
+            var handle = handleComponent.createObject(root, {
+                "position": Qt.vector3d(p.x, p.y, p.z),
+                "_vertexIndex": idx,
+                "_poly": poly,
+                "_isControlPoint": poly.isControlPoint(idx)
+                });
+            _handleList.push(handle);
+            }
+        }
+
+    // Update handle positions without rebuilding.  Called during
+    // drag and undo/redo when vertexRevision changes.
+    function updateVertexHandlePositions() {
+        if (!_handlePolygon)
+            return;
+        var poly = _handlePolygon;
+        for (var i = 0; i < _handleList.length; ++i) {
+            var h = _handleList[i];
+            if (!h)
+                continue;
+            var p = poly.vertexWorldPos(h._vertexIndex);
+            if (p)
+                h.position = Qt.vector3d(p.x, p.y, p.z);
+            }
+        }
+
+    // Update handle hover state.  Called from MouseArea onPositionChanged
+    // when no button is pressed (pure hover).  Highlights the handle
+    // currently under the mouse cursor.
+    function updateHandleHover(x, y) {
+        var newHover = mouseArea.pickVertexHandle(x, y);
+        if (newHover === _hoveredHandle)
+            return;
+        if (_hoveredHandle)
+            _hoveredHandle._hovered = false;
+        if (newHover)
+            newHover._hovered = true;
+        _hoveredHandle = newHover;
+        }
+
+    // Finish the current polygon drawing session.
+    // Closes the polygon and resets drawing state.
+    function finishPolygonDrawing() {
+        if (!_drawingPolygon)
+            return;
+        _drawingPolygon.finishDrawing();
+        _drawingPolygon = null;
+        rebuildVertexHandles();
+        }
+
+    // Convert a world (root) position to local polygon coordinates.
+    // For new polygons, pos is in root space and scale/rot are identity,
+    // so local = world - pos.
+    function worldToPolygonLocal(poly, worldPos) {
+        return Qt.vector3d(worldPos.x - poly.pos.x, worldPos.y - poly.pos.y, 0);
+        }
+
+    //=========================================================
+    //  Background View3D — renders only the Grid element so
+    //  the grid is always rendered behind all other 3D geometry
+    //  regardless of z-stacking within the main scene.
+    //=========================================================
+    View3D {
+        id: backgroundView
+        anchors.fill: parent
+
+        camera: panel.perspectiveCamera ? bgCameraPerspective : bgCameraOrtho
+
+        environment: SceneEnvironment {
+            clearColor: Material.color(Material.BlueGrey, Material.Shade500)
+            backgroundMode: SceneEnvironment.Color
+            antialiasingQuality: SceneEnvironment.VeryHigh
+        }
+
+        OrthographicCamera {
+            id: bgCameraOrtho
+            // Bind directly to the main camera so the background
+            // (grid) layer is always perfectly in sync with the
+            // interactive scene — including during initialization
+            // when Settings restores the persisted camera position.
+            // Using a binding instead of Connections avoids the
+            // timing issue where the Connections target (camera1)
+            // does not exist yet when the background View3D is
+            // created, causing the initial positionChanged signal
+            // to be missed.
+            position: camera1.position
+            clipNear: 0.1
+            clipFar: 10000
+        }
+        PerspectiveCamera {
+            id: bgCameraPerspective
+            // See comment above for bgCameraOrtho.
+            position: camera2.position
+            clipNear: 0.1
+            clipFar: 10000
+        }
+
+        Node {
+            id: bgRoot
+            // Mirror the main root node transform so the grid
+            // stays in sync with the scene camera.
+            position: root.position
+            eulerRotation: root.eulerRotation
+            scale: root.scale
+
+            // Grid model — only visible when a Grid element exists
+            // and config.showGrid is true.
+            GridShape {
+                id: gridShape
+                visible: ZCam.project && ZCam.project.gridElement && ZCam.config.showGrid && ZCam.project.gridElement.show
+                element: ZCam.project ? ZCam.project.gridElement : null
+            }
+        }
+
+        // Background cameras are kept in sync with the main cameras
+        // via direct property bindings (position: camera1.position /
+        // position: camera2.position) declared on the camera objects
+        // above.  This replaces the previous Connections-based
+        // approach which missed the initial sync when Settings
+        // restored camera positions during component initialization.
+    }
+
     View3D {
         id: view3D
         anchors.fill: parent
@@ -34,15 +238,34 @@ Item {
         camera: panel.perspectiveCamera ? camera2 : camera1
         renderMode: View3D.Offscreen
 
+        // Handle Delete key directly on the View3D because the
+        // offscreen render mode can bypass the QML Shortcut event
+        // filter installed on the window.
+        Keys.onPressed: function (event) {
+            if (event.key === Qt.Key_Delete) {
+                ZCam.deleteCurrentElement();
+                event.accepted = true;
+                }
+            if (event.key === Qt.Key_Escape) {
+                finishPolygonDrawing();
+                event.accepted = true;
+                }
+            if (event.key === Qt.Key_P) {
+                ZCam.centerOnWorkspace(ZCam.currentElement);
+                event.accepted = true;
+                }
+            }
+
         environment: SceneEnvironment {
-            clearColor: Material.color(Material.BlueGrey, Material.Shade500)
-            backgroundMode: SceneEnvironment.Color
+            clearColor: "transparent"
+            backgroundMode: SceneEnvironment.Transparent
             antialiasingQuality: SceneEnvironment.VeryHigh
             }
         Settings {
             id: viewSettings
             category: "View3D"
             property alias scale: root.scale
+            property alias rootPosition: root.position
             property alias projection: panel.perspectiveCamera
             property alias position1: camera1.position
             property alias position2: camera2.position
@@ -58,7 +281,7 @@ Item {
         PerspectiveCamera {
             id: camera2
             position: Qt.vector3d(0, 0, 1000)
-            clipNear: 0.1       // zero does not work for perspective
+            clipNear: 0.1
             clipFar: 10000
             }
         DirectionalLight {
@@ -72,10 +295,90 @@ Item {
         Node {
             id: root
             onEulerRotationChanged: viewSettings.rotation = eulerRotation
-            //            TestCube {}
-            ProjectTree {}
+            ProjectTree {
+                id: projectTree
+                }
             }
         }
+
+    // Rebuild handles when the current element changes.
+    Connections {
+        target: ZCam
+        function onCurrentElementChanged() {
+            rebuildVertexHandles();
+            }
+        }
+
+    // Rebuild handles when the handle size changes in config.
+    Connections {
+        target: ZCam.config
+        function onHandleSizeChanged() {
+            rebuildVertexHandles();
+            }
+        ignoreUnknownSignals: true
+        }
+
+    // Update handle positions when vertex revision changes (drag/undo).
+    // Use _handlePolygon which is a var so QML resolves the signal dynamically.
+    Connections {
+        target: _handlePolygon
+        function onVertexRevisionChanged() {
+            updateVertexHandlePositions();
+            }
+        ignoreUnknownSignals: true
+        }
+
+    // Reset the 3D canvas camera and root node to their default
+    // positions.  Called whenever a new project is created (including
+    // Material-Test and Galvo-Test) so the user starts with a clean
+    // view instead of inheriting the previous project's zoom/pan/rotation.
+    function resetCamera() {
+        root.eulerRotation = Qt.vector3d(0, 0, 0);
+        root.scale = Qt.vector3d(5.0, 5.0, 5.0);
+        root.position = Qt.vector3d(0.0, 0.0, 0.0);
+        // Center the workspace of the current machine on the canvas.
+        // The workspace center in local coords is (maxTravel.x/2, maxTravel.y/2).
+        // Because root applies a scale, the center in world (camera) coords is
+        // (cx * root.scale.x, cy * root.scale.y).  We move the camera to that
+        // point so the center appears at screen center.
+        // If no machine is present, the camera is reset to (0, 0, 1000).
+        var machine = (ZCam.project && ZCam.project.machine) ? ZCam.project.machine : null;
+        if (machine) {
+            var travel = machine.maxTravel;
+            var cx = travel.x / 2.0;
+            var cy = travel.y / 2.0;
+            camera1.position = Qt.vector3d(cx * root.scale.x, cy * root.scale.y, 1000);
+            camera2.position = Qt.vector3d(cx * root.scale.x, cy * root.scale.y, 1000);
+        } else {
+            camera1.position = Qt.vector3d(0, 0, 1000);
+            camera2.position = Qt.vector3d(0, 0, 1000);
+        }
+        // Persist the reset values into Settings so they survive
+        // the next application restart.
+        viewSettings.rotation = Qt.vector3d(0, 0, 0);
+        }
+
+    // Reset the 3D camera when a new project is created.
+    // This covers newProject(), createMaterialTest() and
+    // createGalvoTest() — all emit projectCreated() via
+    // ProjectManager::endNewProject().
+    Connections {
+        target: ZCam.projectManager
+        function onProjectCreated() {
+            resetCamera();
+            }
+        }
+
+    Component.onCompleted: {
+        rebuildVertexHandles();
+        // Sync camera button states with the persisted perspectiveCamera value.
+        // The Settings component restores perspectiveCamera before this
+        // handler runs (inner Component.onCompleted runs first), so the
+        // value is already correct at this point.
+        iCamera.checked = !panel.perspectiveCamera;
+        pCamera.checked = panel.perspectiveCamera;
+        }
+
     SpaceMouse {
         onRotate: v => {
             var r = root.eulerRotation;
@@ -93,11 +396,9 @@ Item {
             delta.z = v.z * -0.1;
 
             let velocity = Qt.vector3d(0, 0, 0);
-            // X Movement
             let xDirection = root.right;
             velocity = velocity.plus(Qt.vector3d(xDirection.x * delta.x, xDirection.y * delta.x, xDirection.z * delta.x));
 
-            // Y Movement
             let yDirection = root.up;
             velocity = velocity.plus(Qt.vector3d(yDirection.x * delta.y, yDirection.y * delta.y, yDirection.z * delta.y));
 
@@ -110,8 +411,8 @@ Item {
         hoverEnabled: true
         flat: true
         icon.color: "transparent"
-        icon.width: ZCam.style.iconSize
-        icon.height: ZCam.style.iconSize
+        icon.width: ZCam.config.iconSize
+        icon.height: ZCam.config.iconSize
         }
 
     component RButton: Button {
@@ -121,8 +422,8 @@ Item {
         checkable: true
         autoExclusive: true
         icon.color: "transparent"
-        icon.width: ZCam.style.iconSize
-        icon.height: ZCam.style.iconSize
+        icon.width: ZCam.config.iconSize
+        icon.height: ZCam.config.iconSize
         background: Rectangle {
             border.width: 2
             border.color: Material.accentColor
@@ -145,62 +446,34 @@ Item {
         property real ySpeed: 0.05
         property vector2d lastPos: Qt.vector2d(0, 0)
         property vector3d eLastPos: Qt.vector3d(0, 0, 0)
-        property vector3d pos3d: Qt.vector3d(0, 0, 0)       // current position on xy plane
+        property vector3d pos3d: Qt.vector3d(0, 0, 0)
         property real frameDelta: 10
         property Node curNode: null
+        property variant vertexDragHandle: null
         acceptedButtons: Qt.AllButtons
 
         function pan(delta) {
-            // Zugriff auf die aktuell aktive Kamera im View3D
             var cam = view3D.camera;
             var up = cam.up;
             var right = cam.right;
             var unitsPerPixel = 1.0;
 
-            // --- UNTERSCHEIDUNG DER KAMERA-TYPEN ---
-
-            // Prüfen, ob es eine PerspectiveCamera ist (hat 'fieldOfView')
             if (cam.fieldOfView !== undefined) {
                 var fovRad = cam.fieldOfView * (Math.PI / 180);
-
-                // Berechnung der sichtbaren Höhe auf der aktuellen Tiefe der Kamera
-                // (Annahme: wir pannen auf der Ebene z=0, Distanz ist also cam.z)
-                // Falls die Kamera rotiert ist, ist cam.z eine Annäherung, für perfektes Panning
-                // auf einer schiefen Ebene bräuchte man Raycasting. Für Standard-Pan reicht cam.z.
                 var distance = cam.z;
-
-                // Schutz vor negativen Distanzen (falls Kamera hinter dem Objekt ist)
                 distance = Math.abs(distance);
-
                 var viewHeightAtDepth = 2 * distance * Math.tan(fovRad / 2);
-
                 unitsPerPixel = viewHeightAtDepth / panel.height;
-                } else
-            // Andernfalls: OrthographicCamera
-                {
-                // Bei Ortho bestimmt nur der 'scale' (Zoom) das Verhältnis.
-                // Standard: scale 1.0 => 1 Pixel = 1 Unit
-                // Wir nehmen cam.scale oder 1.0 als Fallback, falls undefined
+                } else {
                 var camScale = (cam.scale) ? cam.scale.y : 1.0;
-
-                // Vermeidung von Division durch Null
                 if (camScale === 0)
                     camScale = 0.001;
-
                 unitsPerPixel = 1.0 / camScale;
                 }
-
-            // --- BEWEGUNG AUSFÜHREN ---
-
-            // WICHTIG: delta.y ist positiv nach unten (Screen),
-            // aber im 3D-Raum ist Y oft positiv nach oben.
-            // Um das Bild "unter der Maus zu greifen", bewegen wir die Kamera entgegengesetzt.
 
             var moveX = -delta.x * unitsPerPixel;
             var moveY = delta.y * unitsPerPixel;
             var moveVec = right.times(moveX).plus(up.times(moveY));
-
-            // Falls du stattdessen die KAMERA bewegen willst (klassisches Panning):
             cam.position = cam.position.minus(moveVec);
             }
 
@@ -208,47 +481,14 @@ Item {
             if (mouse.modifiers != Qt.ControlModifier)
                 return;
 
-            // If an element is under the cursor, scale that element.
-            // Otherwise, zoom the whole scene.
-            var picked = pickModel(mouse.x, mouse.y);
-            if (picked && picked.element) {
-                var sf = (mouse.angleDelta.y > 0.0) ? 1.1 : 0.9;
-                ZCam.scaled(picked.element, Qt.vector3d(sf, sf, sf), mouse.modifiers);
-                return;
-                }
-
-            // view3D.pick() liefert die Position in Szene-Koordinaten (Parent-Space von root).
-            // Um den Punkt unter dem Cursor beim Zoomen stabil zu halten, gilt:
-            //
-            //   Szene-Pos eines lokalen Punktes L:
-            //     S = root.position + Rotation(root.scale * L)
-            //
-            //   Nach Skalierung mit Faktor sd soll S gleich bleiben:
-            //     root.position_new + sd * (S - root.position) = S
-            //   →  root.position_new = root.position + (1 - sd) * (S - root.position)
-            //
-            //   Die Rotation kürzt sich heraus → Formel gilt für beliebige root.eulerRotation.
-
-            // Cursor-Position in Szene-Koordinaten ermitteln.
-            // Primär: pick() gegen das Grid-Modell (exakt).
-            // Fallback: screenToScene() projiziert auf die XY-Ebene (z=0 in Root-Local-Space).
-
             var cursorScenePos;
-            //            var result = view3D.pick(mouse.x, mouse.y, grid);
-            //            if (result && result.hitType !== PickResult.Null) {
-            //                cursorScenePos = result.position;
-            //                }
-            //            else {
             var localPos = screenToScene(mouse.x, mouse.y);
             if (!localPos)
                 return;
-            // screenToScene liefert Root-lokale Koordinaten → in Szene-Koordinaten umrechnen
             cursorScenePos = root.mapPositionToScene(localPos);
-            //                }
 
             var sd = (mouse.angleDelta.y > 0.0) ? 1.2 : 0.8;
             root.scale = root.scale.times(sd);
-            // Korrektur: root.position so verschieben, dass cursorScenePos auf dem Bildschirm bleibt
             root.position = root.position.plus(cursorScenePos.minus(root.position).times(1.0 - sd));
             }
 
@@ -257,38 +497,141 @@ Item {
             lastPos = Qt.vector2d(mouse.x, mouse.y);
             eLastPos = screenToScene(mouse.x, mouse.y);
             if (mouse.button == Qt.LeftButton) {
-                //
-                //  Left button: pick a new element under the cursor.
-                //  This always re-picks so the user can select different elements.
-                //
+                // When actively drawing a polygon, skip handle
+                // picking — clicks continue the polygon, not drag
+                // the preview handle.
+                if (!_drawingPolygon) {
+                    // First check if a vertex handle was picked.
+                    var handle = pickVertexHandle(mouse.x, mouse.y);
+                    if (handle) {
+                        vertexDragHandle = handle;
+                        ZCam.startVertexDrag(handle._poly, handle._vertexIndex);
+                        return;
+                        }
+                    }
+                // Rectangle tool: create a 0×0 rectangle at the click
+                // position and immediately start dragging the
+                // bottom-right handle (index 1) so the user can
+                // pull the rectangle to the desired size.
+                if (ZCam.currentTool == "rectangle") {
+                    var newRect = ZCam.createRectangle(eLastPos.x, eLastPos.y);
+                    if (newRect) {
+                        // Wait for handles to be rebuilt by the
+                        // currentElementChanged connection, then
+                        // start dragging handle index 1.
+                        Qt.callLater(function () {
+                            // Find the handle for vertex index 1.
+                            for (var i = 0; i < _handleList.length; ++i) {
+                                var h = _handleList[i];
+                                if (h && h._vertexIndex === 1) {
+                                    vertexDragHandle = h;
+                                    ZCam.startVertexDrag(newRect, 1);
+                                    return;
+                                    }
+                                }
+                            });
+                        }
+                    return;
+                    }
+                // Ellipse (circle) tool: create a 0×0 ellipse at the click
+                // position and immediately start dragging the
+                // bottom-right handle (index 1) so the user can
+                // pull the ellipse to the desired size.
+                if (ZCam.currentTool == "circle") {
+                    var newEll = ZCam.createEllipse(eLastPos.x, eLastPos.y);
+                    if (newEll) {
+                        Qt.callLater(function () {
+                            for (var i = 0; i < _handleList.length; ++i) {
+                                var h = _handleList[i];
+                                if (h && h._vertexIndex === 1) {
+                                    vertexDragHandle = h;
+                                    ZCam.startVertexDrag(newEll, 1);
+                                    return;
+                                    }
+                                }
+                            });
+                        }
+                    return;
+                    }
+                // Polygon tool: interactive polygon drawing.
+                // First click starts a new polygon; subsequent
+                // clicks add segments; right-click or Escape
+                // finishes the polygon.
+                if (ZCam.currentTool == "polygon") {
+                    if (!_drawingPolygon) {
+                        // Start a new polygon at the click position.
+                        var newPoly = ZCam.createPolygon(eLastPos.x, eLastPos.y);
+                        if (newPoly) {
+                            _drawingPolygon = newPoly;
+                            var lp = worldToPolygonLocal(newPoly, eLastPos);
+                            _drawingPolygon.startDrawing(Qt.vector2d(lp.x, lp.y));
+                            rebuildVertexHandles();
+                            }
+                        } else {
+                        // Continue: fix current segment, start new one.
+                        var lp2 = worldToPolygonLocal(_drawingPolygon, eLastPos);
+                        _drawingPolygon.continueDrawing(Qt.vector2d(lp2.x, lp2.y));
+                        rebuildVertexHandles();
+                        }
+                    return;
+                    }
+                // Pick a new element under the cursor.
                 curNode = pickModel(mouse.x, mouse.y);
-                if (curNode && curNode.element)
+                if (curNode && curNode.element) {
                     ZCam.currentElement = curNode.element;
+                    if (!curNode.element.draggable)
+                        curNode = null;
+                    } else {
+                    // Clicked on empty space — clear segment selection
+                    // and rebuild handles so all vertices reappear.
+                    if (ZCam.currentElement) {
+                        ZCam.clearSegmentSelection(ZCam.currentElement);
+                        rebuildVertexHandles();
+                        }
+                    }
                 ZCam.mousePress(curNode ? curNode.element : null, mouse.buttons, mouse.modifiers, eLastPos.x, eLastPos.y);
-                } else {
-                //
-                //  Right or middle button: use the existing curNode (if any)
-                //  for rotate/pan. If no curNode is set yet, try to pick one.
-                //
+                // After mousePress (which may have selected a segment),
+                // rebuild handles to reflect the new selection state.
+                if (curNode && curNode.element) {
+                    rebuildVertexHandles();
+                    // Only start element drag if no segment is selected
+                    // (otherwise the user is doing segment-level editing).
+                    var hasSegSel = false;
+                    try { hasSegSel = curNode.element.selectedSegment >= 0; } catch(e) {}
+                    if (curNode.element.draggable && !hasSegSel)
+                        ZCam.startElementDrag(curNode.element);
+                    }
+                } else if (mouse.button == Qt.RightButton) {
+                // Right-click finishes the current polygon drawing.
+                if (_drawingPolygon) {
+                    finishPolygonDrawing();
+                    return;
+                    }
                 if (!curNode)
                     curNode = pickModel(mouse.x, mouse.y);
+                if (curNode && curNode.element && !curNode.element.draggable)
+                    curNode = null;
+                } else {
+                if (!curNode)
+                    curNode = pickModel(mouse.x, mouse.y);
+                if (curNode && curNode.element && !curNode.element.draggable)
+                    curNode = null;
                 }
             }
 
         onDoubleClicked: mouse => {
-            //            console.log("double click");
             var m = pickModel(mouse.x, mouse.y);
             if (m && m.element)
                 ZCam.doubleClick(m.element);
             }
 
         onReleased: mouse => {
-            //
-            //  Reset curNode on release so the next click can pick a new element.
-            //  In "line" edit mode, keep curNode so the handle can be dragged
-            //  without holding the mouse button.
-            //
-            if (ZCam.currentTool != "line")
+            if (vertexDragHandle) {
+                ZCam.endVertexDrag(vertexDragHandle._poly, vertexDragHandle._vertexIndex);
+                vertexDragHandle = null;
+                }
+            ZCam.endElementDrag();
+            if (ZCam.currentTool != "rectangle" && ZCam.currentTool != "polygon" && ZCam.currentTool != "circle")
                 curNode = null;
             }
 
@@ -301,9 +644,6 @@ Item {
                 var result = list[i];
                 if (result.hitType == PickResult.Model) {
                     if (result.objectHit.element) {
-                        //
-                        // look for the smallest model
-                        //
                         var l = result.objectHit.element.pickLevel;
                         var b = result.objectHit.bounds;
                         var a = (b.maximum.x - b.minimum.x) * (b.maximum.y - b.minimum.y);
@@ -318,11 +658,20 @@ Item {
             return hit;
             }
 
-        //---------------------------------------------------------
-        //   screenToScene
-        //  returns the scene position for mouse position x/y
-        //  projected on the xy plane
-        //---------------------------------------------------------
+        // Returns the vertex handle Model under x/y, or null.
+        function pickVertexHandle(x, y) {
+            var list = view3D.pickAll(x, y);
+            for (var i = 0; i < list.length; ++i) {
+                var result = list[i];
+                if (result.hitType == PickResult.Model) {
+                    var obj = result.objectHit;
+                    if (obj._vertexIndex !== undefined) {
+                        return obj;
+                        }
+                    }
+                }
+            return null;
+            }
 
         function screenToScene(x, y) {
             let normX = x / view3D.width;
@@ -343,65 +692,127 @@ Item {
         onPositionChanged: mouse => {
             pos3d = screenToScene(mouse.x, mouse.y);
             panel.positionChanged(pos3d.x, pos3d.y);
-            //            var result     = view3D.pick(mouse.x, mouse.y, grid);
             var currentPos = Qt.vector2d(mouse.x, mouse.y);
             var delta = Qt.vector2d(lastPos.x - currentPos.x, lastPos.y - currentPos.y);
 
+            // Update polygon preview when drawing (no button pressed = hover).
+            if (_drawingPolygon && pos3d) {
+                var lp = worldToPolygonLocal(_drawingPolygon, pos3d);
+                _drawingPolygon.updatePreview(Qt.vector2d(lp.x, lp.y));
+                }
+
             if ((mouse.buttons == Qt.RightButton) && (mouse.modifiers == Qt.NoModifier)) {
                 if (curNode) {
-                    //*******************************
-                    //  rotate selected element
-                    //*******************************
                     var rotSpeed = 0.05 * frameDelta;
                     var dRot = Qt.vector3d(delta.y * -mouseArea.ySpeed * rotSpeed, -delta.x * mouseArea.xSpeed * rotSpeed, 0);
                     ZCam.rotated(curNode.element, dRot, mouse.modifiers);
                     } else {
-                    //*************
-                    //  rotate scene
-                    //*************
                     var rotationVector = root.eulerRotation;
-
-                    // rotate x
                     var rotateX = -delta.x * mouseArea.xSpeed * frameDelta;
                     rotationVector.y += rotateX;
-
-                    // rotate y
                     var rotateY = delta.y * -mouseArea.ySpeed * frameDelta;
                     rotationVector.x += rotateY;
                     root.setEulerRotation(rotationVector);
                     }
                 lastPos = currentPos;
                 } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
-                //*************
-                //  pan
-                //*************
                 pan(delta);
                 lastPos = currentPos;
                 } else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
-                //*******************************
-                //  drag model curNode
-                //*******************************
-                if (curNode) {
+                if (vertexDragHandle) {
+                    // The handle is a child of root, so pos3d is already
+                    // in the same coordinate space as the handle.
+                    eLastPos = pos3d;
+                    ZCam.dragVertexTo(vertexDragHandle._poly, vertexDragHandle._vertexIndex, pos3d);
+                    } else if (curNode) {
                     var eDelta = pos3d.minus(eLastPos);
                     eLastPos = pos3d;
                     ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
                     }
                 } else {
-                // in "line" editmode the handle can be dragged without any mouse button pressed:
-                if (ZCam.currentTool == "line" && curNode) {
-                    var eDelta = pos3d.minus(eLastPos);
-                    //if (mouse.modifiers == Qt.ShiftModifier)
+                // No button pressed — update handle hover highlight.
+                updateHandleHover(mouse.x, mouse.y);
+                var m = pickModel(mouse.x, mouse.y);
+                ZCam.hover(m ? m.element : null);
+                }
+            }
+        }
 
-                    eLastPos = pos3d;
-                    ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
-                    } else {
-                    //*************
-                    //  hover
-                    //*************
-                    var m = pickModel(mouse.x, mouse.y);
-                    ZCam.hover(m ? m.element : null);
+    //-----------------------------------------------------
+    //  Drag & Drop area for SVG / DXF / DWG import
+    //-----------------------------------------------------
+
+    DropArea {
+        id: dropArea
+        anchors.fill: parent
+        z: 100  // above the 3D view and mouse area
+
+        property bool _hasImportDrop: false
+
+        // Accept drags that contain at least one supported file.
+        // We evaluate this in onEntered and onPositionChanged so
+        // that the highlight overlay appears only for valid drops.
+        function containsImportable(urls) {
+            for (var i = 0; i < urls.length; ++i) {
+                var path = urls[i].toString().toLowerCase();
+                if (path.endsWith(".svg") || path.endsWith(".dxf") || path.endsWith(".dwg"))
+                    return true;
+                }
+            return false;
+            }
+
+        onEntered: drop => {
+            _hasImportDrop = containsImportable(drop.urls);
+            drop.accepted = _hasImportDrop;
+            }
+
+        onPositionChanged: drop => {
+            _hasImportDrop = containsImportable(drop.urls);
+            drop.accepted = _hasImportDrop;
+            }
+
+        onDropped: drop => {
+            _hasImportDrop = false;
+            var imported = false;
+            for (var i = 0; i < drop.urls.length; ++i) {
+                var path = drop.urls[i].toString();
+                // Strip "file://" prefix to get a local path.
+                if (path.startsWith("file://"))
+                    path = path.substring("file://".length);
+                var lower = path.toLowerCase();
+                if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
+                    ZCam.projectManager.importFile(path);
+                    imported = true;
                     }
                 }
+            drop.accepted = imported;
+            }
+
+        onExited: {
+            _hasImportDrop = false;
+            }
+        }
+
+    // Visual feedback overlay shown while dragging supported files over the canvas.
+    Rectangle {
+        id: dropOverlay
+        anchors.fill: parent
+        z: 99  // below the DropArea so it doesn't block drop events
+        color: Material.color(Material.Teal, Material.Shade700)
+        opacity: 0.25
+        border.width: 4
+        border.color: Material.color(Material.Teal, Material.Shade200)
+        radius: 8
+        visible: dropArea._hasImportDrop
+
+        Label {
+            anchors.centerIn: parent
+            text: qsTr("Drop SVG / DXF to import")
+            font.pixelSize: 24
+            font.bold: true
+            color: "white"
+            style: Text.Raised
+            styleColor: Material.color(Material.Teal, Material.Shade900)
             }
         }
 
@@ -501,11 +912,7 @@ Item {
             }
         TButton {
             icon.source: "qrc:////icons/view-fullscreen.svg"
-            onClicked: {
-                root.eulerRotation = Qt.vector3d(0, 0, 0);
-                root.scale = Qt.vector3d(5.0, 5.0, 5.0);
-                root.position = Qt.vector3d(0.0, 0.0, 0.0);
-                }
+            onClicked: resetCamera()
             z: 1
             }
         }
@@ -521,13 +928,6 @@ Item {
             checked: ZCam.currentTool == "pointer"
             onCheckedChanged: if (checked)
                 ZCam.currentTool = "pointer"
-            z: 1
-            }
-        RButton {
-            icon.source: "qrc:////icons/Draft_Line.svg"
-            checked: ZCam.currentTool == "line"
-            onCheckedChanged: if (checked)
-                ZCam.currentTool = "line"
             z: 1
             }
         RButton {

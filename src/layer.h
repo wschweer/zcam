@@ -28,31 +28,94 @@ class Layer : public Element3d
 
       PROPV(bool, invert, false)
 
-      inline static constexpr std::string_view _properties {R"({
-            "class": "Layer",
-            "items": [
-                  { "row":
-                        {
-                              "show": { "label": "Show",     "type": "bool", "default": true },
-                              "burn": { "label": "Burn",     "type": "bool", "default": true }
+      inline static constexpr std::string_view _properties {
+         R"json({
+                  "class": "Layer",
+                  "items": [
+                    {
+                      "row": {
+                        "show": {
+                          "label": "Show",
+                          "type": "bool",
+                          "default": true
                         },
-                        "label": "State"
-                     },
-                  { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
-                  { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
-                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
-                  { "row":
-                        {
-                              "mirrorX": { "label": "X", "type": "bool", "default": false },
-                              "mirrorY": { "label": "Y", "type": "bool", "default": false }
+                        "burn": {
+                          "label": "Burn",
+                          "type": "bool",
+                          "default": true
+                        }
+                      },
+                      "label": "State"
+                    },
+                    {
+                      "name": "pos",
+                      "label": "Pos.",
+                      "type": "vector3d",
+                      "unit": "mm",
+                      "default": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    {
+                      "name": "rot",
+                      "label": "Rot.",
+                      "type": "vector3d",
+                      "unit": "°",
+                      "min": 0.0,
+                      "max": 360,
+                      "default": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    {
+                      "name": "scale",
+                      "label": "Scale",
+                      "type": "vector3d",
+                      "min": 0.001,
+                      "max": 1000.0,
+                      "precision": 3,
+                      "step": 0.1,
+                      "bigStep": 1.0,
+                      "default": [
+                        1.0,
+                        1.0,
+                        1.0
+                      ]
+                    },
+                    {
+                      "name": "lockScale",
+                      "label": "Lock",
+                      "type": "lockScale",
+                      "default": 2
+                    },
+                    {
+                      "row": {
+                        "mirrorX": {
+                          "label": "X",
+                          "type": "bool",
+                          "default": false
                         },
-                        "label": "Mirror"
-                     }
+                        "mirrorY": {
+                          "label": "Y",
+                          "type": "bool",
+                          "default": false
+                        }
+                      },
+                      "label": "Mirror"
+                    }
                   ]
-                  })"};
+                      })json"};
 
     public:
       Layer(ZCam*, Element* parent = nullptr);
       virtual QString typeName() override { return QStringLiteral("layer"); }
       virtual const std::string_view properties() const override { return _properties; }
+      Q_INVOKABLE virtual bool deletable() const override { return true; }
+      Q_INVOKABLE virtual bool visible() const override { return true; }
       };
+
+extern Clipper2Lib::PathD wobble(const Clipper2Lib::PathD& path, double step, double r);

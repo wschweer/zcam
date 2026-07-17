@@ -58,7 +58,8 @@ class Element : public QObject
       virtual ~Element();
       Q_INVOKABLE virtual QString typeName() = 0;
       const QList<Element*>& children() const { return _children; }
-      Element* parent() const { return _parent; }
+      QList<Element*>& children() { return _children; }
+      Q_INVOKABLE Element* parent() const { return _parent; }
       virtual json toJson() const;
       virtual void fromJson(const json&);
       void addChild(Element* e) {

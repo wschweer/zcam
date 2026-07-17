@@ -26,7 +26,7 @@ Rectangle {
 
         Label {
             Layout.alignment: Qt.AlignCenter
-            text: ZCam.machine && ZCam.machine.name ? ZCam.machine.name : ""
+            text: ZCam.project && ZCam.project.machineName ? ZCam.project.machineName : ""
             color: Material.foreground
             }
         ToolButton {
@@ -101,41 +101,6 @@ Rectangle {
                 enabled: ZCam.laser.enabled
                 Layout.fillWidth: true
                 onClicked: { ZCam.laser.stop() }
-                }
-            }
-
-        // two framing modes:
-        //  - countour framing
-        //  - bounding box framing
-
-        RowLayout {
-            Layout.margins: 10
-            RadioButton {
-                id: framing1
-                text: "Contour"
-                checkable: true
-                enabled: laserLogo.checked
-                checked: ZCam.laser.framing1
-                Layout.fillWidth: true
-                Layout.horizontalStretchFactor: 1
-                onClicked: {
-                    if (checked)
-                        framing2.checked = false
-                    }
-                }
-            RadioButton {
-                id: framing2
-                text: "Bounding Box"
-                checkable: true
-                enabled: laserLogo.checked
-                checked: ZCam.laser.framing2
-                padding: 10
-                Layout.fillWidth: true
-                Layout.horizontalStretchFactor: 1
-                onClicked: {
-                    if (checked)
-                        framing1.checked = false
-                    }
                 }
             }
 

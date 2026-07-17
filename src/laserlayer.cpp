@@ -17,8 +17,13 @@
 #include "fixture.h"
 #include "layer.h"
 #include "zcam.h"
-#include "xmlreader.h"
-#include "xmlwriter.h"
+
+#include <algorithm>
+// #include <cmath>
+#include <future>
+#include <limits>
+#include <memory>
+#include <vector>
 
 //---------------------------------------------------------
 //   Point
@@ -34,63 +39,27 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //---------------------------------------------------------
 
 LaserLayer::LaserLayer(ZCam* w, Element* parent) : Element3d(w, parent) {
-      connect(this, &LaserLayer::kerfOffsetChanged, [this]() { update(); });
-      _geometry = new TessGeometry(this);
-      QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
-
-#if 0
-      connect(burnProperty, &Property::valueChanged, [this] {
-            if (wcam->topLevel() && wcam->topLevel()->fixture() && wcam->topLevel()->fixture()->framing())
-                  wcam->topLevel()->fixture()->framing()->update();
-            Debug("burn property changed");
-                  });
-      connect(invertProperty, &Property::valueChanged, [this] { update(-1); });
-      Dictionary* d = new Dictionary;
-      d->push_back({"None", int(ParameterType::None)});
-      d->push_back({"Speed", int(ParameterType::Speed)});
-      d->push_back({"Power", int(ParameterType::Power)});
-      d->push_back({"Interval", int(ParameterType::Interval)});
-      d->push_back({"Frequency", int(ParameterType::Frequency)});
-      d->push_back({"Count", int(ParameterType::Count)});
-      d->push_back({"Pulse", int(ParameterType::Pulse)});
-      overrideType1Property->setDictionary(d);
-      overrideType2Property->setDictionary(d); // will produce a memory leak
-      setModel("Fixture.qml");
-      connect(showMarksProperty, &Property::valueChanged, [this]() { update(); });
-      connect(showMovesProperty, &Property::valueChanged, [this]() { update(); });
-#endif
+      // LaserLayer no longer creates its own _geometry.
+      // Display geometry is collected and rendered by Cam.
+      set_model("LaserLayer1.qml");
+      setColor(w->config()->markColor());
+      // Keep the element color in sync with Config::markColor so that
+      // ProjectTree's curColor binding shows the correct color for hover/selection.
+      connect(w->config(), &Config::markColorChanged, this,
+              [this, w]() { setColor(w->config()->markColor()); });
       }
 
 LaserLayer::~LaserLayer() {
-      delete _geometry;
+      // _geometry is no longer created in the constructor.
+      // Element3d base class manages _geometry = nullptr safely.
       }
-
-#if 0
-
-//---------------------------------------------------------
-//   LaserLayerTemplates::read
-//---------------------------------------------------------
-
-void LaserLayerTemplates::read(XmlReader& r) {
-      auto l = new LaserLayer(wcam);
-      l->read(r);
-      //TODO      insertRow(-1, l);
-            }
-
-//---------------------------------------------------------
-//   LaserLayerTemplates::write
-//    do not write the protected default layer
-//---------------------------------------------------------
-
-void LaserLayerTemplates::write(XmlWriter& w) const {
-      for (int row = 1; row < rowCount(); ++row)
-            data(row)->write(w);
-            }
-#endif
 
 //---------------------------------------------------------
 //   collectLayerPath
-//    return polygonlist for laser
+//    Return polygon list for a single tile (no panel-grid offsets).
+//    The geometry is in project-root coordinate space
+//    (ce->globalMatrix()).
+//    Cam applies the panel-grid offsets when building the full layout.
 //---------------------------------------------------------
 
 PathsD LaserLayer::collectLayerPath() {
@@ -100,186 +69,194 @@ PathsD LaserLayer::collectLayerPath() {
             Critical("no base element");
             return spl;
             }
-#if 0
-      Cam* cam                 = wcam->topLevel()->cam();
-      Fixture* fixture         = wcam->topLevel()->fixture();
-      QMatrix4x4 fixtureMatrix = fixture->matrix();
 
-      double panelHD = cam->panelHDistance();
-      double panelVD = cam->panelVDistance();
-      double w, h;
-      fixture->size(w, h);
+      for (const auto e : layer->children()) {
+            const auto* ce = toType<Element3d>(e);
+            if (!ce->burn())
+                  continue;
+            const auto& pl = ce->pathList();
 
-      for (int row = 0; row < cam->panelRows(); ++row) {
-            for (int column = 0; column < cam->panelColumns(); ++column) {
-                  double xo = (panelHD + w) * column;
-                  double yo = (panelVD + h) * row;
+            QMatrix4x4 matrix = ce->globalMatrix();
 
-                  for (const auto e : layer->children()) {
-                        // collect into spl:
-                        const auto* ce = toType<Element3d>(e);
-                        const auto& pl = ce->pathList();
-
-                        QMatrix4x4 matrix = ce->matrix() * fixtureMatrix;
-                        if (ce->parent() && isType<Layer>(ce->parent()))
-                              matrix = matrix * toType<Layer>(ce->parent())->matrix();
-
-                        for (const auto& p : pl) {
-                              Clipper2Lib::PathD cp;
-                              for (const auto& pt : p) {
-                                    auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                                    cp.push_back({r.x() + xo, r.y() + yo});
-                                          }
-                              spl.push_back(cp);
-                                    }
-                              }
+            for (const auto& p : pl) {
+                  Clipper2Lib::PathD cp;
+                  for (const auto& pt : p) {
+                        auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
+                        cp.push_back({r.x(), r.y()});
                         }
+                  spl.push_back(cp);
                   }
-#endif
+            }
+
       return spl;
       }
 
 //---------------------------------------------------------
-//   update
-//    collect data for one laser layer
+//   processTileLines
+//    Process one tile's geometry through the recipe (fill, wobble,
+//    line segments) and return raw line segments in project-root
+//    coordinate space.  No panel-grid offsets are applied —
+//    Cam handles the grid layout.
 //---------------------------------------------------------
 
-void LaserLayer::update(int /* flags */) {
-      LaserPath lp = collectLaserPath();
+Clipper2Lib::PathsD LaserLayer::processTileLines() const {
+      if (!recipe()) {
+            Critical("no recipe for <{}>", name());
+            return {};
+            }
+
+      Layer* layer = baseElement();
+      if (!layer)
+            return {};
+
+      Clipper2Lib::PathsD lineList;
+      for (const auto e : layer->children()) {
+            const auto* ce = toType<Element3d>(e);
+            if (!ce->burn())
+                  continue;
+            PathList pl = ce->pathList();
+
+            QMatrix4x4 matrix = ce->globalMatrix();
+
+            Clipper2Lib::PathsD ll;
+            for (const auto& p : pl) {
+                  Clipper2Lib::PathD cp;
+                  for (const auto& pt : p) {
+                        auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
+                        cp.push_back({r.x(), r.y()});
+                        }
+                  ll.push_back(cp);
+                  }
+            auto* ls = recipe()->layer(0);
+            if (pl.fill())
+                  lineList.append_range(createFill(ll));
+            else if (ls->wobble()) {
+                  for (const auto& p : ll) {
+                        if (p.size() < 2)
+                              continue;
+                        auto wl = wobble(p, ls->wobbleStep(), ls->wobbleSize());
+                        lineList.push_back(wl);
+                        }
+                  }
+            else {
+                  for (const auto& l : ll) {
+                        if (l.size() < 2)
+                              continue;
+                        auto currentPoint = l[0];
+                        for (int i = 1; i < l.size(); ++i) {
+                              Clipper2Lib::PathD p;
+                              p.push_back(currentPoint);
+                              currentPoint = l[i];
+                              p.push_back(currentPoint);
+                              lineList.push_back(p);
+                              }
+                        }
+                  }
+            }
+      return lineList;
+      }
+
+//---------------------------------------------------------
+//   collectDisplayLines
+//    Return display line segments (mark + move subsets) for a
+//    single tile.  The result has exactly two subsets:
+//      subset 0 — MarkTo segments (if showMarks)
+//      subset 1 — MoveTo segments (if showMoves)
+//    No panel-grid offsets are applied.
+//---------------------------------------------------------
+
+Clipper2Lib::PathsD LaserLayer::collectDisplayLines() const {
+      Clipper2Lib::PathsD tileLines = processTileLines();
+
+      // Optimise the line order for display
+      Point currentPos(0, 0);
+      auto optimized = optimizePath(std::move(tileLines), currentPos);
+
+      // Build a LaserPath from the optimized lines
+      LaserPath lp;
+      if (!optimized.empty()) {
+            currentPos = optimized.front()[0];
+            lp.moveTo(currentPos.x, currentPos.y);
+            for (const auto& l : optimized) {
+                  if (l.size() == 2) {
+                        if (!(qFuzzyCompare(currentPos.x, l[0].x) && qFuzzyCompare(currentPos.y, l[0].y)))
+                              lp.moveTo(l[0].x, l[0].y);
+                        lp.markTo(l[1].x, l[1].y);
+                        currentPos = {l[1].x, l[1].y};
+                        }
+                  }
+            }
+
+      // Separate MarkTo and MoveTo segments into two subsets
       Clipper2Lib::PathsD lineList;
 
-      //
-      // separate MarkTo and MoveTo segments
-      //
-      Clipper2Lib::PathD lines;
+      Clipper2Lib::PathD markLines;
       LaserPathElement last;
       if (showMarks()) {
             for (auto& pt : lp) {
                   if (pt.type == LaserPathElementType::MarkTo) {
-                        lines.push_back({last.x(), last.y()});
-                        lines.push_back({pt.x(), pt.y()});
+                        markLines.push_back({last.x(), last.y()});
+                        markLines.push_back({pt.x(), pt.y()});
                         }
                   last = pt;
                   }
             }
-      lineList.push_back(lines);
-      lines.clear();
+      lineList.push_back(markLines);
+
+      Clipper2Lib::PathD moveLines;
       if (!lp.empty()) {
             last = lp.front();
             if (showMoves()) {
                   for (auto& pt : lp) {
                         if (pt.type == LaserPathElementType::MoveTo) {
-                              lines.push_back({last.x(), last.y()});
-                              lines.push_back({pt.x(), pt.y()});
+                              moveLines.push_back({last.x(), last.y()});
+                              moveLines.push_back({pt.x(), pt.y()});
                               }
                         last = pt;
                         }
                   }
             }
-      lineList.push_back(lines);
-      _geometry->setLines(lineList);
+      lineList.push_back(moveLines);
 
-#if 0
-      //
-      // process lines
-      //
-      //      Debug("{} {}  n {}", hasWobble, hasLine, lines.size());
-      PathsD lineStrips;
-      for (const auto& line : lines) {
-            if (hasWobble)
-                  lineStrips.push_back(wobble(line, wobbleStep, wobbleSize));
-            if (hasLine) {
-                  auto& path = lineStrips.emplace_back(Clipper2Lib::PathD());
-                  for (const auto& point : line)
-                        path.emplace_back(point.x, point.y);
-                                                                                          }
-      if (invert())
-            Clipper::invertPolygons(poly);
-#endif
+      return lineList;
       }
-
-#if 0
-
-//---------------------------------------------------------
-//   readProperty
-//    special handling for
-//          - laserLayer -> sets
-//---------------------------------------------------------
-
-void LaserLayer::readProperty(XmlReader& r, bool blockSignals) {
-      auto s = r.attribute("name").toString().toStdString();
-
-      if (s == "laserLayer" || s == "baseName") {
-            while (r.readNextStartElement()) {
-                  if (r.name() == u"value") {
-                        auto layerName = r.readElementText();
-                        if (layerName.isEmpty())
-                              Critical("no laserLayer name");
-                        auto llt = wcam->laserLayerSettings(layerName);
-                        //                        Debug("{}: setLaserLayer <{}>", name(), llt->name());
-                        setLaserLayer(llt);
-                              }
-                  else {
-                        Debug("unknown tag <{}>", r.name());
-                        r.unknown();
-                              }
-                        }
-                  }
-      else if (s == "baseLayer") {
-            //            Debug("baseLayer");
-            while (r.readNextStartElement()) {
-                  if (r.name() == u"value") {
-                        auto name = r.readElementText();
-                        //                        Debug("=========lookup <{}>", name);
-                              }
-                  else {
-                        Debug("unknown tag <{}>", r.name());
-                        r.unknown();
-                              }
-                        }
-                  }
-      else {
-            Element::readProperty(r, blockSignals);
-                  }
-            }
-#endif
 
 //---------------------------------------------------------
 //   collectLaserPath
+//    Produces the laser path for all panel tiles.
+//    The geometry is in project-root coordinate space
+//    (ce->globalMatrix()).  Panel-grid offsets are applied here
+//    because the laser path is used for actual laser marking
+//    and must contain the full panel layout.
 //---------------------------------------------------------
 
 LaserPath LaserLayer::collectLaserPath() const {
       if (!recipe()) {
-            Critical("no laser layer settings");
+            Critical("no recipe for <{}>", name());
             return LaserPath();
             }
 
-      Layer* layer     = baseElement();
-      Fixture* fixture = zcam->topLevel()->fixture();
-      //      QMatrix4x4 fixtureMatrix = fixture->matrix();
+      Layer* layer = baseElement();
+      Cam* cam     = zcam->project()->cam();
 
-      auto cam       = zcam->topLevel()->cam();
       double panelHD = cam->panelHDistance();
       double panelVD = cam->panelVDistance();
       double w, h;
-      fixture->size(w, h);
+      zcam->project()->fixture()->size(w, h);
 
-#if 0
       Clipper2Lib::PathsD lineList;
       for (int row = 0; row < cam->panelRows(); ++row) {
             for (int column = 0; column < cam->panelColumns(); ++column) {
                   double xo = (panelHD + w) * column;
                   double yo = (panelVD + h) * row;
 
-                  Debug("{} {} {} {}", row, column, xo, yo);
-
                   for (const auto e : layer->children()) {
                         const auto* ce = toType<Element3d>(e);
-                        PathList pl    = ce->pathList();
+                        if (!ce->burn())
+                              continue;
+                        PathList pl = ce->pathList();
 
-                        QMatrix4x4 matrix = ce->matrix() * fixtureMatrix;
-                        if (ce->parent() && isType<Layer>(ce->parent()))
-                              matrix = matrix * toType<Layer>(ce->parent())->matrix();
+                        QMatrix4x4 matrix = ce->globalMatrix();
 
                         //===========================================
                         //    convert to CAM coordinate system
@@ -291,13 +268,14 @@ LaserPath LaserLayer::collectLaserPath() const {
                               for (const auto& pt : p) {
                                     auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
                                     cp.push_back({r.x() + xo, r.y() + yo});
-                                          }
-                              ll.push_back(cp);
                                     }
-                        auto ls         = laserLayer()->settings(0);
+                              ll.push_back(cp);
+                              }
+                        auto* ls        = recipe()->layer(0);
                         bool mustWobble = ls->wobble();
-                        if (pl.fill())
+                        if (pl.fill()) {
                               lineList.append_range(createFill(ll));
+                              }
                         else {
                               // process lines
                               if (mustWobble) {
@@ -306,8 +284,8 @@ LaserPath LaserLayer::collectLaserPath() const {
                                                 continue;
                                           auto wl = wobble(p, ls->wobbleStep(), ls->wobbleSize());
                                           lineList.push_back(wl);
-                                                }
                                           }
+                                    }
                               else {
                                     for (const auto& l : ll) {
                                           if (l.size() < 2)
@@ -319,88 +297,184 @@ LaserPath LaserLayer::collectLaserPath() const {
                                                 currentPoint = l[i];
                                                 p.push_back(currentPoint);
                                                 lineList.push_back(p);
-                                                      }
                                                 }
                                           }
                                     }
                               }
                         }
                   }
-#endif
+            }
       LaserPath path;
-      //      optimize(&path, lineList);
+      optimize(&path, lineList);
       return path;
       }
 
-// Hilfsfunktion: Euklidische Distanz berechnen
-
 //---------------------------------------------------------
-//   getDistance
+//   KD-Tree for fast 2-D nearest-neighbour search
+//   Each node stores the point coordinates together with
+//   the originating line index and which endpoint (0 or 1)
+//   it represents.  Used to accelerate greedy path optimisation
+//   from O(N²) down to ~O(N log N).
 //---------------------------------------------------------
 
-static double getDistance(const Point& p1, const Point& p2) {
-      return std::hypot(p1.x - p2.x, p1.y - p2.y);
+struct KDNode {
+      double point[2] {};
+      int lineIndex   = 0; // index into the input line array
+      int endPointIdx = 0; // 0 or 1 - which end of the line this node holds
+      std::unique_ptr<KDNode> left, right;
+      };
+
+struct EndPointRef {
+      double x, y;
+      int lineIndex;
+      int endPointIdx; // 0 or 1
+      };
+
+static std::unique_ptr<KDNode> buildKDTree(std::vector<EndPointRef>::iterator begin,
+                                           std::vector<EndPointRef>::iterator end, int depth) {
+      if (begin == end)
+            return nullptr;
+
+      const int axis = depth & 1; // 0 = x, 1 = y
+
+      const size_t n = static_cast<size_t>(std::distance(begin, end));
+      auto mid       = begin + static_cast<long>(n / 2);
+
+      std::nth_element(begin, mid, end, [axis](const EndPointRef& a, const EndPointRef& b) {
+            return axis == 0 ? a.x < b.x : a.y < b.y;
+            });
+
+      auto node         = std::make_unique<KDNode>();
+      node->point[0]    = mid->x;
+      node->point[1]    = mid->y;
+      node->lineIndex   = mid->lineIndex;
+      node->endPointIdx = mid->endPointIdx;
+      node->left        = buildKDTree(begin, mid, depth + 1);
+      node->right       = buildKDTree(mid + 1, end, depth + 1);
+      return node;
+      }
+
+/// Recursive nearest-neighbour search in the k-d tree.
+/// \param best        best candidate found so far (output)
+/// \param bestDist    squared distance to best candidate (output)
+/// \param used        flags which lines have already been consumed
+static void kdNearest(const KDNode* node, double qx, double qy, int depth, const std::vector<bool>& used,
+                      const KDNode*& best, double& bestDist) {
+      if (!node)
+            return;
+
+      // Evaluate this node if its line has not been consumed yet
+      if (!used[node->lineIndex]) {
+            const double dx = node->point[0] - qx;
+            const double dy = node->point[1] - qy;
+            const double d2 = dx * dx + dy * dy;
+            if (d2 < bestDist) {
+                  bestDist = d2;
+                  best     = node;
+                  }
+            }
+
+      const int axis    = depth & 1;
+      const double diff = (axis == 0 ? qx - node->point[0] : qy - node->point[1]);
+
+      // Visit the near side first
+      const KDNode* nearChild = (diff < 0) ? node->left.get() : node->right.get();
+      const KDNode* farChild  = (diff < 0) ? node->right.get() : node->left.get();
+
+      kdNearest(nearChild, qx, qy, depth + 1, used, best, bestDist);
+
+      // Only visit the far side if it could possibly contain a closer point
+      if (diff * diff < bestDist)
+            kdNearest(farChild, qx, qy, depth + 1, used, best, bestDist);
       }
 
 //---------------------------------------------------------
 //   optimizePath
+//   Greedy nearest-neighbour path optimisation accelerated by a k-d tree.
+//   Complexity: O(N log N) average, O(N²) worst-case (degenerate tree).
+//
+//   The tree is rebuilt periodically once enough lines have been consumed
+//   so that dead nodes don't degrade search performance.
 //---------------------------------------------------------
 
 static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& currentPos) {
       Clipper2Lib::PathsD optimizedLines;
-      optimizedLines.reserve(inputLines.size());
+      const size_t totalLines = inputLines.size();
+      if (totalLines == 0)
+            return optimizedLines;
+      optimizedLines.reserve(totalLines);
 
-      // Solange noch Linien in der Eingabeliste sind
-      while (!inputLines.empty()) {
-            double minDistance = std::numeric_limits<double>::max();
-            size_t bestIndex   = 0;
-            bool reverseLine   = false;
+      std::vector<bool> used(totalLines, false);
+      size_t remaining = totalLines;
 
-            // 1. Finde die nächste Linie (Greedy Nearest Neighbor)
-            for (size_t i = 0; i < inputLines.size(); ++i) {
-                  // Distanz zum Startpunkt der Linie
-                  double distToStart = getDistance(currentPos, inputLines[i][0]);
-
-                  // Distanz zum Endpunkt der Linie (falls wir sie rückwärts lasern wollen)
-                  double distToEnd = getDistance(currentPos, inputLines[i][1]);
-
-                  // Prüfe Startpunkt
-                  if (distToStart < minDistance) {
-                        minDistance = distToStart;
-                        bestIndex   = i;
-                        reverseLine = false;
-                        }
-
-                  // Prüfe Endpunkt (Bidirektionales Markieren erlauben)
-                  // Falls es wichtig ist, Linien NICHT umzudrehen (z.B. wegen Schnittrichtung),
-                  // diesen Block auskommentieren.
-                  if (distToEnd < minDistance) {
-                        minDistance = distToEnd;
-                        bestIndex   = i;
-                        reverseLine = true;
+      // Build a k-d tree over all unused line endpoints (2 nodes per line).
+      // Lines with fewer than 2 points are degenerate and are marked as used
+      // so they are silently skipped during optimisation.
+      auto buildTree = [&]() {
+            // First pass: mark degenerate lines as used so they are never queried
+            for (size_t i = 0; i < totalLines; ++i) {
+                  if (!used[i] && inputLines[i].size() < 2) {
+                        used[i] = true;
+                        --remaining;
                         }
                   }
 
-            // 2. Die beste Linie auswählen
-            auto nextLine = inputLines[bestIndex];
+            std::vector<EndPointRef> pts;
+            pts.reserve(remaining * 2);
+            for (size_t i = 0; i < totalLines; ++i) {
+                  if (used[i])
+                        continue;
+                  pts.push_back({inputLines[i][0].x, inputLines[i][0].y, int(i), 0});
+                  pts.push_back({inputLines[i][1].x, inputLines[i][1].y, int(i), 1});
+                  }
+            return buildKDTree(pts.begin(), pts.end(), 0);
+            };
 
-            // 3. Falls der Endpunkt näher war, Start und Ende tauschen
-            if (reverseLine)
-                  std::swap(nextLine[0], nextLine[1]);
+      std::unique_ptr<KDNode> tree = buildTree();
+      size_t lastRebuildRemaining  = remaining;
+      size_t rebuildThreshold      = (remaining + 3) / 4; // rebuild after 25% consumed
 
-            // 4. Zur Ergebnisliste hinzufügen
-            optimizedLines.push_back(nextLine);
+      Point pos = currentPos;
 
-            // 5. Neue aktuelle Position ist das Ende der gerade gefahrenen Linie
-            currentPos = nextLine[1];
+      while (remaining > 0) {
+            // --- nearest-neighbour search via k-d tree ---
+            const KDNode* best = nullptr;
+            double bestDist    = std::numeric_limits<double>::max();
+            kdNearest(tree.get(), pos.x, pos.y, 0, used, best, bestDist);
 
-            // 6. Linie aus der Eingabeliste entfernen (Swap & Pop für Effizienz)
-            // Wir tauschen das gefundene Element mit dem letzten und löschen das letzte.
-            // Das ist O(1) statt O(N) beim Löschen.
-            if (bestIndex != inputLines.size() - 1)
-                  inputLines[bestIndex] = inputLines.back();
-            inputLines.pop_back();
+            if (!best)
+                  break; // safety guard - should never happen
+
+            const int idx   = best->lineIndex;
+            const int epIdx = best->endPointIdx;
+            auto& line      = inputLines[idx];
+
+            Clipper2Lib::PathD nextLine;
+            nextLine.reserve(2);
+            if (epIdx == 0) {
+                  nextLine.push_back(line[0]);
+                  nextLine.push_back(line[1]);
+                  }
+            else {
+                  // Laser the line in reverse
+                  nextLine.push_back(line[1]);
+                  nextLine.push_back(line[0]);
+                  }
+
+            optimizedLines.push_back(std::move(nextLine));
+            used[idx] = true;
+            --remaining;
+            pos = optimizedLines.back()[1];
+
+            // Periodically rebuild the tree so dead nodes don't degrade search performance
+            if (remaining > 0 && lastRebuildRemaining - remaining >= rebuildThreshold) {
+                  tree                 = buildTree();
+                  lastRebuildRemaining = remaining;
+                  rebuildThreshold     = (remaining + 3) / 4;
+                  }
             }
+
+      currentPos = pos;
       return optimizedLines;
       }
 
@@ -411,11 +485,12 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 
 Clipper2Lib::PathsD LaserLayer::createFill(Clipper2Lib::PathsD& spdi) const {
       Clipper2Lib::PathsD lineList;
-#if 0
-      const LaserLayerSettings* fll = laserLayer();
+
+      const LaserPasses* fll = recipe()->layers();
 
       if (kerfOffset())
-            spdi = InflatePaths(spdi, kerfOffset(), Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon, 2, 3);
+            spdi = InflatePaths(spdi, kerfOffset(), Clipper2Lib::JoinType::Miter,
+                                Clipper2Lib::EndType::Polygon, 2, 3);
       Clipper clipper;
       PathsD spd;
       clipper.AddSubject(spdi);
@@ -426,20 +501,23 @@ Clipper2Lib::PathsD LaserLayer::createFill(Clipper2Lib::PathsD& spdi) const {
       //-------------------------------
 
       Point currentPos(0, 0);
-      for (int i = 0; i < fll->rowCount(); ++i) {
-            auto sl                   = fll->settings(i);
+      for (int i = 0; i < fll->size(); ++i) {
+            auto sl                   = &(*fll)[i];
             Clipper2Lib::RectD bounds = Clipper2Lib::GetBounds(spd);
             qreal angle               = sl->startAngle();
             for (int i = 0; i < sl->numPasses(); ++i) {
                   double interval = sl->interval();
-                  PathsD lines1;
-                  auto hatchThread = std::thread([&lines1, spd, bounds, angle, interval] {
+                  // Compute both hatch directions in parallel using std::async.
+                  // This avoids creating and destroying a std::thread per pass,
+                  // which caused rapid thread churn (hundreds of threads per
+                  // createFill() call when numPasses is large).
+                  auto f1 = std::async(std::launch::async, [spd, bounds, angle, interval] {
                         Clipper cl;
-                        lines1 = cl.hatch(spd, bounds, angle, interval);
-                              });
+                        return cl.hatch(spd, bounds, angle, interval);
+                        });
                   clipper.Clear();
                   PathsD lines2 = clipper.hatch(spd, bounds, angle + 90.0, sl->interval());
-                  hatchThread.join();
+                  PathsD lines1 = f1.get();
 
                   lineList.append_range(lines1);
                   lineList.append_range(lines2);
@@ -447,9 +525,8 @@ Clipper2Lib::PathsD LaserLayer::createFill(Clipper2Lib::PathsD& spdi) const {
                   angle += sl->angleIncrement();
                   while (angle >= 180.0)
                         angle -= 180.0;
-                        }
                   }
-#endif
+            }
       return lineList;
       }
 
@@ -460,7 +537,9 @@ Clipper2Lib::PathsD LaserLayer::createFill(Clipper2Lib::PathsD& spdi) const {
 static void optimize(LaserPath* lp, Clipper2Lib::PathsD lines) {
       Point currentPosition = lp->empty() ? Point(0, 0) : Point(lp->back().p.x(), lp->back().p.y());
       auto p                = optimizePath(lines, currentPosition);
-      currentPosition       = p.front()[0];
+      if (p.empty())
+            return;
+      currentPosition = p.front()[0];
       lp->moveTo(currentPosition.x, currentPosition.y);
       for (const auto& l : p) {
             if (l.size() == 2) {

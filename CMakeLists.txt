@@ -9,6 +9,8 @@ set(QT_QML_GENERATE_QMLLS_INI On)
 
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_BUILD_TYPE Debug)
+# set(CMAKE_BUILD_TYPE Release)
+#set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_AUTOMOC ON)
 
 find_package(PkgConfig REQUIRED)
@@ -42,21 +44,26 @@ qt_add_qml_module(zcam
         qml/ToolColumn.qml
         qml/ProjectTree.qml
         qml/Shape.qml
+        qml/GridShape.qml
+        qml/LaserLayer1.qml
         qml/TreeViewPanel.qml
         qml/InspectorPanel.qml
         qml/PropertyEditor.qml
         qml/FontFamilyButton.qml
+        qml/LockCheckBox.qml
         qml/LaserPanel.qml
         qml/ConfigSystem.qml
         qml/ConfigGuiPanel.qml
         qml/ConfigColorsPanel.qml
         qml/ConfigColor.qml
         qml/NavigationCube.qml
+        qml/CamShape.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/machine.cpp src/machine.h
         src/machines.cpp src/machines.h
         src/machinemodel.cpp src/machinemodel.h
+        src/configmodel.cpp src/configmodel.h
         src/layersettingmodel.cpp src/layersettingmodel.h
         src/propertyjson.cpp src/propertyjson.h
         src/recipe.cpp src/recipe.h
@@ -69,8 +76,9 @@ qt_add_qml_module(zcam
         src/element.cpp src/element.h
         src/element3d.cpp src/element3d.h
         src/text.cpp src/text.h
-        src/line.cpp src/line.h
+        src/polygon.cpp src/polygon.h
         src/rectangle.cpp src/rectangle.h
+        src/ellipse.cpp src/ellipse.h
         src/treemodel.cpp src/treemodel.h
         src/inspector_model.cpp src/inspector_model.h
         src/project.cpp src/project.h
@@ -79,18 +87,45 @@ qt_add_qml_module(zcam
         src/fixture.cpp src/fixture.h
         src/stock.cpp src/stock.h
         src/framing.cpp src/framing.h
+        src/grid.cpp src/grid.h
         src/laser.cpp src/laser.h
         src/laserlayer.cpp src/laserlayer.h
         src/laserengine.cpp src/laserengine.h
         src/usb.cpp src/usb.h
         src/clipper.cpp src/clipper.h
         src/layer.cpp src/layer.h
+        src/materialtest.cpp src/materialtest.h
         src/undo.h
+        src/svg.cpp
         src/truncatedcubegeometry.cpp src/truncatedcubegeometry.h
+        src/dxfimport.cpp src/dxfimport.h
+
+        src/geometryworker.cpp src/geometryworker.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp
         clipper2/src/clipper.rectclip.cpp
+
+        libdxfrw/src/libdxfrw.cpp
+        libdxfrw/src/libdwgr.cpp
+        libdxfrw/src/drw_base.cpp
+        libdxfrw/src/drw_entities.cpp
+        libdxfrw/src/drw_objects.cpp
+        libdxfrw/src/drw_classes.cpp
+        libdxfrw/src/drw_header.cpp
+        libdxfrw/src/intern/dxfreader.cpp
+        libdxfrw/src/intern/dxfwriter.cpp
+        libdxfrw/src/intern/dwgbuffer.cpp
+        libdxfrw/src/intern/dwgreader.cpp
+        libdxfrw/src/intern/dwgreader15.cpp
+        libdxfrw/src/intern/dwgreader18.cpp
+        libdxfrw/src/intern/dwgreader21.cpp
+        libdxfrw/src/intern/dwgreader24.cpp
+        libdxfrw/src/intern/dwgreader27.cpp
+        libdxfrw/src/intern/dwgutil.cpp
+        libdxfrw/src/intern/rscodec.cpp
+        libdxfrw/src/intern/drw_textcodec.cpp
+        libdxfrw/src/intern/drw_dbg.cpp
 
         tess2/bucketalloc.cpp
         tess2/dict.cpp
@@ -131,13 +166,14 @@ qt_add_resources(zcam icons FILES
       icons/dark/edit-undo.svg
       icons/dark/edit-redo.svg
       icons/dark/config.svg
+      icons/cam-refresh.svg
+      icons/dark/cam-refresh.svg
       icons/laser-off.svg
       icons/laser.svg
 
       icons/visible.svg
       icons/invisible.svg
       icons/select.svg
-      icons/Draft_Line.svg
       icons/Draft_Polygon.svg
       icons/Draft_Rectangle.svg
       icons/Draft_Circle.svg
@@ -168,3 +204,4 @@ target_link_libraries(zcam PRIVATE
 target_include_directories(zcam PRIVATE src)
 target_include_directories(zcam PRIVATE clipper2/include)
 target_include_directories(zcam PRIVATE tess2)
+target_include_directories(zcam PRIVATE libdxfrw/src)

@@ -25,15 +25,38 @@ TreeModel::TreeModel(QObject* parent) : QAbstractItemModel(parent) {
 //---------------------------------------------------------
 
 void TreeModel::setRoot(Element* r) {
+      // Early return: same pointer, just reset.
+      if (r == _root) {
+            beginResetModel();
+            endResetModel();
+            emit rootChanged();
+            return;
+            }
+      // Safety: if the new root is a descendant of the current root,
+      // do NOT call deleteLater() on the current root — that would
+      // destroy the entire subtree including the new root.  This
+      // happens when update() is called with zcam->rootElement()
+      // (Project) after the tree model root was set to RootElement.
+      // In that case, just reset the model in-place without deleting.
+      if (_root && r) {
+            Element* p = r;
+            while (p) {
+                  if (p == _root) {
+                        beginResetModel();
+                        endResetModel();
+                        emit rootChanged();
+                        return;
+                        }
+                  p = p->parent();
+                  }
+            }
       beginResetModel();
       if (_root) {
-            //            dump("old model");
             _root->deleteLater();
             }
       _root = r;
       endResetModel();
       emit rootChanged();
-      //      dump("new model");
       }
 
 //---------------------------------------------------------
@@ -55,6 +78,19 @@ void TreeModel::dump(std::string s) const {
             };
       if (_root)
             Debug("Dump: {}\n{}", s, a(_root, 0));
+      }
+
+//---------------------------------------------------------
+//   resetModel
+//    Reset the model without changing the root element.
+//    Used after bulk structural changes (e.g. children of
+//    an element were added/removed outside the model) so the
+//    view refreshes its entire tree.
+//---------------------------------------------------------
+
+void TreeModel::resetModel() {
+      beginResetModel();
+      endResetModel();
       }
 
 //---------------------------------------------------------
@@ -117,11 +153,15 @@ int TreeModel::rowCount(const QModelIndex& parent) const {
       if (!parentItem)
             return 0;
       // Only count children that are Element subclasses, matching index().
+
+      return parentItem->children().size();
+#if 0
       int count = 0;
       for (auto obj : parentItem->children())
             if (qobject_cast<Element*>(obj))
                   ++count;
       return count;
+#endif
       }
 
 //---------------------------------------------------------

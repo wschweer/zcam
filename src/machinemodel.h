@@ -16,6 +16,7 @@
 #include <QStringList>
 #include <QList>
 #include <QVariantList>
+#include <QPointer>
 #include "machine.h"
 
 //---------------------------------------------------------
@@ -35,7 +36,7 @@ struct MachineColumnItem {
 //---------------------------------------------------------
 //   MachineModel
 //    A QAbstractListModel that exposes Machine properties to QML,
-//    analog to InspectorModel but for the Q_GADGET Machine class.
+//    analog to InspectorModel but for the QObject Machine class.
 //    The model wraps a single Machine (set via setMachine()) and
 //    uses the Machine::properties() JSON to determine which
 //    properties to show and how to render each one.
@@ -89,7 +90,7 @@ class MachineModel : public QAbstractListModel
     private:
       void parseProperties();
 
-      Machine* _machine = nullptr;
+      QPointer<Machine> _machine;
       QString _title;
       QString _propertiesJson;
 
