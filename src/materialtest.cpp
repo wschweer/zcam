@@ -33,6 +33,7 @@
 //---------------------------------------------------------
 
 MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
+      createChildren();
       connect(this, &MaterialTest::rowsChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::columnsChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::boxHeightChanged, [this] { createChildren(); });
@@ -44,7 +45,11 @@ MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Element3d(zcam, parent
       connect(this, &MaterialTest::showTextChanged, [this] {
             textL->set_show(showText());
             textL->set_burn(showText());
+            createChildren();
             });
+      connect(this, &MaterialTest::materialLayerChanged, [this] { createChildren(); });
+      connect(this, &MaterialTest::textLayerChanged, [this] { createChildren(); });
+      connect(this, &MaterialTest::borderLayerChanged, [this] { createChildren(); });
       }
 
 //---------------------------------------------------------
@@ -120,9 +125,10 @@ void ZCam::createMaterialTest() {
 
       project()->setName("Material-Test");
 
-      Cad* cad         = project()->cad();
-      Cam* cam         = project()->cam();
-      Fixture* fixture = project()->fixture();
+      Cad* cad               = project()->cad();
+      Cam* cam               = project()->cam();
+      Fixture* fixture       = project()->fixture();
+      fixture->_saveChildren = false;
 
       cad->setExpanded(true);
       cam->setExpanded(true);
@@ -134,7 +140,8 @@ void ZCam::createMaterialTest() {
       layer->setExpanded(true);
       cad->addChild(layer);
 
-      auto mtest = new MaterialTest(this, layer);
+      auto mtest           = new MaterialTest(this, layer);
+      mtest->_saveChildren = false;
       mtest->setName("Testpattern");
       mtest->setExpanded(false);
 
@@ -150,7 +157,6 @@ void ZCam::createMaterialTest() {
             }
 
       layer->addChild(mtest);
-      mtest->createChildren();
 
       // Create a LaserLayer linked to the pattern layer
       auto ll = new LaserLayer(this, fixture);
@@ -166,7 +172,7 @@ void ZCam::createMaterialTest() {
       project()->addChild(grid);
 
       // Notify QML that the grid element is now available.
-      emit project()->gridElementChanged();
+      emit project() -> gridElementChanged();
 
       //      finalizeProject(this);
       pm->markDirty();
@@ -256,8 +262,10 @@ void MaterialTest::createChildren() {
       // destroy the corresponding Model node while the C++ element is
       // still alive (QML needs the pointer to find the matching node).
       Fixture* fixture = zcam->project()->fixture();
-      if (!fixture)
+      if (!fixture) {
+            Critical("no fixture");
             return;
+            }
       if (fixture) {
             QList<Element*> toDelete;
             for (Element* c : fixture->children()) {
@@ -291,8 +299,8 @@ void MaterialTest::createChildren() {
       double w = xd + boxWidth(); // cell width
       double h = yd + boxHeight();
 
-      double tw = (columns() * w) + xd;
-      double th = (rows() * h) + yd;
+      float tw = (columns() * w) + xd;
+      float th = (rows() * h) + yd;
 
       // Debug("tw {} columns {}  boxWidth  {} xd {}", tw, columns(), boxWidth(), xd);
       // Debug("th {} rows    {}  boxHeight {} yd {}", th, rows(),    boxHeight(), yd);
@@ -300,7 +308,9 @@ void MaterialTest::createChildren() {
       //      double textWidth  = w * 2;
       //      double textHeight = h * 3;
 
-      QSizeF boxSize = QSizeF(tw, th);
+      float xtext = showText() ? 10 : 0;
+      float ytext = showText() ? 20 : 0;
+      QVector2D boxSize {tw + xtext, th + ytext};
       QRectF samples(0, 0, tw, th);
       samples.moveCenter(QPointF());
 
@@ -360,10 +370,11 @@ void MaterialTest::createChildren() {
             fixture->addChild(ll);
 
             auto r = new Rectangle(zcam, borderL);
+            r->set_lockSize(int(LockScaleMode::Off));
             r->setName("border");
-            r->set_size(QVector2D(boxSize.width() + 10, boxSize.height() + 20));
-            r->set_pos(QVector3D(5, 0, 0));
-            r->set_lineWidth(0.2);
+            r->set_size(boxSize);
+            r->set_pos(QVector3D(xtext * .5, 0, 0));
+            r->set_lineWidth(0.5);
             r->set_fill(true);
             borderL->addChild(r);
             }
@@ -672,4 +683,15 @@ void ZCam::createGalvoTest() {
 
       finalizeProject(this);
       _projectManager->markDirty();
+      }
+
+//---------------------------------------------------------
+//   fixup
+//    this is called after loading the project
+//---------------------------------------------------------
+
+void MaterialTest::fixup() {
+      createChildren();
+      zcam->project()->fixture()->_saveChildren = false;
+      _saveChildren = false;
       }

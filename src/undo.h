@@ -31,6 +31,7 @@ class LaserLayer;
 class Rectangle;
 class Polygon;
 class Ellipse;
+class Text;
 
 //---------------------------------------------------------
 //   UndoCommand
@@ -237,6 +238,29 @@ class AddEllipseCommand : public UndoCommand
       void redo() override;
       QString description() const override { return QStringLiteral("Add Ellipse"); }
       Ellipse* ellipse() const;
+      };
+
+//---------------------------------------------------------
+//   AddTextCommand
+//    Undoable command that creates a new Text element, inserts it
+//    as a child of a Layer, updates the tree model and notifies
+//    the 3D scene.
+//---------------------------------------------------------
+
+class AddTextCommand : public UndoCommand
+      {
+      QPointer<ZCam> _zcam;
+      QPointer<Layer> _layer;
+      QPointer<Text> _text;
+      int _row {-1}; ///< position within layer's children
+
+    public:
+      AddTextCommand(ZCam* zcam, Layer* layer, double x, double y);
+
+      void undo() override;
+      void redo() override;
+      QString description() const override { return QStringLiteral("Add Text"); }
+      Text* text() const;
       };
 
 //---------------------------------------------------------

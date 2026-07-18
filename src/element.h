@@ -54,6 +54,7 @@ class Element : public QObject
       void expandedChanged();
 
     public:
+      bool _saveChildren { true };
       Element(ZCam* zcam, Element* parent = nullptr);
       virtual ~Element();
       Q_INVOKABLE virtual QString typeName() = 0;
@@ -85,6 +86,8 @@ class Element : public QObject
                   }
             }
       ZCam* zcamInstance() const { return zcam; }
+      virtual bool saveChildren() const { return _saveChildren; }
+      virtual void fixup() {}
       };
 
 //---------------------------------------------------------

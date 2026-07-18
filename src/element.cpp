@@ -53,10 +53,12 @@ void Element::clearProject() {
 
 json Element::toJson() const {
       json childList = json::array();
-      for (const auto& child : children()) {
-            json c;
-            c[child->typeName().toStdString()] = child->toJson();
-            childList.push_back(c);
+      if (saveChildren()) {
+            for (const auto& child : children()) {
+                  json c;
+                  c[child->typeName().toStdString()] = child->toJson();
+                  childList.push_back(c);
+                  }
             }
       nlohmann::json data;
       data["name"]     = name().toStdString();

@@ -18,6 +18,7 @@
 #include "rectangle.h"
 #include "polygon.h"
 #include "ellipse.h"
+#include "text.h"
 #include "grid.h"
 #include "zcam.h"
 #include "projectmanager.h"
@@ -92,7 +93,7 @@ void Project::updateCadLayerVisibility() {
                   continue;
             // Set show to true only if this layer is referenced by
             // a LaserLayer in the active fixture.
-//            layer->set_show(referencedLayers.contains(layer));
+            //            layer->set_show(referencedLayers.contains(layer));
             }
       }
 
@@ -336,8 +337,7 @@ QString AddFixtureCommand::description() const {
 //   AddLaserLayerCommand implementation
 //---------------------------------------------------------
 
-AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
-    : _zcam(zcam), _fixture(fixture) {
+AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture) : _zcam(zcam), _fixture(fixture) {
       _laserLayer = new LaserLayer(zcam, nullptr);
       // Auto-link to the first Cad Layer if available
       if (zcam && zcam->project() && zcam->project()->cad()) {
@@ -545,6 +545,56 @@ void AddEllipseCommand::undo() {
 
 Ellipse* AddEllipseCommand::ellipse() const {
       return _ellipse;
+      }
+
+//---------------------------------------------------------
+//   AddTextCommand implementation
+//---------------------------------------------------------
+
+AddTextCommand::AddTextCommand(ZCam* zcam, Layer* layer, double x, double y) : _zcam(zcam), _layer(layer) {
+      _text = new Text(zcam, nullptr);
+      _text->set_text("");
+      _text->set_pos(QVector3D(x, y, 0.0));
+      _text->setColor(QColor("green"));
+      _text->set_fill(true);
+      _text->update();
+      }
+
+void AddTextCommand::redo() {
+      if (!_layer || !_text)
+            return;
+      int row = _layer->children().size();
+      if (_zcam && _zcam->treeModel())
+            _zcam->treeModel()->beginInsertChild(_layer, row);
+      _layer->addChild(_text);
+      _row = row;
+      if (_zcam && _zcam->treeModel())
+            _zcam->treeModel()->endInsertChild();
+      if (_zcam)
+            emit _zcam->add3dElement(_text);
+      }
+
+void AddTextCommand::undo() {
+      if (!_layer || !_text)
+            return;
+      int row = 0;
+      for (const auto c : _layer->children()) {
+            if (c == _text)
+                  break;
+            ++row;
+            }
+      if (_zcam)
+            emit _zcam->remove3dElement(_text);
+      if (_zcam && _zcam->treeModel())
+            _zcam->treeModel()->beginRemoveChild(_layer, row);
+      _layer->removeChild(_text);
+      _row = row;
+      if (_zcam && _zcam->treeModel())
+            _zcam->treeModel()->endRemoveChild();
+      }
+
+Text* AddTextCommand::text() const {
+      return _text;
       }
 
 //---------------------------------------------------------

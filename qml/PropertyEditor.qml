@@ -511,6 +511,7 @@ Item {
                             const t = m.type || "string"
                             switch (t) {
                                 case "bool":      return subBoolDelegate
+                                case "fontStyle": return subFontStyleDelegate
                                 case "int":       return subIntDelegate
                                 case "float":     return subFloatDelegate
                                 case "halign":    return subHalignDelegate
@@ -778,6 +779,7 @@ Item {
                             const t = m.type || "string"
                             switch (t) {
                                 case "bool":      return subBoolDelegate
+                                case "fontStyle": return subFontStyleDelegate
                                 case "int":       return subIntDelegate
                                 case "float":     return subFloatDelegate
                                 case "halign":    return subHalignDelegate
@@ -830,6 +832,46 @@ Item {
                     anchors.centerIn: parent
                     checked: subBool.subValue === true
                     onToggled: if (subBool.setSub) subBool.setSub(checked)
+                    }
+                }
+            }
+
+        Component {
+            id: subFontStyleDelegate
+
+            ValueBox {
+                id: subFontStyle
+                Layout.fillWidth: true
+                Layout.minimumWidth: 60
+                width: parent ? parent.width : 0
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                // The subLabelText is rendered as a styled Text instead of
+                // the default sub-label, so the label reflects the font style:
+                //   bold      → bold "B"
+                //   italic    → italic "I"
+                //   underline → underlined "U"
+                Text {
+                    anchors.left: parent.left
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 4
+                    anchors.bottomMargin: 1
+                    text: subFontStyle.subMeta ? subFontStyle.subMeta.label ?? "" : ""
+                    font.pixelSize: 13
+                    font.bold: subFontStyle.subName === "bold"
+                    font.italic: subFontStyle.subName === "italic"
+                    font.underline: subFontStyle.subName === "underline"
+                    color: "#333333"
+                }
+
+                CheckBox {
+                    anchors.centerIn: parent
+                    checked: subFontStyle.subValue === true
+                    onToggled: if (subFontStyle.setSub) subFontStyle.setSub(checked)
                     }
                 }
             }

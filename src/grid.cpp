@@ -25,7 +25,7 @@ Grid::Grid(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
       _pos           = QVector3D(0, 0, -0.1);
       _geometry      = new TessGeometry(this);
       _minorGeometry = new TessGeometry(this);
-      setColor(QColor(200, 200, 200, 140)); // major lines: light grey
+      setColor(QColor(150, 150, 150, 50)); // major lines: light grey
       set_selectable(false);
       set_pickLevel(-1); // never picked by pickModel
       set_show(true);
@@ -123,4 +123,19 @@ void Grid::update(int) {
       _geometry->setLines(majorLines);
       _minorGeometry->setLines(minorLines);
       emit minorGeometryChanged();
+      }
+
+//---------------------------------------------------------
+//   majorSpacing / minorSpacing
+//    Convenience accessors used by the snap logic in ZCam::dragged().
+//---------------------------------------------------------
+
+double Grid::majorSpacing() const {
+      return _raster > 0.0 ? _raster : 10.0;
+      }
+
+double Grid::minorSpacing() const {
+      double major = majorSpacing();
+      int sub      = _subraster >= 1 ? _subraster : 1;
+      return major / sub;
       }

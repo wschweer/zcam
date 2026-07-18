@@ -245,11 +245,24 @@ void Element3d::fromJson(const json& json) {
             auto propNames          = propjson::parseAllPropertyNames(propStr);
             const QMetaObject* meta = this->metaObject();
 
+            // Two-pass loading: lock constraints (lockScale, lockSize) must
+            // be restored BEFORE the constrained values (scale, size) so that
+            // the custom setters (set_scale, set_size) use the correct lock
+            // mode instead of the constructor default (Square).  Without this,
+            // a non-square rectangle saved with lockSize=Off would be loaded
+            // with lockSize still at its default Square, causing set_size()
+            // to force width==height, turning the rectangle into a square.
             for (const auto& [name, type] : propNames)
+                  if (type == "lockScale" || type == "lockSize")
+                        propjson::readPropertyFromJson(json, this, meta, false, name, type);
+            for (const auto& [name, type] : propNames) {
+                  if (type == "lockScale" || type == "lockSize")
+                        continue; // already loaded in first pass
                   if (type == "layer" || type == "recipe" || type == "machine")
                         readLayerOrRecipe(json, this, name, type);
                   else
                         propjson::readPropertyFromJson(json, this, meta, false, name, type);
+                  }
             }
       catch (const nlohmann::json::parse_error& err) {
             Warning("Element3d::fromJson: JSON parse error in properties: {}", err.what());

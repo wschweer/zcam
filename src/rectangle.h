@@ -35,7 +35,7 @@ class Rectangle : public Element3d
 
     protected:
       QVector2D _size {QVector2D(40, 40)};
-      PROPV(int, lockSize, static_cast<int>(LockScaleMode::Square))
+      PROPV(int, lockSize, static_cast<int>(LockScaleMode::Off))
       PROPV(double, corner, 0.0)
 
       inline static constexpr std::string_view _properties {
@@ -103,7 +103,7 @@ class Rectangle : public Element3d
                       "name": "lockScale",
                       "label": "Lock",
                       "type": "lockScale",
-                      "default": 2
+                      "default": 0
                     },
                     {
                       "name": "line",

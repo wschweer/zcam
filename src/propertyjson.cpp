@@ -162,7 +162,7 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
             j["b"]     = c.blueF();
             data[name] = j;
             }
-      else if (type == "bool") {
+      else if (type == "bool" || type == "fontStyle") {
             data[name] = value.toBool();
             }
       else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize") {
@@ -226,7 +226,7 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
             c.setBlueF(jval.value("b", 0.0));
             return writePropertyRaw(obj, meta, gadget, idx, QVariant::fromValue(c));
             }
-      else if (type == "bool") {
+      else if (type == "bool" || type == "fontStyle") {
             return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<bool>()));
             }
       else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize") {

@@ -28,6 +28,7 @@ enum TextSubelement { BboxSub = 0, CursorSub = 1 };
 class Text : public Element3d
       {
       Q_OBJECT
+      Q_PROPERTY(bool editing READ editing WRITE setEditing NOTIFY editingChanged)
 
       PROPV(int, weight, 600)
       PROPV(QString, text, "ZCam")
@@ -38,6 +39,9 @@ class Text : public Element3d
       PROPV(double, wordSpacing, .0)
       PROPV(double, lineSpacing, 100.0)
       PROPV(int, align, Qt::AlignLeft)
+      PROPV(bool, bold, false)
+      PROPV(bool, italic, false)
+      PROPV(bool, underline, false)
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -139,6 +143,26 @@ class Text : public Element3d
                     },
                     {
                       "row": {
+                        "bold": {
+                          "label": "B",
+                          "type": "fontStyle",
+                          "default": false
+                        },
+                        "italic": {
+                          "label": "I",
+                          "type": "fontStyle",
+                          "default": false
+                        },
+                        "underline": {
+                          "label": "U",
+                          "type": "fontStyle",
+                          "default": false
+                        }
+                      },
+                      "label": " "
+                    },
+                    {
+                      "row": {
                         "pointSize": {
                           "label": "Size",
                           "type": "float",
@@ -223,12 +247,18 @@ class Text : public Element3d
 
       int cursorRow {0};
       int cursorColumn {0};
+      bool _editing {false};
+      Clipper2Lib::PathsD _cursorLines;
 
       //      bool userDelete() const override { return true; }
       void updateText();
       void updateCursor();
+      void updateSelectionGeometry() override;
       double fontLineSpacing() const;
       void addText(QList<QPolygonF>& polys, const QPointF& gpos, const QList<QGlyphRun>& glyphRuns);
+
+    signals:
+      void editingChanged();
 
     public slots:
       void update(int flags = -1) override;
@@ -242,4 +272,7 @@ class Text : public Element3d
       Q_INVOKABLE virtual bool visible() const override { return true; }
       Q_INVOKABLE bool draggable() const override { return true; }
       Q_INVOKABLE bool deletable() const override { return true; }
+      bool editing() const { return _editing; }
+      void setEditing(bool v);
+      Q_INVOKABLE bool keyEvent(int key, int modifiers, const QString& s);
       };

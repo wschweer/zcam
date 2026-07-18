@@ -30,6 +30,39 @@ Item {
     // Polygon drawing state
     property var _drawingPolygon: null   // the Polygon being drawn (null when idle)
 
+    // Text editing state
+    property var _editingText: null      // the Text element being edited (null when idle)
+
+    // Forward key events to the text element being edited.
+    // Returns true if the event was consumed.
+    function handleTextKey(event) {
+        if (!_editingText)
+            return false;
+        if (event.key === Qt.Key_Escape) {
+            _editingText.setEditing(false);
+            _editingText = null;
+            ZCam.currentTool = "pointer";
+            event.accepted = true;
+            return true;
+            }
+        // Navigation and editing keys
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_Right
+            || event.key === Qt.Key_Up || event.key === Qt.Key_Down
+            || event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace
+            || event.key === Qt.Key_Return) {
+            _editingText.keyEvent(event.key, event.modifiers, "");
+            event.accepted = true;
+            return true;
+            }
+        // Printable character
+        if (event.text && event.text.length > 0 && event.key !== Qt.Key_Backspace) {
+            _editingText.keyEvent(event.key, event.modifiers, event.text);
+            event.accepted = true;
+            return true;
+            }
+        return false;
+        }
+
     //─────────────────────────────────────────────────────────────
     //  Vertex handle management
     //─────────────────────────────────────────────────────────────
@@ -242,12 +275,19 @@ Item {
         // offscreen render mode can bypass the QML Shortcut event
         // filter installed on the window.
         Keys.onPressed: function (event) {
+            // If we are editing a text element, forward all key events
+            // to the text element first.
+            if (panel._editingText) {
+                if (panel.handleTextKey(event))
+                    return;
+                }
             if (event.key === Qt.Key_Delete) {
                 ZCam.deleteCurrentElement();
                 event.accepted = true;
                 }
             if (event.key === Qt.Key_Escape) {
                 finishPolygonDrawing();
+                ZCam.currentTool = "pointer";
                 event.accepted = true;
                 }
             if (event.key === Qt.Key_P) {
@@ -305,6 +345,14 @@ Item {
     Connections {
         target: ZCam
         function onCurrentElementChanged() {
+            // If a text element was being edited and the selection moved
+            // to a different element, exit editing mode so the cursor
+            // and editing bounding box disappear.
+            if (panel._editingText && panel._editingText !== ZCam.currentElement) {
+                panel._editingText.setEditing(false);
+                panel._editingText = null;
+                ZCam.currentTool = "pointer";
+                }
             rebuildVertexHandles();
             }
         }
@@ -572,6 +620,17 @@ Item {
                         var lp2 = worldToPolygonLocal(_drawingPolygon, eLastPos);
                         _drawingPolygon.continueDrawing(Qt.vector2d(lp2.x, lp2.y));
                         rebuildVertexHandles();
+                        }
+                    return;
+                    }
+                // Text tool: create a new Text element at the click
+                // position and immediately enter editing mode.
+                if (ZCam.currentTool == "text") {
+                    var newText = ZCam.createText(eLastPos.x, eLastPos.y);
+                    if (newText) {
+                        _editingText = newText;
+                        newText.setEditing(true);
+                        view3D.forceActiveFocus();
                         }
                     return;
                     }

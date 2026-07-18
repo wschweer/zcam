@@ -256,24 +256,36 @@ Item {
                 p = p.parent();
                 }
             // Determine drop position
+            // Shape elements (text, polygon, ellipse, rectangle) can
+            // also act as drop targets ("on") — dropping onto them
+            // re-parents the dragged element as their child.
             var tn = target.typeName();
             var isContainer = (tn === "layer" || tn === "cad" || tn === "fixture" || tn === "cam" || tn === "project");
+            var isShape = (tn === "text" || tn === "polygon" || tn === "ellipse" || tn === "rectangle");
             var pos;
-            if (isContainer && hit.yRel > hit.itemH * 0.33 && hit.yRel < hit.itemH * 0.67)
+            if ((isContainer || isShape) && hit.yRel > hit.itemH * 0.33 && hit.yRel < hit.itemH * 0.67)
                 pos = "on";
             else if (hit.yRel < hit.itemH * 0.5)
                 pos = "before";
             else
                 pos = "after";
             // Determine new parent and row
-            var newParent;
-            var newRow;
             if (pos === "on") {
-                newParent = target;
-                newRow = target.children.length;
+                if (isShape) {
+                    // Re-parent the dragged element to the shape target.
+                    // This requires coordinate transformation so the
+                    // element doesn't visually jump.
+                    ZCam.reparentElement(dragged, target);
+                    }
+                else {
+                    // Drop into a container element (layer, cad, etc.)
+                    var newRow = target.children.length;
+                    ZCam.project.moveElement(dragged, target, newRow);
+                    }
                 }
             else {
-                newParent = target.parent();
+                // Drop before/after the target element (reorder within parent)
+                var newParent = target.parent();
                 if (!newParent)
                     return;
                 var targetRow = 0;
@@ -282,10 +294,9 @@ Item {
                         break;
                     ++targetRow;
                     }
-                newRow = (pos === "before") ? targetRow : targetRow + 1;
+                var newRow2 = (pos === "before") ? targetRow : targetRow + 1;
+                ZCam.project.moveElement(dragged, newParent, newRow2);
                 }
-            if (ZCam.project)
-                ZCam.project.moveElement(dragged, newParent, newRow);
             // Expand the target container after a drop "on" so the
             // newly inserted child becomes visible immediately.
             if (pos === "on" && target.children.length > 0) {
@@ -659,7 +670,8 @@ Item {
                         }
                     var tn = target.typeName();
                     var isContainer = (tn === "layer" || tn === "cad" || tn === "fixture" || tn === "cam" || tn === "project");
-                    if (isContainer && hit.yRel > hit.itemH * 0.33 && hit.yRel < hit.itemH * 0.67) {
+                    var isShape = (tn === "text" || tn === "polygon" || tn === "ellipse" || tn === "rectangle");
+                    if ((isContainer || isShape) && hit.yRel > hit.itemH * 0.33 && hit.yRel < hit.itemH * 0.67) {
                         treeView.dropTargetElement = target;
                         treeView.dropPosition = "on";
                         }

@@ -48,6 +48,9 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       connect(this, &Text::letterSpacingChanged, [this]() { update(FONT); });
       connect(this, &Text::wordSpacingChanged, [this]() { update(FONT); });
       connect(this, &Text::lineSpacingChanged, [this]() { update(FONT); });
+      connect(this, &Text::boldChanged, [this]() { update(FONT); });
+      connect(this, &Text::italicChanged, [this]() { update(FONT); });
+      connect(this, &Text::underlineChanged, [this]() { update(FONT); });
       connect(this, &Text::fillChanged, [this]() { update(TEXT); });
       connect(this, &Text::alignChanged, [this]() { update(TEXT); });
       }
@@ -73,14 +76,16 @@ double Text::fontLineSpacing() const {
 
 void Text::updateCursor() {
       double x = 0.0;
-            QFontMetrics fm(font);
-      if (!text().isEmpty()) {
+      QFontMetrics fm(font);
+      if (!text().isEmpty() && cursorRow < (int)lineOffsets.size()) {
             QStringList sl = text().split('\n');
-            QString s      = sl[cursorRow].left(cursorColumn);
-            QTextOption to;
-            to.setUseDesignMetrics(true);
-            x  = fm.horizontalAdvance(s, to) * FONT_SCALE;
-            x += lineOffsets[cursorRow] * FONT_SCALE;
+            if (cursorRow < sl.size()) {
+                  QString s = sl[cursorRow].left(cursorColumn);
+                  QTextOption to;
+                  to.setUseDesignMetrics(true);
+                  x  = fm.horizontalAdvance(s, to) * FONT_SCALE;
+                  x += lineOffsets[cursorRow] * FONT_SCALE;
+                  }
             }
       double y       = -cursorRow * fontLineSpacing();
       double ascent  = -fm.ascent() * .7 * FONT_SCALE;
@@ -100,7 +105,9 @@ void Text::updateCursor() {
       line3.push_back({x - w2, y + descent});
       line3.push_back({x + w2, y + descent});
       lines.push_back(line3);
-      //      cursor()->geometry()->setLines(lines);
+      _cursorLines = lines;
+      updateSelectionGeometry();
+      emit selectionGeometryChanged();
       }
 
 //---------------------------------------------------------
@@ -159,12 +166,17 @@ void Text::update(int updateFlags) {
             font.setStretch(stretch());
             font.setLetterSpacing(QFont::PercentageSpacing, letterSpacing());
             font.setWordSpacing(wordSpacing());
+            font.setBold(bold());
+            font.setItalic(italic());
+            font.setUnderline(underline());
             updateText();
             updateCursor();
             updateFlags &= ~(FONT | CURSOR_POS | TEXT);
             }
       if (updateFlags & TEXT)
             updateText();
+      if (updateFlags & CURSOR_POS)
+            updateCursor();
       updateFlags = 0;
       }
 
@@ -244,54 +256,118 @@ void Text::updateText() {
       }
 
 //---------------------------------------------------------
+//   setEditing
+//---------------------------------------------------------
+
+void Text::setEditing(bool v) {
+      if (_editing == v)
+            return;
+      _editing = v;
+      emit editingChanged();
+      if (_editing) {
+            cursorRow    = 0;
+            cursorColumn = 0;
+            // Ensure font is initialized before computing cursor position
+            if (font.family().isEmpty()) {
+                  font = QFont(fontFamily());
+                  font.setPointSizeF(pointSize() * FONT_SCALE_UP);
+                  font.setWeight(QFont::Weight(weight()));
+                  font.setStretch(stretch());
+                  font.setLetterSpacing(QFont::PercentageSpacing, letterSpacing());
+                  font.setWordSpacing(wordSpacing());
+                  }
+            }
+      updateCursor();
+      }
+
+//---------------------------------------------------------
+//   updateSelectionGeometry
+//    When editing, show the bounding box + cursor lines.
+//    When not editing, show the normal bounding box.
+//---------------------------------------------------------
+
+void Text::updateSelectionGeometry() {
+      if (!_selectionGeometry)
+            return;
+      if (_editing) {
+            // Combine bounding box + cursor lines
+            Clipper2Lib::PathsD lines;
+            // Bounding box edges
+            QRectF bbox = boundingBox();
+            if (bbox.isNull() || bbox.isEmpty()) {
+                  // When text is empty, show a minimal bounding box
+                  // based on the font metrics so the cursor is visible.
+                  QFontMetrics fm(font);
+                  double w = fm.averageCharWidth() * FONT_SCALE;
+                  double h = fm.lineSpacing() * FONT_SCALE;
+                  bbox = QRectF(0.0, -fm.ascent() * FONT_SCALE, w, h);
+                  }
+            Clipper2Lib::PathD rect;
+            rect.push_back({bbox.left(), bbox.top()});
+            rect.push_back({bbox.right(), bbox.top()});
+            rect.push_back({bbox.right(), bbox.top()});
+            rect.push_back({bbox.right(), bbox.bottom()});
+            rect.push_back({bbox.right(), bbox.bottom()});
+            rect.push_back({bbox.left(), bbox.bottom()});
+            rect.push_back({bbox.left(), bbox.bottom()});
+            rect.push_back({bbox.left(), bbox.top()});
+            lines.push_back(rect);
+            // Cursor lines
+            for (const auto& cl : _cursorLines)
+                  lines.push_back(cl);
+            _selectionGeometry->setLines(lines);
+            emit selectionGeometryChanged();
+            }
+      else
+            Element3d::updateSelectionGeometry();
+      }
+
+//---------------------------------------------------------
 //   keyEvent
 //---------------------------------------------------------
 
-#if 0
-bool Text::keyEvent(int key, int modifiers, const QString& s)
-                              {
-      Debug("Key Event");
+bool Text::keyEvent(int key, int modifiers, const QString& s) {
       QStringList sl = text().split('\n');
 
-      switch(key) {
+      switch (key) {
             case Qt::Key_Left:
                   if (cursorColumn) {
                         --cursorColumn;
                         update(CURSOR_POS);
-                                                }
+                        }
                   else if (cursorRow) {
                         --cursorRow;
                         cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                                                }
+                        }
                   break;
             case Qt::Key_Right:
                   if (cursorColumn < sl[cursorRow].size()) {
                         ++cursorColumn;
                         update(CURSOR_POS);
-                                                }
-                  else if (cursorRow < (sl.size()-1)) {
+                        }
+                  else if (cursorRow < (sl.size() - 1)) {
                         ++cursorRow;
                         cursorColumn = 0;
                         update(CURSOR_POS);
-                                                }
+                        }
                   break;
             case Qt::Key_Delete:
             case Qt::Key_Backspace:
                   if (cursorColumn) {
                         sl[cursorRow].removeAt(--cursorColumn);
-                        zcam->undoChangeProperty(this, "text", sl.join('\n'));
+                        set_text(sl.join('\n'));
                         update(CURSOR_POS);
-                                                }
-                  else  if (cursorRow) {
+                        }
+                  else if (cursorRow) {
                         QString rs = sl[cursorRow];
                         sl.removeAt(cursorRow);
                         --cursorRow;
-                        cursorColumn = sl[cursorRow].size();
+                        cursorColumn   = sl[cursorRow].size();
                         sl[cursorRow] += rs;
-                        zcam->undoChangeProperty(this, "text", sl.join('\n'));
+                        set_text(sl.join('\n'));
                         update(CURSOR_POS);
-                                                }
+                        }
                   break;
             case Qt::Key_Up:
                   if (cursorRow) {
@@ -299,45 +375,42 @@ bool Text::keyEvent(int key, int modifiers, const QString& s)
                         if (sl[cursorRow].size() < cursorColumn)
                               cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                                                }
+                        }
                   break;
             case Qt::Key_Down:
-                  if (cursorRow < sl.size()-1) {
+                  if (cursorRow < sl.size() - 1) {
                         ++cursorRow;
                         if (sl[cursorRow].size() < cursorColumn)
                               cursorColumn = sl[cursorRow].size();
                         update(CURSOR_POS);
-                                                }
+                        }
                   break;
             case Qt::Key_Return: {
                   int n = sl[cursorRow].size();
                   QString rs;
                   if (n > cursorColumn) {
-                        rs = sl[cursorRow].right(n- cursorColumn);
+                        rs            = sl[cursorRow].right(n - cursorColumn);
                         sl[cursorRow] = sl[cursorRow].left(cursorColumn);
-                                                }
+                        }
                   if (sl.size() <= cursorRow)
                         sl += rs;
                   else
-                        sl.insert(cursorRow+1, rs);
+                        sl.insert(cursorRow + 1, rs);
                   ++cursorRow;
                   cursorColumn = 0;
-                  zcam->undoChangeProperty(this, "text", sl.join('\n'));
+                  set_text(sl.join('\n'));
                   update(CURSOR_POS);
-                                          }
-                  break;
+                  } break;
 
             default:
                   if (!s.isEmpty()) {
-                        Debug("{} {}: insert <{}> into <{}>", cursorColumn, cursorRow, s, sl[0]);
                         QString& t = sl[cursorRow];
                         t.insert(cursorColumn, s);
                         cursorColumn += s.size();
-                        zcam->undoChangeProperty(this, "text", sl.join('\n'));
+                        set_text(sl.join('\n'));
                         update();
-                                                }
+                        }
                   break;
-                                    }
+            }
       return true;
-                              }
-#endif
+      }

@@ -27,6 +27,7 @@ class Grid : public Element3d
 
       PROPV(double, raster, 20.0)
       PROPV(int, subraster, 5)
+      PROPV(bool, snap, false)
 
       Q_PROPERTY(TessGeometry* minorGeometry READ minorGeometry NOTIFY minorGeometryChanged)
 
@@ -41,9 +42,10 @@ class Grid : public Element3d
                           "type": "bool",
                           "default": true
                         },
-                        "_empty": {
-                          "label": "Burn",
-                          "type": "empty"
+                        "snap": {
+                          "label": "Snap",
+                          "type": "bool",
+                          "default": false
                         }
                       },
                       "label": "Visibility"
@@ -81,6 +83,10 @@ class Grid : public Element3d
 
     public:
       explicit Grid(ZCam*, Element* parent = nullptr);
+      // Returns the minor line spacing (major / subraster) in mm.
+      double minorSpacing() const;
+      // Returns the major line spacing (raster) in mm.
+      double majorSpacing() const;
       virtual QString typeName() override { return QStringLiteral("grid"); }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool visible() const override { return true; }

@@ -223,18 +223,15 @@ class MaterialTest : public Element3d
       double columnValue(int col) const;
       void updateChildren();
       void addText(double x, double y, const QString& s, Layer* layer, double pt, double rot);
+      void createChildren();
 
     public:
       MaterialTest(ZCam* zcam, Element* parent = nullptr);
       virtual QString typeName() override { return QStringLiteral("materialtest"); }
-      void createChildren();
-      Q_INVOKABLE bool nameEditable() const override { return true; }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool visible() const override { return true; }
-      // Text elements are layer elements and can be dragged on the 3D canvas.
-      static constexpr bool s_draggable = true;
-      Q_INVOKABLE bool draggable() const override { return s_draggable; }
-      // Text elements can be deleted from the project tree.
-      static constexpr bool s_deletable = true;
-      Q_INVOKABLE bool deletable() const override { return s_deletable; }
+      Q_INVOKABLE bool nameEditable() const override { return true; }
+      Q_INVOKABLE bool draggable() const override { return true; }
+      Q_INVOKABLE bool deletable() const override { return true; }
+      virtual void fixup() override;
       };

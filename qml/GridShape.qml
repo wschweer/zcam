@@ -22,12 +22,13 @@ Model {
     pickable: false
     geometry: element ? element.geometry : null
     position: element ? element.pos : Qt.vector3d(0, 0, 0)
-    color: element ? element.curColor : Qt.rgba(0.8, 0.8, 0.8, 0.6)
+//    color: element ? element.curColor : Qt.rgba(0.2, 0.2, 0.2, 1.0)
+    color: Qt.rgba(0.7, 0.7, 0.7, 1.0)
     materials: [
         PrincipledMaterial {
             id: majorMaterial
             cullMode: PrincipledMaterial.NoCulling
-            lineWidth: 1.5
+            lineWidth: 1.0
             lighting: PrincipledMaterial.NoLighting
         }
     ]
@@ -42,9 +43,9 @@ Model {
         materials: [
             PrincipledMaterial {
                 cullMode: PrincipledMaterial.NoCulling
-                lineWidth: 1
+                lineWidth: 0.0
                 lighting: PrincipledMaterial.NoLighting
-                baseColor: Qt.rgba(0.85, 0.85, 0.85, 0.5) // lighter, more transparent
+                baseColor: Qt.rgba(0.4, 0.4, 0.4, 1.0)
             }
         ]
     }

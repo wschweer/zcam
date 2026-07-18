@@ -26,8 +26,10 @@
 #include "undo.h"
 #include "propertyjson.h"
 #include "geometryworker.h"
+#include "grid.h"
 
 #include <cmath>
+#include <QQuaternion>
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>
@@ -357,6 +359,78 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
             if (ok)
                   localDelta = inv.mapVector(delta);
             }
+
+      // Magnetic grid snap: when the project's Grid has snap enabled,
+      // grid lines act magnetically.  The element's reference point is
+      // (0,0) in local coords, which maps to element->pos() in parent
+      // local space.  When the reference point crosses a grid line, the
+      // element snaps to that line.  Further dragging accumulates in
+      // _snapState.excess until it exceeds half the minor spacing, at
+      // which point the element "breaks free" and moves freely until
+      // the next line is crossed.
+      Grid* grid = nullptr;
+      if (_project)
+            grid = qobject_cast<Grid*>(_project->gridElement());
+      if (grid && grid->snap()) {
+            double spacing = grid->minorSpacing();
+            if (spacing > 0.0) {
+                  double halfSpacing = spacing / 2.0;
+                  double curX = element->pos().x();
+                  double curY = element->pos().y();
+                  double newX = curX + localDelta.x();
+                  double newY = curY + localDelta.y();
+
+                  // X axis snap
+                  if (_snapState.activeX) {
+                        _snapState.excessX += localDelta.x();
+                        if (std::abs(_snapState.excessX) > halfSpacing) {
+                              // Break free: snap point releases, move freely
+                              _snapState.activeX = false;
+                              newX = curX + localDelta.x();
+                              }
+                        else {
+                              // Hold snapped: keep X at the snap line
+                              newX = curX;
+                              }
+                        }
+                  else {
+                        // Check if reference point crosses a grid line
+                        double oldLine = std::round(curX / spacing);
+                        double newLine = std::round(newX / spacing);
+                        if (newLine != oldLine) {
+                              _snapState.activeX   = true;
+                              _snapState.excessX   = newX - newLine * spacing;
+                              newX                 = newLine * spacing;
+                              }
+                        }
+
+                  // Y axis snap
+                  if (_snapState.activeY) {
+                        _snapState.excessY += localDelta.y();
+                        if (std::abs(_snapState.excessY) > halfSpacing) {
+                              _snapState.activeY = false;
+                              newY = curY + localDelta.y();
+                              }
+                        else {
+                              newY = curY;
+                              }
+                        }
+                  else {
+                        double oldLine = std::round(curY / spacing);
+                        double newLine = std::round(newY / spacing);
+                        if (newLine != oldLine) {
+                              _snapState.activeY   = true;
+                              _snapState.excessY   = newY - newLine * spacing;
+                              newY                 = newLine * spacing;
+                              }
+                        }
+
+                  QVector3D newPos(newX, newY, element->pos().z() + localDelta.z());
+                  element->set_pos(newPos);
+                  return;
+                  }
+            }
+
       QVector3D newPos = element->pos() + localDelta;
       element->set_pos(newPos);
       }
@@ -408,6 +482,7 @@ void ZCam::startElementDrag(Element3d* element) {
       _elementDragOrigPos   = element->pos();
       _elementDragOrigRot   = element->rot();
       _elementDragOrigScale = element->scale();
+      _snapState.reset();
       }
 
 //---------------------------------------------------------
@@ -465,6 +540,7 @@ void ZCam::endElementDrag() {
             setCamDirty(true);
 
       _elementDragElement = nullptr;
+      _snapState.reset();
       }
 
 //---------------------------------------------------------
@@ -867,12 +943,54 @@ Layer* ZCam::findFirstVisibleLayer(Element* root) const {
       }
 
 //---------------------------------------------------------
+//   findCurrentLayer
+//    Find the Layer that is the current element itself, or the
+//    nearest Layer ancestor of the current element, walking up
+//    the parent chain until Cad is reached.
+//
+//    The search starts at _currentElement. If _currentElement is
+//    itself a Layer, it is returned (provided it is visible).
+//    Otherwise we walk up through parent() until we either find
+//    a Layer or reach the Cad element (which is the container of
+//    all layers and therefore the stop marker).
+//
+//    Returns nullptr if:
+//      - there is no current element
+//      - no Layer is found in the parent chain before reaching Cad
+//      - the found Layer is not visible (show == false or an
+//        ancestor has show == false)
+//---------------------------------------------------------
+
+Layer* ZCam::findCurrentLayer() const {
+      if (!_currentElement)
+            return nullptr;
+
+      // Walk up the parent chain from the current element.
+      // Stop when we reach a Cad element (the container of layers)
+      // or when there are no more parents.
+      for (Element* e = _currentElement; e; e = e->parent()) {
+            // If we reach Cad, the layers are direct children of Cad,
+            // so there is no Layer in this chain.
+            if (isType<Cad>(e))
+                  return nullptr;
+
+            if (auto* layer = qobject_cast<Layer*>(e)) {
+                  if (layer->show() && layer->ancestorsShow())
+                        return layer;
+                  return nullptr;
+                  }
+            }
+      return nullptr;
+      }
+
+//---------------------------------------------------------
 //   createRectangle
 //    Create a new Rectangle element with size (0, 0) at the
-//    given world position and add it to the first visible Layer.
-//    The new rectangle is set as the current element so that
-//    vertex handles are displayed.  Returns the new Rectangle
-//    or nullptr if no suitable layer was found.
+//    given world position and add it to the current Layer (the
+//    Layer of the selected element) or the first visible Layer
+//    as fallback.  The new rectangle is set as the current element
+//    so that vertex handles are displayed.  Returns the new
+//    Rectangle or nullptr if no suitable layer was found.
 //    The operation is routed through the undo stack so it can
 //    be undone/redone.
 //---------------------------------------------------------
@@ -881,8 +999,12 @@ Element3d* ZCam::createRectangle(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
 
-      // Find the first visible layer to host the new rectangle.
-      Layer* layer = findFirstVisibleLayer(_project->cad());
+      // Find the layer to host the new rectangle: prefer the layer
+      // of the currently selected element, fall back to the first
+      // visible layer in the tree.
+      Layer* layer = findCurrentLayer();
+      if (!layer)
+            layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
             Debug("no layer");
             return nullptr;
@@ -905,9 +1027,10 @@ Element3d* ZCam::createRectangle(double x, double y) {
 //---------------------------------------------------------
 //   createPolygon
 //    Create a new Polygon element at the given world position
-//    and add it to the first visible Layer.  The new polygon
-//    is set as the current element so that vertex handles are
-//    displayed.  Returns the new Polygon or nullptr if no
+//    and add it to the current Layer (the Layer of the selected
+//    element) or the first visible Layer as fallback.  The new
+//    polygon is set as the current element so that vertex handles
+//    are displayed.  Returns the new Polygon or nullptr if no
 //    suitable layer was found.  The operation is routed through
 //    the undo stack so it can be undone/redone.
 //---------------------------------------------------------
@@ -916,7 +1039,9 @@ Element3d* ZCam::createPolygon(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
 
-      Layer* layer = findFirstVisibleLayer(_project->cad());
+      Layer* layer = findCurrentLayer();
+      if (!layer)
+            layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
             Debug("no layer");
             return nullptr;
@@ -938,9 +1063,10 @@ Element3d* ZCam::createPolygon(double x, double y) {
 //---------------------------------------------------------
 //   createEllipse
 //    Create a new Ellipse element with size (0, 0) at the
-//    given world position and add it to the first visible Layer.
-//    The new ellipse is set as the current element so that
-//    vertex handles are displayed.  Returns the new Ellipse
+//    given world position and add it to the current Layer (the
+//    Layer of the selected element) or the first visible Layer
+//    as fallback.  The new ellipse is set as the current element
+//    so that vertex handles are displayed.  Returns the new Ellipse
 //    or nullptr if no suitable layer was found.
 //    The operation is routed through the undo stack so it can
 //    be undone/redone.
@@ -950,7 +1076,9 @@ Element3d* ZCam::createEllipse(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
 
-      Layer* layer = findFirstVisibleLayer(_project->cad());
+      Layer* layer = findCurrentLayer();
+      if (!layer)
+            layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
             Debug("no layer");
             return nullptr;
@@ -967,6 +1095,232 @@ Element3d* ZCam::createEllipse(double x, double y) {
       setCamDirty(true);
 
       return ell;
+      }
+
+//---------------------------------------------------------
+//   createText
+//    Create a new Text element at the given world position
+//    and add it to the current Layer (the Layer of the selected
+//    element) or the first visible Layer as fallback.
+//
+//    If the currently selected element is itself a Text, its
+//    font and appearance properties (fontFamily, pointSize, weight,
+//    stretch, letterSpacing, wordSpacing, lineSpacing, align, bold,
+//    italic, underline, fill, color, burn, show, mirrorX, mirrorY,
+//    lockScale, lineWidth, endType, joinType, scale, rot) are
+//    copied to the new Text so that the user gets visual continuity.
+//    The "text" string itself is not copied – the new Text starts
+//    empty.
+//
+//    The new text is set as the current element.  Returns the new
+//    Text or nullptr if no suitable layer was found.
+//    The operation is routed through the undo stack so it can
+//    be undone/redone.
+//---------------------------------------------------------
+
+Element3d* ZCam::createText(double x, double y) {
+      if (!_project || !_project->cad())
+            return nullptr;
+
+      Layer* layer = findCurrentLayer();
+      if (!layer)
+            layer = findFirstVisibleLayer(_project->cad());
+      if (!layer) {
+            Debug("no layer");
+            return nullptr;
+            }
+
+      auto cmd = std::make_unique<AddTextCommand>(this, layer, x, y);
+      cmd->redo(); // apply immediately
+      Element3d* text = cmd->text();
+
+      // If the currently selected element is a Text, copy its font
+      // and appearance properties to the new Text.
+      if (_currentElement && isType<Text>(_currentElement)) {
+            auto* src = qobject_cast<Text*>(_currentElement);
+            auto* dst = qobject_cast<Text*>(text);
+            if (src && dst) {
+                  dst->set_fontFamily(src->fontFamily());
+                  dst->set_pointSize(src->pointSize());
+                  dst->set_weight(src->weight());
+                  dst->set_stretch(src->stretch());
+                  dst->set_letterSpacing(src->letterSpacing());
+                  dst->set_wordSpacing(src->wordSpacing());
+                  dst->set_lineSpacing(src->lineSpacing());
+                  dst->set_align(src->align());
+                  dst->set_bold(src->bold());
+                  dst->set_italic(src->italic());
+                  dst->set_underline(src->underline());
+                  dst->set_fill(src->fill());
+                  dst->setColor(src->color());
+                  dst->set_burn(src->burn());
+                  dst->set_show(src->show());
+                  dst->set_mirrorX(src->mirrorX());
+                  dst->set_mirrorY(src->mirrorY());
+                  dst->set_lockScale(src->lockScale());
+                  dst->set_lineWidth(src->lineWidth());
+                  dst->set_endType(src->endType());
+                  dst->set_joinType(src->joinType());
+                  dst->set_scale(src->scale());
+                  dst->set_rot(src->rot());
+                  dst->update();
+                  }
+            }
+
+      _projectManager->pushCommand(std::move(cmd));
+
+      setCurrentElement(text);
+
+      _projectManager->markDirty();
+      setCamDirty(true);
+
+      return text;
+      }
+
+//---------------------------------------------------------
+//   reparentElement
+//    Re-parent an element to a new parent Element3d.  The element's
+//    local pos/rot/scale are adjusted so that its world-space
+//    transform stays the same (the visual position doesn't jump).
+//    This is the core of the drag-&-drop grouping mechanism:
+//    when the user drops one draggable element onto another, the
+//    dropped element becomes a child of the target element.
+//
+//    Coordinate transformation:
+//      Before:  worldPos = oldParentGlobal * localPos
+//      After:   worldPos = newParentGlobal * newLocalPos
+//      So:      newLocalPos = inverse(newParentGlobal) * oldWorldPos
+//
+//    The same logic applies to scale and rotation, which are
+//    encoded in the matrix and extracted back via decompose().
+//---------------------------------------------------------
+
+void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
+      if (!element || !newParent || element == newParent)
+            return;
+      // Prevent re-parenting into one's own descendant
+      Element* p = newParent;
+      while (p) {
+            if (p == element)
+                  return;
+            p = p->parent();
+            }
+      // Only Element3d parents can carry transforms
+      if (!qobject_cast<Element3d*>(newParent))
+            return;
+
+      Element* oldParent = element->parent();
+      if (!oldParent)
+            return;
+
+      // Compute the element's current world (global) matrix.
+      QMatrix4x4 oldGlobal = element->globalMatrix();
+
+      // Compute the new parent's global matrix.
+      QMatrix4x4 newParentGlobal = newParent->globalMatrix();
+      bool ok = false;
+      QMatrix4x4 newParentInv   = newParentGlobal.inverted(&ok);
+      if (!ok)
+            return;
+
+      // The new local matrix maps points from the element's local
+      // space to the new parent's local space.
+      QMatrix4x4 newLocal = newParentInv * oldGlobal;
+
+      // Decompose the new local matrix into pos, rot, scale.
+      // Extract translation: last column (x, y, z)
+      QVector3D newPos(newLocal(0, 3), newLocal(1, 3), newLocal(2, 3));
+
+      // Extract scale: length of the first three column vectors.
+      // Column 0 = (m(0,0), m(1,0), m(2,0))
+      // Column 1 = (m(0,1), m(1,1), m(2,1))
+      // Column 2 = (m(0,2), m(1,2), m(2,2))
+      float sx = QVector3D(newLocal(0, 0), newLocal(1, 0), newLocal(2, 0)).length();
+      float sy = QVector3D(newLocal(0, 1), newLocal(1, 1), newLocal(2, 1)).length();
+      float sz = QVector3D(newLocal(0, 2), newLocal(1, 2), newLocal(2, 2)).length();
+      QVector3D newScale(sx, sy, sz);
+
+      // Extract rotation: build a pure rotation matrix by dividing
+      // out the scale, then convert to euler angles via quaternion.
+      QMatrix3x3 rotMat;
+      if (sx > 1e-9) {
+            rotMat(0, 0) = newLocal(0, 0) / sx;
+            rotMat(1, 0) = newLocal(1, 0) / sx;
+            rotMat(2, 0) = newLocal(2, 0) / sx;
+            }
+      if (sy > 1e-9) {
+            rotMat(0, 1) = newLocal(0, 1) / sy;
+            rotMat(1, 1) = newLocal(1, 1) / sy;
+            rotMat(2, 1) = newLocal(2, 1) / sy;
+            }
+      if (sz > 1e-9) {
+            rotMat(0, 2) = newLocal(0, 2) / sz;
+            rotMat(1, 2) = newLocal(1, 2) / sz;
+            rotMat(2, 2) = newLocal(2, 2) / sz;
+            }
+      QQuaternion quat = QQuaternion::fromRotationMatrix(rotMat);
+      QVector3D newRot = quat.toEulerAngles();
+
+      // Apply the new transforms BEFORE moving the element in the tree.
+      // This ensures that when the MoveElementCommand's redo() emits
+      // add3dElement, the scene graph rebuilds the element with the
+      // correct local transform.
+      //
+      // Record undo commands for the transform changes so that undo/redo
+      // restores the correct pre-reparent transforms.
+      QVector3D origPos = element->pos();
+      QVector3D origRot = element->rot();
+      QVector3D origScale = element->scale();
+
+      element->beginBatchUpdate();
+      element->set_pos(newPos);
+      element->set_rot(newRot);
+      element->set_scale(newScale);
+      element->endBatchUpdate();
+
+      // Push undo commands for the transform changes.
+      // These must be pushed BEFORE the MoveElementCommand so that
+      // undo undoes the move first (restoring the old parent), then
+      // the transforms (restoring the old pos/rot/scale).
+      if (_projectManager) {
+            {
+            auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("pos"),
+                                                               QVariant::fromValue(origPos), QVariant::fromValue(newPos));
+            _projectManager->pushCommand(std::move(cmd));
+            }
+            {
+            auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("rot"),
+                                                               QVariant::fromValue(origRot), QVariant::fromValue(newRot));
+            _projectManager->pushCommand(std::move(cmd));
+            }
+            {
+            auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("scale"),
+                                                               QVariant::fromValue(origScale), QVariant::fromValue(newScale));
+            _projectManager->pushCommand(std::move(cmd));
+            }
+            }
+
+      // Reset the drag state since we bypassed endElementDrag().
+      _elementDragElement = nullptr;
+
+      // Now move the element in the tree via the undoable command.
+      if (_project) {
+            int oldRow = 0;
+            for (const auto c : oldParent->children()) {
+                  if (c == element)
+                        break;
+                  ++oldRow;
+                  }
+            Debug("reparentElement: calling moveElement: element={} oldParent={} newParent={}",
+                  element->name(), oldParent ? oldParent->name() : "null", newParent->name());
+            _project->moveElement(element, newParent, -1);
+            }
+      else {
+            Debug("reparentElement: no project");
+            }
+
+      _projectManager->markDirty();
+      setCamDirty(true);
       }
 
 //---------------------------------------------------------

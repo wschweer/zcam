@@ -573,6 +573,13 @@ bool ProjectManager::readProjectFile(const std::string& path, bool skipCamUpdate
                   if (!skipCamUpdate && zcam->project()->cam())
                         zcam->project()->cam()->updateCam();
                   }
+            auto func = [] (this auto& self, Element* e) -> void {
+                  for (auto c : e->children()) {
+                        c->fixup();
+                        self(c);
+                        }
+                  };
+            func(zcam->project());
             }
       catch (const nlohmann::json::parse_error& err) {
             Warning("JSON parse error:", err.what());

@@ -249,6 +249,21 @@ class ZCam : public QObject
       QVector3D _elementDragOrigRot;
       QVector3D _elementDragOrigScale;
 
+      // State for magnetic grid snap during element drag.
+      // The reference point for each element is (0,0) in local coords.
+      // When the reference point crosses a grid line, the element "snaps"
+      // to that line.  Further dragging accumulates in _snapExcess and
+      // once it exceeds half the minor spacing, the element "breaks free"
+      // and moves freely until the next line is crossed.
+      struct SnapState {
+            bool activeX {false};      ///< currently snapped on X axis
+            bool activeY {false};      ///< currently snapped on Y axis
+            double excessX {0.0};      ///< accumulated drag beyond the snap point (X)
+            double excessY {0.0};      ///< accumulated drag beyond the snap point (Y)
+            void reset() { activeX = activeY = false; excessX = excessY = 0.0; }
+            };
+      SnapState _snapState;
+
     public:
       bool camDirty() const { return _camDirty; }
       void setCamDirty(bool v);
@@ -285,6 +300,11 @@ class ZCam : public QObject
       Q_INVOKABLE bool restoreAssetsBackup();
 
       /// Called from QML when an element is dragged in the 3D viewport.
+      /// When the project's Grid has snap enabled, grid lines act
+      /// magnetically: the element's reference point (0,0 in local
+      /// coords) snaps to a grid line when it crosses it, and the
+      /// element only breaks free after the drag exceeds half the
+      /// minor grid spacing beyond the snap point.
       Q_INVOKABLE void dragged(Element3d* element, const QVector3D& delta, int modifiers);
 
       /// Called from QML when an element is rotated in the 3D viewport.
@@ -294,7 +314,8 @@ class ZCam : public QObject
       Q_INVOKABLE void scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers);
 
       /// Called from QML when the user starts dragging an element.
-      /// Records the original transform for the undo command.
+      /// Records the original transform for the undo command and
+      /// resets the magnetic-snap state.
       Q_INVOKABLE void startElementDrag(Element3d* element);
 
       /// Called from QML when the user finishes dragging an element.
@@ -342,19 +363,41 @@ class ZCam : public QObject
       Q_INVOKABLE Recipe* recipePtr(const QString& name) const;
 
       /// Create a new Rectangle element at the given world position
-      /// and add it to the first visible Layer.  Returns the new
-      /// Rectangle or nullptr if no layer is available.
+      /// and add it to the current Layer (the Layer of the selected
+      /// element) or the first visible Layer as fallback.  Returns
+      /// the new Rectangle or nullptr if no layer is available.
       Q_INVOKABLE Element3d* createRectangle(double x, double y);
 
       /// Create a new Polygon element at the given world position
-      /// and add it to the first visible Layer.  Returns the new
-      /// Polygon or nullptr if no layer is available.
+      /// and add it to the current Layer (the Layer of the selected
+      /// element) or the first visible Layer as fallback.  Returns
+      /// the new Polygon or nullptr if no layer is available.
       Q_INVOKABLE Element3d* createPolygon(double x, double y);
 
       /// Create a new Ellipse element at the given world position
-      /// and add it to the first visible Layer.  Returns the new
-      /// Ellipse or nullptr if no layer is available.
+      /// and add it to the current Layer (the Layer of the selected
+      /// element) or the first visible Layer as fallback.  Returns
+      /// the new Ellipse or nullptr if no layer is available.
       Q_INVOKABLE Element3d* createEllipse(double x, double y);
+
+      /// Create a new Text element at the given world position
+      /// and add it to the current Layer (the Layer of the selected
+      /// element) or the first visible Layer as fallback.  Returns
+      /// the new Text or nullptr if no layer is available.
+      Q_INVOKABLE Element3d* createText(double x, double y);
+
+      /// Re-parent an element to a new parent Element3d.  The element's
+      /// local pos/rot/scale are adjusted so that its world-space
+      /// transform stays the same (the visual position doesn't jump).
+      /// The operation is undoable via the MoveElementCommand which
+      /// also takes care of scene-graph updates.
+      ///
+      /// This is the core of the drag-drop grouping mechanism:
+      /// when the user drops one draggable element onto another, the
+      /// dropped element becomes a child of the target element.
+      /// Because every Element3d already supports children and has a
+      /// transformation matrix, any element can act as a group.
+      Q_INVOKABLE void reparentElement(Element3d* element, Element3d* newParent);
 
       /// Delete the current element if it is deletable.
       /// The operation is undoable.
@@ -376,4 +419,10 @@ class ZCam : public QObject
 
     private:
       Layer* findFirstVisibleLayer(Element* root) const;
+      /// Find the Layer that is the current element itself, or the
+      /// nearest Layer ancestor of the current element, walking up
+      /// the parent chain until Cad is reached.  Returns nullptr if
+      /// there is no current element, no Layer is found in the chain,
+      /// or the found Layer is not visible.
+      Layer* findCurrentLayer() const;
       };
