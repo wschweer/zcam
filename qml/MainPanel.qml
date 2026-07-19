@@ -24,8 +24,8 @@ Item {
     id: root
 
     // ── External control: toggle MediaBrowser from Main.qml ──────────────────
-    property bool mediaBrowserVisible: panelSettings.mediaBrowserVisible
-    onMediaBrowserVisibleChanged: panelSettings.mediaBrowserVisible = mediaBrowserVisible
+    // Visibility is persisted by Main.qml via settings.mediaBrowserVisible.
+    property bool mediaBrowserVisible: false
 
     // ── Persistent splitter states ────────────────────────────────────────────
     Settings {
@@ -34,7 +34,6 @@ Item {
         property var outerSplitState
         property var innerSplitState
         property var mediaSplitState
-        property bool mediaBrowserVisible: false
         }
 
     Component.onCompleted: {

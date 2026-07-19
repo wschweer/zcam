@@ -40,6 +40,7 @@ Window {
         property int windowHeight: 700
         property int windowX: -1
         property int windowY: -1
+        property bool mediaBrowserVisible: false
         }
 
     onWidthChanged: if (visible)
@@ -254,6 +255,8 @@ Window {
         id: actionShowMediaBrowser
         text: qsTr("Show media browser")
         checkable: true
+        checked: settings.mediaBrowserVisible
+        onCheckedChanged: settings.mediaBrowserVisible = checked
         }
 
     // =========================================================================
@@ -802,6 +805,7 @@ Window {
     // ── Media Browser visibility binding ──────────────────────────────────────
     //   The MediaBrowser lives inside MainPanel. Toggle its visibility
     //   via the mediaBrowserVisible property exposed by MainPanel.
+    //   The action's checked state is persisted via settings.mediaBrowserVisible.
     Binding {
         target: mainPanel
         property: "mediaBrowserVisible"
