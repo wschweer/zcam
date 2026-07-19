@@ -57,6 +57,7 @@ Item {
         if (fontSettings.splitState)
             splitView.restoreState(fontSettings.splitState)
         updateCurrentIndex()
+        fontList.forceActiveFocus()
         }
 
     Connections {
@@ -116,11 +117,29 @@ Item {
                 model: fontModel
                 currentIndex: -1
                 focus: true
+                keyNavigationEnabled: true
 
-                Component.onCompleted: updateCurrentIndex()
+                Component.onCompleted: {
+                    updateCurrentIndex()
+                    forceActiveFocus()
+                    }
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                Keys.onUpPressed: function(event) {
+                    if (currentIndex > 0) {
+                        currentIndex--
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        }
+                    event.accepted = true
+                    }
+                Keys.onDownPressed: function(event) {
+                    if (currentIndex < fontModel.rowCount() - 1) {
+                        currentIndex++
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        }
+                    event.accepted = true
+                    }
                 Keys.onPressed: function(event) {
                     if (event.key === Qt.Key_Delete && currentIndex >= 0) {
                         var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
@@ -130,22 +149,19 @@ Item {
                         }
                     }
 
-                onCurrentIndexChanged: {
-                    if (currentIndex >= 0 && currentIndex < fontModel.rowCount())
-                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                    }
-
-                delegate: Item {
+                delegate: ItemDelegate {
+                    id: fontDelegate
                     width: ListView.view.width
                     height: 32
+                    focusPolicy: Qt.NoFocus
                     readonly property bool isCurrent: model.family === fontModel.currentFamily
+                    highlighted: isCurrent
 
-                    Rectangle {
-                        anchors.fill: parent
-                        color: parent.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                    background: Rectangle {
+                        color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
                         }
 
-                    RowLayout {
+                    contentItem: RowLayout {
                         anchors.fill: parent
                         spacing: 4
 
@@ -162,18 +178,16 @@ Item {
                         Label {
                             text: model.family
                             font.family: model.family
-                            color: parent.parent.isCurrent ? Material.accentColor : Material.foreground
+                            color: fontDelegate.isCurrent ? Material.accentColor : Material.foreground
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             }
                         }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            fontList.currentIndex = index
-                            fontList.forceActiveFocus()
-                            }
+                    onClicked: {
+                        fontList.currentIndex = index
+                        fontModel.currentFamily = model.family
+                        fontList.forceActiveFocus()
                         }
                     }
                 }
