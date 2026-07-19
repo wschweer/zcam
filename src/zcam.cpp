@@ -477,12 +477,13 @@ void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modif
 void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers) {
       if (!element || !element->draggable())
             return;
-      // The lockScale enforcement is handled by Element3d::set_scale(),
-      // so we just compute the new scale and let set_scale() apply
-      // the lock constraints.
+      // Use set_scaleAR() instead of set_scale() so that the lockScale
+      // enforcement (Off / Lock / Square) is applied.  set_scale() bypasses
+      // the lock constraints, which would allow non-uniform scaling even
+      // when lockScale is set to Square or Lock.
       QVector3D cur = element->scale();
       QVector3D newScale(cur.x() * scaleFactor.x(), cur.y() * scaleFactor.y(), cur.z() * scaleFactor.z());
-      element->set_scale(newScale);
+      element->set_scaleAR(newScale);
       }
 
 //---------------------------------------------------------

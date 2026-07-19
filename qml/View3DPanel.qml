@@ -525,6 +525,22 @@ Item {
             if (mouse.modifiers != Qt.ControlModifier)
                 return;
 
+            // If a visible canvas element is selected, scale the element
+            // instead of the 3D view.  Only elements that are visible on
+            // the canvas (Text, Polygon, Ellipse, Rectangle etc.) and
+            // actually shown (show == true and ancestors visible) are
+            // eligible for element scaling.
+            var el = ZCam.currentElement;
+            if (el && el.visible() && el.show && el.ancestorsShow && el.draggable) {
+                var sd = (mouse.angleDelta.y > 0.0) ? 1.2 : 0.8;
+                var scaleFactor = Qt.vector3d(sd, sd, sd);
+                ZCam.startElementDrag(el);
+                ZCam.scaled(el, scaleFactor, mouse.modifiers);
+                ZCam.endElementDrag();
+                return;
+                }
+
+            // No suitable element selected — zoom the 3D view.
             var cursorScenePos;
             var localPos = screenToScene(mouse.x, mouse.y);
             if (!localPos)
