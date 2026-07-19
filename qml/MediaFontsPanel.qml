@@ -144,14 +144,19 @@ Item {
                     Keys.onUpPressed: function(event) {
                         if (currentIndex > 0) {
                             currentIndex--
-                            fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            if (family !== undefined)
+                                fontModel.currentFamily = family
                             }
                         event.accepted = true
                         }
                     Keys.onDownPressed: function(event) {
-                        if (currentIndex < fontModel.rowCount() - 1) {
+                        var last = fontModel.rowCount() - 1
+                        if (currentIndex < last) {
                             currentIndex++
-                            fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            if (family !== undefined)
+                                fontModel.currentFamily = family
                             }
                         event.accepted = true
                         }
@@ -180,21 +185,19 @@ Item {
                             }
                         }
 
-                    delegate: ItemDelegate {
+                    delegate: Rectangle {
                         id: fontDelegate
                         width: ListView.view.width
                         height: 32
-                        focusPolicy: Qt.NoFocus
-                        autoRepeat: false
-                        readonly property bool isCurrent: model.family === fontModel.currentFamily
-                        highlighted: isCurrent || ListView.isCurrentItem
-
-                        background: Rectangle {
-                            color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700)
-                                  : (fontDelegate.ListView.isCurrentItem ? Material.color(Material.BlueGrey, Material.Shade600) : "transparent")
+                        color: {
+                            if (model.family === fontModel.currentFamily)
+                                return Material.color(Material.Teal, Material.Shade700)
+                            if (fontDelegate.ListView.isCurrentItem)
+                                return Material.color(Material.BlueGrey, Material.Shade600)
+                            return "transparent"
                             }
 
-                        contentItem: RowLayout {
+                        RowLayout {
                             anchors.fill: parent
                             spacing: 4
 
@@ -211,16 +214,19 @@ Item {
                             Label {
                                 text: model.family
                                 font.family: model.family
-                                color: fontDelegate.isCurrent ? Material.accentColor : Material.foreground
+                                color: model.family === fontModel.currentFamily ? Material.accentColor : Material.foreground
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 }
                             }
 
-                        onClicked: {
-                            fontList.currentIndex = index
-                            fontModel.currentFamily = model.family
-                            fontList.forceActiveFocus()
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                fontList.currentIndex = index
+                                fontModel.currentFamily = model.family
+                                fontList.forceActiveFocus()
+                                }
                             }
                         }
                     }
