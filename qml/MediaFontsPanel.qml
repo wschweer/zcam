@@ -176,7 +176,6 @@ Item {
                     text: fontModel.currentFamily
                     color: Material.accentColor
                     font.bold: true
-                    font.family: fontModel.currentFamily
                     }
                 }
 
