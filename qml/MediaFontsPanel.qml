@@ -36,6 +36,19 @@ Item {
         property var splitState
         }
 
+    function updateCurrentIndex() {
+        var idx = -1
+        for (var i = 0; i < fontModel.rowCount(); ++i) {
+            if (fontModel.data(fontModel.index(i, 0), FontModel.FamilyRole) === fontModel.currentFamily) {
+                idx = i
+                break
+                }
+            }
+        fontList.currentIndex = idx
+        if (idx >= 0)
+            fontList.positionViewAtIndex(idx, ListView.Contain)
+        }
+
     Component.onCompleted: {
         fontModel.currentFamily = fontSettings.currentFamily || (fontModel.allFamilies().length > 0 ? fontModel.allFamilies()[0] : "")
         fontModel.currentStyle = fontSettings.currentStyle
@@ -43,13 +56,15 @@ Item {
         root.previewScale = fontSettings.previewScale
         if (fontSettings.splitState)
             splitView.restoreState(fontSettings.splitState)
+        updateCurrentIndex()
         }
 
     Connections {
         target: fontModel
-        function onCurrentFamilyChanged() { fontSettings.currentFamily = fontModel.currentFamily }
+        function onCurrentFamilyChanged() { fontSettings.currentFamily = fontModel.currentFamily; updateCurrentIndex() }
         function onCurrentStyleChanged() { fontSettings.currentStyle = fontModel.currentStyle }
         function onShowFavoritesChanged() { fontSettings.showFavorites = fontModel.showFavorites }
+        function onFavoritesChanged() { updateCurrentIndex() }
         }
 
     onPreviewScaleChanged: fontSettings.previewScale = root.previewScale
@@ -99,16 +114,9 @@ Item {
                 Layout.fillHeight: true
                 clip: true
                 model: fontModel
-                currentIndex: {
-                    var idx = -1
-                    for (var i = 0; i < fontModel.rowCount(); ++i) {
-                        if (fontModel.data(fontModel.index(i, 0), FontModel.FamilyRole) === fontModel.currentFamily) {
-                            idx = i
-                            break
-                            }
-                        }
-                    return idx
-                    }
+                currentIndex: -1
+
+                Component.onCompleted: updateCurrentIndex()
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -141,7 +149,6 @@ Item {
 
                     onClicked: {
                         fontModel.currentFamily = model.family
-                        fontList.currentIndex = index
                         }
 
                     Keys.onDeletePressed: {
@@ -157,6 +164,21 @@ Item {
             SplitView.fillWidth: true
             SplitView.minimumWidth: 200
             spacing: 4
+
+            // Current font name as title
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 28
+                color: Material.color(Material.BlueGrey, Material.Shade900)
+
+                Label {
+                    anchors.centerIn: parent
+                    text: fontModel.currentFamily
+                    color: Material.accentColor
+                    font.bold: true
+                    font.family: fontModel.currentFamily
+                    }
+                }
 
             // Style selection row
             RowLayout {
