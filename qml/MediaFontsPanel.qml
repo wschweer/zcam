@@ -121,11 +121,13 @@ Item {
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                 delegate: ItemDelegate {
+                    id: fontDelegate
                     width: ListView.view.width
                     height: 32
+                    highlighted: ListView.isCurrentItem
 
                     background: Rectangle {
-                        color: ListView.isCurrentItem ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                        color: fontDelegate.highlighted ? Material.color(Material.Teal, Material.Shade700) : "transparent"
                         }
 
                     contentItem: RowLayout {
@@ -145,7 +147,7 @@ Item {
                         Label {
                             text: model.family
                             font.family: model.family
-                            color: ListView.isCurrentItem ? Material.accentColor : Material.foreground
+                            color: fontDelegate.highlighted ? Material.accentColor : Material.foreground
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             }
