@@ -55,14 +55,16 @@ Rectangle {
         // Title bar with panel switch buttons
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 36
+            Layout.preferredHeight: 40
             color: Material.color(Material.BlueGrey, Material.Shade900)
 
             TabBar {
                 id: panelTabs
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
+                anchors.fill: parent
                 anchors.leftMargin: 4
+                anchors.rightMargin: 4
+                anchors.topMargin: 0
+                anchors.bottomMargin: 0
                 spacing: 2
                 currentIndex: root.activePanel
                 onCurrentIndexChanged: root.activePanel = currentIndex
