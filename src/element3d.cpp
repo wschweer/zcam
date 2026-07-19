@@ -556,11 +556,21 @@ void Element3d::strokeAndFill() {
                                                                  return;
                                                            _pathList = r.pathList;
                                                            _geometry->setPolygons(_pathList);
+                                                           // Update the selection (bounding box)
+                                                           // geometry now that the final path
+                                                           // list is available.
+                                                           updateSelectionGeometry();
+                                                           emit selectionGeometryChanged();
                                                            });
             }
       else {
             _pathList.setFill(fill());
             _geometry->setPolygons(_pathList);
+            // Update the selection (bounding box) geometry so
+            // selected polygons, ellipses and rectangles show
+            // their bounding box like text elements do.
+            updateSelectionGeometry();
+            emit selectionGeometryChanged();
             }
       }
 
