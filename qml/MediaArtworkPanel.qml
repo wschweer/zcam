@@ -69,20 +69,6 @@ Item {
             SplitView.minimumWidth: 120
             spacing: 0
 
-            // Header
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 28
-                color: Material.color(Material.BlueGrey, Material.Shade900)
-
-                Label {
-                    anchors.centerIn: parent
-                    text: qsTr("Directories")
-                    color: Material.accentColor
-                    font.bold: true
-                    }
-                }
-
             TreeView {
                 id: dirTree
                 Layout.fillWidth: true
