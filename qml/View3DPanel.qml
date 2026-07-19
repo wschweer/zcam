@@ -521,9 +521,26 @@ Item {
             cam.position = cam.position.minus(moveVec);
             }
 
+        // Step sizes for mouse-wheel scaling/zooming:
+        //   Ctrl+wheel  → bigStep    (large step, ~20%)
+        //   plain wheel → step       (normal step, ~10%)
+        //   Shift+wheel → smallStep  (fine step, ~2%)
+        property real wheelBigStep: 1.2
+        property real wheelStep: 1.1
+        property real wheelSmallStep: 1.02
+
         onWheel: mouse => {
-            if (mouse.modifiers != Qt.ControlModifier)
-                return;
+            // Determine the scale delta based on modifier:
+            //   Ctrl+wheel  → bigStep    (large step)
+            //   plain wheel → step       (normal step)
+            //   Shift+wheel → smallStep  (fine step)
+            var sd;
+            if (mouse.modifiers & Qt.ControlModifier)
+                sd = (mouse.angleDelta.y > 0.0) ? wheelBigStep : (1.0 / wheelBigStep);
+            else if (mouse.modifiers & Qt.ShiftModifier)
+                sd = (mouse.angleDelta.y > 0.0) ? wheelSmallStep : (1.0 / wheelSmallStep);
+            else
+                sd = (mouse.angleDelta.y > 0.0) ? wheelStep : (1.0 / wheelStep);
 
             // If a visible canvas element is selected, scale the element
             // instead of the 3D view.  Only elements that are visible on
@@ -532,7 +549,6 @@ Item {
             // eligible for element scaling.
             var el = ZCam.currentElement;
             if (el && el.visible() && el.show && el.ancestorsShow && el.draggable) {
-                var sd = (mouse.angleDelta.y > 0.0) ? 1.2 : 0.8;
                 var scaleFactor = Qt.vector3d(sd, sd, sd);
                 ZCam.startElementDrag(el);
                 ZCam.scaled(el, scaleFactor, mouse.modifiers);
@@ -547,7 +563,6 @@ Item {
                 return;
             cursorScenePos = root.mapPositionToScene(localPos);
 
-            var sd = (mouse.angleDelta.y > 0.0) ? 1.2 : 0.8;
             root.scale = root.scale.times(sd);
             root.position = root.position.plus(cursorScenePos.minus(root.position).times(1.0 - sd));
             }
