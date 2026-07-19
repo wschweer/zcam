@@ -57,7 +57,7 @@ Item {
         if (fontSettings.splitState)
             splitView.restoreState(fontSettings.splitState)
         updateCurrentIndex()
-        fontList.forceActiveFocus()
+        fontListScope.forceActiveFocus()
         }
 
     Connections {
@@ -109,85 +109,87 @@ Item {
                 }
 
             // Font list
-            ListView {
-                id: fontList
+            FocusScope {
+                id: fontListScope
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                model: fontModel
-                currentIndex: -1
-                focus: true
-                keyNavigationEnabled: true
 
-                Component.onCompleted: {
-                    updateCurrentIndex()
-                    forceActiveFocus()
-                    }
+                ListView {
+                    id: fontList
+                    anchors.fill: parent
+                    clip: true
+                    model: fontModel
+                    currentIndex: -1
+                    focus: true
+                    keyNavigationEnabled: true
 
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    Component.onCompleted: updateCurrentIndex()
 
-                Keys.onUpPressed: function(event) {
-                    if (currentIndex > 0) {
-                        currentIndex--
-                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                        }
-                    event.accepted = true
-                    }
-                Keys.onDownPressed: function(event) {
-                    if (currentIndex < fontModel.rowCount() - 1) {
-                        currentIndex++
-                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                        }
-                    event.accepted = true
-                    }
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Delete && currentIndex >= 0) {
-                        var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                        if (fontModel.showFavorites)
-                            fontModel.removeFavorite(family)
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    Keys.onUpPressed: function(event) {
+                        if (currentIndex > 0) {
+                            currentIndex--
+                            fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            }
                         event.accepted = true
                         }
-                    }
-
-                delegate: ItemDelegate {
-                    id: fontDelegate
-                    width: ListView.view.width
-                    height: 32
-                    focusPolicy: Qt.NoFocus
-                    readonly property bool isCurrent: model.family === fontModel.currentFamily
-                    highlighted: isCurrent
-
-                    background: Rectangle {
-                        color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
-                        }
-
-                    contentItem: RowLayout {
-                        anchors.fill: parent
-                        spacing: 4
-
-                        // Favorite star
-                        Label {
-                            text: "★"
-                            color: Material.accentColor
-                            font.pixelSize: 14
-                            visible: model.isFavorite
-                            Layout.preferredWidth: 20
+                    Keys.onDownPressed: function(event) {
+                        if (currentIndex < fontModel.rowCount() - 1) {
+                            currentIndex++
+                            fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
                             }
-
-                        // Font family name rendered in the actual font
-                        Label {
-                            text: model.family
-                            font.family: model.family
-                            color: fontDelegate.isCurrent ? Material.accentColor : Material.foreground
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
+                        event.accepted = true
+                        }
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Delete && currentIndex >= 0) {
+                            var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            if (fontModel.showFavorites)
+                                fontModel.removeFavorite(family)
+                            event.accepted = true
                             }
                         }
 
-                    onClicked: {
-                        fontList.currentIndex = index
-                        fontModel.currentFamily = model.family
-                        fontList.forceActiveFocus()
+                    delegate: ItemDelegate {
+                        id: fontDelegate
+                        width: ListView.view.width
+                        height: 32
+                        focusPolicy: Qt.NoFocus
+                        readonly property bool isCurrent: model.family === fontModel.currentFamily
+                        highlighted: isCurrent
+
+                        background: Rectangle {
+                            color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                            }
+
+                        contentItem: RowLayout {
+                            anchors.fill: parent
+                            spacing: 4
+
+                            // Favorite star
+                            Label {
+                                text: "★"
+                                color: Material.accentColor
+                                font.pixelSize: 14
+                                visible: model.isFavorite
+                                Layout.preferredWidth: 20
+                                }
+
+                            // Font family name rendered in the actual font
+                            Label {
+                                text: model.family
+                                font.family: model.family
+                                color: fontDelegate.isCurrent ? Material.accentColor : Material.foreground
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                                }
+                            }
+
+                        onClicked: {
+                            fontList.currentIndex = index
+                            fontModel.currentFamily = model.family
+                            fontListScope.forceActiveFocus()
+                            }
                         }
                     }
                 }
