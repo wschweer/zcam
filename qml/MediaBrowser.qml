@@ -38,15 +38,16 @@ Rectangle {
         anchors.fill: parent
         spacing: 0
 
-        // ── Title bar with panel switch buttons ───────────────────────────
+        // Title bar with panel switch buttons
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 36
             color: Material.color(Material.BlueGrey, Material.Shade900)
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 4
+            Row {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 4
                 spacing: 4
 
                 Button {
@@ -56,8 +57,8 @@ Rectangle {
                     checked: root.activePanel === 0
                     onClicked: root.activePanel = 0
                     Material.foreground: checked ? Material.accentColor : Material.foreground
-                    Layout.fillHeight: false
-                    Layout.alignment: Qt.AlignVCenter
+                    topPadding: 0
+                    bottomPadding: 0
                     }
                 Button {
                     text: qsTr("Artwork")
@@ -66,15 +67,13 @@ Rectangle {
                     checked: root.activePanel === 1
                     onClicked: root.activePanel = 1
                     Material.foreground: checked ? Material.accentColor : Material.foreground
-                    Layout.fillHeight: false
-                    Layout.alignment: Qt.AlignVCenter
+                    topPadding: 0
+                    bottomPadding: 0
                     }
-
-                Item { Layout.fillWidth: true }
                 }
             }
 
-        // ── Panel stack ───────────────────────────────────────────────────
+        // Panel stack
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
