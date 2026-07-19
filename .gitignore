@@ -16,3 +16,4 @@ tools/linuxdeploy
 tools/linuxdeploy-qt
 tools/linuxdeploy-plugin-qt.AppImage
 tools/lib
+testfiles
