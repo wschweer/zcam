@@ -65,6 +65,7 @@ qt_add_qml_module(zcam
         qml/MediaBrowser.qml
         qml/MediaFontsPanel.qml
         qml/MediaArtworkPanel.qml
+        qml/MediaIconsPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/machine.cpp src/machine.h

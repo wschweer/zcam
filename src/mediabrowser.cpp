@@ -130,7 +130,7 @@ QStringList FontModel::stylesForFamily(const QString& family) const {
 QStringList FontModel::weightsForFamily(const QString& family) const {
       QStringList weights;
       static const QStringList weightNames = {"Thin",     "ExtraLight", "Light",     "Normal", "Medium",
-                                               "DemiBold", "Bold",       "ExtraBold", "Black"};
+                                              "DemiBold", "Bold",       "ExtraBold", "Black"};
       static const QList<int> weightValues = {QFont::Thin,   QFont::ExtraLight, QFont::Light,
                                               QFont::Normal, QFont::Medium,     QFont::DemiBold,
                                               QFont::Bold,   QFont::ExtraBold,  QFont::Black};
@@ -338,11 +338,11 @@ void ArtworkTreeModel::loadChildren(ArtworkNode* node) {
             return;
       dir.setFilter(QDir::Dirs | QDir::NoDotAndDotDot);
       for (const QString& sub : dir.entryList()) {
-            auto child         = std::make_unique<ArtworkNode>();
-            child->name        = sub;
-            child->path        = dir.filePath(sub);
-            child->parent      = node;
-            child->hasImages   = directoryHasImagesRecursive(child->path);
+            auto child       = std::make_unique<ArtworkNode>();
+            child->name      = sub;
+            child->path      = dir.filePath(sub);
+            child->parent    = node;
+            child->hasImages = directoryHasImagesRecursive(child->path);
             // Determine whether this directory has subdirectories.
             QDir subdir(child->path);
             subdir.setFilter(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -432,7 +432,8 @@ QVariant ArtworkTreeModel::data(const QModelIndex& index, int role) const {
             case NameRole: return node->name;
             case PathRole: return node->path;
             case HasImagesRole: return node->hasImages;
-            case HasChildrenRole: return node->hasChildren || !node->loaded;  // not-yet-loaded nodes may have children
+            case HasChildrenRole:
+                  return node->hasChildren || !node->loaded; // not-yet-loaded nodes may have children
             default: return {};
             }
       }

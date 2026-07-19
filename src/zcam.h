@@ -57,6 +57,7 @@ class Config : public QObject
       PROPV(double, gridSpacing, 10.0)
       PROPV(QString, defaultMachine, QString())
       PROPV(QString, artworkDirectory, QString())
+      PROPV(QString, iconDirectory, QString())
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -194,6 +195,13 @@ class Config : public QObject
                     {
                       "name": "artworkDirectory",
                       "label": "Artwork Directory",
+                      "type": "singleline",
+                      "cat": "Project",
+                      "default": ""
+                    },
+                    {
+                      "name": "iconDirectory",
+                      "label": "Icon Directory",
                       "type": "singleline",
                       "cat": "Project",
                       "default": ""

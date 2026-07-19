@@ -20,7 +20,7 @@ Rectangle {
     id: root
     color: Material.color(Material.BlueGrey, Material.Shade800)
 
-    // Persistent splitter: which panel is active (0=Fonts, 1=Artwork)
+    // Persistent splitter: which panel is active (0=Fonts, 1=Artwork, 2=Icons)
     property int activePanel: 0
 
     // Public API so callers can switch to the Fonts panel and optionally
@@ -84,6 +84,16 @@ Rectangle {
                     topPadding: 0
                     bottomPadding: 0
                     }
+                Button {
+                    text: qsTr("Icons")
+                    flat: true
+                    checkable: true
+                    checked: root.activePanel === 2
+                    onClicked: root.activePanel = 2
+                    Material.foreground: checked ? Material.accentColor : Material.foreground
+                    topPadding: 0
+                    bottomPadding: 0
+                    }
                 }
             }
 
@@ -99,6 +109,11 @@ Rectangle {
                 }
             MediaArtworkPanel {
                 id: artworkPanel
+                tileScale: mediaSettings.tileScale
+                onTileScaleChanged: mediaSettings.tileScale = tileScale
+                }
+            MediaIconsPanel {
+                id: iconsPanel
                 tileScale: mediaSettings.tileScale
                 onTileScaleChanged: mediaSettings.tileScale = tileScale
                 }
