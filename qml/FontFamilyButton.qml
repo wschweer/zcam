@@ -80,6 +80,7 @@ Item {
 
     FontDialog {
         id: fontDialog
+        flags: FontDialog.DontUseNativeDialog
 
         title: "Choose Font Family"
 

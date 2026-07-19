@@ -9,3 +9,4 @@ zcam.log*
 .qmlls.ini
 LOG
 mops*
+*.zcam
