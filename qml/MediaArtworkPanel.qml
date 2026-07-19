@@ -106,9 +106,18 @@ Item {
                     implicitWidth: treeView.width
                     implicitHeight: 28
                     highlighted: current
-
+                    clip: true
+                    padding: 0
                     leftPadding: 8 + depth * 20
                     rightPadding: 8
+                    topPadding: 2
+                    bottomPadding: 2
+                    verticalAlignment: Qt.AlignVCenter
+
+                    background: Rectangle {
+                        anchors.fill: parent
+                        color: dirDelegate.highlighted ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                        }
 
                     contentItem: RowLayout {
                         spacing: 4
@@ -118,13 +127,15 @@ Item {
                             font.pixelSize: 10
                             color: Material.foreground
                             Layout.preferredWidth: 12
+                            verticalAlignment: Text.AlignVCenter
                             }
 
                         Label {
                             text: model.dirName
-                            color: dirDelegate.current ? Material.accentColor : Material.foreground
+                            color: dirDelegate.highlighted ? Material.accentColor : Material.foreground
                             Layout.fillWidth: true
                             elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
                             }
                         }
 
