@@ -254,7 +254,6 @@ Window {
         id: actionShowMediaBrowser
         text: qsTr("Show media browser")
         checkable: true
-        icon.text: "M"
         }
 
     // =========================================================================
@@ -643,6 +642,7 @@ Window {
                 ToolButton {
                     action: actionShowMediaBrowser
                     display: AbstractButton.TextOnly
+                    text: "M"
                     font.bold: true
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Show Media Browser")
