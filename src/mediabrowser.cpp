@@ -547,3 +547,53 @@ bool ArtworkTreeModel::hasImages(const QString& dirPath) const {
 void ArtworkTreeModel::refresh() {
       rebuildTree();
       }
+
+//---------------------------------------------------------
+//   findIndexForPath
+//    Walk the tree from the root to the node whose path matches
+//    dirPath, lazily loading each ancestor along the way.
+//    Returns the QModelIndex of the matching node, or an invalid
+//    index if the path is not found in the tree.
+//---------------------------------------------------------
+
+QModelIndex ArtworkTreeModel::findIndexForPath(const QString& dirPath) const {
+      if (!_root || dirPath.isEmpty())
+            return {};
+      // Build the list of path components from rootPath to dirPath.
+      // e.g. rootPath="/usr/share/icons", dirPath="/usr/share/icons/Adwaita/16x16/actions"
+      //       → components = ["Adwaita", "16x16", "actions"]
+      QString relative = QDir(_rootPath).relativeFilePath(dirPath);
+      if (relative.isEmpty())
+            return {}; // dirPath is the root itself — not a child node
+      if (relative.startsWith(".."))
+            return {}; // dirPath is outside the root
+      QStringList components = relative.split('/', Qt::SkipEmptyParts);
+      if (components.isEmpty())
+            return {};
+
+      // Walk the tree, loading children as needed.
+      // We use const_cast because loadChildren / fetchMore modify the model.
+      ArtworkNode* current = _root.get();
+      QModelIndex currentIdx;
+      for (int depth = 0; depth < components.size(); ++depth) {
+            if (!current->loaded) {
+                  // Lazily load children of this node.
+                  const_cast<ArtworkTreeModel*>(this)->fetchMore(currentIdx);
+                  }
+            // Find the child whose name matches the component.
+            ArtworkNode* found = nullptr;
+            int foundRow = -1;
+            for (int i = 0; i < static_cast<int>(current->children.size()); ++i) {
+                  if (current->children[i]->name == components[depth]) {
+                        found = current->children[i].get();
+                        foundRow = i;
+                        break;
+                        }
+                  }
+            if (!found)
+                  return {};
+            current = found;
+            currentIdx = index(foundRow, 0, currentIdx);
+            }
+      return currentIdx;
+      }

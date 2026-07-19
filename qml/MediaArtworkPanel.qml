@@ -61,12 +61,36 @@ Item {
         property string currentDir: ""
         }
 
+    function restoreTreeSelection() {
+        if (!currentDirPath)
+            return
+        let idx = artworkModel.findIndexForPath(currentDirPath)
+        if (!idx.valid)
+            return
+        // Expand all ancestors from root down to the target.
+        let ancestors = []
+        let p = idx
+        while (p.valid) {
+            ancestors.unshift(p)
+            p = artworkModel.parent(p)
+        }
+        for (let i = 0; i < ancestors.length; ++i) {
+            let a = ancestors[i]
+            let row = a.row
+            if (!dirTree.isExpanded(row))
+                dirTree.toggleExpanded(row)
+        }
+        dirTree.selectionModel.setCurrentIndex(idx, ItemSelectionModel.ClearAndSelect)
+        dirTree.positionViewAtRow(idx.row, ListView.Contain)
+    }
+
     Component.onCompleted: {
         if (artworkSettings.splitState)
             splitView.restoreState(artworkSettings.splitState)
         if (artworkSettings.currentDir)
             currentDirPath = artworkSettings.currentDir
-        }
+        Qt.callLater(restoreTreeSelection)
+    }
 
     Connections {
         target: ZCam.config

@@ -65,11 +65,34 @@ Item {
         property string currentDir: ""
     }
 
+    function restoreTreeSelection() {
+        if (!currentDirPath)
+            return
+        let idx = iconModel.findIndexForPath(currentDirPath)
+        if (!idx.valid)
+            return
+        let ancestors = []
+        let p = idx
+        while (p.valid) {
+            ancestors.unshift(p)
+            p = iconModel.parent(p)
+        }
+        for (let i = 0; i < ancestors.length; ++i) {
+            let a = ancestors[i]
+            let row = a.row
+            if (!dirTree.isExpanded(row))
+                dirTree.toggleExpanded(row)
+        }
+        dirTree.selectionModel.setCurrentIndex(idx, ItemSelectionModel.ClearAndSelect)
+        dirTree.positionViewAtRow(idx.row, ListView.Contain)
+    }
+
     Component.onCompleted: {
         if (iconSettings.splitState)
             splitView.restoreState(iconSettings.splitState)
         if (iconSettings.currentDir)
             currentDirPath = iconSettings.currentDir
+        Qt.callLater(restoreTreeSelection)
     }
 
     Connections {

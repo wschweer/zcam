@@ -140,6 +140,11 @@ class ArtworkTreeModel : public QAbstractItemModel
       Q_INVOKABLE bool hasImages(const QString& dirPath) const;
       Q_INVOKABLE void refresh();
 
+      /// Returns the model index for the directory whose path matches
+      /// dirPath.  All ancestor nodes are lazily loaded so the caller
+      /// can expand and select the index in the TreeView.
+      Q_INVOKABLE QModelIndex findIndexForPath(const QString& dirPath) const;
+
     signals:
       void rootPathChanged();
 
