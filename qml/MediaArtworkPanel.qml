@@ -76,8 +76,50 @@ Item {
                 Layout.margins: 4
                 model: artworkModel
                 clip: true
+                focus: true
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                Keys.onUpPressed: function(event) {
+                    var idx = dirTree.selectionModel.currentIndex
+                    if (idx.valid && idx.row() > 0) {
+                        var newIdx = artworkModel.index(idx.row() - 1, 0, idx.parent())
+                        dirTree.selectionModel.setCurrentIndex(newIdx, ItemSelectionModel.ClearAndSelect)
+                        root.currentDirPath = artworkModel.data(newIdx, ArtworkTreeModel.PathRole)
+                        event.accepted = true
+                        }
+                    }
+                Keys.onDownPressed: function(event) {
+                    var idx = dirTree.selectionModel.currentIndex
+                    if (idx.valid) {
+                        var parent = idx.parent()
+                        var count = artworkModel.rowCount(parent)
+                        if (idx.row() < count - 1) {
+                            var newIdx = artworkModel.index(idx.row() + 1, 0, parent)
+                            dirTree.selectionModel.setCurrentIndex(newIdx, ItemSelectionModel.ClearAndSelect)
+                            root.currentDirPath = artworkModel.data(newIdx, ArtworkTreeModel.PathRole)
+                            event.accepted = true
+                            }
+                        }
+                    }
+                Keys.onLeftPressed: function(event) {
+                    var idx = dirTree.selectionModel.currentIndex
+                    if (idx.valid && dirTree.isExpanded(idx.row(), idx.parent()))
+                        dirTree.toggleExpanded(idx.row(), idx.parent())
+                    event.accepted = true
+                    }
+                Keys.onRightPressed: function(event) {
+                    var idx = dirTree.selectionModel.currentIndex
+                    if (idx.valid && artworkModel.hasChildren(idx))
+                        dirTree.toggleExpanded(idx.row(), idx.parent())
+                    event.accepted = true
+                    }
+                Keys.onReturnPressed: function(event) {
+                    var idx = dirTree.selectionModel.currentIndex
+                    if (idx.valid && artworkModel.hasChildren(idx))
+                        dirTree.toggleExpanded(idx.row(), idx.parent())
+                    event.accepted = true
+                    }
                 delegate: ItemDelegate {
                     id: dirDelegate
                     required property TreeView treeView
@@ -129,6 +171,7 @@ Item {
                         root.currentDirPath = model.dirPath
                         if (dirDelegate.hasChildren)
                             treeView.toggleExpanded(row)
+                        dirTree.forceActiveFocus()
                         }
                     }
 

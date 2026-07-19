@@ -115,10 +115,32 @@ Item {
                 clip: true
                 model: fontModel
                 currentIndex: -1
+                focus: true
 
                 Component.onCompleted: updateCurrentIndex()
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                Keys.onUpPressed: function(event) {
+                    if (currentIndex > 0) {
+                        currentIndex--
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        event.accepted = true
+                        }
+                    }
+                Keys.onDownPressed: function(event) {
+                    if (currentIndex < fontModel.rowCount() - 1) {
+                        currentIndex++
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        event.accepted = true
+                        }
+                    }
+                Keys.onReturnPressed: function(event) {
+                    if (currentIndex >= 0) {
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        event.accepted = true
+                        }
+                    }
 
                 delegate: ItemDelegate {
                     id: fontDelegate
@@ -156,6 +178,7 @@ Item {
 
                     onClicked: {
                         fontModel.currentFamily = model.family
+                        fontList.forceActiveFocus()
                         }
 
                     Keys.onDeletePressed: {
