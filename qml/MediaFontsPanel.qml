@@ -134,53 +134,27 @@ Item {
                     currentIndex: -1
                     focus: true
                     activeFocusOnTab: true
-                    keyNavigationEnabled: false
+                    keyNavigationEnabled: true
                     keyNavigationWraps: false
+                    highlightFollowsCurrentItem: true
 
                     Component.onCompleted: updateCurrentIndex()
 
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                    Keys.onUpPressed: function(event) {
-                        if (currentIndex > 0) {
-                            currentIndex--
+                    onCurrentIndexChanged: {
+                        if (currentIndex >= 0) {
                             var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
                             if (family !== undefined)
                                 fontModel.currentFamily = family
                             }
-                        event.accepted = true
                         }
-                    Keys.onDownPressed: function(event) {
-                        var last = fontModel.rowCount() - 1
-                        if (currentIndex < last) {
-                            currentIndex++
-                            var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                            if (family !== undefined)
-                                fontModel.currentFamily = family
-                            }
-                        event.accepted = true
-                        }
+
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Delete && currentIndex >= 0) {
                             var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
                             if (fontModel.showFavorites)
                                 fontModel.removeFavorite(family)
-                            event.accepted = true
-                            return
-                            }
-                        // Jump to next font family starting with the typed letter.
-                        if (event.text.length === 1 && event.text[0].isLetterOrNumber()) {
-                            var searchChar = event.text[0].toLowerCase()
-                            var count = fontModel.rowCount()
-                            for (var i = 1; i <= count; ++i) {
-                                var row = (currentIndex + i) % count
-                                var family = fontModel.data(fontModel.index(row, 0), FontModel.FamilyRole)
-                                if (family.length > 0 && family[0].toLowerCase() === searchChar) {
-                                    currentIndex = row
-                                    fontModel.currentFamily = family
-                                    break
-                                    }
-                                }
                             event.accepted = true
                             }
                         }
@@ -189,13 +163,7 @@ Item {
                         id: fontDelegate
                         width: ListView.view.width
                         height: 32
-                        color: {
-                            if (model.family === fontModel.currentFamily)
-                                return Material.color(Material.Teal, Material.Shade700)
-                            if (fontDelegate.ListView.isCurrentItem)
-                                return Material.color(Material.BlueGrey, Material.Shade600)
-                            return "transparent"
-                            }
+                        color: fontDelegate.ListView.isCurrentItem ? Material.color(Material.Teal, Material.Shade700) : "transparent"
 
                         RowLayout {
                             anchors.fill: parent
@@ -214,7 +182,7 @@ Item {
                             Label {
                                 text: model.family
                                 font.family: model.family
-                                color: model.family === fontModel.currentFamily ? Material.accentColor : Material.foreground
+                                color: fontDelegate.ListView.isCurrentItem ? Material.accentColor : Material.foreground
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 }
@@ -224,7 +192,6 @@ Item {
                             anchors.fill: parent
                             onClicked: {
                                 fontList.currentIndex = index
-                                fontModel.currentFamily = model.family
                                 fontList.forceActiveFocus()
                                 }
                             }
