@@ -19,13 +19,13 @@
 #include <atomic>
 #include "clipper2/clipper.h"
 #include "logger.h"
+#include "macros.h"
 
 class Tesselator;
 class Element3d;
 class PathList;
 
 #include "geometryworker.h"  // for TessResult, LineResult definitions
-
 
 //---------------------------------------------------------
 //   TessGeometry
@@ -49,16 +49,12 @@ class TessGeometry : public QQuick3DGeometry
       QML_ELEMENT
       QML_UNCREATABLE("")
 
-      Q_PROPERTY(Element3d* element READ element NOTIFY elementChanged)
+      PROPV(Element3d*, element, nullptr)
 
       Tesselator* tess{nullptr};
-      Element3d* _element{nullptr};
 
       // Revision counter for async result validation.
       std::atomic<int> m_revision{0};
-
-    signals:
-      void elementChanged();
 
     private:
       void applyTessResult(const GeometryWorker::TessResult& r);
@@ -71,11 +67,4 @@ class TessGeometry : public QQuick3DGeometry
       void setPolygons(const PathList& _pathList);
       void setLines(const Clipper2Lib::PathD&);
       void setLines(const Clipper2Lib::PathsD&);
-      void setElement(Element3d* e) {
-            if (e != _element) {
-                  _element = e;
-                  emit elementChanged();
-                  }
-            }
-      Element3d* element() const { return _element; }
       };

@@ -679,10 +679,12 @@ void ZCam::hover(Element3d* element) {
       // if an element changes its hover status, signal
       // a color change
       if (oldElement != element) {
-            if (element)
+            if (element) {
                   emit element->curColorChanged();
-            if (oldElement)
+                  }
+            if (oldElement) {
                   emit oldElement->curColorChanged();
+                  }
             }
       }
 

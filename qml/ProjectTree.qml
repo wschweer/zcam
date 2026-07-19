@@ -54,8 +54,7 @@ Node {
             if (be) {
                 base.addElement(be, e);
                 } else
-                console.log("onAdd3dElement: searchBase: <" + e.parent().name + "> for <"
-                 + e.name + "> not found");
+                console.log("onAdd3dElement: searchBase: <" + e.parent().name + "> for <" + e.name + "> not found");
             }
         function onAddSubElement(e, parent) {
             //                        console.log("onAddSubElement <"+e.name+"> base <"+parent.name+">");
@@ -128,11 +127,12 @@ Node {
 
         //        console.log("addElement: parent =="+parent+"===element=="+element+"=="+element.model+"==");
         element.update();    // ?!
-        var shapeComponent = Qt.createComponent(element.model);
+        var shapeComponent = Qt.createComponent(element.model)
         if (shapeComponent.status === Component.Ready) {
             var instance = shapeComponent.createObject(parent, {
                 position: element.pos
                 });
+
             instance.element = element;
             if (element.geometry)
                 instance.geometry = Qt.binding(function () {
@@ -156,10 +156,12 @@ Node {
             instance.visible = Qt.binding(function () {
                 return element.show && element.ancestorsShow;
                 });
-            if (element.curColor && instance.color !== undefined)
-                instance.color = Qt.binding(function () {
-                    return element.curColor;
-                    });
+
+            //            if (element.curColor && instance.color !== undefined) {
+            instance.color = Qt.binding(function () {
+                return element.curColor;
+                });
+            //                 };
             var n = element.children.length;
             for (var i = 0; i < n; ++i)
                 addElement(instance, element.children[i]);

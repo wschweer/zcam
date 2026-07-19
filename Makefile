@@ -7,8 +7,9 @@ PROJECT=zcam
 
 export LOGFILE=${HOME}/${PROJECT}/${PROJECT}.log
 
-${PROJECT}: build/${PROJECT}
-	./build/${PROJECT}
+${PROJECT}:
+	#export QT_FATAL_WARNINGS=true
+	cd build; cmake --build . --parallel 32 && cd .. && build/${PROJECT}
 
 #
 #     "test" target

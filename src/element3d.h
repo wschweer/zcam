@@ -56,14 +56,8 @@ class Element3d : public Element
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
       PROPV(QVector3D, rot, QVector3D(0.0, 0.0, 0.0))
-      // Custom scale property with lockScale enforcement in set_scale().
-      Q_PROPERTY(QVector3D scale READ scale WRITE set_scale NOTIFY scaleChanged)
-    public:
-      QVector3D scale() const { return _scale; }
-      void set_scale(QVector3D v);
-    Q_SIGNAL void scaleChanged();
-    protected:
-      QVector3D _scale {QVector3D(1.0, 1.0, 1.0)};
+      PROPV(QVector3D, scale, QVector3D(1.0, 1.0, 1.0))
+
       PROPV(bool, selectable, true)
       PROPV(int, lockScale, static_cast<int>(LockScaleMode::Square))
       PROPV(bool, mirrorX, false)
@@ -89,13 +83,6 @@ class Element3d : public Element
       int _vertexRevision {0};
       bool _batching {false}; ///< suppresses vertexRevisionChanged during batch updates
 
-    signals:
-      void selectionGeometryChanged();
-      void ancestorsShowChanged();
-      void colorChanged();
-      void curColorChanged();
-      void vertexRevisionChanged();
-
     protected:
       // Static, class-bound flag: only elements whose class sets this to true
       // can be interactively dragged on the 3D canvas.  Subclasses override
@@ -110,6 +97,14 @@ class Element3d : public Element
       mutable bool _matrixDirty {true};
       // return true if lineWidth() is zero
       bool thinLine() const { return qFuzzyCompare(lineWidth(), 0.0); }
+
+    signals:
+      void selectionGeometryChanged();
+      void ancestorsShowChanged();
+      void colorChanged();
+      void curColorChanged();
+      void vertexRevisionChanged();
+
     public slots:
       Q_INVOKABLE virtual void update(int flags = -1) {}
 
@@ -189,6 +184,8 @@ class Element3d : public Element
       ///   global = rootMatrix * ... * parentMatrix * localMatrix
       QMatrix4x4 globalMatrix() const;
       void strokeAndFill();
+
+      Q_INVOKABLE void set_scaleAR(QVector3D v);
       };
 
 extern void closePath(PathList& _pathList);

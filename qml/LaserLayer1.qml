@@ -20,5 +20,6 @@ import ZCam
 Node {
     id: model
     property Element element
+    property color color      // dummy
     visible: element ? (element.show && element.ancestorsShow) : false
 }
