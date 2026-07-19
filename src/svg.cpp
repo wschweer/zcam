@@ -19,6 +19,7 @@
 #include "projectmanager.h"
 #include "undo.h"
 #include "logger.h"
+#include <QFileInfo>
 
 //---------------------------------------------------------
 //   importSvg
@@ -102,7 +103,7 @@ void ZCam::importSvg(const QString& path) {
 
       auto* poly = new Polygon(this, layer);
       poly->setPainterPath(pp);
-      poly->setName(QStringLiteral("Svg"));
+      poly->setName(QFileInfo(path).baseName());
       poly->set_pos(QVector3D(0, 0, 0));
       poly->set_lineWidth(0);
       poly->set_fill(false);

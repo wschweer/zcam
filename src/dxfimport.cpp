@@ -49,6 +49,7 @@ class DxfReaderInterface final : public DRW_Interface
       ZCam* m_zcam;
       Layer* m_defaultLayer;                                ///< the single layer created for this import
       double m_unitScale;                                   ///< conversion factor to mm
+      QString m_baseName;                                   ///< file base name for element naming
       std::unordered_map<std::string, int> m_layerColorMap; ///< layer name -> color index
       // Block support: collect entities per block, then replicate on INSERT
       struct BlockEntity {
@@ -80,11 +81,17 @@ class DxfReaderInterface final : public DRW_Interface
       bool m_inBlock {false};
 
     public:
-      DxfReaderInterface(ZCam* zcam, Layer* layer) : m_zcam(zcam), m_defaultLayer(layer), m_unitScale(1.0) {}
+      DxfReaderInterface(ZCam* zcam, Layer* layer, const QString& baseName)
+          : m_zcam(zcam), m_defaultLayer(layer), m_unitScale(1.0), m_baseName(baseName) {}
       double unitScale() const { return m_unitScale; }
       void setUnitScale(double s) { m_unitScale = s; }
       double mm(double v) const { return v * m_unitScale; }
       Vec2d mm2d(const DRW_Coord& c) const { return {mm(c.x), mm(c.y)}; }
+      /// Build an element name from the file base name and a type suffix.
+      /// Element::setName() will de-duplicate automatically (e.g. "foo-Line", "foo-Line-1").
+      QString elementName(const char* suffix) const {
+            return QStringLiteral("%1-%2").arg(m_baseName, QString::fromUtf8(suffix));
+            }
       //---- DRW_Interface overrides (read side) -------------------------
       void addHeader(const DRW_Header* data) override {
             // Determine unit scale from $INSUNITS.
@@ -93,11 +100,11 @@ class DxfReaderInterface final : public DRW_Interface
             // Only when $INSUNITS is entirely absent from the header AND
             // $MEASUREMENT says English do we fall back to 25.4 mm/inch.
             bool insunitsFound = false;
-            auto it = data->vars.find("$INSUNITS");
+            auto it            = data->vars.find("$INSUNITS");
             if (it != data->vars.end() && it->second->type() == DRW_Variant::INTEGER) {
                   int unit = it->second->content.i;
-                  if (unit != 0) {  // 0 = unspecified, skip
-                        m_unitScale = unitToMm(unit);
+                  if (unit != 0) { // 0 = unspecified, skip
+                        m_unitScale   = unitToMm(unit);
                         insunitsFound = true;
                         }
                   }
@@ -105,7 +112,7 @@ class DxfReaderInterface final : public DRW_Interface
                   // Fall back to $MEASUREMENT only when $INSUNITS was not set
                   auto mit = data->vars.find("$MEASUREMENT");
                   if (mit != data->vars.end() && mit->second->type() == DRW_Variant::INTEGER) {
-                        if (mit->second->content.i == 0)  // English
+                        if (mit->second->content.i == 0) // English
                               m_unitScale = 25.4;
                         }
                   }
@@ -139,7 +146,7 @@ class DxfReaderInterface final : public DRW_Interface
             // A single point → small marker line (zero-length not useful)
             // Create a tiny polygon point marker
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Point"));
+            poly->setName(elementName("Point"));
             Vec2d p = mm2d(data.basePoint);
             poly->moveTo(p);
             poly->lineTo(p);
@@ -158,7 +165,7 @@ class DxfReaderInterface final : public DRW_Interface
                   return;
                   }
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Line"));
+            poly->setName(elementName("Line"));
             poly->moveTo(mm2d(data.basePoint));
             poly->lineTo(mm2d(data.secPoint));
             poly->set_lineWidth(0.0);
@@ -184,7 +191,7 @@ class DxfReaderInterface final : public DRW_Interface
             if (pp.empty())
                   return;
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Arc"));
+            poly->setName(elementName("Arc"));
             poly->setPainterPath(pp);
             poly->set_lineWidth(0.0);
             poly->set_fill(false);
@@ -202,7 +209,7 @@ class DxfReaderInterface final : public DRW_Interface
                   }
             double r  = mm(data.radious);
             auto* ell = new Ellipse(m_zcam, m_defaultLayer);
-            ell->setName(QStringLiteral("Circle"));
+            ell->setName(elementName("Circle"));
             ell->set_pos(QVector3D(mm(data.basePoint.x), mm(data.basePoint.y), 0.0));
             ell->set_size(QVector2D(r * 2.0, r * 2.0));
             ell->update();
@@ -232,7 +239,7 @@ class DxfReaderInterface final : public DRW_Interface
 
             if (full) {
                   auto* ell = new Ellipse(m_zcam, m_defaultLayer);
-                  ell->setName(QStringLiteral("Ellipse"));
+                  ell->setName(elementName("Ellipse"));
                   ell->set_pos(QVector3D(mm(data.basePoint.x), mm(data.basePoint.y), 0.0));
                   ell->set_size(QVector2D(majorR * 2.0, minorR * 2.0));
                   ell->set_rot(QVector3D(0.0, 0.0, rotDeg));
@@ -245,7 +252,7 @@ class DxfReaderInterface final : public DRW_Interface
                   if (pp.empty())
                         return;
                   auto* poly = new Polygon(m_zcam, m_defaultLayer);
-                  poly->setName(QStringLiteral("EllipseArc"));
+                  poly->setName(elementName("EllipseArc"));
                   poly->setPainterPath(pp);
                   poly->set_lineWidth(0.0);
                   poly->set_fill(false);
@@ -268,7 +275,7 @@ class DxfReaderInterface final : public DRW_Interface
                   }
 
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Polyline"));
+            poly->setName(elementName("Polyline"));
             bool first = true;
             for (const auto& v : data.vertlist) {
                   Vec2d pt(mm(v->x), mm(v->y));
@@ -311,7 +318,7 @@ class DxfReaderInterface final : public DRW_Interface
                   return;
                   }
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Polyline3d"));
+            poly->setName(elementName("Polyline3d"));
             bool first = true;
             for (const auto& v : data.vertlist) {
                   Vec2d pt(mm(v->basePoint.x), mm(v->basePoint.y));
@@ -356,7 +363,7 @@ class DxfReaderInterface final : public DRW_Interface
             // For now, connect control points with straight line segments
             // (proper B-spline tessellation could be added later)
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Spline"));
+            poly->setName(elementName("Spline"));
             bool first = true;
             for (const auto& cp : data->controllist) {
                   Vec2d pt(mm(cp->x), mm(cp->y));
@@ -401,7 +408,7 @@ class DxfReaderInterface final : public DRW_Interface
                   switch (e.type) {
                         case BlockEntity::Type::Line: {
                               auto* poly = new Polygon(m_zcam, m_defaultLayer);
-                              poly->setName(QStringLiteral("BlockLine"));
+                              poly->setName(elementName("BlockLine"));
                               poly->moveTo(apply(e.p1));
                               poly->lineTo(apply(e.p2));
                               poly->set_lineWidth(0.0);
@@ -413,7 +420,7 @@ class DxfReaderInterface final : public DRW_Interface
                         case BlockEntity::Type::Circle: {
                               double r  = mm(e.radius) * std::abs(sx); // approximate uniform scale
                               auto* ell = new Ellipse(m_zcam, m_defaultLayer);
-                              ell->setName(QStringLiteral("BlockCircle"));
+                              ell->setName(elementName("BlockCircle"));
                               Vec2d c = apply(e.p1);
                               ell->set_pos(QVector3D(c.x(), c.y(), 0.0));
                               ell->set_size(QVector2D(r * 2.0, r * 2.0));
@@ -464,7 +471,7 @@ class DxfReaderInterface final : public DRW_Interface
                                     pp.lineTo(Vec2d(rx + center.x(), ry + center.y()));
                                     }
                               auto* poly = new Polygon(m_zcam, m_defaultLayer);
-                              poly->setName(QStringLiteral("BlockArc"));
+                              poly->setName(elementName("BlockArc"));
                               poly->setPainterPath(pp);
                               poly->set_lineWidth(0.0);
                               poly->set_fill(false);
@@ -474,7 +481,7 @@ class DxfReaderInterface final : public DRW_Interface
                               }
                         case BlockEntity::Type::LWPolyline: {
                               auto* poly = new Polygon(m_zcam, m_defaultLayer);
-                              poly->setName(QStringLiteral("BlockPoly"));
+                              poly->setName(elementName("BlockPoly"));
                               bool firstV = true;
                               for (const auto& v : e.vertices) {
                                     Vec2d pt = apply(DRW_Coord(v.x, v.y, 0));
@@ -495,7 +502,7 @@ class DxfReaderInterface final : public DRW_Interface
                               }
                         case BlockEntity::Type::Point: {
                               auto* poly = new Polygon(m_zcam, m_defaultLayer);
-                              poly->setName(QStringLiteral("BlockPoint"));
+                              poly->setName(elementName("BlockPoint"));
                               Vec2d p = apply(e.p1);
                               poly->moveTo(p);
                               poly->lineTo(p);
@@ -512,7 +519,7 @@ class DxfReaderInterface final : public DRW_Interface
       void addTrace(const DRW_Trace& data) override {
             // A trace/solid is a filled quadrilateral
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Trace"));
+            poly->setName(elementName("Trace"));
             poly->moveTo(mm2d(data.basePoint));
             poly->lineTo(mm2d(data.secPoint));
             poly->lineTo(mm2d(data.thirdPoint));
@@ -525,7 +532,7 @@ class DxfReaderInterface final : public DRW_Interface
             }
       void add3dFace(const DRW_3Dface& data) override {
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("3dFace"));
+            poly->setName(elementName("3dFace"));
             poly->moveTo(mm2d(data.basePoint));
             poly->lineTo(mm2d(data.secPoint));
             poly->lineTo(mm2d(data.thirdPoint));
@@ -543,7 +550,7 @@ class DxfReaderInterface final : public DRW_Interface
             }
       void addSolid(const DRW_Solid& data) override {
             auto* poly = new Polygon(m_zcam, m_defaultLayer);
-            poly->setName(QStringLiteral("Solid"));
+            poly->setName(elementName("Solid"));
             poly->moveTo(mm2d(data.basePoint));
             poly->lineTo(mm2d(data.secPoint));
             poly->lineTo(mm2d(data.thirdPoint));
@@ -604,7 +611,7 @@ class DxfReaderInterface final : public DRW_Interface
             if (txt.empty())
                   return;
             auto* textEl = new Text(m_zcam, m_defaultLayer);
-            textEl->setName(QString::fromUtf8(txt.c_str()));
+            textEl->setName(elementName(txt.c_str()));
             textEl->set_pos(QVector3D(mm(pos.x), mm(pos.y), 0.0));
             // Height is in drawing units; convert to mm
             double h = mm(height);
@@ -832,7 +839,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             }
 
       // Read the DXF file using libdxfrw
-      DxfReaderInterface reader(zcam, layer);
+      DxfReaderInterface reader(zcam, layer, fi.baseName());
       dxfRW dxf(path.toUtf8().constData());
       bool ok = dxf.read(&reader, false);
 
