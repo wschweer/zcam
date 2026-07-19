@@ -347,14 +347,67 @@ void Element3d::updateSelectionGeometry() {
       }
 
 //---------------------------------------------------------
+//   adjustColorTone
+//    Shift a colour towards white (tone > 0, lighten) or
+//    towards black (tone < 0, darken) by blending a fixed
+//    fraction of the target tone into the original colour.
+//
+//    Unlike QColor::lighter()/darker() which multiply or
+//    divide RGB values, this linear blend always produces a
+//    visible change – even for extreme colours like pure
+//    black or pure white where the Qt routines are no-ops.
+//
+//    A |tone| of 0.2 shifts the colour 20 % of the way
+//    toward white or black, which is clearly perceptible
+//    yet preserves the hue identity.
+//---------------------------------------------------------
+static QColor adjustColorTone(const QColor& c, double tone) {
+      constexpr double blend = 0.2;   // 20 % shift
+      int r = c.red();
+      int g = c.green();
+      int b = c.blue();
+      if (tone > 0.0) {
+            // Blend toward white
+            r = static_cast<int>(std::round(r + (255 - r) * blend * tone));
+            g = static_cast<int>(std::round(g + (255 - g) * blend * tone));
+            b = static_cast<int>(std::round(b + (255 - b) * blend * tone));
+            }
+      else {
+            // Blend toward black
+            double f = blend * (-tone);
+            r = static_cast<int>(std::round(r * (1.0 - f)));
+            g = static_cast<int>(std::round(g * (1.0 - f)));
+            b = static_cast<int>(std::round(b * (1.0 - f)));
+            }
+      return QColor(
+            std::clamp(r, 0, 255),
+            std::clamp(g, 0, 255),
+            std::clamp(b, 0, 255),
+            c.alpha()
+            );
+      }
+
+//---------------------------------------------------------
 //   curColor
+//    Returns the element's colour, adjusted for hover or
+//    current-selection state.  Light colours are darkened,
+//    dark colours are lightened so the element stands out.
 //---------------------------------------------------------
 
 QColor Element3d::curColor() const {
-      if (zcam->hoverElement() == this)
-            return _color.darker();
-      if (zcam->currentElement() == this)
-            return _color.lighter();
+      if (zcam->hoverElement() == this) {
+            // Light colours → darken, dark colours → lighten
+            double lum = 0.299 * _color.redF()
+                       + 0.587 * _color.greenF()
+                       + 0.114 * _color.blueF();
+            return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
+            }
+      if (zcam->currentElement() == this) {
+            double lum = 0.299 * _color.redF()
+                       + 0.587 * _color.greenF()
+                       + 0.114 * _color.blueF();
+            return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
+            }
       return _color;
       }
 
@@ -371,7 +424,7 @@ void Element3d::setColor(const QColor& c) {
       }
 
 //---------------------------------------------------------
-//   set_scale
+//   set_scaleAR
 //    Custom setter for the scale property that enforces the
 //    lockScale mode:
 //      Off    – accept the value as-is
@@ -379,7 +432,8 @@ void Element3d::setColor(const QColor& c) {
 //               that changed the most drives the others
 //      Square – force x == y == z using the most-changed axis
 //---------------------------------------------------------
-void Element3d::set_scale(QVector3D v) {
+
+void Element3d::set_scaleAR(QVector3D v) {
       if (v == _scale)
             return;
       auto mode = static_cast<LockScaleMode>(lockScale());
@@ -423,15 +477,13 @@ void Element3d::set_scale(QVector3D v) {
                   }
             v = QVector3D(_scale.x() * factor, _scale.y() * factor, _scale.z() * factor);
             }
-      if (v == _scale)
+      if (v == scale())
             return;
-      _scale       = v;
-      _matrixDirty = true;
+      set_scale(v);
       if (!_batching) {
             ++_vertexRevision;
             emit vertexRevisionChanged();
             }
-      emit scaleChanged();
       }
 
 //---------------------------------------------------------
