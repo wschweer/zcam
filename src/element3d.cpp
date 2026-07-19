@@ -316,6 +316,49 @@ QRectF Element3d::boundingBox() const {
       }
 
 //---------------------------------------------------------
+//   worldBoundingBox
+//    compute the axis-aligned bounding box in world (root)
+//    coordinates by transforming the local bounding box corners
+//    through globalMatrix() and taking the AABB of the result.
+//---------------------------------------------------------
+
+QRectF Element3d::worldBoundingBox() const {
+      QRectF local = boundingBox();
+      if (local.isNull() || local.isEmpty())
+            return {};
+      QMatrix4x4 gm = globalMatrix();
+      // Transform all four corners
+      QVector3D corners[4] = {
+            gm.map(QVector3D(float(local.left()),  float(local.top()),    0.0f)),
+            gm.map(QVector3D(float(local.right()), float(local.top()),    0.0f)),
+            gm.map(QVector3D(float(local.left()),  float(local.bottom()), 0.0f)),
+            gm.map(QVector3D(float(local.right()), float(local.bottom()), 0.0f)),
+            };
+      double minX = corners[0].x(), maxX = minX;
+      double minY = corners[0].y(), maxY = minY;
+      for (int i = 1; i < 4; ++i) {
+            minX = std::min(minX, double(corners[i].x()));
+            maxX = std::max(maxX, double(corners[i].x()));
+            minY = std::min(minY, double(corners[i].y()));
+            maxY = std::max(maxY, double(corners[i].y()));
+            }
+      return QRectF(minX, minY, maxX - minX, maxY - minY);
+      }
+
+//---------------------------------------------------------
+//   containsWorldPoint
+//    Returns true if the given world-space point (x, y) lies
+//    inside this element's world bounding box.
+//---------------------------------------------------------
+
+bool Element3d::containsWorldPoint(double x, double y) const {
+      QRectF wb = worldBoundingBox();
+      if (wb.isNull() || wb.isEmpty())
+            return false;
+      return x >= wb.left() && x <= wb.right() && y >= wb.top() && y <= wb.bottom();
+      }
+
+//---------------------------------------------------------
 //   updateSelectionGeometry
 //    build a line rectangle for the bounding box so the QML
 //    layer can render it when this element is selected

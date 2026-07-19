@@ -33,11 +33,7 @@ static constexpr double FONT_SCALE_UP = 10.0;
 //               axis updates the other two proportionally
 //      Square – force xScale == yScale == zScale at all times
 //---------------------------------------------------------
-enum class LockScaleMode : int {
-      Off    = 0,
-      Lock   = 1,
-      Square = 2
-      };
+enum class LockScaleMode : int { Off = 0, Lock = 1, Square = 2 };
 Q_DECLARE_METATYPE(LockScaleMode)
 
 //---------------------------------------------------------
@@ -59,6 +55,7 @@ class Element3d : public Element
       // Custom scale property: WRITE routes through set_scaleAR() which
       // corrects the value according to the lockScale aspect-ratio mode.
       Q_PROPERTY(QVector3D scale READ scale WRITE set_scaleAR NOTIFY scaleChanged)
+
     public:
       QVector3D scale() const { return _scale; }
       void set_scaleAR(QVector3D v);
@@ -70,8 +67,9 @@ class Element3d : public Element
             }
     Q_SIGNALS:
       void scaleChanged();
+
     protected:
-      QVector3D _scale{QVector3D(1.0, 1.0, 1.0)};
+      QVector3D _scale {QVector3D(1.0, 1.0, 1.0)};
 
       PROPV(bool, selectable, true)
       PROPV(int, lockScale, static_cast<int>(LockScaleMode::Square))
@@ -112,7 +110,6 @@ class Element3d : public Element
       mutable bool _matrixDirty {true};
       // return true if lineWidth() is zero
       bool thinLine() const { return qFuzzyCompare(lineWidth(), 0.0); }
-
     signals:
       void selectionGeometryChanged();
       void ancestorsShowChanged();
@@ -186,6 +183,12 @@ class Element3d : public Element
       bool ancestorsShow() const;
 
       QRectF boundingBox() const;
+      /// Returns the axis-aligned bounding box in world (root) coordinates
+      /// by transforming the local boundingBox() through globalMatrix().
+      QRectF worldBoundingBox() const;
+      /// Returns true if the given world-space point (x, y) lies inside
+      /// this element's world bounding box.
+      bool containsWorldPoint(double x, double y) const;
       TessGeometry* selectionGeometry() const { return _selectionGeometry; }
       QColor color() const { return _color; }
       void setColor(const QColor&);
@@ -199,7 +202,6 @@ class Element3d : public Element
       ///   global = rootMatrix * ... * parentMatrix * localMatrix
       QMatrix4x4 globalMatrix() const;
       void strokeAndFill();
-
       };
 
 extern void closePath(PathList& _pathList);

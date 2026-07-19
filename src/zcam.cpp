@@ -29,6 +29,8 @@
 #include "grid.h"
 
 #include <cmath>
+#include <algorithm>
+#include <vector>
 #include <QQuaternion>
 #include <QStandardPaths>
 #include <QDir>
@@ -703,6 +705,46 @@ void ZCam::hover(Element3d* element) {
             if (oldElement)
                   emit oldElement->curColorChanged();
             }
+      }
+
+
+//---------------------------------------------------------
+//   pickElement
+//    Custom picking: traverse the element tree depth-first and
+//    collect all visible Element3d whose world bounding box
+//    contains the given world-space point (x, y).  Return the
+//    one with the smallest area (innermost).  Only elements
+//    that are visible (show == true, ancestorsShow == true),
+//    selectable, and have a non-empty path list are considered.
+//---------------------------------------------------------
+
+static void collectPickCandidates(Element* root, double x, double y,
+                                  std::vector<std::pair<double, Element3d*>>& candidates) {
+      if (!root)
+            return;
+      auto* e3d = qobject_cast<Element3d*>(root);
+      if (e3d && e3d->show() && e3d->ancestorsShow() && e3d->selectable()) {
+            QRectF wb = e3d->worldBoundingBox();
+            if (!wb.isNull() && !wb.isEmpty()) {
+                  if (x >= wb.left() && x <= wb.right() && y >= wb.top() && y <= wb.bottom()) {
+                        double area = wb.width() * wb.height();
+                        candidates.emplace_back(area, e3d);
+                        }
+                  }
+            }
+      for (auto* child : root->children())
+            collectPickCandidates(child, x, y, candidates);
+      }
+
+Element3d* ZCam::pickElement(double x, double y) {
+      std::vector<std::pair<double, Element3d*>> candidates;
+      collectPickCandidates(_rootElement, x, y, candidates);
+      if (candidates.empty())
+            return nullptr;
+      // Return the element with the smallest area (innermost).
+      auto it = std::min_element(candidates.begin(), candidates.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+      return it->second;
       }
 
 //---------------------------------------------------------

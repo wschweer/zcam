@@ -758,26 +758,20 @@ Item {
             }
 
         function pickModel(x, y) {
-            var list = view3D.pickAll(x, y);
-            var area = Infinity;
-            var hit = null;
-            var pickLevel = -1;
-            for (var i = 0; i < list.length; ++i) {
-                var result = list[i];
-                if (result.hitType == PickResult.Model) {
-                    if (result.objectHit.element) {
-                        var l = result.objectHit.element.pickLevel;
-                        var b = result.objectHit.bounds;
-                        var a = (b.maximum.x - b.minimum.x) * (b.maximum.y - b.minimum.y);
-                        if (l > pickLevel || (l == pickLevel && a != 0 && (a < area))) {
-                            hit = result.objectHit;
-                            area = a;
-                            pickLevel = l;
-                            }
-                        }
-                    }
-                }
-            return hit;
+            // Custom picking: use C++ bounding-box-based picking
+            // instead of Qt Quick 3D's built-in pickAll.
+            // The C++ side traverses the element tree and returns
+            // the innermost (smallest area) visible element whose
+            // world bounding box contains the screen-to-scene point.
+            var scenePos = screenToScene(x, y);
+            if (!scenePos)
+                return null;
+            var el = ZCam.pickElement(scenePos.x, scenePos.y);
+            if (!el)
+                return null;
+            // Return a pseudo-result object with .element so the
+            // callers that expect { element: ... } still work.
+            return { element: el, objectHit: null, bounds: null };
             }
 
         // Returns the vertex handle Model under x/y, or null.

@@ -353,6 +353,13 @@ class ZCam : public QObject
       Q_INVOKABLE void doubleClick(Element3d* element) {}
       Q_INVOKABLE void mousePress(Element3d* element, int buttons, int modifiers, double x, double y);
 
+      /// Custom picking: traverse the element tree and return the
+      /// topmost (smallest area) visible Element3d whose world bounding
+      /// box contains the given world-space point (x, y).  Elements
+      /// are searched from innermost (smallest area) to outermost.
+      /// Returns nullptr if no element is hit.
+      Q_INVOKABLE Element3d* pickElement(double x, double y);
+
       /// Called from QML when the user starts dragging a handle.
       /// Records the original handle position for the undo command.
       Q_INVOKABLE void startVertexDrag(Element3d* element, int vertexIndex);
