@@ -121,10 +121,16 @@ Item {
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                onCurrentIndexChanged: {
+                    if (currentIndex >= 0 && currentIndex < fontModel.rowCount())
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                    }
+
                 delegate: ItemDelegate {
                     id: fontDelegate
                     width: ListView.view.width
                     height: 32
+                    focusPolicy: Qt.NoFocus
                     readonly property bool isCurrent: model.family === fontModel.currentFamily
                     highlighted: isCurrent
 
@@ -156,24 +162,10 @@ Item {
                         }
 
                     onClicked: {
-                        fontModel.currentFamily = model.family
                         fontList.currentIndex = index
+                        fontList.forceActiveFocus()
                         }
 
-                    Keys.onUpPressed: function(event) {
-                        if (index > 0) {
-                            fontList.currentIndex = index - 1
-                            fontModel.currentFamily = fontModel.data(fontModel.index(index - 1, 0), FontModel.FamilyRole)
-                            }
-                        event.accepted = true
-                        }
-                    Keys.onDownPressed: function(event) {
-                        if (index < fontModel.rowCount() - 1) {
-                            fontList.currentIndex = index + 1
-                            fontModel.currentFamily = fontModel.data(fontModel.index(index + 1, 0), FontModel.FamilyRole)
-                            }
-                        event.accepted = true
-                        }
                     Keys.onDeletePressed: {
                         if (fontModel.showFavorites)
                             fontModel.removeFavorite(model.family)
