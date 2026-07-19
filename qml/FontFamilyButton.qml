@@ -49,7 +49,7 @@ Item {
     RowLayout {
         id: row
         anchors.fill: parent
-//        spacing: 4
+        //        spacing: 4
 
         // Family name label – fills available width, clips long names
         Label {
@@ -59,7 +59,7 @@ Item {
             elide: Text.ElideRight
             font.family: root.family   // render in the chosen face for preview
             color: Material.foreground
-//            Layout.alignment: Qt.AlignVCenter
+            //            Layout.alignment: Qt.AlignVCenter
             }
 
         // "…" button opens the font selector (media browser or system dialog)
@@ -68,8 +68,8 @@ Item {
             text: "…"
             flat: true
             implicitWidth: implicitHeight   // square
-//            Layout.alignment: Qt.AlignVCenter
-//            padding: 4
+            //            Layout.alignment: Qt.AlignVCenter
+            //            padding: 4
             implicitHeight: parent.height
 
             ToolTip.visible: hovered
@@ -78,9 +78,9 @@ Item {
 
             onClicked: {
                 if (root.useMediaBrowser)
-                    ZCam.showFontMediaBrowserRequested()
+                    ZCam.showFontMediaBrowserRequested();
                 else
-                    fontDialog.open()
+                    fontDialog.open();
                 }
             }
         }
@@ -93,7 +93,7 @@ Item {
 
         title: "Choose Font Family"
 
-/*  Material settings have no effect:
+        /*  Material settings have no effect:
         Material.theme: Material.Light
         Material.accent: Material.Teal
         Material.primary: Material.BlueGrey

@@ -26,13 +26,13 @@ Rectangle {
     // Public API so callers can switch to the Fonts panel and optionally
     // pre-select a font family.
     function showFontsPanel(family) {
-        root.activePanel = 0
+        root.activePanel = 0;
         if (family !== undefined && family.length > 0) {
-            fontModel.currentFamily = family
-            var idx = fontModel.allFamilies().indexOf(family)
+            fontModel.currentFamily = family;
+            var idx = fontModel.allFamilies().indexOf(family);
             if (idx >= 0) {
-                fontList.currentIndex = idx
-                fontList.positionViewAtIndex(idx, ListView.Contain)
+                fontList.currentIndex = idx;
+                fontList.positionViewAtIndex(idx, ListView.Contain);
                 }
             }
         }
@@ -44,7 +44,7 @@ Rectangle {
         property real tileScale: 1.0
         }
     Component.onCompleted: {
-        activePanel = mediaSettings.activePanel
+        activePanel = mediaSettings.activePanel;
         }
     onActivePanelChanged: mediaSettings.activePanel = activePanel
 
@@ -110,9 +110,9 @@ Rectangle {
         target: ZCam
         function onShowFontMediaBrowserRequested() {
             if (ZCam.currentElement && ZCam.currentElement.typeName() === "text")
-                root.showFontsPanel(ZCam.currentElement.fontFamily)
+                root.showFontsPanel(ZCam.currentElement.fontFamily);
             else
-                root.showFontsPanel("")
+                root.showFontsPanel("");
             }
         }
     }
