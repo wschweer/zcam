@@ -124,10 +124,11 @@ Item {
                     id: fontDelegate
                     width: ListView.view.width
                     height: 32
-                    highlighted: ListView.isCurrentItem
+                    readonly property bool isCurrent: model.family === fontModel.currentFamily
+                    highlighted: isCurrent
 
                     background: Rectangle {
-                        color: fontDelegate.highlighted ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                        color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
                         }
 
                     contentItem: RowLayout {
@@ -147,7 +148,7 @@ Item {
                         Label {
                             text: model.family
                             font.family: model.family
-                            color: fontDelegate.highlighted ? Material.accentColor : Material.foreground
+                            color: fontDelegate.isCurrent ? Material.accentColor : Material.foreground
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             }
