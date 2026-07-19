@@ -32,7 +32,7 @@ profile:
 #     (for this to work HOME/bin must exist and must be part of your PATH
 #
 i:
-	cp build/${PROJECT}  /home/ws/bin
+	cp build/${PROJECT}  §{HOME}/bin
 
 #
 #     git push helper

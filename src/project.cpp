@@ -54,10 +54,12 @@ Project::Project(ZCam* z, Element* parent) : Element3d(z, parent) {
       // transformation chain (fixtureMatrix * camMatrix * ...),
       // so all CAM data must be recalculated.
       connect(this, &Project::fixtureChanged, [this] {
-            if (fixture())
+            if (fixture()) {
                   Debug("== {}", fixture()->name());
-            else
+                  }
+            else {
                   Debug("== no fixture");
+                  }
             // Cam display is NOT refreshed automatically when the fixture
             // changes.  The user triggers it manually via the refresh button.
             zcam->setCamDirty(true);
