@@ -139,6 +139,33 @@ Item {
         return Number(m.default)
         }
 
+    // Derive step sizes from precision.
+    // precision N means N decimal places.
+    //   stepSize  = 10^(1-N)  → precision 2 gives 0.1
+    //   bigStep   = 10^(2-N)  → precision 2 gives 1.0
+    //   minStep   = 10^(-N)   → precision 2 gives 0.01
+    // JSON config can override with "step", "bigStep", "minStep".
+    function defaultStepSize(meta) {
+        if (meta && meta.step !== undefined)
+            return meta.step
+        const p = meta && meta.precision !== undefined ? meta.precision : 2
+        return Math.pow(10, 1 - p)
+        }
+
+    function defaultBigStep(meta) {
+        if (meta && meta.bigStep !== undefined)
+            return meta.bigStep
+        const p = meta && meta.precision !== undefined ? meta.precision : 2
+        return Math.pow(10, 2 - p)
+        }
+
+    function defaultMinStep(meta) {
+        if (meta && meta.minStep !== undefined)
+            return meta.minStep
+        const p = meta && meta.precision !== undefined ? meta.precision : 2
+        return Math.pow(10, -p)
+        }
+
     // ── Reusable borderless SpinBox ──────────────────────────────────────────
     component BareSpinBox : SpinBox {
         id: _sb
@@ -232,6 +259,8 @@ Item {
                 let step;
                 if (event.modifiers & Qt.ControlModifier)
                     step = _dsb.bigStep > 0 ? _dsb.bigStep : (_dsb.stepSize > 0 ? _dsb.stepSize * 10.0 : 10.0);
+                else if (event.modifiers & Qt.ShiftModifier)
+                    step = _dsb.minStep > 0 ? _dsb.minStep : (_dsb.stepSize > 0 ? _dsb.stepSize * 0.1 : 0.1);
                 else
                     step = _dsb.stepSize > 0 ? _dsb.stepSize : 1.0;
                                 if (event.angleDelta.y > 0)
@@ -256,6 +285,7 @@ Item {
 
         property real resetValue
         property real bigStep
+        property real minStep
         }
 
     // ── ValueBox ─────────────────────────────────────────────────────────────
@@ -930,8 +960,9 @@ Item {
                     anchors.fill: parent
                     from: subFloat.subMeta && subFloat.subMeta.min !== undefined ? subFloat.subMeta.min : -1000000.0
                     to: subFloat.subMeta && subFloat.subMeta.max !== undefined ? subFloat.subMeta.max : 1000000.0
-                    stepSize: subFloat.subMeta && subFloat.subMeta.step !== undefined ? subFloat.subMeta.step : 1.0
-                    bigStep: subFloat.subMeta && subFloat.subMeta.bigStep !== undefined ? subFloat.subMeta.bigStep : (subFloat.subMeta && subFloat.subMeta.step !== undefined ? subFloat.subMeta.step * 10.0 : 10.0)
+                    stepSize: root.defaultStepSize(subFloat.subMeta)
+                    bigStep: root.defaultBigStep(subFloat.subMeta)
+                    minStep: root.defaultMinStep(subFloat.subMeta)
 
                     decimals: subFloat.subMeta && subFloat.subMeta.precision !== undefined ? subFloat.subMeta.precision : 2
 
@@ -1413,8 +1444,9 @@ Item {
                         anchors.fill: parent
                         from: rowFloat.meta && rowFloat.meta.min !== undefined ? rowFloat.meta.min : -1000000.0
                         to: rowFloat.meta && rowFloat.meta.max !== undefined ? rowFloat.meta.max : 1000000.0
-                        stepSize: rowFloat.meta && rowFloat.meta.step !== undefined ? rowFloat.meta.step : 1.0
-                        bigStep: rowFloat.meta && rowFloat.meta.bigStep !== undefined ? rowFloat.meta.bigStep : (rowFloat.meta && rowFloat.meta.step !== undefined ? rowFloat.meta.step * 10.0 : 10.0)
+                        stepSize: root.defaultStepSize(rowFloat.meta)
+                        bigStep: root.defaultBigStep(rowFloat.meta)
+                        minStep: root.defaultMinStep(rowFloat.meta)
                         resetValue: root.defaultScalar(rowFloat.propName, 0)
 
                         decimals: rowFloat.meta && rowFloat.meta.precision !== undefined ? rowFloat.meta.precision : 2
@@ -1470,8 +1502,9 @@ Item {
                         anchors.fill: parent
                         from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
                         to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
-                        stepSize: rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step : 1.0
-                        bigStep: rowVec3.meta && rowVec3.meta.bigStep !== undefined ? rowVec3.meta.bigStep : (rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step * 10.0 : 10.0)
+                        stepSize: root.defaultStepSize(rowVec3.meta)
+                        bigStep: root.defaultBigStep(rowVec3.meta)
+                        minStep: root.defaultMinStep(rowVec3.meta)
                         resetValue: root.defaultScalar(rowVec3.propName, 0)
 
                         decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
@@ -1501,8 +1534,9 @@ Item {
                         anchors.fill: parent
                         from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
                         to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
-                        stepSize: rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step : 1.0
-                        bigStep: rowVec3.meta && rowVec3.meta.bigStep !== undefined ? rowVec3.meta.bigStep : (rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step * 10.0 : 10.0)
+                        stepSize: root.defaultStepSize(rowVec3.meta)
+                        bigStep: root.defaultBigStep(rowVec3.meta)
+                        minStep: root.defaultMinStep(rowVec3.meta)
                         resetValue: root.defaultScalar(rowVec3.propName, 1)
 
                         decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
@@ -1532,8 +1566,9 @@ Item {
                         anchors.fill: parent
                         from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
                         to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
-                        stepSize: rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step : 1.0
-                        bigStep: rowVec3.meta && rowVec3.meta.bigStep !== undefined ? rowVec3.meta.bigStep : (rowVec3.meta && rowVec3.meta.step !== undefined ? rowVec3.meta.step * 10.0 : 10.0)
+                        stepSize: root.defaultStepSize(rowVec3.meta)
+                        bigStep: root.defaultBigStep(rowVec3.meta)
+                        minStep: root.defaultMinStep(rowVec3.meta)
                         resetValue: root.defaultScalar(rowVec3.propName, 2)
 
                         decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
@@ -1589,8 +1624,9 @@ Item {
                         anchors.fill: parent
                         from: rowVec2.meta && rowVec2.meta.min !== undefined ? rowVec2.meta.min : -1000000.0
                         to: rowVec2.meta && rowVec2.meta.max !== undefined ? rowVec2.meta.max : 1000000.0
-                        stepSize: rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step : 1.0
-                        bigStep: rowVec2.meta && rowVec2.meta.bigStep !== undefined ? rowVec2.meta.bigStep : (rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step * 10.0 : 10.0)
+                        stepSize: root.defaultStepSize(rowVec2.meta)
+                        bigStep: root.defaultBigStep(rowVec2.meta)
+                        minStep: root.defaultMinStep(rowVec2.meta)
                         resetValue: root.defaultScalar(rowVec2.propName, 0)
 
                         decimals: rowVec2.meta && rowVec2.meta.precision !== undefined ? rowVec2.meta.precision : 2
@@ -1620,8 +1656,9 @@ Item {
                         anchors.fill: parent
                         from: rowVec2.meta && rowVec2.meta.min !== undefined ? rowVec2.meta.min : -1000000.0
                         to: rowVec2.meta && rowVec2.meta.max !== undefined ? rowVec2.meta.max : 1000000.0
-                        stepSize: rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step : 1.0
-                        bigStep: rowVec2.meta && rowVec2.meta.bigStep !== undefined ? rowVec2.meta.bigStep : (rowVec2.meta && rowVec2.meta.step !== undefined ? rowVec2.meta.step * 10.0 : 10.0)
+                        stepSize: root.defaultStepSize(rowVec2.meta)
+                        bigStep: root.defaultBigStep(rowVec2.meta)
+                        minStep: root.defaultMinStep(rowVec2.meta)
                         resetValue: root.defaultScalar(rowVec2.propName, 1)
 
                         decimals: rowVec2.meta && rowVec2.meta.precision !== undefined ? rowVec2.meta.precision : 2
