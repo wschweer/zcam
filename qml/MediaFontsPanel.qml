@@ -124,6 +124,10 @@ Item {
                     width: ListView.view.width
                     height: 32
 
+                    background: Rectangle {
+                        color: ListView.isCurrentItem ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                        }
+
                     contentItem: RowLayout {
                         anchors.fill: parent
                         spacing: 4
