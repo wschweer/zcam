@@ -121,21 +121,6 @@ Item {
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                Keys.onUpPressed: function(event) {
-                    if (currentIndex > 0) {
-                        currentIndex--
-                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                        }
-                    event.accepted = true
-                    }
-                Keys.onDownPressed: function(event) {
-                    if (currentIndex < fontModel.rowCount() - 1) {
-                        currentIndex++
-                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                        }
-                    event.accepted = true
-                    }
-
                 delegate: ItemDelegate {
                     id: fontDelegate
                     width: ListView.view.width
@@ -172,9 +157,23 @@ Item {
 
                     onClicked: {
                         fontModel.currentFamily = model.family
-                        fontList.forceActiveFocus()
+                        fontList.currentIndex = index
                         }
 
+                    Keys.onUpPressed: function(event) {
+                        if (index > 0) {
+                            fontList.currentIndex = index - 1
+                            fontModel.currentFamily = fontModel.data(fontModel.index(index - 1, 0), FontModel.FamilyRole)
+                            }
+                        event.accepted = true
+                        }
+                    Keys.onDownPressed: function(event) {
+                        if (index < fontModel.rowCount() - 1) {
+                            fontList.currentIndex = index + 1
+                            fontModel.currentFamily = fontModel.data(fontModel.index(index + 1, 0), FontModel.FamilyRole)
+                            }
+                        event.accepted = true
+                        }
                     Keys.onDeletePressed: {
                         if (fontModel.showFavorites)
                             fontModel.removeFavorite(model.family)
