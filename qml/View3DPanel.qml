@@ -46,10 +46,7 @@ Item {
             return true;
             }
         // Navigation and editing keys
-        if (event.key === Qt.Key_Left || event.key === Qt.Key_Right
-            || event.key === Qt.Key_Up || event.key === Qt.Key_Down
-            || event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace
-            || event.key === Qt.Key_Return) {
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up || event.key === Qt.Key_Down || event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace || event.key === Qt.Key_Return) {
             _editingText.keyEvent(event.key, event.modifiers, "");
             event.accepted = true;
             return true;
@@ -96,11 +93,10 @@ Item {
                 PrincipledMaterial {
                     cullMode: PrincipledMaterial.NoCulling
                     lighting: PrincipledMaterial.NoLighting
-                    baseColor: _isControlPoint
-                        ? (_hovered ? Qt.rgba(0.9, 0.3, 0.3, 1.0)   // lighter red (hovered control point)
-                                    : Qt.rgba(0.6, 0.0, 0.0, 1.0))  // dark red (control point)
-                        : (_hovered ? Qt.rgba(1.0, 0.75, 0.3, 1.0)   // lighter orange (hovered)
-                                    : Qt.rgba(1.0, 0.4, 0.0, 1.0))  // orange (normal)
+                    baseColor: _isControlPoint ? (_hovered ? Qt.rgba(0.9, 0.3, 0.3, 1.0)   // lighter red (hovered control point)
+                        : Qt.rgba(0.6, 0.0, 0.0, 1.0))  // dark red (control point)
+                    : (_hovered ? Qt.rgba(1.0, 0.75, 0.3, 1.0)   // lighter orange (hovered)
+                        : Qt.rgba(1.0, 0.4, 0.0, 1.0))  // orange (normal)
                     }
             ]
             }
@@ -214,7 +210,7 @@ Item {
             clearColor: Material.color(Material.BlueGrey, Material.Shade500)
             backgroundMode: SceneEnvironment.Color
             antialiasingQuality: SceneEnvironment.VeryHigh
-        }
+            }
 
         OrthographicCamera {
             id: bgCameraOrtho
@@ -230,14 +226,14 @@ Item {
             position: camera1.position
             clipNear: 0.1
             clipFar: 10000
-        }
+            }
         PerspectiveCamera {
             id: bgCameraPerspective
             // See comment above for bgCameraOrtho.
             position: camera2.position
             clipNear: 0.1
             clipFar: 10000
-        }
+            }
 
         Node {
             id: bgRoot
@@ -253,8 +249,8 @@ Item {
                 id: gridShape
                 visible: ZCam.project && ZCam.project.gridElement && ZCam.config.showGrid && ZCam.project.gridElement.show
                 element: ZCam.project ? ZCam.project.gridElement : null
+                }
             }
-        }
 
         // Background cameras are kept in sync with the main cameras
         // via direct property bindings (position: camera1.position /
@@ -262,7 +258,7 @@ Item {
         // above.  This replaces the previous Connections-based
         // approach which missed the initial sync when Settings
         // restored camera positions during component initialization.
-    }
+        }
 
     View3D {
         id: view3D
@@ -397,10 +393,10 @@ Item {
             var cy = travel.y / 2.0;
             camera1.position = Qt.vector3d(cx * root.scale.x, cy * root.scale.y, 1000);
             camera2.position = Qt.vector3d(cx * root.scale.x, cy * root.scale.y, 1000);
-        } else {
+            } else {
             camera1.position = Qt.vector3d(0, 0, 1000);
             camera2.position = Qt.vector3d(0, 0, 1000);
-        }
+            }
         // Persist the reset values into Settings so they survive
         // the next application restart.
         viewSettings.rotation = Qt.vector3d(0, 0, 0);
@@ -656,7 +652,9 @@ Item {
                     // Only start element drag if no segment is selected
                     // (otherwise the user is doing segment-level editing).
                     var hasSegSel = false;
-                    try { hasSegSel = curNode.element.selectedSegment >= 0; } catch(e) {}
+                    try {
+                        hasSegSel = curNode.element.selectedSegment >= 0;
+                        } catch (e) {}
                     if (curNode.element.draggable && !hasSegSel)
                         ZCam.startElementDrag(curNode.element);
                     }
@@ -680,8 +678,24 @@ Item {
 
         onDoubleClicked: mouse => {
             var m = pickModel(mouse.x, mouse.y);
-            if (m && m.element)
-                ZCam.doubleClick(m.element);
+            if (m && m.element) {
+                // Double-click on a Text element enters edit mode
+                // and switches to the text tool.
+                if (m.element.typeName() === "text") {
+                    // If a different text is being edited, exit that first
+                    if (panel._editingText && panel._editingText !== m.element) {
+                        panel._editingText.setEditing(false);
+                        panel._editingText = null;
+                        }
+                    ZCam.currentElement = m.element;
+                    panel._editingText = m.element;
+                    m.element.setEditing(true);
+                    ZCam.currentTool = "text";
+                    view3D.forceActiveFocus();
+                    }
+                else
+                    ZCam.doubleClick(m.element);
+                }
             }
 
         onReleased: mouse => {
