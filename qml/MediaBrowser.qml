@@ -56,6 +56,7 @@ Rectangle {
                     checked: root.activePanel === 0
                     onClicked: root.activePanel = 0
                     Material.foreground: checked ? Material.accentColor : Material.foreground
+                    Layout.alignment: Qt.AlignVCenter
                     }
                 Button {
                     text: qsTr("Artwork")
@@ -64,6 +65,7 @@ Rectangle {
                     checked: root.activePanel === 1
                     onClicked: root.activePanel = 1
                     Material.foreground: checked ? Material.accentColor : Material.foreground
+                    Layout.alignment: Qt.AlignVCenter
                     }
 
                 Item { Layout.fillWidth: true }
