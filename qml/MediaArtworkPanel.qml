@@ -67,21 +67,27 @@ Item {
         let idx = artworkModel.findIndexForPath(currentDirPath)
         if (!idx.valid)
             return
-        // Expand all ancestors from root down to the target.
+        // Collect ancestors from root down to target
         let ancestors = []
         let p = idx
         while (p.valid) {
             ancestors.unshift(p)
             p = artworkModel.parent(p)
         }
+        // Expand from root down, computing the TreeView *visible* row.
+        // On startup nothing is expanded, so each child appears directly
+        // after its parent:  treeViewRow = parentRow + 1 + childModelRow
+        let tvRow = 0
         for (let i = 0; i < ancestors.length; ++i) {
             let a = ancestors[i]
-            let row = a.row
-            if (!dirTree.isExpanded(row))
-                dirTree.toggleExpanded(row)
+            if (i === 0)
+                tvRow = a.row
+            else
+                tvRow = tvRow + 1 + a.row
+            if (!dirTree.isExpanded(tvRow))
+                dirTree.toggleExpanded(tvRow)
         }
         dirTree.selectionModel.setCurrentIndex(idx, ItemSelectionModel.ClearAndSelect)
-        dirTree.positionViewAtRow(idx.row, ListView.Contain)
     }
 
     Component.onCompleted: {
