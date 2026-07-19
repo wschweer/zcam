@@ -112,7 +112,6 @@ Item {
                     rightPadding: 8
                     topPadding: 2
                     bottomPadding: 2
-                    verticalAlignment: Qt.AlignVCenter
 
                     background: Rectangle {
                         anchors.fill: parent
