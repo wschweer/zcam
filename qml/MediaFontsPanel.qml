@@ -121,9 +121,19 @@ Item {
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                onCurrentIndexChanged: {
-                    if (currentIndex >= 0 && currentIndex < fontModel.rowCount())
+                Keys.onUpPressed: function(event) {
+                    if (currentIndex > 0) {
+                        currentIndex--
                         fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        }
+                    event.accepted = true
+                    }
+                Keys.onDownPressed: function(event) {
+                    if (currentIndex < fontModel.rowCount() - 1) {
+                        currentIndex++
+                        fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        }
+                    event.accepted = true
                     }
 
                 delegate: ItemDelegate {
