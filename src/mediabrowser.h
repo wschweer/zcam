@@ -126,6 +126,7 @@ class ArtworkTreeModel : public QAbstractItemModel
       QModelIndex parent(const QModelIndex& child) const override;
       QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
       QHash<int, QByteArray> roleNames() const override;
+      bool hasChildren(const QModelIndex& parent = QModelIndex()) const override;
 
       bool canFetchMore(const QModelIndex& parent) const override;
       void fetchMore(const QModelIndex& parent) override;

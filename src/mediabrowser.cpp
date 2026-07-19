@@ -130,7 +130,7 @@ QStringList FontModel::stylesForFamily(const QString& family) const {
 QStringList FontModel::weightsForFamily(const QString& family) const {
       QStringList weights;
       static const QStringList weightNames = {"Thin",     "ExtraLight", "Light",     "Normal", "Medium",
-                                              "DemiBold", "Bold",       "ExtraBold", "Black"};
+                                               "DemiBold", "Bold",       "ExtraBold", "Black"};
       static const QList<int> weightValues = {QFont::Thin,   QFont::ExtraLight, QFont::Light,
                                               QFont::Normal, QFont::Medium,     QFont::DemiBold,
                                               QFont::Bold,   QFont::ExtraBold,  QFont::Black};
@@ -268,8 +268,12 @@ void ArtworkTreeModel::rebuildTree() {
                 std::remove_if(_root->children.begin(), _root->children.end(),
                                [](const std::unique_ptr<ArtworkNode>& c) { return !c->hasImages; }),
                 _root->children.end());
-            for (auto& c : _root->children)
+            for (auto& c : _root->children) {
                   c->parent = _root.get();
+                  // Mark children as not-yet-loaded so that canFetchMore()
+                  // returns true and TreeView shows the expand arrow.
+                  c->loaded = false;
+                  }
             }
       endResetModel();
       }
@@ -329,7 +333,10 @@ void ArtworkTreeModel::loadChildren(ArtworkNode* node) {
             child->path        = dir.filePath(sub);
             child->parent      = node;
             child->hasImages   = directoryHasImagesRecursive(child->path);
-            child->hasChildren = false; // will be determined by lazy load
+            // Determine whether this directory has subdirectories.
+            QDir subdir(child->path);
+            subdir.setFilter(QDir::Dirs | QDir::NoDotAndDotDot);
+            child->hasChildren = !subdir.entryList().isEmpty();
             node->children.push_back(std::move(child));
             }
       // Remove children without images
@@ -338,6 +345,9 @@ void ArtworkTreeModel::loadChildren(ArtworkNode* node) {
                          [](const std::unique_ptr<ArtworkNode>& c) { return !c->hasImages; }),
           node->children.end());
       node->hasChildren = !node->children.empty();
+      // Mark all children as not-yet-loaded so they can be lazily expanded.
+      for (auto& c : node->children)
+            c->loaded = false;
       }
 
 //---------------------------------------------------------
@@ -428,6 +438,27 @@ QHash<int, QByteArray> ArtworkTreeModel::roleNames() const {
       roles[HasImagesRole]   = "hasImages";
       roles[HasChildrenRole] = "hasChildrenRole";
       return roles;
+      }
+
+//---------------------------------------------------------
+//   hasChildren
+//    Returns true if the node might have children.
+//    For not-yet-loaded nodes, returns true so TreeView shows
+//    the expand arrow. Once loaded, returns whether the node
+//    actually has children.
+//---------------------------------------------------------
+
+bool ArtworkTreeModel::hasChildren(const QModelIndex& parent) const {
+      if (!parent.isValid())
+            return _root && !_root->children.empty();
+      ArtworkNode* node = static_cast<ArtworkNode*>(parent.internalPointer());
+      if (!node)
+            return false;
+      // If not yet loaded, assume it has children (lazy load).
+      // Once loaded, return whether it actually has children.
+      if (!node->loaded)
+            return true;
+      return !node->children.empty();
       }
 
 //---------------------------------------------------------

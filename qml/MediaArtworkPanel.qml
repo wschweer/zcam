@@ -92,11 +92,6 @@ Item {
                 clip: true
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                onExpanded: index => {
-                    artworkModel.fetchMore(index)
-                    }
-
                 delegate: ItemDelegate {
                     id: dirDelegate
                     required property TreeView treeView
