@@ -22,17 +22,37 @@
 
 //---------------------------------------------------------
 //   importSvg
+//    NanoSVG is called with units="px" so that the path coordinates
+//    are returned in SVG user-space pixels (after viewBox scaling).
+//    We then convert pixels to millimetres ourselves using the
+//    standard 96-DPI factor (25.4 / 96 ≈ 0.2646).
+//
+//    This avoids a NanoSVG bug: when units="mm" is used and the SVG
+//    has width/height in mm but NO viewBox, NanoSVG treats the user
+//    units as pixels and applies an extra px→mm conversion, making
+//    the coordinates ~3.78× too small.
+//
+//    With units="px" NanoSVG does no unit conversion at all; the
+//    coordinates stay in pixel space.  We apply the single correct
+//    px→mm factor ourselves, which works correctly for:
+//      • SVGs with width in px + viewBox  (px → mm)
+//      • SVGs with width in mm + viewBox (viewBox px → image px → mm)
+//      • SVGs with width in px, no viewBox (px → mm)
 //---------------------------------------------------------
 
 void ZCam::importSvg(const QString& path) {
-      NSVGimage* image = nsvgParseFromFile(path.toLocal8Bit(), "mm", 96);
+      NSVGimage* image = nsvgParseFromFile(path.toLocal8Bit(), "px", 96);
       if (!image) {
             Critical("importSvg: cannot parse SVG file: {}", path);
             return;
             }
       Debug("loaded SVG image {}x{}", image->width, image->height);
 
-      // Build a PainterPath from all shapes and sub-paths in the SVG
+      // Pixel → millimetre conversion factor (96 DPI).
+      constexpr double pxToMm = 25.4 / 96.0;
+
+      // Build a PainterPath from all shapes and sub-paths in the SVG.
+      // All coordinates are converted from pixels to millimetres.
       PainterPath pp;
       for (NSVGshape* shape = image->shapes; shape; shape = shape->next) {
             for (NSVGpath* svgPath = shape->paths; svgPath; svgPath = svgPath->next) {
@@ -42,14 +62,14 @@ void ZCam::importSvg(const QString& path) {
                   Vec2d last;
                   for (int i = 0; i < svgPath->npts - 1; i += 3) {
                         float* p = &svgPath->pts[i * 2];
-                        Vec2d p1(p[0], p[1]);
+                        Vec2d p1(p[0] * pxToMm, p[1] * pxToMm);
                         if (i == 0) {
                               pp.moveTo(p1);
                               first = p1;
                               }
-                        Vec2d p2(p[2], p[3]);
-                        Vec2d p3(p[4], p[5]);
-                        Vec2d p4(p[6], p[7]);
+                        Vec2d p2(p[2] * pxToMm, p[3] * pxToMm);
+                        Vec2d p3(p[4] * pxToMm, p[5] * pxToMm);
+                        Vec2d p4(p[6] * pxToMm, p[7] * pxToMm);
                         pp.cubicTo(p2, p3, p4);
                         last = p4;
                         }
