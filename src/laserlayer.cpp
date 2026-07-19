@@ -20,10 +20,32 @@
 
 #include <algorithm>
 // #include <cmath>
+#include <functional>
 #include <future>
 #include <limits>
 #include <memory>
 #include <vector>
+
+//---------------------------------------------------------
+//   collectBurnElements
+//    Recursively collect all burnable Element3d children under the
+//    given element.  This traverses the full subtree (including
+//    nested Cad groups) so that elements at any depth are found.
+//---------------------------------------------------------
+
+static void collectBurnElements(Element* parent, std::vector<const Element3d*>& out) {
+      for (Element* child : parent->children()) {
+            auto* ce = qobject_cast<Element3d*>(child);
+            if (!ce)
+                  continue;
+            if (ce->burn() && !ce->pathList().empty())
+                  out.push_back(ce);
+            // Recurse into children regardless of burn flag on the
+            // parent — a group (Cad) may have burn=false but still
+            // contain burnable children.
+            collectBurnElements(child, out);
+            }
+      }
 
 //---------------------------------------------------------
 //   Point
@@ -70,10 +92,10 @@ PathsD LaserLayer::collectLayerPath() {
             return spl;
             }
 
-      for (const auto e : layer->children()) {
-            const auto* ce = toType<Element3d>(e);
-            if (!ce->burn())
-                  continue;
+      std::vector<const Element3d*> elements;
+      collectBurnElements(layer, elements);
+
+      for (const auto* ce : elements) {
             const auto& pl = ce->pathList();
 
             QMatrix4x4 matrix = ce->globalMatrix();
@@ -110,10 +132,10 @@ Clipper2Lib::PathsD LaserLayer::processTileLines() const {
             return {};
 
       Clipper2Lib::PathsD lineList;
-      for (const auto e : layer->children()) {
-            const auto* ce = toType<Element3d>(e);
-            if (!ce->burn())
-                  continue;
+      std::vector<const Element3d*> elements;
+      collectBurnElements(layer, elements);
+
+      for (const auto* ce : elements) {
             PathList pl = ce->pathList();
 
             QMatrix4x4 matrix = ce->globalMatrix();
