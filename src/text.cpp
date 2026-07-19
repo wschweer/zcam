@@ -340,7 +340,7 @@ bool Text::setCursorPositionFromWorld(const QVector3D& worldPos) {
       if (bbox.isNull() || bbox.isEmpty())
             return false;
       if (lx < bbox.left() / FONT_SCALE - 2.0 || lx > bbox.right() / FONT_SCALE + 2.0 ||
-          ly > bbox.top() / FONT_SCALE + 2.0 || ly < bbox.bottom() / FONT_SCALE - 2.0)
+          ly < bbox.top() / FONT_SCALE - 2.0 || ly > bbox.bottom() / FONT_SCALE + 2.0)
             return false;
 
       // Determine which row the click falls on.
