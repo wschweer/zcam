@@ -19,6 +19,8 @@ import ZCam
 Item {
     id: root
 
+    property real previewScale: 1.0
+
     FontModel {
         id: fontModel
         }
@@ -30,6 +32,7 @@ Item {
         property string currentStyle: ""
         property bool showFavorites: false
         property string sampleText: "The quick brown fox jumps over the lazy dog"
+        property real previewScale: 1.0
         property var splitState
         }
 
@@ -37,6 +40,7 @@ Item {
         fontModel.currentFamily = fontSettings.currentFamily || (fontModel.allFamilies().length > 0 ? fontModel.allFamilies()[0] : "")
         fontModel.currentStyle = fontSettings.currentStyle
         fontModel.showFavorites = fontSettings.showFavorites
+        root.previewScale = fontSettings.previewScale
         if (fontSettings.splitState)
             splitView.restoreState(fontSettings.splitState)
         }
@@ -47,6 +51,8 @@ Item {
         function onCurrentStyleChanged() { fontSettings.currentStyle = fontModel.currentStyle }
         function onShowFavoritesChanged() { fontSettings.showFavorites = fontModel.showFavorites }
         }
+
+    onPreviewScaleChanged: fontSettings.previewScale = root.previewScale
 
     SplitView {
         id: splitView
@@ -209,25 +215,47 @@ Item {
                 }
 
             // Font preview area
-            ScrollView {
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
 
-                TextArea {
-                    id: previewText
-                    readOnly: true
-                    text: fontSettings.sampleText
-                    wrapMode: TextArea.Wrap
-                    color: Material.foreground
-                    font.family: fontModel.currentFamily
-                    font.pointSize: 24
-                    font.styleName: fontModel.currentStyle
-                    font.bold: fontModel.currentStyle.toLowerCase().indexOf("bold") >= 0
-                    font.italic: fontModel.currentStyle.toLowerCase().indexOf("italic") >= 0 || fontModel.currentStyle.toLowerCase().indexOf("oblique") >= 0
-                    background: Rectangle {
-                        color: Material.color(Material.BlueGrey, Material.Shade900)
-                        radius: 4
+                ScrollView {
+                    anchors.fill: parent
+                    clip: true
+
+                    TextArea {
+                        id: previewText
+                        readOnly: true
+                        text: fontSettings.sampleText
+                        wrapMode: TextArea.Wrap
+                        color: Material.foreground
+                        font.family: fontModel.currentFamily
+                        font.pointSize: 24 * root.previewScale
+                        font.styleName: fontModel.currentStyle
+                        font.bold: fontModel.currentStyle.toLowerCase().indexOf("bold") >= 0
+                        font.italic: fontModel.currentStyle.toLowerCase().indexOf("italic") >= 0 || fontModel.currentStyle.toLowerCase().indexOf("oblique") >= 0
+                        background: Rectangle {
+                            color: Material.color(Material.BlueGrey, Material.Shade900)
+                            radius: 4
+                            }
+                        }
+                    }
+
+                // Ctrl+wheel to scale the preview font size
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    onWheel: wheel => {
+                        if (wheel.modifiers & Qt.ControlModifier) {
+                            if (wheel.angleDelta.y > 0)
+                                root.previewScale = Math.min(6.0, root.previewScale * 1.15)
+                            else
+                                root.previewScale = Math.max(0.2, root.previewScale / 1.15)
+                            wheel.accepted = true
+                            }
+                        else {
+                            wheel.accepted = false
+                            }
                         }
                     }
                 }
