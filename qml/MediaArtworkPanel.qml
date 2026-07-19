@@ -20,6 +20,8 @@ Item {
     id: root
 
     property real tileScale: 1.0
+    property string selectedFilePath: ""
+    property string selectedFileType: ""
 
     ArtworkTreeModel {
         id: artworkModel
@@ -207,12 +209,15 @@ Item {
                             width: imageGrid.cellWidth
                             height: imageGrid.cellHeight
 
+                            property bool isSelected: false
+
                             Rectangle {
+                                id: tileBg
                                 anchors.fill: parent
                                 anchors.margins: 4
-                                color: Material.color(Material.BlueGrey, Material.Shade900)
-                                border.width: 1
-                                border.color: Material.color(Material.BlueGrey, Material.Shade700)
+                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : Material.color(Material.BlueGrey, Material.Shade900)
+                                border.width: isSelected ? 3 : 1
+                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade700)
                                 radius: 4
 
                                 ColumnLayout {
@@ -262,21 +267,47 @@ Item {
                                     }
                                 }
 
-                            // Drag support for drag&drop to 3D canvas
-                            DragHandler {
-                                id: dragHandler
-                                target: null
+                            // Click to select + drag to 3D canvas
+                            MouseArea {
+                                id: tileMouseArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton
+                                hoverEnabled: true
 
-                                onActiveChanged: {
-                                    if (active) {
-                                        dragHelper.filePath = modelData.filePath
-                                        dragHelper.fileType = modelData.fileType
-                                        dragHelper.active = true
+                                onClicked: {
+                                    // Deselect all other tiles
+                                    for (var i = 0; i < imageGrid.count; ++i) {
+                                        var item = imageGrid.itemAtIndex(i)
+                                        if (item)
+                                            item.isSelected = false
                                         }
-                                    else {
-                                        dragHelper.active = false
-                                        }
+                                    isSelected = true
+                                    root.selectedFilePath = modelData.filePath
+                                    root.selectedFileType = modelData.fileType
                                     }
+
+                                onPressed: {
+                                    // Ensure this tile is selected before dragging
+                                    for (var i = 0; i < imageGrid.count; ++i) {
+                                        var item = imageGrid.itemAtIndex(i)
+                                        if (item)
+                                            item.isSelected = false
+                                        }
+                                    isSelected = true
+                                    root.selectedFilePath = modelData.filePath
+                                    root.selectedFileType = modelData.fileType
+                                    }
+
+                                // Drag support for drag&drop to 3D canvas
+                                drag.target: parent
+                                drag.threshold: 10
+                                }
+
+                            // QML Drag — provides mimeData to DropArea
+                            Drag.active: tileMouseArea.pressed
+                            Drag.dragType: Drag.Automatic
+                            Drag.mimeData: {
+                                "text/uri-list": "file://" + modelData.filePath
                                 }
                             }
                         }
@@ -293,13 +324,5 @@ Item {
                     }
                 }
             }
-        }
-
-    // Drag helper – communicates with the 3D canvas DropArea
-    QtObject {
-        id: dragHelper
-        property string filePath: ""
-        property string fileType: ""
-        property bool active: false
         }
     }

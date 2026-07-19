@@ -847,27 +847,66 @@ Item {
             return false;
             }
 
+        // Check if the drag source is a MediaArtworkPanel tile
+        function isArtworkDrag(drag) {
+            if (!drag.source)
+                return false;
+            // Walk up the parent hierarchy to find MediaArtworkPanel root
+            var p = drag.source;
+            while (p) {
+                if (p.selectedFilePath !== undefined && p.selectedFilePath !== "" )
+                    return true;
+                p = p.parent;
+                }
+            return false;
+            }
+
+        function getArtworkPath(drag) {
+            var p = drag.source;
+            while (p) {
+                if (p.selectedFilePath !== undefined && p.selectedFilePath !== "")
+                    return p.selectedFilePath;
+                p = p.parent;
+                }
+            return "";
+            }
+
         onEntered: drop => {
-            _hasImportDrop = containsImportable(drop.urls);
+            if (drop.urls && drop.urls.length > 0)
+                _hasImportDrop = containsImportable(drop.urls);
+            else
+                _hasImportDrop = isArtworkDrag(drop);
             drop.accepted = _hasImportDrop;
             }
 
         onPositionChanged: drop => {
-            _hasImportDrop = containsImportable(drop.urls);
+            if (drop.urls && drop.urls.length > 0)
+                _hasImportDrop = containsImportable(drop.urls);
+            else
+                _hasImportDrop = isArtworkDrag(drop);
             drop.accepted = _hasImportDrop;
             }
 
         onDropped: drop => {
             _hasImportDrop = false;
             var imported = false;
-            for (var i = 0; i < drop.urls.length; ++i) {
-                var path = drop.urls[i].toString();
-                // Strip "file://" prefix to get a local path.
-                if (path.startsWith("file://"))
-                    path = path.substring("file://".length);
-                var lower = path.toLowerCase();
-                if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
-                    ZCam.projectManager.importFile(path);
+            if (drop.urls && drop.urls.length > 0) {
+                for (var i = 0; i < drop.urls.length; ++i) {
+                    var path = drop.urls[i].toString();
+                    // Strip "file://" prefix to get a local path.
+                    if (path.startsWith("file://"))
+                        path = path.substring("file://".length);
+                    var lower = path.toLowerCase();
+                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
+                        ZCam.projectManager.importFile(path);
+                        imported = true;
+                        }
+                    }
+                }
+            else if (isArtworkDrag(drop)) {
+                var artworkPath = getArtworkPath(drop);
+                if (artworkPath !== "") {
+                    ZCam.projectManager.importFile(artworkPath);
                     imported = true;
                     }
                 }
