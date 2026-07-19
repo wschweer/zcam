@@ -117,7 +117,7 @@ Item {
                         spacing: 4
 
                         Label {
-                            text: hasChildren ? (expanded ? "▾" : "▸") : ""
+                            text: dirDelegate.hasChildren ? (dirDelegate.expanded ? "▾" : "▸") : ""
                             font.pixelSize: 10
                             color: Material.foreground
                             Layout.preferredWidth: 12
@@ -134,6 +134,8 @@ Item {
                     onClicked: {
                         treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect)
                         root.currentDirPath = model.dirPath
+                        if (dirDelegate.hasChildren)
+                            treeView.toggleExpanded(row)
                         }
                     }
 
@@ -205,10 +207,6 @@ Item {
                             width: imageGrid.cellWidth
                             height: imageGrid.cellHeight
 
-                            required property string model_fileName
-                            required property string model_filePath
-                            required property string model_fileType
-
                             Rectangle {
                                 anchors.fill: parent
                                 anchors.margins: 4
@@ -230,9 +228,9 @@ Item {
                                         Image {
                                             anchors.fill: parent
                                             source: {
-                                                var ft = model_fileType.toLowerCase()
+                                                var ft = modelData.fileType.toLowerCase()
                                                 if (ft === "png" || ft === "svg")
-                                                    return "file://" + model_filePath
+                                                    return "file://" + modelData.filePath
                                                 return ""
                                                 }
                                             fillMode: Image.PreserveAspectFit
@@ -244,7 +242,7 @@ Item {
                                         Label {
                                             anchors.centerIn: parent
                                             text: "DXF"
-                                            visible: model_fileType.toLowerCase() === "dxf"
+                                            visible: modelData.fileType.toLowerCase() === "dxf"
                                             color: Material.foreground
                                             font.bold: true
                                             font.pixelSize: 24
@@ -255,7 +253,7 @@ Item {
                                     Label {
                                         Layout.fillWidth: true
                                         Layout.margins: 2
-                                        text: model_fileName
+                                        text: modelData.fileName
                                         elide: Text.ElideMiddle
                                         font.pixelSize: 10
                                         color: Material.foreground
@@ -271,8 +269,8 @@ Item {
 
                                 onActiveChanged: {
                                     if (active) {
-                                        dragHelper.filePath = model_filePath
-                                        dragHelper.fileType = model_fileType
+                                        dragHelper.filePath = modelData.filePath
+                                        dragHelper.fileType = modelData.fileType
                                         dragHelper.active = true
                                         }
                                     else {

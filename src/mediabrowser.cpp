@@ -412,7 +412,7 @@ QVariant ArtworkTreeModel::data(const QModelIndex& index, int role) const {
             case NameRole: return node->name;
             case PathRole: return node->path;
             case HasImagesRole: return node->hasImages;
-            case HasChildrenRole: return node->hasChildren || !node->loaded;
+            case HasChildrenRole: return node->hasChildren || !node->loaded;  // not-yet-loaded nodes may have children
             default: return {};
             }
       }
@@ -426,7 +426,7 @@ QHash<int, QByteArray> ArtworkTreeModel::roleNames() const {
       roles[NameRole]        = "dirName";
       roles[PathRole]        = "dirPath";
       roles[HasImagesRole]   = "hasImages";
-      roles[HasChildrenRole] = "hasChildren";
+      roles[HasChildrenRole] = "hasChildrenRole";
       return roles;
       }
 
