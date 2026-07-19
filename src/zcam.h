@@ -17,6 +17,7 @@
 #include <QVector3D>
 #include <QFont>
 #include <QColor>
+#include <QRectF>
 #include <QtQml/qqmlregistration.h>
 #include <nlohmann/json.hpp>
 
@@ -274,6 +275,11 @@ class ZCam : public QObject
             };
       SnapState _snapState;
 
+      // SVG drag-preview state
+      TessGeometry* _dragPreviewGeometry {nullptr};
+      QString _svgDragPath;
+      QRectF _svgDragBBox;
+
     public:
       bool camDirty() const { return _camDirty; }
       void setCamDirty(bool v);
@@ -284,6 +290,7 @@ class ZCam : public QObject
       void camDirtyChanged();
       void currentElementChanged();
       void showFontMediaBrowserRequested();
+      void dragPreviewGeometryChanged();
       void remove3dElement(Element3d*); // signal 3d gui to remove an element from the scene graph
       void add3dElement(Element3d*);    // signal 3d gui to add a new element into the scene graph
       void addSubElement(Element3d*,
@@ -431,6 +438,27 @@ class ZCam : public QObject
       Q_INVOKABLE void createMaterialTest();
       Q_INVOKABLE void createGalvoTest();
       void importSvg(const QString& path);
+
+      /// Returns the bounding box (in mm) of the SVG at the given path.
+      /// The box reflects the Y-mirrored, px→mm-converted path data.
+      /// Returns an empty QRectF if the SVG cannot be parsed.
+      Q_INVOKABLE QRectF svgBoundingBox(const QString& path);
+
+      /// Import an SVG file and position the resulting Polygon so that
+      /// the bounding box's bottom-left corner is at (x, y) in the
+      /// parent layer's local coordinate space.
+      Q_INVOKABLE void importSvgAt(const QString& path, double x, double y);
+
+      /// Prepare a drag-preview geometry for the SVG at the given path.
+      /// The geometry is a rectangle outline matching the SVG bounding box.
+      /// Call endSvgDrag() to clean up.
+      Q_INVOKABLE void startSvgDrag(const QString& path);
+      Q_INVOKABLE void endSvgDrag();
+
+      /// The drag-preview geometry (rectangle outline) for the current
+      /// SVG drag operation, or nullptr when no drag is active.
+      Q_PROPERTY(TessGeometry* dragPreviewGeometry READ dragPreviewGeometry NOTIFY dragPreviewGeometryChanged)
+      TessGeometry* dragPreviewGeometry() const { return _dragPreviewGeometry; }
 
     private:
       Layer* findFirstVisibleLayer(Element* root) const;

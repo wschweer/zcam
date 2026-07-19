@@ -834,6 +834,7 @@ Item {
         z: 100  // above the 3D view and mouse area
 
         property bool _hasImportDrop: false
+        property string _pendingSvgPath: ""   // SVG path being dragged
 
         // Accept drags that contain at least one supported file.
         // We evaluate this in onEntered and onPositionChanged so
@@ -871,12 +872,39 @@ Item {
             return "";
             }
 
+        // Extract the first SVG path from the drop (either from
+        // urls or from an artwork panel drag source).
+        function getSvgPath(drop) {
+            if (drop.urls && drop.urls.length > 0) {
+                for (var i = 0; i < drop.urls.length; ++i) {
+                    var path = drop.urls[i].toString();
+                    if (path.toLowerCase().endsWith(".svg")) {
+                        if (path.startsWith("file://"))
+                            path = path.substring("file://".length);
+                        return path;
+                        }
+                    }
+                }
+            else if (isArtworkDrag(drop)) {
+                var artworkPath = getArtworkPath(drop);
+                if (artworkPath.toLowerCase().endsWith(".svg"))
+                    return artworkPath;
+                }
+            return "";
+            }
+
         onEntered: drop => {
             if (drop.urls && drop.urls.length > 0)
                 _hasImportDrop = containsImportable(drop.urls);
             else
                 _hasImportDrop = isArtworkDrag(drop);
             drop.accepted = _hasImportDrop;
+            // Start SVG drag preview if this is an SVG
+            if (_hasImportDrop) {
+                _pendingSvgPath = getSvgPath(drop);
+                if (_pendingSvgPath !== "")
+                    ZCam.startSvgDrag(_pendingSvgPath);
+                }
             }
 
         onPositionChanged: drop => {
@@ -885,11 +913,19 @@ Item {
             else
                 _hasImportDrop = isArtworkDrag(drop);
             drop.accepted = _hasImportDrop;
+            // Update the preview box position to follow the mouse
+            if (_hasImportDrop && _pendingSvgPath !== "") {
+                var scenePos = mouseArea.screenToScene(drop.x, drop.y);
+                if (scenePos)
+                    svgDragPreview.position = Qt.vector3d(scenePos.x, scenePos.y, 0);
+                }
             }
 
         onDropped: drop => {
             _hasImportDrop = false;
             var imported = false;
+            // Get the drop position in scene coordinates
+            var dropPos = mouseArea.screenToScene(drop.x, drop.y);
             if (drop.urls && drop.urls.length > 0) {
                 for (var i = 0; i < drop.urls.length; ++i) {
                     var path = drop.urls[i].toString();
@@ -897,7 +933,14 @@ Item {
                     if (path.startsWith("file://"))
                         path = path.substring("file://".length);
                     var lower = path.toLowerCase();
-                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
+                    if (lower.endsWith(".svg")) {
+                        if (dropPos)
+                            ZCam.importSvgAt(path, dropPos.x, dropPos.y);
+                        else
+                            ZCam.projectManager.importFile(path);
+                        imported = true;
+                        }
+                    else if (lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
                         ZCam.projectManager.importFile(path);
                         imported = true;
                         }
@@ -906,15 +949,23 @@ Item {
             else if (isArtworkDrag(drop)) {
                 var artworkPath = getArtworkPath(drop);
                 if (artworkPath !== "") {
-                    ZCam.projectManager.importFile(artworkPath);
+                    if (artworkPath.toLowerCase().endsWith(".svg") && dropPos)
+                        ZCam.importSvgAt(artworkPath, dropPos.x, dropPos.y);
+                    else
+                        ZCam.projectManager.importFile(artworkPath);
                     imported = true;
                     }
                 }
+            // End SVG drag preview
+            _pendingSvgPath = "";
+            ZCam.endSvgDrag();
             drop.accepted = imported;
             }
 
         onExited: {
             _hasImportDrop = false;
+            _pendingSvgPath = "";
+            ZCam.endSvgDrag();
             }
         }
 
@@ -940,6 +991,27 @@ Item {
             styleColor: Material.color(Material.Teal, Material.Shade900)
             }
         }
+
+    // SVG drag-preview bounding box rendered in the 3D scene.
+    // The geometry is a rectangle outline created by ZCam::startSvgDrag()
+    // from the SVG's path data.  Its position is updated in
+    // DropArea::onPositionChanged to follow the mouse on the XY plane.
+    Model {
+        id: svgDragPreview
+        parent: root
+        visible: ZCam.dragPreviewGeometry !== null
+        geometry: ZCam.dragPreviewGeometry
+        pickable: false
+        position: Qt.vector3d(0, 0, 0)
+        materials: [
+            PrincipledMaterial {
+                cullMode: PrincipledMaterial.NoCulling
+                lineWidth: 2
+                lighting: PrincipledMaterial.NoLighting
+                baseColor: Qt.rgba(0.0, 1.0, 0.5, 1.0)  // teal-green outline
+            }
+        ]
+    }
 
     NavigationCube {
         id: navCube
