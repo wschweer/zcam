@@ -273,6 +273,6 @@ class Text : public Element3d
       Q_INVOKABLE bool draggable() const override { return true; }
       Q_INVOKABLE bool deletable() const override { return true; }
       bool editing() const { return _editing; }
-      void setEditing(bool v);
+      Q_INVOKABLE void setEditing(bool v);
       Q_INVOKABLE bool keyEvent(int key, int modifiers, const QString& s);
       };
