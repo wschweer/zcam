@@ -213,9 +213,17 @@ Item {
 
                 Label {
                     anchors.centerIn: parent
-                    text: currentDirPath !== "" ? currentDirPath.split("/").pop() : qsTr("Icons")
+                    text: {
+                        if (currentDirPath === "")
+                            return qsTr("Icons")
+                        let root = ZCam.config ? ZCam.config.iconDirectory : ""
+                        if (root !== "" && currentDirPath.startsWith(root + "/"))
+                            return currentDirPath.substring(root.length + 1)
+                        return currentDirPath
+                    }
                     color: Material.accentColor
                     font.bold: true
+                    elide: Text.ElideMiddle
                 }
             }
 
