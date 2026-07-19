@@ -13,6 +13,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtCore
+import ZCam
 
 // ── Main work panel ───────────────────────────────────────────────────────────
 // Contains the outer horizontal split (scene tree + inspector | 3-D viewport).
@@ -28,6 +29,8 @@ Item {
         category: "MainPanel"
         property var outerSplitState
         property var innerSplitState
+        property var mediaSplitState
+        property bool mediaBrowserVisible: false
         }
 
     Component.onCompleted: {
@@ -35,9 +38,11 @@ Item {
             outerSplit.restoreState(panelSettings.outerSplitState);
         if (panelSettings.innerSplitState)
             innerSplit.restoreState(panelSettings.innerSplitState);
+        if (panelSettings.mediaSplitState && mediaBrowser.visible)
+            mediaSplit.restoreState(panelSettings.mediaSplitState);
         }
 
-    // ── Outer horizontal split: left panel | 3-D viewport ────────────────────
+    // ── Outer horizontal split: left panel | 3-D viewport (+ media browser) ─
     SplitView {
         id: outerSplit
         anchors.fill: parent
@@ -85,10 +90,29 @@ Item {
                 }
             }
 
-        // ── Right panel: 3-D viewport ─────────────────────────────────────────
-        View3DPanel {
+        // ── Right panel: 3-D viewport + media browser splitter ───────────────
+        SplitView {
+            id: mediaSplit
             SplitView.fillWidth: true
             SplitView.minimumWidth: 200
+            orientation: Qt.Horizontal
+
+            View3DPanel {
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 200
+                }
+
+            MediaBrowser {
+                id: mediaBrowser
+                objectName: "mediaBrowser"
+                visible: panelSettings.mediaBrowserVisible
+                SplitView.preferredWidth: 300
+                SplitView.minimumWidth: 200
+                onVisibleChanged: panelSettings.mediaBrowserVisible = visible
+                }
+
+            onResizingChanged: if (!resizing)
+                panelSettings.mediaSplitState = saveState()
             }
         }
     }

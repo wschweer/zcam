@@ -62,6 +62,9 @@ qt_add_qml_module(zcam
         qml/ConfigColor.qml
         qml/NavigationCube.qml
         qml/CamShape.qml
+        qml/MediaBrowser.qml
+        qml/MediaFontsPanel.qml
+        qml/MediaArtworkPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/machine.cpp src/machine.h
@@ -105,6 +108,8 @@ qt_add_qml_module(zcam
         src/dxfimport.cpp src/dxfimport.h
 
         src/geometryworker.cpp src/geometryworker.h
+
+        src/mediabrowser.cpp src/mediabrowser.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp

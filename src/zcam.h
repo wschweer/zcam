@@ -55,6 +55,7 @@ class Config : public QObject
       PROPV(bool, showGrid, true)
       PROPV(double, gridSpacing, 10.0)
       PROPV(QString, defaultMachine, QString())
+      PROPV(QString, artworkDirectory, QString())
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -188,6 +189,13 @@ class Config : public QObject
                       "type": "machineName",
                       "cat": "Project",
                       "default": ""
+                    },
+                    {
+                      "name": "artworkDirectory",
+                      "label": "Artwork Directory",
+                      "type": "singleline",
+                      "cat": "Project",
+                      "default": ""
                     }
                   ]
                       })json"};
@@ -248,7 +256,6 @@ class ZCam : public QObject
       QVector3D _elementDragOrigPos;
       QVector3D _elementDragOrigRot;
       QVector3D _elementDragOrigScale;
-
       // State for magnetic grid snap during element drag.
       // The reference point for each element is (0,0) in local coords.
       // When the reference point crosses a grid line, the element "snaps"
@@ -256,11 +263,14 @@ class ZCam : public QObject
       // once it exceeds half the minor spacing, the element "breaks free"
       // and moves freely until the next line is crossed.
       struct SnapState {
-            bool activeX {false};      ///< currently snapped on X axis
-            bool activeY {false};      ///< currently snapped on Y axis
-            double excessX {0.0};      ///< accumulated drag beyond the snap point (X)
-            double excessY {0.0};      ///< accumulated drag beyond the snap point (Y)
-            void reset() { activeX = activeY = false; excessX = excessY = 0.0; }
+            bool activeX {false}; ///< currently snapped on X axis
+            bool activeY {false}; ///< currently snapped on Y axis
+            double excessX {0.0}; ///< accumulated drag beyond the snap point (X)
+            double excessY {0.0}; ///< accumulated drag beyond the snap point (Y)
+            void reset() {
+                  activeX = activeY = false;
+                  excessX = excessY = 0.0;
+                  }
             };
       SnapState _snapState;
 

@@ -250,6 +250,13 @@ Window {
         icon.source: "qrc:/icons/laser.svg"
         }
 
+    Action {
+        id: actionShowMediaBrowser
+        text: qsTr("Show media browser")
+        checkable: true
+        icon.text: "M"
+        }
+
     // =========================================================================
     //  File dialogs  (platform-native via Qt Labs)
     // =========================================================================
@@ -631,6 +638,16 @@ Window {
                     }
 
                 // placed on the right side of the toolbar
+
+                // Media Browser toggle button — placed left of the Laser button
+                ToolButton {
+                    action: actionShowMediaBrowser
+                    display: AbstractButton.TextOnly
+                    font.bold: true
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Show Media Browser")
+                    Layout.rightMargin: 4
+                    }
                 ToolButton {
                     //                    Layout.alignment: Qt.AlignRight
                     action: actionShowLaserPanel
@@ -779,6 +796,19 @@ Window {
                 SplitView.minimumWidth: 300
                 SplitView.maximumWidth: 300
                 }
+            }
+        }
+
+    // ── Media Browser visibility binding ──────────────────────────────────────
+    //   The MediaBrowser lives inside MainPanel, so we toggle its
+    //   visibility via a property binding on the mainPanel item.
+    Connections {
+        target: actionShowMediaBrowser
+        function onCheckedChanged() {
+            // Find the MediaBrowser inside MainPanel and toggle visibility
+            // MainPanel.mediaBrowser is found via object name
+            if (mainPanel.mediaBrowser)
+                mainPanel.mediaBrowser.visible = actionShowMediaBrowser.checked
             }
         }
     }
