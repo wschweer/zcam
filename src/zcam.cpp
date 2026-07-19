@@ -122,6 +122,24 @@ void ZCam::setCurrentElement(Element3d* el) {
       }
 
 //---------------------------------------------------------
+//   applyFontToCurrentText
+//    Apply a font family to the currently selected Text
+//    element. The change goes through ProjectManager so it
+//    is undoable and marks the project dirty.
+//---------------------------------------------------------
+
+void ZCam::applyFontToCurrentText(const QString& family) {
+      if (!_currentElement)
+            return;
+      auto* text = qobject_cast<Text*>(_currentElement);
+      if (!text)
+            return;
+      if (!text->fontFamily().isEmpty() && text->fontFamily() == family)
+            return;
+      _projectManager->changeProperty(text, "fontFamily", family);
+      }
+
+//---------------------------------------------------------
 //   setCamDirty
 //    Mark the cam data as out-of-date.  The QML "Cam" refresh
 //    button becomes enabled when this is true.
@@ -375,10 +393,10 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
             double spacing = grid->minorSpacing();
             if (spacing > 0.0) {
                   double halfSpacing = spacing / 2.0;
-                  double curX = element->pos().x();
-                  double curY = element->pos().y();
-                  double newX = curX + localDelta.x();
-                  double newY = curY + localDelta.y();
+                  double curX        = element->pos().x();
+                  double curY        = element->pos().y();
+                  double newX        = curX + localDelta.x();
+                  double newY        = curY + localDelta.y();
 
                   // X axis snap
                   if (_snapState.activeX) {
@@ -386,7 +404,7 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         if (std::abs(_snapState.excessX) > halfSpacing) {
                               // Break free: snap point releases, move freely
                               _snapState.activeX = false;
-                              newX = curX + localDelta.x();
+                              newX               = curX + localDelta.x();
                               }
                         else {
                               // Hold snapped: keep X at the snap line
@@ -398,9 +416,9 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         double oldLine = std::round(curX / spacing);
                         double newLine = std::round(newX / spacing);
                         if (newLine != oldLine) {
-                              _snapState.activeX   = true;
-                              _snapState.excessX   = newX - newLine * spacing;
-                              newX                 = newLine * spacing;
+                              _snapState.activeX = true;
+                              _snapState.excessX = newX - newLine * spacing;
+                              newX               = newLine * spacing;
                               }
                         }
 
@@ -409,7 +427,7 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         _snapState.excessY += localDelta.y();
                         if (std::abs(_snapState.excessY) > halfSpacing) {
                               _snapState.activeY = false;
-                              newY = curY + localDelta.y();
+                              newY               = curY + localDelta.y();
                               }
                         else {
                               newY = curY;
@@ -419,9 +437,9 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         double oldLine = std::round(curY / spacing);
                         double newLine = std::round(newY / spacing);
                         if (newLine != oldLine) {
-                              _snapState.activeY   = true;
-                              _snapState.excessY   = newY - newLine * spacing;
-                              newY                 = newLine * spacing;
+                              _snapState.activeY = true;
+                              _snapState.excessY = newY - newLine * spacing;
+                              newY               = newLine * spacing;
                               }
                         }
 
@@ -679,12 +697,10 @@ void ZCam::hover(Element3d* element) {
       // if an element changes its hover status, signal
       // a color change
       if (oldElement != element) {
-            if (element) {
+            if (element)
                   emit element->curColorChanged();
-                  }
-            if (oldElement) {
+            if (oldElement)
                   emit oldElement->curColorChanged();
-                  }
             }
       }
 
@@ -1220,8 +1236,8 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
 
       // Compute the new parent's global matrix.
       QMatrix4x4 newParentGlobal = newParent->globalMatrix();
-      bool ok = false;
-      QMatrix4x4 newParentInv   = newParentGlobal.inverted(&ok);
+      bool ok                    = false;
+      QMatrix4x4 newParentInv    = newParentGlobal.inverted(&ok);
       if (!ok)
             return;
 
@@ -1270,8 +1286,8 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
       //
       // Record undo commands for the transform changes so that undo/redo
       // restores the correct pre-reparent transforms.
-      QVector3D origPos = element->pos();
-      QVector3D origRot = element->rot();
+      QVector3D origPos   = element->pos();
+      QVector3D origRot   = element->rot();
       QVector3D origScale = element->scale();
 
       element->beginBatchUpdate();
@@ -1285,21 +1301,24 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
       // undo undoes the move first (restoring the old parent), then
       // the transforms (restoring the old pos/rot/scale).
       if (_projectManager) {
-            {
-            auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("pos"),
-                                                               QVariant::fromValue(origPos), QVariant::fromValue(newPos));
-            _projectManager->pushCommand(std::move(cmd));
-            }
-            {
-            auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("rot"),
-                                                               QVariant::fromValue(origRot), QVariant::fromValue(newRot));
-            _projectManager->pushCommand(std::move(cmd));
-            }
-            {
-            auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("scale"),
-                                                               QVariant::fromValue(origScale), QVariant::fromValue(newScale));
-            _projectManager->pushCommand(std::move(cmd));
-            }
+                  {
+                  auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("pos"),
+                                                                     QVariant::fromValue(origPos),
+                                                                     QVariant::fromValue(newPos));
+                  _projectManager->pushCommand(std::move(cmd));
+                  }
+                  {
+                  auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("rot"),
+                                                                     QVariant::fromValue(origRot),
+                                                                     QVariant::fromValue(newRot));
+                  _projectManager->pushCommand(std::move(cmd));
+                  }
+                  {
+                  auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("scale"),
+                                                                     QVariant::fromValue(origScale),
+                                                                     QVariant::fromValue(newScale));
+                  _projectManager->pushCommand(std::move(cmd));
+                  }
             }
 
       // Reset the drag state since we bypassed endElementDrag().

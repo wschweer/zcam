@@ -283,6 +283,7 @@ class ZCam : public QObject
     signals:
       void camDirtyChanged();
       void currentElementChanged();
+      void showFontMediaBrowserRequested();
       void remove3dElement(Element3d*); // signal 3d gui to remove an element from the scene graph
       void add3dElement(Element3d*);    // signal 3d gui to add a new element into the scene graph
       void addSubElement(Element3d*,
@@ -395,6 +396,10 @@ class ZCam : public QObject
       /// element) or the first visible Layer as fallback.  Returns
       /// the new Text or nullptr if no layer is available.
       Q_INVOKABLE Element3d* createText(double x, double y);
+
+      /// Apply the given font family to the currently selected Text element.
+      /// The change is routed through the undo system and marks the project dirty.
+      Q_INVOKABLE void applyFontToCurrentText(const QString& family);
 
       /// Re-parent an element to a new parent Element3d.  The element's
       /// local pos/rot/scale are adjusted so that its world-space

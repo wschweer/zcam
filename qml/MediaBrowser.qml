@@ -23,6 +23,20 @@ Rectangle {
     // Persistent splitter: which panel is active (0=Fonts, 1=Artwork)
     property int activePanel: 0
 
+    // Public API so callers can switch to the Fonts panel and optionally
+    // pre-select a font family.
+    function showFontsPanel(family) {
+        root.activePanel = 0
+        if (family !== undefined && family.length > 0) {
+            fontModel.currentFamily = family
+            var idx = fontModel.allFamilies().indexOf(family)
+            if (idx >= 0) {
+                fontList.currentIndex = idx
+                fontList.positionViewAtIndex(idx, ListView.Contain)
+                }
+            }
+        }
+
     Settings {
         id: mediaSettings
         category: "MediaBrowser"
@@ -81,12 +95,24 @@ Rectangle {
 
             MediaFontsPanel {
                 id: fontsPanel
+                onApplyFontRequested: family => ZCam.applyFontToCurrentText(family)
                 }
             MediaArtworkPanel {
                 id: artworkPanel
                 tileScale: mediaSettings.tileScale
                 onTileScaleChanged: mediaSettings.tileScale = tileScale
                 }
+            }
+        }
+
+    // Apply the selected font to the current Text element when requested.
+    Connections {
+        target: ZCam
+        function onShowFontMediaBrowserRequested() {
+            if (ZCam.currentElement && ZCam.currentElement.typeName() === "text")
+                root.showFontsPanel(ZCam.currentElement.fontFamily)
+            else
+                root.showFontsPanel("")
             }
         }
     }

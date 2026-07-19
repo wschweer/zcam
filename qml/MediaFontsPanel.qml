@@ -22,6 +22,10 @@ Item {
     property real previewScale: 1.0
     property string selectedFamily: ""
 
+    // Emitted when the user explicitly wants to apply the selected font
+    // to the currently selected Text element in the project tree.
+    signal applyFontRequested(string family)
+
     FontModel {
         id: fontModel
         }
@@ -222,20 +226,40 @@ Item {
                 Layout.preferredHeight: 56
                 color: Material.color(Material.BlueGrey, Material.Shade900)
 
-                Column {
-                    anchors.centerIn: parent
-                    spacing: 2
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    spacing: 4
 
-                    Label {
-                        text: root.selectedFamily
-                        color: Material.accentColor
-                        font.bold: true
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Label {
+                            text: root.selectedFamily
+                            color: Material.accentColor
+                            font.bold: true
+                            }
+
+                        Label {
+                            text: "idx:" + fontList.currentIndex + " sel:" + root.selectedFamily + " fam:" + fontModel.currentFamily
+                            color: Material.foreground
+                            font.pixelSize: 10
+                            }
                         }
 
-                    Label {
-                        text: "idx:" + fontList.currentIndex + " sel:" + root.selectedFamily + " fam:" + fontModel.currentFamily
-                        color: Material.foreground
-                        font.pixelSize: 10
+                    // Apply the selected font to the current Text element.
+                    Button {
+                        text: qsTr("Apply")
+                        flat: true
+                        enabled: ZCam.currentElement && ZCam.currentElement.typeName() === "text"
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: qsTr("Apply font to selected text element")
+                        onClicked: {
+                            if (ZCam.currentElement && ZCam.currentElement.typeName() === "text")
+                                root.applyFontRequested(root.selectedFamily)
+                            }
                         }
                     }
                 }

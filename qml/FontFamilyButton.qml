@@ -33,7 +33,11 @@ Item {
     /// The currently displayed font family name.
     property string family: ""
 
-    /// Emitted when the user accepts the dialog.
+    /// When true, clicking the "…" button toggles the media browser to the
+    /// Fonts panel instead of opening the system font dialog.
+    property bool useMediaBrowser: true
+
+    /// Emitted when the user accepts the dialog or clicks Apply in the media browser.
     /// @param family  The newly chosen font family name.
     signal familySelected(string family)
 
@@ -58,7 +62,7 @@ Item {
 //            Layout.alignment: Qt.AlignVCenter
             }
 
-        // "…" button opens the dialog
+        // "…" button opens the font selector (media browser or system dialog)
         Button {
             id: pickButton
             text: "…"
@@ -70,13 +74,18 @@ Item {
 
             ToolTip.visible: hovered
             ToolTip.delay: 600
-            ToolTip.text: "Choose font family"
+            ToolTip.text: root.useMediaBrowser ? "Choose font family from media browser" : "Choose font family"
 
-            onClicked: fontDialog.open()
+            onClicked: {
+                if (root.useMediaBrowser)
+                    ZCam.showFontMediaBrowserRequested()
+                else
+                    fontDialog.open()
+                }
             }
         }
 
-    // ── Font Dialog ───────────────────────────────────────────────────────────
+    // ── Font Dialog (fallback when useMediaBrowser is false) ──────────────────
 
     FontDialog {
         id: fontDialog

@@ -811,4 +811,12 @@ Window {
         property: "mediaBrowserVisible"
         value: actionShowMediaBrowser.checked
         }
+
+    // Show the font media browser when requested by FontFamilyButton.
+    Connections {
+        target: ZCam
+        function onShowFontMediaBrowserRequested() {
+            actionShowMediaBrowser.checked = true
+            }
+        }
     }
