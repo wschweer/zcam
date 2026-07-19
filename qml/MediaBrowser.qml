@@ -58,41 +58,33 @@ Rectangle {
             Layout.preferredHeight: 36
             color: Material.color(Material.BlueGrey, Material.Shade900)
 
-            Row {
+            TabBar {
+                id: panelTabs
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: 4
-                spacing: 4
+                spacing: 2
+                currentIndex: root.activePanel
+                onCurrentIndexChanged: root.activePanel = currentIndex
+                background: Rectangle { color: "transparent" }
 
-                Button {
+                TabButton {
                     text: qsTr("Fonts")
-                    flat: true
-                    checkable: true
-                    checked: root.activePanel === 0
-                    onClicked: root.activePanel = 0
-                    Material.foreground: checked ? Material.accentColor : Material.foreground
-                    topPadding: 0
-                    bottomPadding: 0
+                    width: implicitWidth
+                    topPadding: 4
+                    bottomPadding: 4
                     }
-                Button {
+                TabButton {
                     text: qsTr("Artwork")
-                    flat: true
-                    checkable: true
-                    checked: root.activePanel === 1
-                    onClicked: root.activePanel = 1
-                    Material.foreground: checked ? Material.accentColor : Material.foreground
-                    topPadding: 0
-                    bottomPadding: 0
+                    width: implicitWidth
+                    topPadding: 4
+                    bottomPadding: 4
                     }
-                Button {
+                TabButton {
                     text: qsTr("Icons")
-                    flat: true
-                    checkable: true
-                    checked: root.activePanel === 2
-                    onClicked: root.activePanel = 2
-                    Material.foreground: checked ? Material.accentColor : Material.foreground
-                    topPadding: 0
-                    bottomPadding: 0
+                    width: implicitWidth
+                    topPadding: 4
+                    bottomPadding: 4
                     }
                 }
             }
