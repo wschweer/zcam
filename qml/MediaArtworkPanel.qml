@@ -23,6 +23,32 @@ Item {
     property string selectedFilePath: ""
     property string selectedFileType: ""
 
+    // Checkerboard background for transparent images.
+    Component {
+        id: checkerboardComponent
+        Canvas {
+            property int sqSize: 10
+            property color colLight: "#c8c8c8"
+            property color colDark: "#787878"
+            onPaint: {
+                let ctx = getContext("2d")
+                ctx.reset()
+                let w = width
+                let h = height
+                let s = sqSize
+                for (let y = 0; y < h; y += s) {
+                    for (let x = 0; x < w; x += s) {
+                        let odd = ((Math.floor(x / s) + Math.floor(y / s)) % 2) === 1
+                        ctx.fillStyle = odd ? colDark : colLight
+                        ctx.fillRect(x, y, s, s)
+                    }
+                }
+            }
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+        }
+    }
+
     ArtworkTreeModel {
         id: artworkModel
         rootPath: ZCam.config ? ZCam.config.artworkDirectory : ""
@@ -196,10 +222,18 @@ Item {
                                 id: tileBg
                                 anchors.fill: parent
                                 anchors.margins: 4
-                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "white"
+                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "transparent"
                                 border.width: isSelected ? 3 : 1
                                 border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
                                 radius: 4
+                                clip: true
+
+                                // Checkerboard background for transparent images
+                                Loader {
+                                    anchors.fill: parent
+                                    active: !isSelected
+                                    sourceComponent: checkerboardComponent
+                                }
 
                                 ColumnLayout {
                                     anchors.fill: parent
