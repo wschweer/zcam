@@ -134,7 +134,7 @@ Item {
                     currentIndex: -1
                     focus: true
                     activeFocusOnTab: true
-                    keyNavigationEnabled: true
+                    keyNavigationEnabled: false
                     keyNavigationWraps: false
 
                     Component.onCompleted: updateCurrentIndex()
