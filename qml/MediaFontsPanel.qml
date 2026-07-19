@@ -20,6 +20,7 @@ Item {
     id: root
 
     property real previewScale: 1.0
+    property string selectedFamily: ""
 
     FontModel {
         id: fontModel
@@ -62,7 +63,11 @@ Item {
 
     Connections {
         target: fontModel
-        function onCurrentFamilyChanged() { fontSettings.currentFamily = fontModel.currentFamily; updateCurrentIndex() }
+        function onCurrentFamilyChanged() {
+            fontSettings.currentFamily = fontModel.currentFamily
+            if (fontModel.currentFamily !== root.selectedFamily)
+                updateCurrentIndex()
+            }
         function onCurrentStyleChanged() { fontSettings.currentStyle = fontModel.currentStyle }
         function onShowFavoritesChanged() { fontSettings.showFavorites = fontModel.showFavorites }
         function onFavoritesChanged() { updateCurrentIndex() }
@@ -143,11 +148,14 @@ Item {
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     onCurrentIndexChanged: {
-                        if (currentIndex >= 0) {
-                            var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                            if (family !== undefined)
-                                fontModel.currentFamily = family
-                            }
+                        var family = ""
+                        if (currentIndex >= 0 && currentIndex < fontModel.rowCount())
+                            family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        if (family === undefined)
+                            family = ""
+                        root.selectedFamily = family
+                        if (family !== fontModel.currentFamily)
+                            fontModel.currentFamily = family
                         }
 
                     Keys.onPressed: function(event) {
@@ -214,7 +222,7 @@ Item {
 
                 Label {
                     anchors.centerIn: parent
-                    text: fontModel.currentFamily
+                    text: root.selectedFamily
                     color: Material.accentColor
                     font.bold: true
                     }
@@ -234,9 +242,9 @@ Item {
                 ComboBox {
                     id: styleCombo
                     Layout.fillWidth: true
-                    model: fontModel.stylesForFamily(fontModel.currentFamily)
+                    model: fontModel.stylesForFamily(root.selectedFamily)
                     currentIndex: {
-                        var styles = fontModel.stylesForFamily(fontModel.currentFamily)
+                        var styles = fontModel.stylesForFamily(root.selectedFamily)
                         var idx = styles.indexOf(fontModel.currentStyle)
                         return idx >= 0 ? idx : -1
                         }
@@ -247,15 +255,15 @@ Item {
 
                 // Add to favorites button
                 Button {
-                    text: fontModel.isFavorite(fontModel.currentFamily) ? "★" : "☆"
+                    text: fontModel.isFavorite(root.selectedFamily) ? "★" : "☆"
                     flat: true
                     ToolTip.visible: hovered
-                    ToolTip.text: fontModel.isFavorite(fontModel.currentFamily) ? qsTr("Remove from favorites") : qsTr("Add to favorites")
+                    ToolTip.text: fontModel.isFavorite(root.selectedFamily) ? qsTr("Remove from favorites") : qsTr("Add to favorites")
                     onClicked: {
-                        if (fontModel.isFavorite(fontModel.currentFamily))
-                            fontModel.removeFavorite(fontModel.currentFamily)
+                        if (fontModel.isFavorite(root.selectedFamily))
+                            fontModel.removeFavorite(root.selectedFamily)
                         else
-                            fontModel.addFavorite(fontModel.currentFamily)
+                            fontModel.addFavorite(root.selectedFamily)
                         }
                     }
                 }
@@ -291,7 +299,7 @@ Item {
                         text: fontSettings.sampleText
                         wrapMode: TextArea.Wrap
                         color: Material.foreground
-                        font.family: fontModel.currentFamily
+                        font.family: root.selectedFamily
                         font.pointSize: 24 * root.previewScale
                         font.styleName: fontModel.currentStyle
                         font.bold: fontModel.currentStyle.toLowerCase().indexOf("bold") >= 0
