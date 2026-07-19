@@ -163,24 +163,6 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                // Ctrl+wheel to scale tiles
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    onWheel: wheel => {
-                        if (wheel.modifiers & Qt.ControlModifier) {
-                            if (wheel.angleDelta.y > 0)
-                                root.tileScale = Math.min(3.0, root.tileScale * 1.15)
-                            else
-                                root.tileScale = Math.max(0.3, root.tileScale / 1.15)
-                                wheel.accepted = true
-                            }
-                        else {
-                            wheel.accepted = false
-                            }
-                        }
-                    }
-
                 ScrollView {
                     anchors.fill: parent
                     anchors.margins: 4
@@ -312,6 +294,24 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     visible: ZCam.config && ZCam.config.artworkDirectory === ""
                     font.pixelSize: 14
+                    }
+
+                // Ctrl+wheel to scale tiles — placed after ScrollView so it is on top
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    onWheel: wheel => {
+                        if (wheel.modifiers & Qt.ControlModifier) {
+                            if (wheel.angleDelta.y > 0)
+                                root.tileScale = Math.min(3.0, root.tileScale * 1.15)
+                            else
+                                root.tileScale = Math.max(0.3, root.tileScale / 1.15)
+                            wheel.accepted = true
+                            }
+                        else {
+                            wheel.accepted = false
+                            }
+                        }
                     }
                 }
             }
