@@ -57,7 +57,7 @@ Item {
         if (fontSettings.splitState)
             splitView.restoreState(fontSettings.splitState)
         updateCurrentIndex()
-        fontListScope.forceActiveFocus()
+        fontListContainer.activate()
         }
 
     Connections {
@@ -109,19 +109,33 @@ Item {
                 }
 
             // Font list
-            FocusScope {
-                id: fontListScope
+            Rectangle {
+                id: fontListContainer
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                color: "transparent"
+                border.width: activeFocus ? 1 : 0
+                border.color: Material.accentColor
+
+                property alias currentIndex: fontList.currentIndex
+
+                function activate() {
+                    fontList.forceActiveFocus()
+                    }
+
+                Keys.forwardTo: [fontList]
 
                 ListView {
                     id: fontList
                     anchors.fill: parent
+                    anchors.margins: activeFocus ? 1 : 0
                     clip: true
                     model: fontModel
                     currentIndex: -1
                     focus: true
+                    activeFocusOnTab: true
                     keyNavigationEnabled: true
+                    keyNavigationWraps: false
 
                     Component.onCompleted: updateCurrentIndex()
 
@@ -147,6 +161,22 @@ Item {
                             if (fontModel.showFavorites)
                                 fontModel.removeFavorite(family)
                             event.accepted = true
+                            return
+                            }
+                        // Jump to next font family starting with the typed letter.
+                        if (event.text.length === 1 && event.text[0].isLetterOrNumber()) {
+                            var searchChar = event.text[0].toLowerCase()
+                            var count = fontModel.rowCount()
+                            for (var i = 1; i <= count; ++i) {
+                                var row = (currentIndex + i) % count
+                                var family = fontModel.data(fontModel.index(row, 0), FontModel.FamilyRole)
+                                if (family.length > 0 && family[0].toLowerCase() === searchChar) {
+                                    currentIndex = row
+                                    fontModel.currentFamily = family
+                                    break
+                                    }
+                                }
+                            event.accepted = true
                             }
                         }
 
@@ -155,11 +185,13 @@ Item {
                         width: ListView.view.width
                         height: 32
                         focusPolicy: Qt.NoFocus
+                        autoRepeat: false
                         readonly property bool isCurrent: model.family === fontModel.currentFamily
-                        highlighted: isCurrent
+                        highlighted: isCurrent || ListView.isCurrentItem
 
                         background: Rectangle {
-                            color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                            color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700)
+                                  : (fontDelegate.ListView.isCurrentItem ? Material.color(Material.BlueGrey, Material.Shade600) : "transparent")
                             }
 
                         contentItem: RowLayout {
@@ -188,7 +220,7 @@ Item {
                         onClicked: {
                             fontList.currentIndex = index
                             fontModel.currentFamily = model.family
-                            fontListScope.forceActiveFocus()
+                            fontList.forceActiveFocus()
                             }
                         }
                     }
