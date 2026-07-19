@@ -23,39 +23,69 @@ Item {
     property string selectedFilePath: ""
     property string selectedFileType: ""
 
+    // Checkerboard component for icon thumbnails.
+    // Icons may be white-on-transparent or black-on-transparent;
+    // a two-tone checkerboard makes both visible.
+    Component {
+        id: checkerboardComponent
+
+        Canvas {
+            property int sqSize: 10
+            property color colLight: "#c8c8c8"
+            property color colDark: "#787878"
+
+            onPaint: {
+                let ctx = getContext("2d")
+                ctx.reset()
+                let w = width
+                let h = height
+                let s = sqSize
+                for (let y = 0; y < h; y += s) {
+                    for (let x = 0; x < w; x += s) {
+                        let odd = ((Math.floor(x / s) + Math.floor(y / s)) % 2) === 1
+                        ctx.fillStyle = odd ? colDark : colLight
+                        ctx.fillRect(x, y, s, s)
+                    }
+                }
+            }
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+        }
+    }
+
     ArtworkTreeModel {
         id: iconModel
         rootPath: ZCam.config ? ZCam.config.iconDirectory : ""
-        }
+    }
 
     Settings {
         id: iconSettings
         category: "MediaIconsPanel"
         property var splitState
         property string currentDir: ""
-        }
+    }
 
     Component.onCompleted: {
         if (iconSettings.splitState)
             splitView.restoreState(iconSettings.splitState)
         if (iconSettings.currentDir)
             currentDirPath = iconSettings.currentDir
-        }
+    }
 
     Connections {
         target: ZCam.config
         function onIconDirectoryChanged() {
             iconModel.rootPath = ZCam.config ? ZCam.config.iconDirectory : ""
-            }
-        ignoreUnknownSignals: true
         }
+        ignoreUnknownSignals: true
+    }
 
     property string currentDirPath: ""
 
     onCurrentDirPathChanged: {
         iconSettings.currentDir = currentDirPath
         imageGrid.model = iconModel.imageFiles(currentDirPath)
-        }
+    }
 
     SplitView {
         id: splitView
@@ -86,8 +116,8 @@ Item {
                     onCurrentChanged: function(current, previous) {
                         if (current.valid)
                             root.currentDirPath = iconModel.data(current, ArtworkTreeModel.PathRole)
-                        }
                     }
+                }
 
                 delegate: ItemDelegate {
                     id: dirDelegate
@@ -113,7 +143,7 @@ Item {
                     background: Rectangle {
                         anchors.fill: parent
                         color: dirDelegate.highlighted ? Material.color(Material.Teal, Material.Shade700) : "transparent"
-                        }
+                    }
 
                     contentItem: RowLayout {
                         spacing: 4
@@ -124,7 +154,7 @@ Item {
                             color: Material.foreground
                             Layout.preferredWidth: 12
                             verticalAlignment: Text.AlignVCenter
-                            }
+                        }
 
                         Label {
                             text: model.dirName
@@ -132,8 +162,8 @@ Item {
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
-                            }
                         }
+                    }
 
                     onClicked: {
                         treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect)
@@ -141,10 +171,10 @@ Item {
                         if (dirDelegate.hasChildren)
                             treeView.toggleExpanded(row)
                         dirTree.forceActiveFocus()
-                        }
                     }
                 }
             }
+        }
 
         // ── Right: image grid ─────────────────────────────────────────────
         ColumnLayout {
@@ -163,8 +193,8 @@ Item {
                     text: currentDirPath !== "" ? currentDirPath.split("/").pop() : qsTr("Icons")
                     color: Material.accentColor
                     font.bold: true
-                    }
                 }
+            }
 
             // Content area
             Item {
@@ -196,10 +226,18 @@ Item {
                                 id: tileBg
                                 anchors.fill: parent
                                 anchors.margins: 4
-                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "white"
+                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "transparent"
                                 border.width: isSelected ? 3 : 1
                                 border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
                                 radius: 4
+                                clip: true
+
+                                // Checkerboard background for transparent icons
+                                Loader {
+                                    anchors.fill: parent
+                                    active: !isSelected
+                                    sourceComponent: checkerboardComponent
+                                }
 
                                 ColumnLayout {
                                     anchors.fill: parent
@@ -214,15 +252,15 @@ Item {
                                         Image {
                                             anchors.fill: parent
                                             source: {
-                                                var ft = modelData.fileType.toLowerCase()
+                                                let ft = modelData.fileType.toLowerCase()
                                                 if (ft === "png" || ft === "svg")
                                                     return "file://" + modelData.filePath
                                                 return ""
-                                                }
+                                            }
                                             fillMode: Image.PreserveAspectFit
                                             sourceSize.width: 200
                                             sourceSize.height: 200
-                                            }
+                                        }
 
                                         // DXF icon fallback
                                         Label {
@@ -232,8 +270,8 @@ Item {
                                             color: "#333333"
                                             font.bold: true
                                             font.pixelSize: 24
-                                            }
                                         }
+                                    }
 
                                     // Filename
                                     Label {
@@ -244,9 +282,9 @@ Item {
                                         font.pixelSize: 10
                                         color: "#333333"
                                         horizontalAlignment: Text.AlignHCenter
-                                        }
                                     }
                                 }
+                            }
 
                             // Click to select + drag to 3D canvas
                             MouseArea {
@@ -256,43 +294,41 @@ Item {
                                 hoverEnabled: true
 
                                 onClicked: {
-                                    // Deselect all other tiles
-                                    for (var i = 0; i < imageGrid.count; ++i) {
-                                        var item = imageGrid.itemAtIndex(i)
+                                    for (let i = 0; i < imageGrid.count; ++i) {
+                                        let item = imageGrid.itemAtIndex(i)
                                         if (item)
                                             item.isSelected = false
-                                        }
+                                    }
                                     isSelected = true
                                     root.selectedFilePath = modelData.filePath
                                     root.selectedFileType = modelData.fileType
-                                    }
+                                }
 
                                 onPressed: {
-                                    // Ensure this tile is selected before dragging
-                                    for (var i = 0; i < imageGrid.count; ++i) {
-                                        var item = imageGrid.itemAtIndex(i)
+                                    for (let i = 0; i < imageGrid.count; ++i) {
+                                        let item = imageGrid.itemAtIndex(i)
                                         if (item)
                                             item.isSelected = false
-                                        }
+                                    }
                                     isSelected = true
                                     root.selectedFilePath = modelData.filePath
                                     root.selectedFileType = modelData.fileType
-                                    }
+                                }
 
                                 // Drag support for drag&drop to 3D canvas
                                 drag.target: parent
                                 drag.threshold: 10
-                                }
+                            }
 
                             // QML Drag — provides mimeData to DropArea
                             Drag.active: tileMouseArea.pressed
                             Drag.dragType: Drag.Automatic
                             Drag.mimeData: {
                                 "text/uri-list": "file://" + modelData.filePath
-                                }
                             }
                         }
                     }
+                }
 
                 // Label shown when no root path is configured
                 Label {
@@ -302,7 +338,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     visible: ZCam.config && ZCam.config.iconDirectory === ""
                     font.pixelSize: 14
-                    }
+                }
 
                 // Ctrl+wheel to scale tiles — placed after ScrollView so it is on top
                 MouseArea {
@@ -315,13 +351,13 @@ Item {
                             else
                                 root.tileScale = Math.max(0.3, root.tileScale / 1.15)
                             wheel.accepted = true
-                            }
+                        }
                         else {
                             wheel.accepted = false
-                            }
                         }
                     }
                 }
             }
         }
     }
+}
