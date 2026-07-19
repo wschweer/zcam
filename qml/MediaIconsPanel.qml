@@ -274,14 +274,25 @@ Item {
                                     }
 
                                     // Filename
-                                    Label {
+                                    Rectangle {
                                         Layout.fillWidth: true
                                         Layout.margins: 2
-                                        text: modelData.fileName
-                                        elide: Text.ElideMiddle
-                                        font.pixelSize: 10
-                                        color: "#333333"
-                                        horizontalAlignment: Text.AlignHCenter
+                                        color: "#e0e0e0"
+                                        radius: 2
+                                        implicitHeight: filenameLabel.implicitHeight + 4
+
+                                        Label {
+                                            id: filenameLabel
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 4
+                                            anchors.rightMargin: 4
+                                            text: modelData.fileName
+                                            elide: Text.ElideMiddle
+                                            font.pixelSize: 13
+                                            color: "#333333"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
                                     }
                                 }
                             }
