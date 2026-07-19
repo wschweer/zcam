@@ -56,7 +56,22 @@ class Element3d : public Element
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
       PROPV(QVector3D, rot, QVector3D(0.0, 0.0, 0.0))
-      PROPV(QVector3D, scale, QVector3D(1.0, 1.0, 1.0))
+      // Custom scale property: WRITE routes through set_scaleAR() which
+      // corrects the value according to the lockScale aspect-ratio mode.
+      Q_PROPERTY(QVector3D scale READ scale WRITE set_scaleAR NOTIFY scaleChanged)
+    public:
+      QVector3D scale() const { return _scale; }
+      void set_scaleAR(QVector3D v);
+      void set_scale(QVector3D v) {
+            if (v != _scale) {
+                  _scale = v;
+                  emit scaleChanged();
+                  }
+            }
+    Q_SIGNALS:
+      void scaleChanged();
+    protected:
+      QVector3D _scale{QVector3D(1.0, 1.0, 1.0)};
 
       PROPV(bool, selectable, true)
       PROPV(int, lockScale, static_cast<int>(LockScaleMode::Square))
@@ -185,7 +200,6 @@ class Element3d : public Element
       QMatrix4x4 globalMatrix() const;
       void strokeAndFill();
 
-      Q_INVOKABLE void set_scaleAR(QVector3D v);
       };
 
 extern void closePath(PathList& _pathList);

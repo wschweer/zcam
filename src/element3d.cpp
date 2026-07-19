@@ -362,10 +362,10 @@ void Element3d::updateSelectionGeometry() {
 //    yet preserves the hue identity.
 //---------------------------------------------------------
 static QColor adjustColorTone(const QColor& c, double tone) {
-      constexpr double blend = 0.2;   // 20 % shift
-      int r = c.red();
-      int g = c.green();
-      int b = c.blue();
+      constexpr double blend = 0.2; // 20 % shift
+      int r                  = c.red();
+      int g                  = c.green();
+      int b                  = c.blue();
       if (tone > 0.0) {
             // Blend toward white
             r = static_cast<int>(std::round(r + (255 - r) * blend * tone));
@@ -375,16 +375,11 @@ static QColor adjustColorTone(const QColor& c, double tone) {
       else {
             // Blend toward black
             double f = blend * (-tone);
-            r = static_cast<int>(std::round(r * (1.0 - f)));
-            g = static_cast<int>(std::round(g * (1.0 - f)));
-            b = static_cast<int>(std::round(b * (1.0 - f)));
+            r        = static_cast<int>(std::round(r * (1.0 - f)));
+            g        = static_cast<int>(std::round(g * (1.0 - f)));
+            b        = static_cast<int>(std::round(b * (1.0 - f)));
             }
-      return QColor(
-            std::clamp(r, 0, 255),
-            std::clamp(g, 0, 255),
-            std::clamp(b, 0, 255),
-            c.alpha()
-            );
+      return QColor(std::clamp(r, 0, 255), std::clamp(g, 0, 255), std::clamp(b, 0, 255), c.alpha());
       }
 
 //---------------------------------------------------------
@@ -397,15 +392,11 @@ static QColor adjustColorTone(const QColor& c, double tone) {
 QColor Element3d::curColor() const {
       if (zcam->hoverElement() == this) {
             // Light colours → darken, dark colours → lighten
-            double lum = 0.299 * _color.redF()
-                       + 0.587 * _color.greenF()
-                       + 0.114 * _color.blueF();
+            double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
             return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
             }
       if (zcam->currentElement() == this) {
-            double lum = 0.299 * _color.redF()
-                       + 0.587 * _color.greenF()
-                       + 0.114 * _color.blueF();
+            double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
             return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
             }
       return _color;

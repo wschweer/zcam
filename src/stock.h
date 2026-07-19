@@ -31,10 +31,10 @@ class Stock : public Element3d
                   { "name": "color",         "label": "Color",    "type": "color","default": "green" },
                   { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
                   { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
-                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
+                  { "name": "scale",         "label": "Scale",    "type": "scale", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
                   { "name": "lockScale",     "label": "Lock", "type": "lockScale", "default": 2 }
                   ]
-                        })"};
+                              })"};
 
     public slots:
       void update(int flags = -1) override;

@@ -71,7 +71,7 @@ class Cad : public Element3d
                     {
                       "name": "scale",
                       "label": "Scale",
-                      "type": "vector3d",
+                      "type": "scale",
                       "min": 0.001,
                       "max": 1000,
                       "default": [

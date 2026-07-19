@@ -139,7 +139,7 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
       QMetaProperty mp = meta->property(idx);
       QVariant value   = readPropertyRaw(obj, meta, gadget, idx);
 
-      if (type == "vector3d") {
+      if (type == "vector3d" || type == "scale") {
             QVector3D v        = value.value<QVector3D>();
             nlohmann::json arr = nlohmann::json::array();
             arr.push_back(v.x());
@@ -206,7 +206,7 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
             return false;
       QMetaProperty mp = meta->property(idx);
 
-      if (type == "vector3d") {
+      if (type == "vector3d" || type == "scale") {
             QVector3D v;
             v.setX(jval.at(0).get<double>());
             v.setY(jval.at(1).get<double>());

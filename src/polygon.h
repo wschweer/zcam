@@ -77,7 +77,7 @@ class Polygon : public Element3d
                     {
                       "name": "scale",
                       "label": "Scale",
-                      "type": "vector3d",
+                      "type": "scale",
                       "min": 0.001,
                       "max": 1000.0,
                       "precision": 3,

@@ -378,6 +378,7 @@ Item {
                         case "int":       return intDelegate
                         case "float":     return floatDelegate
                         case "vector3d":  return vector3dDelegate
+                        case "scale":      return vector3dDelegate
                         case "vector2d":  return vector2dDelegate
                         case "font":      return fontDelegate
                         case "halign":    return halignDelegate
@@ -674,6 +675,7 @@ Item {
                                         case "int":       return intDelegate
                                         case "float":     return floatDelegate
                                         case "vector3d":  return vector3dDelegate
+                                        case "scale":      return vector3dDelegate
                                         case "vector2d":  return vector2dDelegate
                                         case "font":      return fontDelegate
                                         case "halign":    return halignDelegate

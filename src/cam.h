@@ -39,7 +39,7 @@ class Cam : public Element3d
                     "label": "State" },
                   { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
                   { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
-                  { "name": "scale",         "label": "Scale",    "type": "vector3d", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
+                  { "name": "scale",         "label": "Scale",    "type": "scale", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
                   { "name": "lockScale",     "label": "Lock", "type": "lockScale", "default": 2 },
                   { "name": "line", "type": "line" },
                   { "row": { "panelRows":    { "label": "Rows",  "type": "int", "min": 1, "max": 100, "default": 1 },
@@ -49,7 +49,7 @@ class Cam : public Element3d
                               "panelVDistance": { "label": "V", "type": "float", "unit": "mm", "min": 0.0, "max": 50.0, "default": 0.0 } },
                     "label": "Dist." }
                   ]
-                                          })"};
+                                                })"};
 
     signals:
       void panelChanged();

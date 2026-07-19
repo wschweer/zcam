@@ -29,11 +29,13 @@ class Ellipse : public Element3d
 
       // Custom size property with lockSize enforcement in set_size().
       Q_PROPERTY(QVector2D size READ size WRITE set_size NOTIFY sizeChanged)
+
     public:
       QVector2D size() const { return _size; }
       void set_size(QVector2D v);
     Q_SIGNALS:
       void sizeChanged();
+
     protected:
       QVector2D _size {QVector2D(40, 40)};
       PROPV(int, lockSize, static_cast<int>(LockScaleMode::Square))
@@ -92,7 +94,7 @@ class Ellipse : public Element3d
                     {
                       "name": "scale",
                       "label": "Scale",
-                      "type": "vector3d",
+                      "type": "scale",
                       "min": 0.001,
                       "max": 1000,
                       "default": [
