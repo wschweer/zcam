@@ -196,9 +196,9 @@ Item {
                                 id: tileBg
                                 anchors.fill: parent
                                 anchors.margins: 4
-                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : Material.color(Material.BlueGrey, Material.Shade900)
+                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "white"
                                 border.width: isSelected ? 3 : 1
-                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade700)
+                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
                                 radius: 4
 
                                 ColumnLayout {
@@ -229,7 +229,7 @@ Item {
                                             anchors.centerIn: parent
                                             text: "DXF"
                                             visible: modelData.fileType.toLowerCase() === "dxf"
-                                            color: Material.foreground
+                                            color: "#333333"
                                             font.bold: true
                                             font.pixelSize: 24
                                             }
@@ -242,7 +242,7 @@ Item {
                                         text: modelData.fileName
                                         elide: Text.ElideMiddle
                                         font.pixelSize: 10
-                                        color: Material.foreground
+                                        color: "#333333"
                                         horizontalAlignment: Text.AlignHCenter
                                         }
                                     }
