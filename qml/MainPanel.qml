@@ -23,6 +23,10 @@ import ZCam
 Item {
     id: root
 
+    // ── External control: toggle MediaBrowser from Main.qml ──────────────────
+    property bool mediaBrowserVisible: panelSettings.mediaBrowserVisible
+    onMediaBrowserVisibleChanged: panelSettings.mediaBrowserVisible = mediaBrowserVisible
+
     // ── Persistent splitter states ────────────────────────────────────────────
     Settings {
         id: panelSettings
@@ -40,6 +44,9 @@ Item {
             innerSplit.restoreState(panelSettings.innerSplitState);
         if (panelSettings.mediaSplitState && mediaBrowser.visible)
             mediaSplit.restoreState(panelSettings.mediaSplitState);
+        // Ensure the media browser gets a sensible width when first shown
+        if (mediaBrowser.visible && mediaBrowser.width < 250)
+            mediaBrowser.width = 300;
         }
 
     // ── Outer horizontal split: left panel | 3-D viewport (+ media browser) ─
@@ -63,8 +70,8 @@ Item {
 
             // Upper half: scene tree
             Flickable {
-                    SplitView.preferredHeight: 300
-                    SplitView.minimumHeight: 80
+                SplitView.preferredHeight: 300
+                SplitView.minimumHeight: 80
                 Rectangle {
                     anchors.fill: parent
                     color: Material.color(Material.BlueGrey, Material.Shade900)
@@ -77,8 +84,8 @@ Item {
 
             // Lower half: inspector
             Flickable {
-                    SplitView.fillHeight: true
-                    SplitView.minimumHeight: 80
+                SplitView.fillHeight: true
+                SplitView.minimumHeight: 80
                 Rectangle {
                     anchors.fill: parent
                     color: Material.color(Material.BlueGrey, Material.Shade800)
@@ -105,10 +112,9 @@ Item {
             MediaBrowser {
                 id: mediaBrowser
                 objectName: "mediaBrowser"
-                visible: panelSettings.mediaBrowserVisible
+                visible: root.mediaBrowserVisible
                 SplitView.preferredWidth: 300
-                SplitView.minimumWidth: 200
-                onVisibleChanged: panelSettings.mediaBrowserVisible = visible
+                SplitView.minimumWidth: 250
                 }
 
             onResizingChanged: if (!resizing)

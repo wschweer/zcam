@@ -800,15 +800,11 @@ Window {
         }
 
     // ── Media Browser visibility binding ──────────────────────────────────────
-    //   The MediaBrowser lives inside MainPanel, so we toggle its
-    //   visibility via a property binding on the mainPanel item.
-    Connections {
-        target: actionShowMediaBrowser
-        function onCheckedChanged() {
-            // Find the MediaBrowser inside MainPanel and toggle visibility
-            // MainPanel.mediaBrowser is found via object name
-            if (mainPanel.mediaBrowser)
-                mainPanel.mediaBrowser.visible = actionShowMediaBrowser.checked
-            }
+    //   The MediaBrowser lives inside MainPanel. Toggle its visibility
+    //   via the mediaBrowserVisible property exposed by MainPanel.
+    Binding {
+        target: mainPanel
+        property: "mediaBrowserVisible"
+        value: actionShowMediaBrowser.checked
         }
     }
