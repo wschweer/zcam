@@ -675,32 +675,37 @@ Item {
                     return;
                     }
                 // Pick a new element under the cursor.
+                // NOTE: ZCam.currentElement is NOT set here — it is
+                // set by ZCam.mousePress() below.  This allows
+                // mousePress to distinguish between a first click
+                // (select the element, show bounding box) and a
+                // second click on an already-selected polygon
+                // (select a segment instead).
                 curNode = pickModel(mouse.x, mouse.y);
                 if (curNode && curNode.element) {
-                    ZCam.currentElement = curNode.element;
                     if (!curNode.element.draggable)
                         curNode = null;
                     } else {
-                    // Clicked on empty space — clear segment selection
-                    // and rebuild handles so all vertices reappear.
-                    if (ZCam.currentElement) {
-                        ZCam.clearSegmentSelection(ZCam.currentElement);
-                        rebuildVertexHandles();
-                        }
+                    // Clicked on empty space — clear selection.
+                    // mousePress(null) below will call
+                    // setCurrentElement(null) which also clears
+                    // any segment selection on the old element.
                     }
                 ZCam.mousePress(curNode ? curNode.element : null, mouse.buttons, mouse.modifiers, eLastPos.x, eLastPos.y);
-                // After mousePress (which may have selected a segment),
-                // rebuild handles to reflect the new selection state.
-                if (curNode && curNode.element) {
+                // After mousePress (which may have selected a segment
+                // or set currentElement), rebuild handles to reflect
+                // the new selection state.
+                var el = ZCam.currentElement;
+                if (el) {
                     rebuildVertexHandles();
                     // Only start element drag if no segment is selected
                     // (otherwise the user is doing segment-level editing).
                     var hasSegSel = false;
                     try {
-                        hasSegSel = curNode.element.selectedSegment >= 0;
+                        hasSegSel = el.selectedSegment >= 0;
                         } catch (e) {}
-                    if (curNode.element.draggable && !hasSegSel)
-                        ZCam.startElementDrag(curNode.element);
+                    if (el.draggable && !hasSegSel)
+                        ZCam.startElementDrag(el);
                     }
                 } else if (mouse.button == Qt.RightButton) {
                 // Right-click finishes the current polygon drawing.
