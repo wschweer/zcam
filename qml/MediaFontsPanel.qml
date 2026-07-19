@@ -121,24 +121,31 @@ Item {
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Delete && currentIndex >= 0) {
+                        var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                        if (fontModel.showFavorites)
+                            fontModel.removeFavorite(family)
+                        event.accepted = true
+                        }
+                    }
+
                 onCurrentIndexChanged: {
                     if (currentIndex >= 0 && currentIndex < fontModel.rowCount())
                         fontModel.currentFamily = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
                     }
 
-                delegate: ItemDelegate {
-                    id: fontDelegate
+                delegate: Item {
                     width: ListView.view.width
                     height: 32
-                    focusPolicy: Qt.NoFocus
                     readonly property bool isCurrent: model.family === fontModel.currentFamily
-                    highlighted: isCurrent
 
-                    background: Rectangle {
-                        color: fontDelegate.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                    Rectangle {
+                        anchors.fill: parent
+                        color: parent.isCurrent ? Material.color(Material.Teal, Material.Shade700) : "transparent"
                         }
 
-                    contentItem: RowLayout {
+                    RowLayout {
                         anchors.fill: parent
                         spacing: 4
 
@@ -155,20 +162,18 @@ Item {
                         Label {
                             text: model.family
                             font.family: model.family
-                            color: fontDelegate.isCurrent ? Material.accentColor : Material.foreground
+                            color: parent.parent.isCurrent ? Material.accentColor : Material.foreground
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                             }
                         }
 
-                    onClicked: {
-                        fontList.currentIndex = index
-                        fontList.forceActiveFocus()
-                        }
-
-                    Keys.onDeletePressed: {
-                        if (fontModel.showFavorites)
-                            fontModel.removeFavorite(model.family)
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            fontList.currentIndex = index
+                            fontList.forceActiveFocus()
+                            }
                         }
                     }
                 }
