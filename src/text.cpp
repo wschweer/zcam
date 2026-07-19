@@ -342,23 +342,21 @@ bool Text::setCursorPositionFromWorld(const QVector3D& worldPos) {
       if (lx < bbox.left() / FONT_SCALE - 2.0 || lx > bbox.right() / FONT_SCALE + 2.0 ||
           ly < bbox.top() / FONT_SCALE - 2.0 || ly > bbox.bottom() / FONT_SCALE + 2.0)
             return false;
-
       // Determine which row the click falls on.
-      // In text layout coordinates, row 0 starts at y = -fm.ascent().
-      // Each subsequent row advances by ls (negative, going downward).
-      // So row i has its vertical position at y = -ascent + i * ls.
+      // The cursor Y position for row i (in local coords) is:
+      //   y_i = -i * fontLineSpacing()
+      // where fontLineSpacing() = lineSpacing * lineSpacing% * 0.01 * FONT_SCALE (positive).
+      // Row 0 is at y=0, row 1 at y=-fontLineSpacing(), etc.
+      // We divide ly by -fontLineSpacing() to get the row number.
+      double fls = fontLineSpacing();  // positive
       QFontMetricsF fm(font);
-      double ascent = fm.ascent();
-      double ls     = -fm.lineSpacing() * lineSpacing() * 0.01; // negative, same as in updateText
-
       QStringList sl = text().split('\n');
       int numRows    = sl.size();
       if (numRows == 0)
             return false;
 
-      // rowF = (ly - (-ascent)) / ls   — ls is negative so this gives
-      // 0 for row 0, 1 for row 1, etc.
-      double rowF = (ly - (-ascent)) / ls;
+      // rowF = -ly / fls
+      double rowF = -ly / fls;
       int newRow  = std::round(rowF);
       if (newRow < 0)
             newRow = 0;
