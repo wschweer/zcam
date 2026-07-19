@@ -57,7 +57,7 @@ class Config : public QObject
       PROPV(double, gridSpacing, 10.0)
       PROPV(QString, defaultMachine, QString())
       PROPV(QString, artworkDirectory, QString())
-      PROPV(QString, iconDirectory, QString())
+      PROPV(QString, iconDirectory, QString::fromUtf8("/usr/share/icons"))
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -204,7 +204,7 @@ class Config : public QObject
                       "label": "Icon Directory",
                       "type": "singleline",
                       "cat": "Project",
-                      "default": ""
+                      "default": "/usr/share/icons"
                     }
                   ]
                       })json"};
