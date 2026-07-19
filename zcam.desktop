@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ZCam
+Comment=CAM application for laser cutting and CNC machining
+Exec=zcam
+Icon=zcam
+Terminal=false
+Categories=Graphics;Engineering;3DGraphics;

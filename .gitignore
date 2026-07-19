@@ -9,3 +9,9 @@ zcam.log*
 .qmlls.ini
 LOG
 mops*
+AppDir
+*.AppImage
+tools/linuxdeploy
+tools/linuxdeploy-qt
+tools/linuxdeploy-plugin-qt.AppImage
+tools/lib
