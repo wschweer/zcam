@@ -13,6 +13,10 @@ set(CMAKE_BUILD_TYPE Debug)
 #set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_AUTOMOC ON)
 
+# linuxdeploy handles library bundling; skip RPATH rewriting on install
+set(CMAKE_SKIP_INSTALL_RPATH ON)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration)
 
@@ -205,3 +209,10 @@ target_include_directories(zcam PRIVATE src)
 target_include_directories(zcam PRIVATE clipper2/include)
 target_include_directories(zcam PRIVATE tess2)
 target_include_directories(zcam PRIVATE libdxfrw/src)
+
+# ---------------------------------------------------------------------------
+# Install targets – required by "make appimage" (linuxdeploy)
+# ---------------------------------------------------------------------------
+install(TARGETS zcam RUNTIME DESTINATION bin)
+install(FILES zcam.desktop DESTINATION share/applications)
+install(FILES zcam.png DESTINATION share/icons/hicolor/256x256/apps RENAME zcam.png)

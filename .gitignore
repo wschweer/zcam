@@ -10,3 +10,9 @@ zcam.log*
 LOG
 mops*
 *.zcam
+AppDir
+*.AppImage
+tools/linuxdeploy
+tools/linuxdeploy-qt
+tools/linuxdeploy-plugin-qt.AppImage
+tools/lib
