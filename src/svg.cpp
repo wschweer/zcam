@@ -52,6 +52,12 @@ void ZCam::importSvg(const QString& path) {
       // Pixel → millimetre conversion factor (96 DPI).
       constexpr double pxToMm = 25.4 / 96.0;
 
+      // SVG uses a top-left origin with the Y-axis pointing downward.
+      // CAM/CAD uses a bottom-left origin with Y pointing upward.
+      // Mirror all Y coordinates about the SVG height so the image is
+      // not rendered upside-down.
+      const double svgHeight = image->height;
+
       // Build a PainterPath from all shapes and sub-paths in the SVG.
       // All coordinates are converted from pixels to millimetres.
       PainterPath pp;
@@ -63,14 +69,14 @@ void ZCam::importSvg(const QString& path) {
                   Vec2d last;
                   for (int i = 0; i < svgPath->npts - 1; i += 3) {
                         float* p = &svgPath->pts[i * 2];
-                        Vec2d p1(p[0] * pxToMm, p[1] * pxToMm);
+                        Vec2d p1(p[0] * pxToMm, (svgHeight - p[1]) * pxToMm);
                         if (i == 0) {
                               pp.moveTo(p1);
                               first = p1;
                               }
-                        Vec2d p2(p[2] * pxToMm, p[3] * pxToMm);
-                        Vec2d p3(p[4] * pxToMm, p[5] * pxToMm);
-                        Vec2d p4(p[6] * pxToMm, p[7] * pxToMm);
+                        Vec2d p2(p[2] * pxToMm, (svgHeight - p[3]) * pxToMm);
+                        Vec2d p3(p[4] * pxToMm, (svgHeight - p[5]) * pxToMm);
+                        Vec2d p4(p[6] * pxToMm, (svgHeight - p[7]) * pxToMm);
                         pp.cubicTo(p2, p3, p4);
                         last = p4;
                         }
