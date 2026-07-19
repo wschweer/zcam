@@ -148,19 +148,20 @@ Item {
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     onCurrentIndexChanged: {
-                        var family = ""
-                        if (currentIndex >= 0 && currentIndex < fontModel.rowCount())
-                            family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
-                        if (family === undefined)
+                        console.log("currentIndex changed:", currentIndex)
+                        var family = fontModel.familyAt(currentIndex)
+                        console.log("family from model:", family)
+                        if (family === undefined || family === null)
                             family = ""
                         root.selectedFamily = family
+                        console.log("selectedFamily:", root.selectedFamily)
                         if (family !== fontModel.currentFamily)
                             fontModel.currentFamily = family
                         }
 
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Delete && currentIndex >= 0) {
-                            var family = fontModel.data(fontModel.index(currentIndex, 0), FontModel.FamilyRole)
+                            var family = fontModel.familyAt(currentIndex)
                             if (fontModel.showFavorites)
                                 fontModel.removeFavorite(family)
                             event.accepted = true
@@ -199,6 +200,7 @@ Item {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
+                                console.log("mouse clicked index:", index, "model.family:", model.family)
                                 fontList.currentIndex = index
                                 fontList.forceActiveFocus()
                                 }
@@ -217,14 +219,24 @@ Item {
             // Current font name as title
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 28
+                Layout.preferredHeight: 56
                 color: Material.color(Material.BlueGrey, Material.Shade900)
 
-                Label {
+                Column {
                     anchors.centerIn: parent
-                    text: root.selectedFamily
-                    color: Material.accentColor
-                    font.bold: true
+                    spacing: 2
+
+                    Label {
+                        text: root.selectedFamily
+                        color: Material.accentColor
+                        font.bold: true
+                        }
+
+                    Label {
+                        text: "idx:" + fontList.currentIndex + " sel:" + root.selectedFamily + " fam:" + fontModel.currentFamily
+                        color: Material.foreground
+                        font.pixelSize: 10
+                        }
                     }
                 }
 

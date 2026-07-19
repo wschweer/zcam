@@ -147,6 +147,16 @@ QStringList FontModel::weightsForFamily(const QString& family) const {
       }
 
 //---------------------------------------------------------
+//   familyAt
+//---------------------------------------------------------
+
+QString FontModel::familyAt(int row) const {
+      if (row < 0 || row >= _visibleFamilies.size())
+            return {};
+      return _visibleFamilies[row];
+      }
+
+//---------------------------------------------------------
 //   addFavorite
 //---------------------------------------------------------
 

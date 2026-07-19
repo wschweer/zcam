@@ -56,6 +56,7 @@ class FontModel : public QAbstractListModel
 
       Q_INVOKABLE QStringList stylesForFamily(const QString& family) const;
       Q_INVOKABLE QStringList weightsForFamily(const QString& family) const;
+      Q_INVOKABLE QString familyAt(int row) const;
       Q_INVOKABLE void addFavorite(const QString& family);
       Q_INVOKABLE void removeFavorite(const QString& family);
       Q_INVOKABLE bool isFavorite(const QString& family) const;
