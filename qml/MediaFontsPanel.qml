@@ -96,7 +96,7 @@ Item {
                 currentIndex: {
                     var idx = -1
                     for (var i = 0; i < fontModel.rowCount(); ++i) {
-                        if (fontModel.data(fontModel.index(i), FontModel.FamilyRole) === fontModel.currentFamily) {
+                        if (fontModel.data(fontModel.index(i, 0), FontModel.FamilyRole) === fontModel.currentFamily) {
                             idx = i
                             break
                             }
@@ -110,11 +110,6 @@ Item {
                     width: ListView.view.width
                     height: 32
 
-                    required property string model_family
-                    required property bool model_isFavorite
-                    property string modelData_family: model_family
-                    property bool modelData_isFavorite: model_isFavorite
-
                     contentItem: RowLayout {
                         anchors.fill: parent
                         spacing: 4
@@ -124,14 +119,14 @@ Item {
                             text: "★"
                             color: Material.accentColor
                             font.pixelSize: 14
-                            visible: model_isFavorite
+                            visible: model.isFavorite
                             Layout.preferredWidth: 20
                             }
 
                         // Font family name rendered in the actual font
                         Label {
-                            text: model_family
-                            font.family: model_family
+                            text: model.family
+                            font.family: model.family
                             color: ListView.isCurrentItem ? Material.accentColor : Material.foreground
                             Layout.fillWidth: true
                             elide: Text.ElideRight
@@ -139,13 +134,13 @@ Item {
                         }
 
                     onClicked: {
-                        fontModel.currentFamily = model_family
+                        fontModel.currentFamily = model.family
                         fontList.currentIndex = index
                         }
 
                     Keys.onDeletePressed: {
                         if (fontModel.showFavorites)
-                            fontModel.removeFavorite(model_family)
+                            fontModel.removeFavorite(model.family)
                         }
                     }
                 }
