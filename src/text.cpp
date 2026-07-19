@@ -55,13 +55,6 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       connect(this, &Text::alignChanged, [this]() { update(TEXT); });
       }
 
-//  Text::toJson() and Text::fromJson() are no longer overridden:
-//  Element3d::toJson() and Element3d::fromJson() now use the
-//  properties() JSON definition to serialise all user-editable
-//  properties (text, fill, fontFamily, pointSize, weight, stretch,
-//  letterSpacing, wordSpacing, lineSpacing, align, show, burn, color,
-//  pos, rot, scale, mirrorX, mirrorY) generically.
-
 //---------------------------------------------------------
 //   fontLineSpacing
 //---------------------------------------------------------
@@ -300,7 +293,7 @@ void Text::updateSelectionGeometry() {
                   QFontMetrics fm(font);
                   double w = fm.averageCharWidth() * FONT_SCALE;
                   double h = fm.lineSpacing() * FONT_SCALE;
-                  bbox = QRectF(0.0, -fm.ascent() * FONT_SCALE, w, h);
+                  bbox     = QRectF(0.0, -fm.ascent() * FONT_SCALE, w, h);
                   }
             Clipper2Lib::PathD rect;
             rect.push_back({bbox.left(), bbox.top()});
@@ -320,6 +313,83 @@ void Text::updateSelectionGeometry() {
             }
       else
             Element3d::updateSelectionGeometry();
+      }
+
+//---------------------------------------------------------
+//   setCursorPositionFromWorld
+//    Set the cursor (row/column) based on a world-space position.
+//    Returns true if the position was within the text bounding box.
+//---------------------------------------------------------
+
+bool Text::setCursorPositionFromWorld(const QVector3D& worldPos) {
+      // Convert world position to local coordinates
+      QMatrix4x4 inv = globalMatrix();
+      bool ok;
+      inv = inv.inverted(&ok);
+      if (!ok)
+            return false;
+      QVector3D localPos = inv.map(worldPos);
+
+      // Text layout coordinates are scaled by FONT_SCALE relative to
+      // the local coordinate system, so divide to get layout coords.
+      double lx = localPos.x() / FONT_SCALE;
+      double ly = localPos.y() / FONT_SCALE;
+
+      // Check if the click is within the bounding box
+      QRectF bbox = boundingBox();
+      if (bbox.isNull() || bbox.isEmpty())
+            return false;
+      if (lx < bbox.left() / FONT_SCALE - 2.0 || lx > bbox.right() / FONT_SCALE + 2.0 ||
+          ly > bbox.top() / FONT_SCALE + 2.0 || ly < bbox.bottom() / FONT_SCALE - 2.0)
+            return false;
+
+      // Determine which row the click falls on.
+      // In text layout coordinates, row 0 starts at y = -fm.ascent().
+      // Each subsequent row advances by ls (negative, going downward).
+      // So row i has its vertical position at y = -ascent + i * ls.
+      QFontMetricsF fm(font);
+      double ascent = fm.ascent();
+      double ls     = -fm.lineSpacing() * lineSpacing() * 0.01; // negative, same as in updateText
+
+      QStringList sl = text().split('\n');
+      int numRows    = sl.size();
+      if (numRows == 0)
+            return false;
+
+      // rowF = (ly - (-ascent)) / ls   — ls is negative so this gives
+      // 0 for row 0, 1 for row 1, etc.
+      double rowF = (ly - (-ascent)) / ls;
+      int newRow  = std::round(rowF);
+      if (newRow < 0)
+            newRow = 0;
+      if (newRow >= numRows)
+            newRow = numRows - 1;
+
+      // Determine the column within the row.
+      // The x position of the start of each row in layout coords is lineOffsets[row].
+      // The cursor x in layout coords is lx - lineOffsets[row].
+      double rowX = lx - lineOffsets[newRow];
+
+      // Find the column whose horizontal advance is closest to rowX.
+      QString rowText = sl[newRow];
+      QTextOption to;
+      to.setUseDesignMetrics(true);
+      int newCol      = 0;
+      double bestDist = std::numeric_limits<double>::max();
+      for (int c = 0; c <= rowText.size(); ++c) {
+            QString s   = rowText.left(c);
+            double adv  = fm.horizontalAdvance(s, to);
+            double dist = std::abs(adv - rowX);
+            if (dist < bestDist) {
+                  bestDist = dist;
+                  newCol   = c;
+                  }
+            }
+
+      cursorRow    = newRow;
+      cursorColumn = newCol;
+      update(CURSOR_POS);
+      return true;
       }
 
 //---------------------------------------------------------

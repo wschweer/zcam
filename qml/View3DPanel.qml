@@ -541,6 +541,19 @@ Item {
             lastPos = Qt.vector2d(mouse.x, mouse.y);
             eLastPos = screenToScene(mouse.x, mouse.y);
             if (mouse.button == Qt.LeftButton) {
+                // If a text element is being edited, a click inside
+                // the text bounding box moves the cursor to that
+                // position. A click outside exits editing mode.
+                if (panel._editingText && eLastPos) {
+                    if (panel._editingText.setCursorPositionFromWorld(eLastPos)) {
+                        view3D.forceActiveFocus();
+                        return;
+                        }
+                    // Click was outside the text bounding box — exit editing
+                    panel._editingText.setEditing(false);
+                    panel._editingText = null;
+                    ZCam.currentTool = "pointer";
+                    }
                 // When actively drawing a polygon, skip handle
                 // picking — clicks continue the polygon, not drag
                 // the preview handle.

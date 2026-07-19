@@ -275,4 +275,5 @@ class Text : public Element3d
       bool editing() const { return _editing; }
       Q_INVOKABLE void setEditing(bool v);
       Q_INVOKABLE bool keyEvent(int key, int modifiers, const QString& s);
+      Q_INVOKABLE bool setCursorPositionFromWorld(const QVector3D& worldPos);
       };
