@@ -343,9 +343,14 @@ Item {
         Connections {
             target: ZCam
             function onCurrentElementChanged() {
-                if (ZCam.currentElement)
+                if (ZCam.currentElement) {
                     treeSettings.currentElement = ZCam.currentElement.name;
-                root.syncSelection();
+                    root.syncSelection();
+                    }
+                else {
+                    treeSettings.currentElement = "";
+                    treeView.selectionModel.clear();
+                    }
                 }
             }
 
