@@ -492,7 +492,7 @@ Item {
         property vector3d eLastPos: Qt.vector3d(0, 0, 0)
         property vector3d pos3d: Qt.vector3d(0, 0, 0)
         property real frameDelta: 10
-        property Node curNode: null
+        property var curNode: null
         property variant vertexDragHandle: null
         acceptedButtons: Qt.AllButtons
 
