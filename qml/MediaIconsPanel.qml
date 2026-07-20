@@ -144,8 +144,10 @@ Item {
                     id: dirTreeSelModel
                     model: iconModel
                     onCurrentChanged: function(current, previous) {
-                        if (current.valid)
-                            root.currentDirPath = iconModel.data(current, ArtworkTreeModel.PathRole)
+                        if (current.valid) {
+                            var p = iconModel.data(current, ArtworkTreeModel.PathRole)
+                            root.currentDirPath = p !== undefined ? p : ""
+                        }
                     }
                 }
 

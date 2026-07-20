@@ -140,10 +140,12 @@ Item {
                     id: dirTreeSelModel
                     model: artworkModel
                     onCurrentChanged: function(current, previous) {
-                        if (current.valid)
-                            root.currentDirPath = artworkModel.data(current, ArtworkTreeModel.PathRole)
+                        if (current.valid) {
+                            var p = artworkModel.data(current, ArtworkTreeModel.PathRole)
+                            root.currentDirPath = p !== undefined ? p : ""
                         }
                     }
+                }
 
                 delegate: ItemDelegate {
                     id: dirDelegate

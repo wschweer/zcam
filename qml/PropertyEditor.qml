@@ -566,7 +566,8 @@ Item {
                             item.subValue = Qt.binding(() => subLoader.subValue)
                             item.subMeta   = subLoader.subMeta
                             item.setSub    = function(v) {
-                                rowContainer.setSubValue(subLoader.subName, v)
+                                if (rowContainer.setSubValue)
+                                    rowContainer.setSubValue(subLoader.subName, v)
                                 }
                             }
                         }
@@ -835,7 +836,8 @@ Item {
                             item.subValue = Qt.binding(() => subLoaderCol.subValue)
                             item.subMeta   = subLoaderCol.subMeta
                             item.setSub    = function(v) {
-                                rowContainerCol.setSubValue(subLoaderCol.subName, v)
+                                if (rowContainerCol.setSubValue)
+                                    rowContainerCol.setSubValue(subLoaderCol.subName, v)
                                 }
                             }
                         }
@@ -1976,7 +1978,7 @@ Item {
                         anchors.fill: parent
                         text: rowSingle.propValue !== undefined ? rowSingle.propValue : ""
                         onEditingFinished: rowSingle.setModelValue(text)
-                        horizontalAlignment: TextInput.AlignRight
+                        horizontalAlignment: TextInput.AlignLeft
                         verticalAlignment: TextInput.AlignVCenter
                         color: "#ffffff"
                         clip: true
@@ -2018,7 +2020,7 @@ Item {
                         anchors.fill: parent
                         text: rowString.propValue !== undefined ? rowString.propValue : ""
                         onEditingFinished: rowString.setModelValue(text)
-                        horizontalAlignment: TextInput.AlignRight
+                        horizontalAlignment: TextInput.AlignLeft
                         verticalAlignment: TextInput.AlignVCenter
                         color: "#ffffff"
                         clip: true

@@ -59,6 +59,10 @@ bool Machine::fromJson(const json& data) {
             const QMetaObject* meta = &Machine::staticMetaObject;
             for (const auto& [name, type] : propNames)
                   propjson::readPropertyFromJson(data, this, meta, false, name, type);
+
+            // Migration: rename legacy machine type names to current ones.
+            if (type() == QStringLiteral("Fiber Laser"))
+                  set_type(QStringLiteral("Q-switched Laser"));
             }
       catch (const nlohmann::json::parse_error& err) {
             Warning("Machine::fromJson: JSON parse error: {}", err.what());
@@ -318,9 +322,8 @@ static constexpr std::string_view _properties[] = {
                  }
                ]
                    })json"},
-         {
-      // MOPA laser
-      R"json({
+         {// MOPA laser
+    R"json(           {
                "class": "Machine",
                "items": [
                  {
@@ -412,35 +415,7 @@ static constexpr std::string_view _properties[] = {
                        },
                        {
                          "name": "maxAcceleration",
-                         "label": "Max Accel",
-                         "type": "vector3d",
-                         "unit": "mm/s²",
-                         "default": [
-                           0.0,
-                           0.0,
-                           0.0
-                         ]
-                       },
-                       {
-                         "row": {
-                           "minSpindle": {
-                             "label": "Min",
-                             "type": "float",
-                             "unit": "rpm",
-                             "min": 0.0,
-                             "max": 1000000.0,
-                             "default": 0.0
-                           },
-                           "maxSpindle": {
-                             "label": "Max",
-                             "type": "float",
-                             "unit": "rpm",
-                             "min": 0.0,
-                             "max": 1000000.0,
-                             "default": 0.0
-                           }
-                         },
-                         "label": "Spindle"
+                         "type": "empty"
                        },
                        {
                          "name": "line",
@@ -542,7 +517,7 @@ static constexpr std::string_view _properties[] = {
                              "default": 0.0
                            }
                          },
-                         "label": "Galvo Shear"
+                         "label": " "
                        },
                        {
                          "name": "galvoRotate",
@@ -555,16 +530,24 @@ static constexpr std::string_view _properties[] = {
                          "precision": 3
                        },
                        {
-                         "name": "galvoSwapxy",
-                         "label": "Galvo Swap XY",
-                         "type": "bool",
-                         "default": false
+                         "row": {
+                           "galvoSwapxy": {
+                              "label": "Galvo Swap XY",
+                              "type": "bool",
+                              "default": false
+                              },
+                            "empty2": {
+                              "type": "empty"
+                              }
+                           },
+                           "label": " "
+                        }
                        }
                      ]
                    }
                  }
                ]
-                   })json"},
+                         })json"},
          {
       R"json({
                "class": "Machine",
@@ -993,10 +976,18 @@ static constexpr std::string_view _properties[] = {
 //---------------------------------------------------------
 
 const std::string_view Machine::properties() const {
-      Debug("machine type <{}>", type());
+      QString t = type();
+      if (t.isEmpty()) {
+            // Return the first property set as a fallback for
+            // not-yet-initialised machines (e.g. during construction).
+            return _properties[0];
+            }
       for (int i = 0; i < machineTypes.size(); ++i)
-            if (type() == machineTypes[i])
+            if (t == QString::fromStdString(machineTypes[i]))
                   return _properties[i];
-      Critical("bad machine type <{}>", type());
+      // Migration: accept legacy type names that were renamed.
+      if (t == QStringLiteral("Fiber Laser"))
+            return _properties[0]; // maps to "Q-switched Laser"
+      Critical("bad machine type <{}>", t);
       return _properties[0];
       }
