@@ -462,9 +462,15 @@ QStringList MachineModel::ethDevices() const {
             }
 
       for (pcap_if_t* d = alldevs; d; d = d->next) {
-            // Only include devices that support live capture.
-            if (d->name)
-                  result.append(QString::fromUtf8(d->name));
+            if (!d->name)
+                  continue;
+            // Skip loopback and wireless interfaces — only keep
+            // physical wired Ethernet devices.
+            if (d->flags & PCAP_IF_LOOPBACK)
+                  continue;
+            if (d->flags & PCAP_IF_WIRELESS)
+                  continue;
+            result.append(QString::fromUtf8(d->name));
             }
 
       pcap_freealldevs(alldevs);
