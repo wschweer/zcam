@@ -728,7 +728,7 @@ Item {
                                                 }
                                             return undefined
                                             })
-                                        // meta is auto-bound to root.metaFor(propName) in the delegate
+                                        item.meta = Qt.binding(() => root.metaFor(item.propName))
                                         item.propIndex = colsContainer.propIndex
                                         item.setModelValue = function(v) {
                                             colsContainer.setModelValue(d.name, v)
@@ -1249,8 +1249,8 @@ Item {
                 function freqModel() {
                     if (root.model.pulsewidthNames)
                         return root.model.pulsewidthNames()
-                    if (ZCam.laser && ZCam.laser.engine)
-                        return ZCam.laser.engine.laserPulseList
+                    if (ZCam.project.laser && ZCam.project.laser.engine)
+                        return ZCam.project.laser.engine.laserPulseList
                     return []
                     }
 
@@ -2526,8 +2526,8 @@ Item {
             function freqModel() {
                 if (root.model.pulsewidthNames)
                     return root.model.pulsewidthNames()
-                if (ZCam.laser && ZCam.laser.engine)
-                    return ZCam.laser.engine.laserPulseList
+                if (ZCam.project.laser && ZCam.project.laser.engine)
+                    return ZCam.project.laser.engine.laserPulseList
                 return []
                 }
 
