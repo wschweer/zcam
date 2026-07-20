@@ -26,7 +26,7 @@
 
 struct MachineColumnItem {
       QString name;
-      bool isRow = false;
+      bool isRow  = false;
       bool isLine = false;
       QStringList subProps;
       QString rowLabel;
@@ -80,6 +80,10 @@ class MachineModel : public QAbstractListModel
       // Returns the list of available machine type strings for "machineType"
       // property delegates in QML.
       Q_INVOKABLE QStringList machineTypes() const;
+
+      // Returns the list of available board type strings for "boardType"
+      // property delegates in QML.
+      Q_INVOKABLE QStringList boardTypes() const;
 
     signals:
       void machineChanged();

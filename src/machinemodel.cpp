@@ -430,3 +430,15 @@ QStringList MachineModel::machineTypes() const {
             result.append(QString::fromStdString(t));
       return result;
       }
+
+//---------------------------------------------------------
+//   boardTypes
+//    Return the list of available board type strings.
+//---------------------------------------------------------
+
+QStringList MachineModel::boardTypes() const {
+      QStringList result;
+      for (const auto& t : ::boardTypes)
+            result.append(QString::fromStdString(t));
+      return result;
+      }

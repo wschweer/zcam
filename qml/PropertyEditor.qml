@@ -391,6 +391,7 @@ Item {
                         case "machine":   return machineDelegate
                         case "machineName": return machineNameDelegate
                         case "machineType": return machineTypeDelegate
+                        case "boardType":  return boardTypeDelegate
                         case "override":  return overrideDelegate
                         case "pulsewidth": return pulsewidthDelegate
                         case "lineJoin":  return lineJoinDelegate
@@ -547,6 +548,7 @@ Item {
                                 case "float":     return subFloatDelegate
                                 case "halign":    return subHalignDelegate
                                 case "machineType": return subMachineTypeDelegate
+                                case "boardType":  return subBoardTypeDelegate
                                 case "override":  return subOverrideDelegate
                                 case "pulsewidth": return subPulsewidthDelegate
                                 case "lineJoin":  return subLineJoinDelegate
@@ -687,6 +689,7 @@ Item {
                                         case "recipe":    return recipeDelegate
                                         case "machine":   return machineDelegate
                                         case "machineType": return machineTypeDelegate
+                                        case "boardType":  return boardTypeDelegate
                                         case "override":  return overrideDelegate
                                         case "pulsewidth": return pulsewidthDelegate
                                         case "lineJoin":  return lineJoinDelegate
@@ -817,6 +820,7 @@ Item {
                                 case "float":     return subFloatDelegate
                                 case "halign":    return subHalignDelegate
                                 case "machineType": return subMachineTypeDelegate
+                                case "boardType":  return subBoardTypeDelegate
                                 case "override":  return subOverrideDelegate
                                 case "pulsewidth": return subPulsewidthDelegate
                                 case "lineJoin":  return subLineJoinDelegate
@@ -1135,7 +1139,52 @@ Item {
             }
         }
 
-        // ── Sub-delegate for override type in row entries ──────────────────
+        // ── Sub-delegate for boardType in row entries ─────────────────
+        Component {
+            id: subBoardTypeDelegate
+
+            ValueBox {
+                id: subBoardType
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subBoardType.subMeta ? subBoardType.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subBoardTypeCombo
+                    anchors.fill: parent
+                    model: root.model.boardTypes ? root.model.boardTypes() : []
+
+                    property string currentName: subBoardType.subValue !== undefined ? subBoardType.subValue : ""
+                    currentIndex: {
+                        let idx = subBoardTypeCombo.find(subBoardTypeCombo.currentName)
+                        return idx >= 0 ? idx : -1
+                    }
+
+                    onActivated: index => {
+                        subBoardType.setSub(subBoardTypeCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subBoardTypeCombo.currentName
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+
+        // ── Sub-delegate for override type in row entries ───────────────────
         Component {
             id: subOverrideDelegate
 
@@ -2205,6 +2254,64 @@ Item {
                         padding: 2
                         contentItem: Text {
                             text: typeCombo.currentName
+                            font.bold: true
+                            color: "#ffffff"
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                        indicator: Item {}
+                    }
+                }
+            }
+        }
+
+        // ── boardType: ComboBox for board type selection ────────────────
+        Component {
+            id: boardTypeDelegate
+
+            RowLayout {
+                id: rowBoardType
+                width: parent ? parent.width : 0
+                spacing: 6
+
+                property string propName
+                property var propValue
+                property var meta
+                property int propIndex
+                property var setModelValue: function(v) {}
+
+                Label {
+                    text: rowBoardType.meta ? rowBoardType.meta.label ?? "" : ""
+                    Layout.preferredWidth: root.labelWidth
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
+                    color: Material.foreground
+                    opacity: 0.75
+                    }
+
+                ValueBox {
+                    Layout.fillWidth: true
+
+                    ComboBox {
+                        id: boardTypeCombo
+                        anchors.fill: parent
+                        model: root.model.boardTypes ? root.model.boardTypes() : []
+
+                        property string currentName: rowBoardType.propValue !== undefined ? rowBoardType.propValue : ""
+                        currentIndex: {
+                            let idx = boardTypeCombo.find(boardTypeCombo.currentName)
+                            return idx >= 0 ? idx : -1
+                        }
+
+                        onActivated: index => {
+                            rowBoardType.setModelValue(boardTypeCombo.model[index])
+                        }
+
+                        background: Item {}
+                        padding: 2
+                        contentItem: Text {
+                            text: boardTypeCombo.currentName
                             font.bold: true
                             color: "#ffffff"
                             horizontalAlignment: Text.AlignRight
