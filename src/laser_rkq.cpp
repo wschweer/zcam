@@ -309,7 +309,7 @@ bool LaserRKQ::sendPacket(const std::vector<std::uint8_t>& frame) {
             }
 
       bool wasEmpty;
-      {
+            {
             std::lock_guard lock(_txMutex);
             wasEmpty = _txQueue.empty();
             _txQueue.push(frame);
@@ -335,12 +335,13 @@ void LaserRKQ::onReadable(int) {
             return;
 
       while (true) {
-            struct pcap_pkthdr* hdr  = nullptr;
-            const u_char* data        = nullptr;
-            int rv = pcap_next_ex(_pcapHandle, &hdr, &data);
+            struct pcap_pkthdr* hdr = nullptr;
+            const u_char* data      = nullptr;
+            int rv                  = pcap_next_ex(_pcapHandle, &hdr, &data);
             if (rv == 1) {
                   // A packet was successfully read.
                   std::vector<std::uint8_t> payload(data, data + hdr->caplen);
+                  Debug("packet received ({} bytes):\n{}", hdr->caplen, payload);
                   emit packetReceived(payload);
                   }
             else if (rv == 0) {
@@ -374,7 +375,7 @@ void LaserRKQ::onWritable(int) {
 
       while (true) {
             std::vector<std::uint8_t> frame;
-            {
+                  {
                   std::lock_guard lock(_txMutex);
                   if (_txQueue.empty()) {
                         if (_writeNotifier)
