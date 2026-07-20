@@ -46,13 +46,11 @@ class LaserRKQ : public LaserEngine
       QML_ELEMENT
       QML_UNCREATABLE("no no no")
 
-    private:
-      // libpcap handle for the Ethernet device
-      pcap_t* _pcapHandle {nullptr};
+      pcap_t* _pcapHandle {nullptr}; // libpcap handle for the Ethernet device
 
       // QSocketNotifier wraps the pcap selectable fd so incoming
       // packets are dispatched inside the Qt event loop.
-      QSocketNotifier* _readNotifier  {nullptr};
+      QSocketNotifier* _readNotifier {nullptr};
       QSocketNotifier* _writeNotifier {nullptr};
 
       // Outgoing packet queue – populated by sendPacket(), drained
@@ -68,12 +66,26 @@ class LaserRKQ : public LaserEngine
       void setupSocketNotifiers();
       void teardownSocketNotifiers();
 
+      /// Send the initial broadcast discovery packet to the laser
+      /// controller.  The frame is 1510 bytes long: a 16-byte
+      /// Ethernet header followed by 1494 bytes of zero payload.
+      void laserInit();
+
     private slots:
       void onReadable(int fd);
       void onWritable(int fd);
 
     protected:
       ZCam* zcam;
+
+    signals:
+      /// Emitted inside the Qt event loop for every raw frame that is
+      /// received.  The vector contains the full Ethernet frame as
+      /// captured by libpcap.
+      void packetReceived(const std::vector<std::uint8_t>& payload);
+
+      /// Emitted when a previously enqueued frame has been written.
+      void packetSent();
 
     public:
       LaserRKQ(ZCam* w, QObject* parent = nullptr);
@@ -104,13 +116,4 @@ class LaserRKQ : public LaserEngine
       /// Install a BPF capture filter so only matching frames are
       /// delivered to packetReceived().  Call after init() succeeds.
       bool setFilter(const std::string& bpfExpression);
-
-    signals:
-      /// Emitted inside the Qt event loop for every raw frame that is
-      /// received.  The vector contains the full Ethernet frame as
-      /// captured by libpcap.
-      void packetReceived(const std::vector<std::uint8_t>& payload);
-
-      /// Emitted when a previously enqueued frame has been written.
-      void packetSent();
       };

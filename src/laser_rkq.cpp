@@ -67,6 +67,41 @@ void LaserRKQ::teardownSocketNotifiers() {
       }
 
 //---------------------------------------------------------
+//   laserInit
+//    Send the initial broadcast discovery packet to the RKQ
+//    laser controller board.  The Ethernet frame is 1510 bytes
+//    long in total: a 16-byte header followed by a 1494-byte
+//    payload consisting entirely of zero bytes.
+//
+//    Frame layout:
+//      Bytes  0–5    destination MAC  = ff:ff:ff:ff:ff:ff (broadcast)
+//      Bytes  6–11   source MAC       = 00:00:00:00:00:00
+//      Bytes 12–13   EtherType        = 0x0000
+//      Bytes 14–15   (part of header padding / length)
+//      Bytes 16–1509 payload           = 1494 × 0x00
+//---------------------------------------------------------
+
+void LaserRKQ::laserInit() {
+      constexpr std::size_t FrameSize    = 1510;
+      constexpr std::size_t PayloadSize  = 1494;
+      constexpr std::size_t HeaderSize   = FrameSize - PayloadSize;  // 16
+
+      std::vector<std::uint8_t> frame(FrameSize, 0);
+
+      // Destination MAC: broadcast (ff:ff:ff:ff:ff:ff)
+      std::fill(frame.begin(), frame.begin() + 6, 0xFF);
+
+      // Source MAC and EtherType are left as zero (already zero-initialised).
+
+      Debug("laserInit: sending {}-byte broadcast frame ({} byte header + {} byte zero payload)",
+            FrameSize, HeaderSize, PayloadSize);
+
+      if (!sendPacket(frame)) {
+            Warning("laserInit: failed to enqueue broadcast discovery frame");
+            }
+      }
+
+//---------------------------------------------------------
 //   init
 //    Open the configured Ethernet device with libpcap for
 //    capturing and injecting raw frames.  The device name is
@@ -163,6 +198,8 @@ bool LaserRKQ::init(bool _dryRun) {
             }
 
       setupSocketNotifiers();
+
+      laserInit();
 
       Debug("RKQ initialised on Ethernet device <{}>", devName);
       return true;
