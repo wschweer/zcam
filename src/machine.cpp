@@ -529,25 +529,24 @@ static constexpr std::string_view _properties[] = {
                          "default": 0.0,
                          "precision": 3
                        },
-                       {
-                         "row": {
-                           "galvoSwapxy": {
+                        {
+                          "row": {
+                            "galvoSwapxy": {
                               "label": "Galvo Swap XY",
                               "type": "bool",
                               "default": false
-                              },
+                            },
                             "empty2": {
                               "type": "empty"
-                              }
-                           },
-                           "label": " "
+                            }
+                          },
+                          "label": " "
                         }
-                       }
-                     ]
-                   }
-                 }
-               ]
-                         })json"},
+                      ]
+                    }
+                  }
+                ]
+                          })json"},
          {
       R"json({
                "class": "Machine",
