@@ -23,20 +23,12 @@ using json = nlohmann::json;
 
 class ZCam;
 class Machines;
+class Laser;
+enum MachineType { Q_LASER, MOPA_LASER, UV_LASER, GCODE_CNC };
+inline const std::vector<std::string> machineTypes {"Q-switched Laser", "MOPA Laser", "UV Laser",
+                                                    "GCode CNC"};
 
-enum MachineType {
-      Q_LASER,
-      MOPA_LASER,
-      UV_LASER,
-      GCODE_CNC
-      };
-
-inline const std::vector<std::string> machineTypes {
-      "Q-switched Laser",
-      "MOPA Laser",
-      "UV Laser",
-      "GCode CNC"
-      };
+inline const std::vector<std::string> boardTypes {"BJJCZ", "RKQ-LM-441"};
 
 //---------------------------------------------------------
 //   Machine
@@ -50,6 +42,7 @@ class Machine : public QObject
 
       PROP(QString, name)
       PROP(QString, type)
+      PROP(QString, boardType)
       PROP(QString, description)
       PROPV(QVector3D, maxTravel, QVector3D(100.0, 100.0, 100.0))
       PROP(double, travelSpeed)
@@ -74,8 +67,13 @@ class Machine : public QObject
       PROP(double, galvoRotate)
       PROP(bool, galvoSwapxy)
 
+      PROPV(Laser*, laser, nullptr)
+      PROP(QString, ethDevice)
+
+      ZCam* zcam;
+
     public:
-      Machine(QObject* parent = nullptr) : QObject(parent) {}
+      Machine(ZCam* zc, QObject* parent = nullptr) : QObject(parent), zcam(zc) {}
       json toJson() const;
       bool fromJson(const json&);
       const std::string_view properties() const;

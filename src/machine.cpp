@@ -12,6 +12,7 @@
 #include "machine.h"
 #include "propertyjson.h"
 #include "logger.h"
+#include "laser.h"
 
 //---------------------------------------------------------
 //   toJson
@@ -72,6 +73,9 @@ bool Machine::fromJson(const json& data) {
             Warning("Machine::fromJson: unknown JSON error");
             return false;
             }
+      delete _laser;
+      Debug("====create laser after reading machine");
+      _laser = new Laser(zcam, this, nullptr);
       return true;
       }
 
@@ -89,6 +93,10 @@ static constexpr std::string_view _properties[] = {
                      "type": {
                        "label": "Type",
                        "type": "machineType"
+                     },
+                     "boardType": {
+                       "label": "Board",
+                       "type": "boardType"
                      }
                    },
                    "label": " "
@@ -316,6 +324,12 @@ static constexpr std::string_view _properties[] = {
                          "label": "Galvo Swap XY",
                          "type": "bool",
                          "default": false
+                       },
+                       {
+                         "name": "ethDevice",
+                         "label": "Ethernet Device",
+                         "type": "string",
+                         "default": ""
                        }
                      ]
                    }
@@ -323,230 +337,241 @@ static constexpr std::string_view _properties[] = {
                ]
                    })json"},
          {// MOPA laser
-    R"json(           {
-               "class": "Machine",
-               "items": [
-                 {
-                   "row": {
-                     "name": {
-                       "label": "Name",
-                       "type": "string"
-                     },
-                     "type": {
-                       "label": "Type",
-                       "type": "machineType"
-                     }
+    R"json({
+             "class": "Machine",
+             "items": [
+               {
+                 "row": {
+                   "name": {
+                     "label": "Name",
+                     "type": "string"
                    },
-                   "label": " "
+                   "type": {
+                     "label": "Type",
+                     "type": "machineType"
+                   },
+                   "boardType": {
+                     "label": "Board",
+                     "type": "boardType"
+                   }
                  },
-                 {
-                   "name": "description",
-                   "label": "Description",
-                   "type": "multiline"
-                 },
-                 {
-                   "name": "line",
-                   "type": "line"
-                 },
-                 {
-                   "columns": {
-                     "count": 2,
-                     "items": [
-                       {
-                         "name": "maxTravel",
-                         "label": "Travel",
-                         "type": "vector3d",
-                         "unit": "mm",
-                         "default": [
-                           100.0,
-                           100.0,
-                           100.0
-                         ]
-                       },
-                       {
-                         "name": "travelSpeed",
-                         "label": "Travel Speed",
-                         "type": "float",
-                         "unit": "mm/s",
-                         "min": 0.0,
-                         "max": 100000.0,
-                         "default": 0.0
-                       },
-                       {
-                         "name": "framingSpeed",
-                         "label": "Framing Speed",
-                         "type": "float",
-                         "unit": "mm/s",
-                         "min": 0.0,
-                         "max": 100000.0,
-                         "default": 0.0
-                       },
-                       {
-                         "row": {
-                           "safeDist1": {
-                             "label": "Safe 1",
-                             "type": "float",
-                             "unit": "mm",
-                             "min": 0.0,
-                             "max": 1000.0,
-                             "default": 0.0
-                           },
-                           "safeDist2": {
-                             "label": "Safe 2",
-                             "type": "float",
-                             "unit": "mm",
-                             "min": 0.0,
-                             "max": 1000.0,
-                             "default": 0.0
-                           }
+                 "label": " "
+               },
+               {
+                 "name": "description",
+                 "label": "Description",
+                 "type": "multiline"
+               },
+               {
+                 "name": "line",
+                 "type": "line"
+               },
+               {
+                 "columns": {
+                   "count": 2,
+                   "items": [
+                     {
+                       "name": "maxTravel",
+                       "label": "Travel",
+                       "type": "vector3d",
+                       "unit": "mm",
+                       "default": [
+                         100.0,
+                         100.0,
+                         100.0
+                       ]
+                     },
+                     {
+                       "name": "travelSpeed",
+                       "label": "Travel Speed",
+                       "type": "float",
+                       "unit": "mm/s",
+                       "min": 0.0,
+                       "max": 100000.0,
+                       "default": 0.0
+                     },
+                     {
+                       "name": "framingSpeed",
+                       "label": "Framing Speed",
+                       "type": "float",
+                       "unit": "mm/s",
+                       "min": 0.0,
+                       "max": 100000.0,
+                       "default": 0.0
+                     },
+                     {
+                       "row": {
+                         "safeDist1": {
+                           "label": "Safe 1",
+                           "type": "float",
+                           "unit": "mm",
+                           "min": 0.0,
+                           "max": 1000.0,
+                           "default": 0.0
                          },
-                         "label": "Safe Dist"
+                         "safeDist2": {
+                           "label": "Safe 2",
+                           "type": "float",
+                           "unit": "mm",
+                           "min": 0.0,
+                           "max": 1000.0,
+                           "default": 0.0
+                         }
                        },
-                       {
-                         "name": "maxFeed",
-                         "label": "Max Feed",
-                         "type": "vector3d",
-                         "unit": "mm/s",
-                         "default": [
-                           0.0,
-                           0.0,
-                           0.0
-                         ]
-                       },
-                       {
-                         "name": "maxAcceleration",
-                         "type": "empty"
-                       },
-                       {
-                         "name": "line",
-                         "type": "line",
-                         "colSpan": 2
-                       },
-                       {
-                         "row": {
-                           "precision": {
-                             "label": "Prec",
-                             "type": "float",
-                             "unit": "mm",
-                             "min": 0.001,
-                             "max": 10.0,
-                             "precision": 3,
-                             "default": 0.001
-                           },
-                           "ncPrecision": {
-                             "label": "NC Prec",
-                             "type": "float",
-                             "unit": "mm",
-                             "min": 0.001,
-                             "max": 10.0,
-                             "precision": 3,
-                             "default": 0.001
-                           }
+                       "label": "Safe Dist"
+                     },
+                     {
+                       "name": "maxFeed",
+                       "label": "Max Feed",
+                       "type": "vector3d",
+                       "unit": "mm/s",
+                       "default": [
+                         0.0,
+                         0.0,
+                         0.0
+                       ]
+                     },
+                     {
+                       "name": "maxAcceleration",
+                       "type": "empty"
+                     },
+                     {
+                       "name": "line",
+                       "type": "line",
+                       "colSpan": 2
+                     },
+                     {
+                       "row": {
+                         "precision": {
+                           "label": "Prec",
+                           "type": "float",
+                           "unit": "mm",
+                           "min": 0.001,
+                           "max": 10.0,
+                           "precision": 3,
+                           "default": 0.001
                          },
-                         "label": "Precision"
+                         "ncPrecision": {
+                           "label": "NC Prec",
+                           "type": "float",
+                           "unit": "mm",
+                           "min": 0.001,
+                           "max": 10.0,
+                           "precision": 3,
+                           "default": 0.001
+                         }
                        },
-                       {
-                         "name": "circlePrecision",
-                         "label": "Circle Prec",
-                         "type": "float",
-                         "unit": "mm",
-                         "min": 0.001,
-                         "max": 10.0,
-                         "precision": 3,
-                         "default": 0.001
-                       },
-                       {
-                         "name": "line",
-                         "type": "line",
-                         "colSpan": 2
-                       },
-                       {
-                         "row": {
-                           "galvoP1": {
-                             "label": "P1",
-                             "type": "float",
-                             "min": 0.0,
-                             "max": 10.0,
-                             "default": 0.0,
-                             "precision": 4
-                           },
-                           "galvoP2": {
-                             "label": "P2",
-                             "type": "float",
-                             "min": 0.0,
-                             "max": 10.0,
-                             "precision": 4,
-                             "default": 0.0
-                           },
-                           "galvoP3": {
-                             "label": "P3",
-                             "type": "float",
-                             "min": 0.0,
-                             "max": 10.0,
-                             "precision": 4,
-                             "default": 0.0
-                           }
+                       "label": "Precision"
+                     },
+                     {
+                       "name": "circlePrecision",
+                       "label": "Circle Prec",
+                       "type": "float",
+                       "unit": "mm",
+                       "min": 0.001,
+                       "max": 10.0,
+                       "precision": 3,
+                       "default": 0.001
+                     },
+                     {
+                       "name": "line",
+                       "type": "line",
+                       "colSpan": 2
+                     },
+                     {
+                       "row": {
+                         "galvoP1": {
+                           "label": "P1",
+                           "type": "float",
+                           "min": 0.0,
+                           "max": 10.0,
+                           "default": 0.0,
+                           "precision": 4
                          },
-                         "label": "Galvo"
-                       },
-                       {
-                         "name": "galvoScale",
-                         "label": "Galvo Scale",
-                         "type": "vector2d",
-                         "default": [
-                           100.0,
-                           100.0
-                         ]
-                       },
-                       {
-                         "row": {
-                           "galvoShearX": {
-                             "label": "Shear X",
-                             "type": "float",
-                             "min": -100.0,
-                             "max": 100.0,
-                             "precision": 3,
-                             "default": 0.0
-                           },
-                           "galvoShearY": {
-                             "label": "Shear Y",
-                             "type": "float",
-                             "min": -100.0,
-                             "max": 100.0,
-                             "precision": 3,
-                             "default": 0.0
-                           }
+                         "galvoP2": {
+                           "label": "P2",
+                           "type": "float",
+                           "min": 0.0,
+                           "max": 10.0,
+                           "precision": 4,
+                           "default": 0.0
                          },
-                         "label": " "
+                         "galvoP3": {
+                           "label": "P3",
+                           "type": "float",
+                           "min": 0.0,
+                           "max": 10.0,
+                           "precision": 4,
+                           "default": 0.0
+                         }
                        },
-                       {
-                         "name": "galvoRotate",
-                         "label": "Galvo Rotate",
-                         "type": "float",
-                         "unit": "°",
-                         "min": 0.0,
-                         "max": 360.0,
-                         "default": 0.0,
-                         "precision": 3
+                       "label": "Galvo"
+                     },
+                     {
+                       "name": "galvoScale",
+                       "label": "Galvo Scale",
+                       "type": "vector2d",
+                       "default": [
+                         100.0,
+                         100.0
+                       ]
+                     },
+                     {
+                       "row": {
+                         "galvoShearX": {
+                           "label": "Shear X",
+                           "type": "float",
+                           "min": -100.0,
+                           "max": 100.0,
+                           "precision": 3,
+                           "default": 0.0
+                         },
+                         "galvoShearY": {
+                           "label": "Shear Y",
+                           "type": "float",
+                           "min": -100.0,
+                           "max": 100.0,
+                           "precision": 3,
+                           "default": 0.0
+                         }
                        },
-                        {
-                          "row": {
-                            "galvoSwapxy": {
-                              "label": "Galvo Swap XY",
-                              "type": "bool",
-                              "default": false
-                            },
-                            "empty2": {
-                              "type": "empty"
-                            }
-                          },
-                          "label": " "
-                        }
-                      ]
-                    }
-                  }
-                ]
-                          })json"},
+                       "label": " "
+                     },
+                     {
+                       "name": "galvoRotate",
+                       "label": "Galvo Rotate",
+                       "type": "float",
+                       "unit": "°",
+                       "min": 0.0,
+                       "max": 360.0,
+                       "default": 0.0,
+                       "precision": 3
+                     },
+                     {
+                       "row": {
+                         "galvoSwapxy": {
+                           "label": "Galvo Swap XY",
+                           "type": "bool",
+                           "default": false
+                         },
+                         "empty2": {
+                           "type": "empty"
+                         }
+                       },
+                       "label": " "
+                     },
+                     {
+                       "name": "ethDevice",
+                       "label": "Ethernet Device",
+                       "type": "string",
+                       "default": "",
+                       "colSpan": 2
+                     }
+                   ]
+                 }
+               }
+             ]
+                 })json"},
          {
       R"json({
                "class": "Machine",
@@ -560,6 +585,10 @@ static constexpr std::string_view _properties[] = {
                      "type": {
                        "label": "Type",
                        "type": "machineType"
+                     },
+                     "boardType": {
+                       "label": "Board",
+                       "type": "boardType"
                      }
                    },
                    "label": " "
@@ -787,6 +816,12 @@ static constexpr std::string_view _properties[] = {
                          "label": "Galvo Swap XY",
                          "type": "bool",
                          "default": false
+                       },
+                       {
+                         "name": "ethDevice",
+                         "label": "Ethernet Device",
+                         "type": "string",
+                         "default": ""
                        }
                      ]
                    }
@@ -810,6 +845,10 @@ static constexpr std::string_view _properties[] = {
                      "type": {
                        "label": "Type",
                        "type": "machineType"
+                     },
+                     "boardType": {
+                       "label": "Board",
+                       "type": "boardType"
                      }
                    },
                    "label": " "
