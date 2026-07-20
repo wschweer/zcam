@@ -85,6 +85,10 @@ class MachineModel : public QAbstractListModel
       // property delegates in QML.
       Q_INVOKABLE QStringList boardTypes() const;
 
+      // Returns the list of available Ethernet device names (via libpcap)
+      // for "ethDevice" property delegates in QML.
+      Q_INVOKABLE QStringList ethDevices() const;
+
     signals:
       void machineChanged();
       void titleChanged();

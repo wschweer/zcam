@@ -74,7 +74,6 @@ bool Machine::fromJson(const json& data) {
             return false;
             }
       delete _laser;
-      Debug("====create laser after reading machine");
       _laser = new Laser(zcam, this, nullptr);
       return true;
       }
@@ -328,7 +327,7 @@ static constexpr std::string_view _properties[] = {
                        {
                          "name": "ethDevice",
                          "label": "Ethernet Device",
-                         "type": "string",
+                         "type": "ethDevice",
                          "default": ""
                        }
                      ]
@@ -563,7 +562,7 @@ static constexpr std::string_view _properties[] = {
                      {
                        "name": "ethDevice",
                        "label": "Ethernet Device",
-                       "type": "string",
+                       "type": "ethDevice",
                        "default": "",
                        "colSpan": 2
                      }
@@ -820,7 +819,7 @@ static constexpr std::string_view _properties[] = {
                        {
                          "name": "ethDevice",
                          "label": "Ethernet Device",
-                         "type": "string",
+                         "type": "ethDevice",
                          "default": ""
                        }
                      ]

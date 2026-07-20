@@ -12,6 +12,7 @@
 #include "machinemodel.h"
 #include <QMetaProperty>
 #include <nlohmann/json.hpp>
+#include <pcap/pcap.h>
 #include "logger.h"
 
 //---------------------------------------------------------
@@ -440,5 +441,32 @@ QStringList MachineModel::boardTypes() const {
       QStringList result;
       for (const auto& t : ::boardTypes)
             result.append(QString::fromStdString(t));
+      return result;
+      }
+
+//---------------------------------------------------------
+//   ethDevices
+//    Return the list of available Ethernet device names that
+//    libpcap can open for live capture.  Uses pcap_findalldevs()
+//    to enumerate all interfaces on the system.
+//---------------------------------------------------------
+
+QStringList MachineModel::ethDevices() const {
+      QStringList result;
+      pcap_if_t* alldevs = nullptr;
+      char errbuf[PCAP_ERRBUF_SIZE];
+
+      if (pcap_findalldevs(&alldevs, errbuf) < 0) {
+            Warning("pcap_findalldevs failed: {}", errbuf);
+            return result;
+            }
+
+      for (pcap_if_t* d = alldevs; d; d = d->next) {
+            // Only include devices that support live capture.
+            if (d->name)
+                  result.append(QString::fromUtf8(d->name));
+            }
+
+      pcap_freealldevs(alldevs);
       return result;
       }

@@ -399,6 +399,7 @@ Item {
                         case "lockScale":  return lockScaleDelegate
                         case "lockSize":   return lockSizeDelegate
                         case "framingType": return framingTypeDelegate
+                        case "ethDevice":  return ethDeviceDelegate
                         case "empty":      return emptyDelegate
                         default:          return stringDelegate
                         }
@@ -556,6 +557,7 @@ Item {
                                 case "lockScale":  return subLockScaleDelegate
                                 case "lockSize":   return subLockSizeDelegate
                                 case "framingType": return subFramingTypeDelegate
+                                case "ethDevice":  return subEthDeviceDelegate
                                 case "singleline":return subSinglelineDelegate
                                 case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
@@ -697,6 +699,7 @@ Item {
                                         case "lockScale":  return lockScaleDelegate
                                         case "lockSize":   return lockSizeDelegate
                                         case "framingType": return framingTypeDelegate
+                                        case "ethDevice":  return ethDeviceDelegate
                                         case "empty":      return emptyDelegate
                                         default:          return stringDelegate
                                         }
@@ -828,6 +831,7 @@ Item {
                                 case "lockScale":  return subLockScaleDelegate
                                 case "lockSize":   return subLockSizeDelegate
                                 case "framingType": return subFramingTypeDelegate
+                                case "ethDevice":  return subEthDeviceDelegate
                                 case "singleline":return subSinglelineDelegate
                                 case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
@@ -2320,6 +2324,109 @@ Item {
                         }
                         indicator: Item {}
                     }
+                }
+            }
+        }
+
+        // ── ethDevice: ComboBox for Ethernet device selection ────────────
+        Component {
+            id: ethDeviceDelegate
+
+            RowLayout {
+                id: rowEthDevice
+                width: parent ? parent.width : 0
+                spacing: 6
+
+                property string propName
+                property var propValue
+                property var meta
+                property int propIndex
+                property var setModelValue: function(v) {}
+
+                Label {
+                    text: rowEthDevice.meta ? rowEthDevice.meta.label ?? "" : ""
+                    Layout.preferredWidth: root.labelWidth
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
+                    color: Material.foreground
+                    opacity: 0.75
+                    }
+
+                ValueBox {
+                    Layout.fillWidth: true
+
+                    ComboBox {
+                        id: ethDeviceCombo
+                        anchors.fill: parent
+                        model: root.model.ethDevices ? root.model.ethDevices() : []
+
+                        property string currentName: rowEthDevice.propValue !== undefined ? rowEthDevice.propValue : ""
+                        currentIndex: {
+                            let idx = ethDeviceCombo.find(ethDeviceCombo.currentName)
+                            return idx >= 0 ? idx : -1
+                        }
+
+                        onActivated: index => {
+                            rowEthDevice.setModelValue(ethDeviceCombo.model[index])
+                        }
+
+                        background: Item {}
+                        padding: 2
+                        contentItem: Text {
+                            text: ethDeviceCombo.currentName
+                            font.bold: true
+                            color: "#ffffff"
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                        indicator: Item {}
+                    }
+                }
+            }
+        }
+
+        // ── subEthDevice: ComboBox for Ethernet device in row entries ───
+        Component {
+            id: subEthDeviceDelegate
+
+            ValueBox {
+                id: subEthDevice
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subEthDevice.subMeta ? subEthDevice.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subEthDeviceCombo
+                    anchors.fill: parent
+                    model: root.model.ethDevices ? root.model.ethDevices() : []
+
+                    property string currentName: subEthDevice.subValue !== undefined ? subEthDevice.subValue : ""
+                    currentIndex: {
+                        let idx = subEthDeviceCombo.find(subEthDeviceCombo.currentName)
+                        return idx >= 0 ? idx : -1
+                    }
+
+                    onActivated: index => {
+                        subEthDevice.setSub(subEthDeviceCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subEthDeviceCombo.currentName
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
                 }
             }
         }
