@@ -143,32 +143,30 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
       QByteArray pn     = propName.toUtf8();
       QVariant oldValue = element->property(pn.constData());
 
-      // If newValue is null/invalid but the property is a pointer type,
-      // we need to write a null pointer directly via QMetaProperty::write()
-      // because setProperty() with an invalid QVariant silently does nothing.
+      // If newValue represents a null pointer (invalid QVariant or a valid
+      // but null value) and the property is a pointer type, we need to write
+      // a typed null pointer directly.  setProperty() with an untyped null
+      // (e.g. from QML) silently does nothing for Q_DECLARE_OPAQUE_POINTER
+      // properties such as LaserLayer*.
       bool isNullPointerWrite = false;
-      if (!newValue.isValid()) {
+      QMetaType propertyMetaType;
+      if (!newValue.isValid() || newValue.isNull()) {
             int propIdx = element->metaObject()->indexOfProperty(pn.constData());
             if (propIdx >= 0) {
                   QMetaProperty mp = element->metaObject()->property(propIdx);
-                  QMetaType mt = mp.metaType();
-                  if (mt.id() == QMetaType::QObjectStar
-                      || (mt.id() >= QMetaType::User && mt.sizeOf() == sizeof(void*))) {
+                  propertyMetaType = mp.metaType();
+                  if (propertyMetaType.id() == QMetaType::QObjectStar
+                      || (propertyMetaType.id() >= QMetaType::User && propertyMetaType.sizeOf() == sizeof(void*))) {
                         isNullPointerWrite = true;
                         }
                   }
             }
 
       if (isNullPointerWrite) {
-            // Directly call the setter with a typed null pointer.
-            // We bypass the QVariant pipeline entirely because
-            // QMetaProperty::write() may silently fail for
-            // Q_DECLARE_OPAQUE_POINTER types.
-            //
-            // Since LaserLayer is fully defined in this TU, we can
-            // use QVariant::fromValue<LaserLayer*>(nullptr) which
-            // creates a properly-typed QVariant at compile time.
-            QVariant typedNull = QVariant::fromValue<LaserLayer*>(nullptr);
+            // Build a properly-typed null QVariant for the property's meta type.
+            // This is required for Q_DECLARE_OPAQUE_POINTER types where a
+            // generic QML null cannot be converted automatically.
+            QVariant typedNull(propertyMetaType, nullptr);
             if (oldValue == typedNull)
                   return;
             // Write the null pointer directly.
