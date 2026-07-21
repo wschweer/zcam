@@ -13,7 +13,6 @@
 #include "propertyjson.h"
 #include "logger.h"
 #include "laser.h"
-
 //---------------------------------------------------------
 //   toJson
 //    Serialize all user-editable properties declared in
@@ -31,19 +30,18 @@ json Machine::toJson() const {
       std::vector<std::pair<std::string, std::string>> propNames;
       try {
             propNames = propjson::parseAllPropertyNames(propStr);
-            }
+      }
       catch (const nlohmann::json::parse_error& err) {
             Warning("Machine::toJson: JSON parse error: {}", err.what());
             return data;
-            }
+      }
 
       const QMetaObject* meta = &Machine::staticMetaObject;
       for (const auto& [name, type] : propNames)
             propjson::writePropertyToJson(data, this, meta, false, name, type);
 
       return data;
-      }
-
+}
 //---------------------------------------------------------
 //   fromJson
 //    Deserialize all properties from JSON using the shared
@@ -64,22 +62,21 @@ bool Machine::fromJson(const json& data) {
             // Migration: rename legacy machine type names to current ones.
             if (type() == QStringLiteral("Fiber Laser"))
                   set_type(QStringLiteral("Q-switched Laser"));
-            }
+      }
       catch (const nlohmann::json::parse_error& err) {
             Warning("Machine::fromJson: JSON parse error: {}", err.what());
             return false;
-            }
+      }
       catch (...) {
             Warning("Machine::fromJson: unknown JSON error");
             return false;
-            }
+      }
       delete _laser;
       _laser = new Laser(zcam, this, nullptr);
       return true;
-      }
-
+}
 static constexpr std::string_view _properties[] = {
-         {// Q-switched Laser
+   {// Q-switched Laser
     R"json({
              "class": "Machine",
              "items": [
@@ -313,8 +310,8 @@ static constexpr std::string_view _properties[] = {
                  }
                }
              ]
-                 })json"},
-         {// MOPA laser
+           })json"},
+   {// MOPA laser
     R"json({
              "class": "Machine",
              "items": [
@@ -514,14 +511,14 @@ static constexpr std::string_view _properties[] = {
                        "name": "ethDevice",
                        "label": "Ethernet Device",
                        "type": "ethDevice",
-                       "default": "",
+                       "default": ""
                      }
                    ]
                  }
                }
              ]
-                 })json"},
-         {// UV-Laser
+           })json"},
+   {// UV-Laser
     R"json({
              "class": "Machine",
              "items": [
@@ -755,12 +752,12 @@ static constexpr std::string_view _properties[] = {
                  }
                }
              ]
-                 })json"},
+           })json"},
 
    //================================
    // GCode CNC:
    //================================
-         {
+   {
       R"json({
                "class": "Machine",
                "items": [
@@ -934,9 +931,8 @@ static constexpr std::string_view _properties[] = {
                    }
                  }
                ]
-                   })json"},
-      };
-
+             })json"},
+};
 //---------------------------------------------------------
 //   properties
 //---------------------------------------------------------
@@ -947,7 +943,7 @@ const std::string_view Machine::properties() const {
             // Return the first property set as a fallback for
             // not-yet-initialised machines (e.g. during construction).
             return _properties[0];
-            }
+      }
       for (int i = 0; i < machineTypes.size(); ++i)
             if (t == QString::fromStdString(machineTypes[i]))
                   return _properties[i];
@@ -956,4 +952,4 @@ const std::string_view Machine::properties() const {
             return _properties[0]; // maps to "Q-switched Laser"
       Critical("bad machine type <{}>", t);
       return _properties[0];
-      }
+}
