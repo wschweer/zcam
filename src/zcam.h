@@ -29,13 +29,12 @@
 class Project;
 class Element3d;
 class TreeModel;
-
 //---------------------------------------------------------
 //   Config
 //---------------------------------------------------------
 
 class Config : public QObject
-      {
+{
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no")
@@ -56,6 +55,8 @@ class Config : public QObject
       PROPV(QString, defaultMachine, QString())
       PROPV(QString, artworkDirectory, QString())
       PROPV(QString, iconDirectory, QString::fromUtf8("/usr/share/icons"))
+      PROPV(QString, machinesDirectory, QString())
+      PROPV(QString, recipesDirectory, QString())
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -217,26 +218,41 @@ class Config : public QObject
                             "cat": "Project",
                             "default": "/usr/share/icons",
                             "colSpan": 2
+                          },
+                          {
+                            "name": "machinesDirectory",
+                            "label": "Machines Directory",
+                            "type": "singleline",
+                            "cat": "Project",
+                            "default": "",
+                            "colSpan": 2
+                          },
+                          {
+                            "name": "recipesDirectory",
+                            "label": "Recipes Directory",
+                            "type": "singleline",
+                            "cat": "Project",
+                            "default": "",
+                            "colSpan": 2
                           }
                         ]
                       }
                     }
                   ]
-                      })json"};
+                })json"};
 
     public:
       explicit Config(QObject* parent = nullptr) : QObject(parent) {}
       const std::string_view properties() const { return _properties; }
       nlohmann::json toJson() const;
       bool fromJson(const nlohmann::json&);
-      };
-
+};
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
 
 class ZCam : public QObject
-      {
+{
       Q_OBJECT
       QML_ELEMENT
       QML_SINGLETON
@@ -260,8 +276,7 @@ class ZCam : public QObject
       PROPV(LaserReceipes*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
 
-      void initAssets();
-      void parseAssetsData(const QByteArray& data);
+      void loadAssets();
 
       bool _camDirty {false};
 
@@ -300,8 +315,8 @@ class ZCam : public QObject
             void reset() {
                   activeX = activeY = false;
                   excessX = excessY = 0.0;
-                  }
-            };
+            }
+      };
       SnapState _snapState;
 
       // SVG drag-preview state
@@ -340,8 +355,6 @@ class ZCam : public QObject
       explicit ZCam(QObject* parent = nullptr);
       static ZCam* create(QQmlEngine*, QJSEngine*);
       void undoChangeProperty(Element*, const char*, QVariant) {}
-      void loadAssets();
-
       // ── Project lifecycle (moved from ProjectManager) ───────────────────
       /// Start a fresh, unnamed project.  Returns false if user cancelled.
       Q_INVOKABLE void newProject(bool clearPersistedPath = true);
@@ -379,16 +392,14 @@ class ZCam : public QObject
       Element3d* currentElement() const { return _currentElement; }
       void setCurrentElement(Element3d* el);
 
-      /// Save current assets (recipes, machines, config) to a backup
-      /// file named "assets-bu" in the application data directory.
-      /// This allows restoring known-good assets if they become
-      /// corrupted during development.
-      Q_INVOKABLE bool saveAssetsBackup();
-
-      /// Restore assets from the backup file named "assets-bu" in
-      /// the application data directory.  Returns false if the
-      /// backup file does not exist or cannot be parsed.
-      Q_INVOKABLE bool restoreAssetsBackup();
+      /// Return the default machines directory: $(HOME)/ZCam/machines
+      static QString defaultMachinesDirectory();
+      /// Return the default recipes directory: $(HOME)/ZCam/recipes
+      static QString defaultRecipesDirectory();
+      /// Return the configured machines directory, or the default if empty.
+      QString machinesDirectory() const;
+      /// Return the configured recipes directory, or the default if empty.
+      QString recipesDirectory() const;
 
       /// Called from QML when an element is dragged in the 3D viewport.
       /// When the project's Grid has snap enabled, grid lines act
@@ -548,4 +559,4 @@ class ZCam : public QObject
       /// SVG drag operation, or nullptr when no drag is active.
       Q_PROPERTY(TessGeometry* dragPreviewGeometry READ dragPreviewGeometry NOTIFY dragPreviewGeometryChanged)
       TessGeometry* dragPreviewGeometry() const { return _dragPreviewGeometry; }
-      };
+};

@@ -35,22 +35,20 @@
 
 #include <QSettings>
 #include <QFileInfo>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
+#include <QStandardPaths>
+#include <QDebug>
+#include <QCoreApplication>
 #include <fstream>
-
 #include <cmath>
 #include <algorithm>
 #include <vector>
 #include <QQuaternion>
-#include <QStandardPaths>
-#include <QDir>
-#include <QFile>
-#include <QTextStream>
-#include <QDebug>
-#include <QCoreApplication>
 #include <QMatrix4x4>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
-
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
@@ -84,7 +82,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       connect(_machines, &Machines::machinesModelChanged, this, [this]() {
             if (_project)
                   _project->resolveMachine();
-            });
+      });
 
       // Automatically save assets (machines, recipes) and stop the laser
       // when the application is about to quit so changes are not lost and
@@ -98,9 +96,8 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       QObject::connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
             GeometryWorker::instance().shutdown();
             saveAssets();
-            });
-      }
-
+      });
+}
 //---------------------------------------------------------
 //   setCurrentElement
 //    Custom setter for currentElement.  Emits curColorChanged on
@@ -118,7 +115,7 @@ void ZCam::setCurrentElement(Element3d* el) {
             auto* oldPoly = qobject_cast<Polygon*>(oldElement);
             if (oldPoly && oldPoly->selectedSegment() >= 0)
                   oldPoly->clearSegmentSelection();
-            }
+      }
       _currentElement = el;
       emit currentElementChanged();
       // Signal color changes so the 3D view updates highlight colors.
@@ -126,8 +123,7 @@ void ZCam::setCurrentElement(Element3d* el) {
             emit oldElement->curColorChanged();
       if (el)
             emit el->curColorChanged();
-      }
-
+}
 //---------------------------------------------------------
 //   applyFontToCurrentText
 //    Apply a font family to the currently selected Text
@@ -144,8 +140,7 @@ void ZCam::applyFontToCurrentText(const QString& family) {
       if (!text->fontFamily().isEmpty() && text->fontFamily() == family)
             return;
       _project->changeProperty(text, "fontFamily", family);
-      }
-
+}
 //---------------------------------------------------------
 //   setCamDirty
 //    Mark the cam data as out-of-date.  The QML "Cam" refresh
@@ -157,8 +152,7 @@ void ZCam::setCamDirty(bool v) {
             return;
       _camDirty = v;
       emit camDirtyChanged();
-      }
-
+}
 //---------------------------------------------------------
 //   centerOnWorkspace
 //    Center the given element on the workspace midpoint.
@@ -187,7 +181,7 @@ void ZCam::centerOnWorkspace(Element3d* element) {
             QVector3D travel = _project->machine()->maxTravel();
             centerX          = travel.x() / 2.0;
             centerY          = travel.y() / 2.0;
-            }
+      }
 
       // Compute the element's bounding box center in world coordinates.
       // The bounding box is in local coordinates, so we transform it
@@ -217,7 +211,7 @@ void ZCam::centerOnWorkspace(Element3d* element) {
             QMatrix4x4 inv          = parentGlobal.inverted(&ok);
             if (ok)
                   localDelta = inv.mapVector(worldDelta);
-            }
+      }
 
       QVector3D oldPos = element->pos();
       QVector3D newPos = QVector3D(oldPos.x() + localDelta.x(), oldPos.y() + localDelta.y(), 0.0f);
@@ -231,12 +225,11 @@ void ZCam::centerOnWorkspace(Element3d* element) {
             cmd->redo(); // apply the new position immediately
             _project->pushCommand(std::move(cmd));
             _project->markDirty();
-            }
+      }
 
       if (_project)
             setCamDirty(true);
-      }
-
+}
 //---------------------------------------------------------
 //   refreshCam
 //    Recalculate cam data and clear the dirty flag.
@@ -250,106 +243,104 @@ void ZCam::refreshCam() {
             return;
       cam->updateCam();
       setCamDirty(false);
-      }
-
+}
 //---------------------------------------------------------
 //   create
 //---------------------------------------------------------
 
 ZCam* ZCam::create(QQmlEngine*, QJSEngine*) {
       return new ZCam();
-      }
-
+}
 //---------------------------------------------------------
-//   initAssets
-//    initialize assets with dummies so the app will not
-//    crash
+//   defaultMachinesDirectory
 //---------------------------------------------------------
 
-void ZCam::initAssets() {
-      // create recipes default
-      if (_recipes) {
-            json defaultRecipes = json::array();
-            _recipes->fromJson(defaultRecipes);
-            }
-      if (_machines) {
-            json defaultMachines = json::array();
-            _machines->fromJson(defaultMachines);
-            }
-      }
+QString ZCam::defaultMachinesDirectory() {
+      QString home = QDir::homePath();
+      return QDir(home).filePath("ZCam/machines");
+}
+//---------------------------------------------------------
+//   defaultRecipesDirectory
+//---------------------------------------------------------
 
+QString ZCam::defaultRecipesDirectory() {
+      QString home = QDir::homePath();
+      return QDir(home).filePath("ZCam/recipes");
+}
+//---------------------------------------------------------
+//   machinesDirectory
+//    Return the configured machines directory, or the default.
+//---------------------------------------------------------
+
+QString ZCam::machinesDirectory() const {
+      if (_config && !_config->machinesDirectory().isEmpty())
+            return _config->machinesDirectory();
+      return defaultMachinesDirectory();
+}
+//---------------------------------------------------------
+//   recipesDirectory
+//    Return the configured recipes directory, or the default.
+//---------------------------------------------------------
+
+QString ZCam::recipesDirectory() const {
+      if (_config && !_config->recipesDirectory().isEmpty())
+            return _config->recipesDirectory();
+      return defaultRecipesDirectory();
+}
 //---------------------------------------------------------
 //   loadAssets
-//    load assets on application startup
+//    Load config from assets.json in the AppDataLocation,
+//    then load machines and recipes from their individual
+//    directories.
 //---------------------------------------------------------
 
 void ZCam::loadAssets() {
-      initAssets();
-
+      // Load config from assets.json (still a single file)
       QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-      if (dataDir.isEmpty())
-            return;
-
-      QString filePath = QDir(dataDir).filePath("assets.json");
-      QFile file(filePath);
-      if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QByteArray data = file.readAll();
-            file.close();
-            parseAssetsData(data);
-            }
-
-      // If the main file had no recipes/machines, try the backup file
-      // created by previous editor sessions and merge missing sections.
-      QString backupPath = QDir(dataDir).filePath(".assets.json,");
-      QFile backup(backupPath);
-      if (backup.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QByteArray bdata = backup.readAll();
-            backup.close();
-            try {
-                  json bj = json::parse(bdata.toStdString());
-                  if (bj.contains("recipes") && !bj["recipes"].empty()) {
-                        if (_recipes && _recipes->recipeCount() == 0)
-                              _recipes->fromJson(bj.at("recipes"));
-                        }
-                  if (bj.contains("machines") && !bj["machines"].empty()) {
-                        if (_machines) {
-                              QStringList model = _machines->machinesModel();
-                              if (model.isEmpty())
-                                    _machines->fromJson(bj.at("machines"));
-                              }
+      json legacyAssets;
+      if (!dataDir.isEmpty()) {
+            QString filePath = QDir(dataDir).filePath("assets.json");
+            QFile file(filePath);
+            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                  QByteArray data = file.readAll();
+                  file.close();
+                  try {
+                        legacyAssets = json::parse(data.toStdString());
+                        if (legacyAssets.contains("config")) {
+                              if (_config)
+                                    _config->fromJson(legacyAssets.at("config"));
                         }
                   }
-            catch (json::parse_error&) {
-                  // ignore backup parse errors
+                  catch (json::parse_error& e) {
+                        qWarning() << "Failed to parse assets.json:" << e.what();
                   }
             }
       }
 
-//---------------------------------------------------------
-//   parseAssetsData
-//---------------------------------------------------------
+      // Load machines from individual files in the machines directory
+      if (_machines)
+            _machines->loadFromDirectory(machinesDirectory());
 
-void ZCam::parseAssetsData(const QByteArray& data) {
-      try {
-            json j = json::parse(data.toStdString());
-            if (j.contains("recipes")) {
-                  if (_recipes)
-                        _recipes->fromJson(j.at("recipes"));
-                  }
-            if (j.contains("machines")) {
-                  if (_machines)
-                        _machines->fromJson(j.at("machines"));
-                  }
-            if (j.contains("config")) {
-                  if (_config)
-                        _config->fromJson(j.at("config"));
-                  }
-            }
-      catch (json::parse_error& e) {
-            qWarning() << "Failed to parse assets.json:" << e.what();
-            }
+      // Migrate: if the machines directory was empty but the legacy
+      // assets.json contained machines, import them and save to the
+      // directory so the migration is permanent.
+      if (_machines && _machines->machinesModel().isEmpty() && legacyAssets.contains("machines")) {
+            _machines->fromJson(legacyAssets.at("machines"));
+            _machines->saveToDirectory(machinesDirectory());
       }
 
+      // Load recipes from individual files in the recipes directory
+      if (_recipes)
+            _recipes->loadFromDirectory(recipesDirectory());
+
+      // Migrate: if the recipes directory was empty but the legacy
+      // assets.json contained recipes, import them and save to the
+      // directory so the migration is permanent.
+      if (_recipes && _recipes->recipeCount() == 0 && legacyAssets.contains("recipes")) {
+            _recipes->fromJson(legacyAssets.at("recipes"));
+            _recipes->saveToDirectory(recipesDirectory());
+      }
+}
 //---------------------------------------------------------
 //   saveAssets
 //    assets are written in json format
@@ -380,7 +371,7 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
             auto* poly = qobject_cast<Polygon*>(element);
             if (poly && poly->selectedSegment() >= 0)
                   poly->clearSegmentSelection();
-            }
+      }
       // The delta from QML is in world (root) space coordinates, but
       // element->pos() is in the parent's local coordinate system.
       // If the parent (e.g. a Layer) has a non-identity scale, the
@@ -399,7 +390,7 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
             QMatrix4x4 inv          = parentGlobal.inverted(&ok);
             if (ok)
                   localDelta = inv.mapVector(delta);
-            }
+      }
 
       // Magnetic grid snap: when the project's Grid has snap enabled,
       // grid lines act magnetically.  The element's reference point is
@@ -428,12 +419,12 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                               // Break free: snap point releases, move freely
                               _snapState.activeX = false;
                               newX               = curX + localDelta.x();
-                              }
+                        }
                         else {
                               // Hold snapped: keep X at the snap line
                               newX = curX;
-                              }
                         }
+                  }
                   else {
                         // Check if reference point crosses a grid line
                         double oldLine = std::round(curX / spacing);
@@ -442,8 +433,8 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                               _snapState.activeX = true;
                               _snapState.excessX = newX - newLine * spacing;
                               newX               = newLine * spacing;
-                              }
                         }
+                  }
 
                   // Y axis snap
                   if (_snapState.activeY) {
@@ -451,11 +442,11 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         if (std::abs(_snapState.excessY) > halfSpacing) {
                               _snapState.activeY = false;
                               newY               = curY + localDelta.y();
-                              }
+                        }
                         else {
                               newY = curY;
-                              }
                         }
+                  }
                   else {
                         double oldLine = std::round(curY / spacing);
                         double newLine = std::round(newY / spacing);
@@ -463,19 +454,18 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                               _snapState.activeY = true;
                               _snapState.excessY = newY - newLine * spacing;
                               newY               = newLine * spacing;
-                              }
                         }
+                  }
 
                   QVector3D newPos(newX, newY, element->pos().z() + localDelta.z());
                   element->set_pos(newPos);
                   return;
-                  }
             }
+      }
 
       QVector3D newPos = element->pos() + localDelta;
       element->set_pos(newPos);
-      }
-
+}
 //---------------------------------------------------------
 //   rotated
 //    Called from QML when an element is rotated in the 3D viewport.
@@ -491,8 +481,7 @@ void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modif
             startElementDrag(element);
       QVector3D newRot = element->rot() + deltaRotation;
       element->set_rot(newRot);
-      }
-
+}
 //---------------------------------------------------------
 //   scaled
 //    Called from QML when an element is scaled in the 3D viewport.
@@ -548,13 +537,12 @@ void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifier
             QMatrix4x4 inv          = parentGlobal.inverted(&ok);
             if (ok)
                   localDelta = inv.mapVector(worldDelta);
-            }
+      }
 
       element->beginBatchUpdate();
       element->set_pos(element->pos() + localDelta);
       element->endBatchUpdate();
-      }
-
+}
 //---------------------------------------------------------
 //   startElementDrag
 //    Called from QML when the user starts dragging/rotating/scaling
@@ -571,8 +559,7 @@ void ZCam::startElementDrag(Element3d* element) {
       _elementDragOrigRot   = element->rot();
       _elementDragOrigScale = element->scale();
       _snapState.reset();
-      }
-
+}
 //---------------------------------------------------------
 //   endElementDrag
 //    Called from QML when the user finishes dragging/rotating/scaling
@@ -595,10 +582,10 @@ void ZCam::endElementDrag() {
                         int nearest = poly->findNearestSegment(_pendingSegmentClickPos);
                         if (nearest >= 0)
                               poly->setSelectedSegment(nearest);
-                        }
                   }
+            }
             _pendingSegmentElement = nullptr;
-            };
+      };
 
       if (!_elementDragElement) {
             // startElementDrag() was never called — apply pending
@@ -606,7 +593,7 @@ void ZCam::endElementDrag() {
             // polygon without any movement).
             applyPendingSegment();
             return;
-            }
+      }
 
       Element3d* el      = _elementDragElement;
       QVector3D newPos   = el->pos();
@@ -626,7 +613,7 @@ void ZCam::endElementDrag() {
             _elementDragElement = nullptr;
             _snapState.reset();
             return;
-            }
+      }
 
       // A drag occurred — discard any pending segment selection so the
       // bounding box stays visible after the drag ends.
@@ -639,26 +626,26 @@ void ZCam::endElementDrag() {
             //
             // We push up to three commands atomically.  They are undone
             // and redone in reverse/forward order as a group.
-                  {
+            {
                   auto cmd = std::make_unique<PropertyChangeCommand>(el, QByteArrayLiteral("pos"),
                                                                      QVariant::fromValue(_elementDragOrigPos),
                                                                      QVariant::fromValue(newPos));
                   _project->pushCommand(std::move(cmd));
-                  }
-                  {
+            }
+            {
                   auto cmd = std::make_unique<PropertyChangeCommand>(el, QByteArrayLiteral("rot"),
                                                                      QVariant::fromValue(_elementDragOrigRot),
                                                                      QVariant::fromValue(newRot));
                   _project->pushCommand(std::move(cmd));
-                  }
-                  {
+            }
+            {
                   auto cmd = std::make_unique<PropertyChangeCommand>(
                       el, QByteArrayLiteral("scale"), QVariant::fromValue(_elementDragOrigScale),
                       QVariant::fromValue(newScale));
                   _project->pushCommand(std::move(cmd));
-                  }
-            _project->markDirty();
             }
+            _project->markDirty();
+      }
 
       // Cam display is NOT refreshed automatically at end of drag.
       // The user triggers it manually via the refresh button.
@@ -667,134 +654,41 @@ void ZCam::endElementDrag() {
 
       _elementDragElement = nullptr;
       _snapState.reset();
-      }
-
+}
 //---------------------------------------------------------
 //   saveAssets
+//    Save config to assets.json and machines/recipes to their
+//    individual directories.
 //---------------------------------------------------------
 
 void ZCam::saveAssets() {
+      // Save config to assets.json (still a single file)
       QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-      if (dataDir.isEmpty())
-            return;
+      if (!dataDir.isEmpty()) {
+            QDir dir(dataDir);
+            if (!dir.exists())
+                  dir.mkpath(".");
 
-      QDir dir(dataDir);
-      if (!dir.exists())
-            dir.mkpath(".");
-
-      QString filePath = dir.filePath("assets.json");
-      QFile file(filePath);
-      if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            qWarning() << "Failed to open assets.json for writing";
-            return;
-            }
-
-      json j;
-      if (_recipes)
-            j["recipes"] = _recipes->toJson();
-      if (_machines)
-            j["machines"] = _machines->toJson();
-      if (_config)
-            j["config"] = _config->toJson();
-
-      QTextStream out(&file);
-      out << QString::fromStdString(j.dump(4));
-      file.close();
-      }
-
-//---------------------------------------------------------
-//   saveAssetsBackup
-//    Save current assets to a backup file "assets-bu" in the
-//    application data directory.  This is a developer convenience
-//    to snapshot known-good assets before risky edits.
-//---------------------------------------------------------
-
-bool ZCam::saveAssetsBackup() {
-      QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-      if (dataDir.isEmpty()) {
-            qWarning() << "saveAssetsBackup: no writable AppDataLocation";
-            return false;
-            }
-
-      QDir dir(dataDir);
-      if (!dir.exists())
-            dir.mkpath(".");
-
-      QString filePath = dir.filePath("assets-bu");
-      QFile file(filePath);
-      if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            qWarning() << "saveAssetsBackup: failed to open" << filePath << "for writing";
-            return false;
-            }
-
-      json j;
-      if (_recipes)
-            j["recipes"] = _recipes->toJson();
-      if (_machines)
-            j["machines"] = _machines->toJson();
-      if (_config)
-            j["config"] = _config->toJson();
-
-      QTextStream out(&file);
-      out << QString::fromStdString(j.dump(4));
-      file.close();
-
-      qDebug() << "saveAssetsBackup: assets saved to" << filePath;
-      return true;
-      }
-
-//---------------------------------------------------------
-//   restoreAssetsBackup
-//    Restore assets from the backup file "assets-bu" in the
-//    application data directory.  This is a developer convenience
-//    to recover from corrupted assets.
-//---------------------------------------------------------
-
-bool ZCam::restoreAssetsBackup() {
-      QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-      if (dataDir.isEmpty()) {
-            qWarning() << "restoreAssetsBackup: no writable AppDataLocation";
-            return false;
-            }
-
-      QString filePath = QDir(dataDir).filePath("assets-bu");
-      QFile file(filePath);
-      if (!file.exists()) {
-            qWarning() << "restoreAssetsBackup: backup file not found:" << filePath;
-            return false;
-            }
-      if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            qWarning() << "restoreAssetsBackup: failed to open" << filePath;
-            return false;
-            }
-
-      QByteArray data = file.readAll();
-      file.close();
-
-      try {
-            json j = json::parse(data.toStdString());
-            if (j.contains("recipes")) {
-                  if (_recipes)
-                        _recipes->fromJson(j.at("recipes"));
-                  }
-            if (j.contains("machines")) {
-                  if (_machines)
-                        _machines->fromJson(j.at("machines"));
-                  }
-            if (j.contains("config")) {
+            QString filePath = dir.filePath("assets.json");
+            QFile file(filePath);
+            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                  json j;
                   if (_config)
-                        _config->fromJson(j.at("config"));
-                  }
+                        j["config"] = _config->toJson();
+                  QTextStream out(&file);
+                  out << QString::fromStdString(j.dump(4));
+                  file.close();
             }
-      catch (json::parse_error& e) {
-            qWarning() << "restoreAssetsBackup: failed to parse" << filePath << ":" << e.what();
-            return false;
-            }
-
-      qDebug() << "restoreAssetsBackup: assets restored from" << filePath;
-      return true;
       }
 
+      // Save machines to individual files
+      if (_machines)
+            _machines->saveToDirectory(machinesDirectory());
+
+      // Save recipes to individual files
+      if (_recipes)
+            _recipes->saveToDirectory(recipesDirectory());
+}
 //---------------------------------------------------------
 //   hover
 //---------------------------------------------------------
@@ -809,9 +703,8 @@ void ZCam::hover(Element3d* element) {
                   emit element->curColorChanged();
             if (oldElement)
                   emit oldElement->curColorChanged();
-            }
       }
-
+}
 //---------------------------------------------------------
 //   pickElement
 //    Custom picking: traverse the element tree depth-first and
@@ -833,13 +726,12 @@ static void collectPickCandidates(Element* root, double x, double y,
                   if (x >= wb.left() && x <= wb.right() && y >= wb.top() && y <= wb.bottom()) {
                         double area = wb.width() * wb.height();
                         candidates.emplace_back(area, e3d);
-                        }
                   }
             }
+      }
       for (auto* child : root->children())
             collectPickCandidates(child, x, y, candidates);
-      }
-
+}
 Element3d* ZCam::pickElement(double x, double y) {
       std::vector<std::pair<double, Element3d*>> candidates;
       collectPickCandidates(_rootElement, x, y, candidates);
@@ -849,8 +741,7 @@ Element3d* ZCam::pickElement(double x, double y) {
       auto it = std::min_element(candidates.begin(), candidates.end(),
                                  [](const auto& a, const auto& b) { return a.first < b.first; });
       return it->second;
-      }
-
+}
 //---------------------------------------------------------
 //   mousePress
 //---------------------------------------------------------
@@ -879,11 +770,10 @@ void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, 
                   // with the bounding box visible.  The segment will be
                   // selected in endElementDrag() if no drag occurred.
                   return;
-                  }
             }
-      setCurrentElement(element);
       }
-
+      setCurrentElement(element);
+}
 //---------------------------------------------------------
 //   startVertexDrag
 //    Called from QML when the user starts dragging a handle.
@@ -898,8 +788,7 @@ void ZCam::startVertexDrag(Element3d* element, int vertexIndex) {
       _vertexDragIndex   = vertexIndex;
       // Store original position in LOCAL coordinates for the undo command
       _vertexDragOrigPos = element->vertexPos(vertexIndex);
-      }
-
+}
 //---------------------------------------------------------
 //   dragVertexTo
 //    Called from QML during dragging a handle.
@@ -918,8 +807,7 @@ void ZCam::dragVertexTo(Element3d* element, int vertexIndex, const QVector3D& wo
             return;
       QVector3D localPos = inv.map(worldPos);
       element->setVertexPos(vertexIndex, localPos);
-      }
-
+}
 //---------------------------------------------------------
 //   endVertexDrag
 //    Called from QML when the user finishes dragging a handle.
@@ -936,19 +824,18 @@ void ZCam::endVertexDrag(Element3d* element, int vertexIndex) {
           std::abs(newPos.y() - _vertexDragOrigPos.y()) < 0.001) {
             _vertexDragElement = nullptr;
             return;
-            }
+      }
       if (_project) {
             auto cmd = std::make_unique<HandleDragCommand>(element, vertexIndex, _vertexDragOrigPos, newPos);
             _project->pushCommand(std::move(cmd));
             _project->markDirty();
-            }
+      }
       // Cam display is NOT refreshed automatically at end of drag.
       // The user triggers it manually via the refresh button.
       if (_project)
             setCamDirty(true);
       _vertexDragElement = nullptr;
-      }
-
+}
 //---------------------------------------------------------
 //   selectSegment
 //    Select a segment of a Polygon element by segment index.
@@ -963,8 +850,7 @@ void ZCam::selectSegment(Element3d* element, int segmentIndex) {
       if (!poly)
             return;
       poly->setSelectedSegment(segmentIndex);
-      }
-
+}
 //---------------------------------------------------------
 //   clearSegmentSelection
 //---------------------------------------------------------
@@ -976,8 +862,7 @@ void ZCam::clearSegmentSelection(Element3d* element) {
       if (!poly)
             return;
       poly->clearSegmentSelection();
-      }
-
+}
 //---------------------------------------------------------
 //   selectNearestSegment
 //    Find and select the segment closest to the given world position.
@@ -994,8 +879,7 @@ int ZCam::selectNearestSegment(Element3d* element, const QVector3D& worldPos) {
       if (idx >= 0)
             poly->setSelectedSegment(idx);
       return idx;
-      }
-
+}
 //---------------------------------------------------------
 //   collectLayers (static helper)
 //    Recursively traverse the element tree and collect all
@@ -1009,8 +893,7 @@ static void collectLayers(Element* root, QStringList& names) {
             names.append(root->name());
       for (Element* child : root->children())
             collectLayers(child, names);
-      }
-
+}
 //---------------------------------------------------------
 //   layerNames
 //    Collect all Layer element names by traversing the project tree.
@@ -1020,8 +903,7 @@ QStringList ZCam::layerNames() const {
       QStringList names;
       collectLayers(rootElement(), names);
       return names;
-      }
-
+}
 //---------------------------------------------------------
 //   layerPtr
 //    Return the Layer* for a given name, or nullptr.
@@ -1032,8 +914,7 @@ Group* ZCam::layerPtr(const QString& name) const {
       if (!e)
             return nullptr;
       return qobject_cast<Group*>(e);
-      }
-
+}
 //---------------------------------------------------------
 //   laserLayerNames
 //    Collect all LaserLayer element names by traversing the project tree.
@@ -1046,14 +927,12 @@ static void collectLaserLayers(Element* root, QStringList& names) {
             names.append(root->name());
       for (Element* child : root->children())
             collectLaserLayers(child, names);
-      }
-
+}
 QStringList ZCam::laserLayerNames() const {
       QStringList names;
       collectLaserLayers(rootElement(), names);
       return names;
-      }
-
+}
 //---------------------------------------------------------
 //   laserLayerPtr
 //    Return the LaserLayer* for a given name, or nullptr.
@@ -1064,8 +943,7 @@ Recipe* ZCam::laserLayerPtr(const QString& name) const {
       if (!e)
             return nullptr;
       return qobject_cast<Recipe*>(e);
-      }
-
+}
 //---------------------------------------------------------
 //   recipeNames
 //    Return all recipe names from ZCam::recipes.
@@ -1075,8 +953,7 @@ QStringList ZCam::recipeNames() const {
       if (!_recipes)
             return {};
       return _recipes->recipeModel();
-      }
-
+}
 //---------------------------------------------------------
 //   recipePtr
 //    Return a pointer to the Recipe with the given name.
@@ -1092,10 +969,9 @@ LaserRecipe* ZCam::recipePtr(const QString& name) const {
             const LaserRecipe* r = _recipes->recipePtr(i);
             if (r->name() == name)
                   return _recipes->recipePtr(i);
-            }
-      return nullptr;
       }
-
+      return nullptr;
+}
 //---------------------------------------------------------
 //   Config::toJson
 //    Serialise all config properties to a JSON object using
@@ -1110,8 +986,7 @@ nlohmann::json Config::toJson() const {
       for (const auto& [name, type] : propNames)
             propjson::writePropertyToJson(data, this, meta, false, name, type);
       return data;
-      }
-
+}
 //---------------------------------------------------------
 //   Config::fromJson
 //    Deserialise config properties from a JSON object.
@@ -1123,8 +998,7 @@ bool Config::fromJson(const nlohmann::json& data) {
       for (const auto& [name, type] : propNames)
             propjson::readPropertyFromJson(data, this, meta, false, name, type);
       return true;
-      }
-
+}
 //---------------------------------------------------------
 //   findFirstVisibleLayer
 //    Recursively traverse the element tree to find the first
@@ -1137,15 +1011,14 @@ Group* ZCam::findFirstVisibleLayer(Element* root) const {
       if (auto* layer = qobject_cast<Group*>(root)) {
             if (layer->show() && layer->ancestorsShow())
                   return layer;
-            }
+      }
       for (Element* child : root->children()) {
             auto* found = findFirstVisibleLayer(child);
             if (found)
                   return found;
-            }
-      return nullptr;
       }
-
+      return nullptr;
+}
 //---------------------------------------------------------
 //   findCurrentLayer
 //    Find the Layer that is the current element itself, or the
@@ -1182,11 +1055,10 @@ Group* ZCam::findCurrentLayer() const {
                   if (layer->show() && layer->ancestorsShow())
                         return layer;
                   return nullptr;
-                  }
             }
-      return nullptr;
       }
-
+      return nullptr;
+}
 //---------------------------------------------------------
 //   createRectangle
 //    Create a new Rectangle element with size (0, 0) at the
@@ -1212,7 +1084,7 @@ Element3d* ZCam::createRectangle(double x, double y) {
       if (!layer) {
             Debug("no layer");
             return nullptr;
-            }
+      }
 
       auto cmd = std::make_unique<AddRectangleCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
@@ -1226,8 +1098,7 @@ Element3d* ZCam::createRectangle(double x, double y) {
       setCamDirty(true);
 
       return rect;
-      }
-
+}
 //---------------------------------------------------------
 //   createPolygon
 //    Create a new Polygon element at the given world position
@@ -1249,7 +1120,7 @@ Element3d* ZCam::createPolygon(double x, double y) {
       if (!layer) {
             Debug("no layer");
             return nullptr;
-            }
+      }
 
       auto cmd = std::make_unique<AddPolygonCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
@@ -1262,8 +1133,7 @@ Element3d* ZCam::createPolygon(double x, double y) {
       setCamDirty(true);
 
       return poly;
-      }
-
+}
 //---------------------------------------------------------
 //   createEllipse
 //    Create a new Ellipse element with size (0, 0) at the
@@ -1286,7 +1156,7 @@ Element3d* ZCam::createEllipse(double x, double y) {
       if (!layer) {
             Debug("no layer");
             return nullptr;
-            }
+      }
 
       auto cmd = std::make_unique<AddEllipseCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
@@ -1299,8 +1169,7 @@ Element3d* ZCam::createEllipse(double x, double y) {
       setCamDirty(true);
 
       return ell;
-      }
-
+}
 //---------------------------------------------------------
 //   createText
 //    Create a new Text element at the given world position
@@ -1332,7 +1201,7 @@ Element3d* ZCam::createText(double x, double y) {
       if (!layer) {
             Debug("no layer");
             return nullptr;
-            }
+      }
 
       auto cmd = std::make_unique<AddTextCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
@@ -1368,8 +1237,8 @@ Element3d* ZCam::createText(double x, double y) {
                   dst->set_scale(src->scale());
                   dst->set_rot(src->rot());
                   dst->update();
-                  }
             }
+      }
 
       _project->pushCommand(std::move(cmd));
 
@@ -1379,8 +1248,7 @@ Element3d* ZCam::createText(double x, double y) {
       setCamDirty(true);
 
       return text;
-      }
-
+}
 //---------------------------------------------------------
 //   reparentElement
 //    Re-parent an element to a new parent Element3d.  The element's
@@ -1408,7 +1276,7 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
             if (p == element)
                   return;
             p = p->parent();
-            }
+      }
       // Only Element3d parents can carry transforms
       if (!qobject_cast<Element3d*>(newParent))
             return;
@@ -1451,17 +1319,17 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
             rotMat(0, 0) = newLocal(0, 0) / sx;
             rotMat(1, 0) = newLocal(1, 0) / sx;
             rotMat(2, 0) = newLocal(2, 0) / sx;
-            }
+      }
       if (sy > 1e-9) {
             rotMat(0, 1) = newLocal(0, 1) / sy;
             rotMat(1, 1) = newLocal(1, 1) / sy;
             rotMat(2, 1) = newLocal(2, 1) / sy;
-            }
+      }
       if (sz > 1e-9) {
             rotMat(0, 2) = newLocal(0, 2) / sz;
             rotMat(1, 2) = newLocal(1, 2) / sz;
             rotMat(2, 2) = newLocal(2, 2) / sz;
-            }
+      }
       QQuaternion quat = QQuaternion::fromRotationMatrix(rotMat);
       QVector3D newRot = quat.toEulerAngles();
 
@@ -1487,25 +1355,25 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
       // undo undoes the move first (restoring the old parent), then
       // the transforms (restoring the old pos/rot/scale).
       if (_project) {
-                  {
+            {
                   auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("pos"),
                                                                      QVariant::fromValue(origPos),
                                                                      QVariant::fromValue(newPos));
                   _project->pushCommand(std::move(cmd));
-                  }
-                  {
+            }
+            {
                   auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("rot"),
                                                                      QVariant::fromValue(origRot),
                                                                      QVariant::fromValue(newRot));
                   _project->pushCommand(std::move(cmd));
-                  }
-                  {
+            }
+            {
                   auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("scale"),
                                                                      QVariant::fromValue(origScale),
                                                                      QVariant::fromValue(newScale));
                   _project->pushCommand(std::move(cmd));
-                  }
             }
+      }
 
       // Reset the drag state since we bypassed endElementDrag().
       _elementDragElement = nullptr;
@@ -1517,19 +1385,18 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
                   if (c == element)
                         break;
                   ++oldRow;
-                  }
+            }
             Debug("reparentElement: calling moveElement: element={} oldParent={} newParent={}",
                   element->name(), oldParent ? oldParent->name() : "null", newParent->name());
             _project->moveElement(element, newParent, -1);
-            }
+      }
       else {
             Debug("reparentElement: no project");
-            }
+      }
 
       _project->markDirty();
       setCamDirty(true);
-      }
-
+}
 //---------------------------------------------------------
 //   deleteCurrentElement
 //    Delete the current element if it is deletable.
@@ -1553,8 +1420,7 @@ void ZCam::deleteCurrentElement() {
       // bindings don't dereference a dangling pointer.
       setCurrentElement(nullptr);
       _project->removeElement(el);
-      }
-
+}
 //=========================================================
 //  Project lifecycle methods (moved from ProjectManager)
 //=========================================================
@@ -1568,13 +1434,11 @@ void ZCam::deleteCurrentElement() {
 static void saveLastProjectPath(const QString& path) {
       QSettings settings;
       settings.setValue("project/lastPath", path);
-      }
-
+}
 static QString lastProjectPath() {
       QSettings settings;
       return settings.value("project/lastPath").toString();
-      }
-
+}
 //---------------------------------------------------------
 //   newProject
 //---------------------------------------------------------
@@ -1594,7 +1458,7 @@ void ZCam::newProject(bool clearPersistedPath) {
       auto layer = new Group(this, cad);
       // Set the LaserLayer on the Layer so all children inherit it.
       layer->set_laserLayer(ll);
-      auto text  = new Text(this, layer);
+      auto text = new Text(this, layer);
       text->setColor("yellow");
       text->set_text("ZCam");
 
@@ -1637,8 +1501,7 @@ void ZCam::newProject(bool clearPersistedPath) {
       fixture->addChild(ll);
 
       endNewProject();
-      }
-
+}
 //---------------------------------------------------------
 //   startNewProject
 //---------------------------------------------------------
@@ -1691,7 +1554,7 @@ void ZCam::startNewProject(bool clearPersistedPath) {
             int idx           = model.indexOf(_config->defaultMachine());
             if (idx >= 0)
                   top->set_machine(_machines->machine(idx));
-            }
+      }
 
       auto cad     = new Cad(this, top);
       auto cam     = new Cam(this, top);
@@ -1702,8 +1565,7 @@ void ZCam::startNewProject(bool clearPersistedPath) {
       cam->addChild(fixture);
       cam->addChild(framing);
       connect(top, &Project::updateFraming, framing, &Framing::update);
-      }
-
+}
 //---------------------------------------------------------
 //   endNewProject
 //---------------------------------------------------------
@@ -1733,8 +1595,7 @@ void ZCam::endNewProject() {
       if (project())
             project()->updateCadLayerVisibility();
       setCamDirty(true);
-      }
-
+}
 //---------------------------------------------------------
 //   update
 //    updates the tree view and triggers update of 3DCanvas
@@ -1743,8 +1604,7 @@ void ZCam::endNewProject() {
 void ZCam::update() {
       _treeModel->setRoot(rootElement()); // update project tree view
       set_rootElement(project());         // build and show the scene
-      }
-
+}
 //---------------------------------------------------------
 //   openProject
 //---------------------------------------------------------
@@ -1753,11 +1613,11 @@ bool ZCam::openProject(const QString& path, bool skipCamUpdate) {
       if (path.isEmpty()) {
             Warning("ZCam::openProject: empty path");
             return false;
-            }
+      }
       if (!readProjectFile(path.toStdString(), skipCamUpdate)) {
             Warning("ZCam::openProject: failed to read", path);
             return false;
-            }
+      }
       _project->setProjectPath(path);
       _project->clearUndoStack();
       _project->setDirty(false);
@@ -1768,8 +1628,7 @@ bool ZCam::openProject(const QString& path, bool skipCamUpdate) {
       // so the refresh button is enabled and the user can update manually.
       setCamDirty(skipCamUpdate);
       return true;
-      }
-
+}
 //---------------------------------------------------------
 //   save
 //---------------------------------------------------------
@@ -1783,8 +1642,7 @@ bool ZCam::save() {
       saveLastProjectPath(_project->projectPath());
       emit projectSaved(_project->projectPath());
       return true;
-      }
-
+}
 //---------------------------------------------------------
 //   saveAs
 //---------------------------------------------------------
@@ -1799,8 +1657,7 @@ bool ZCam::saveAs(const QString& path) {
       saveLastProjectPath(path);
       emit projectSaved(path);
       return true;
-      }
-
+}
 //---------------------------------------------------------
 //   importFile
 //---------------------------------------------------------
@@ -1817,12 +1674,11 @@ bool ZCam::importFile(const QString& path) {
       else {
             Warning("ZCam::importFile: unsupported file type: {}", suffix);
             return false;
-            }
+      }
       _project->markDirty();
       setCamDirty(true);
       return true;
-      }
-
+}
 //---------------------------------------------------------
 //   restoreLastProject
 //    Called at startup to re-open the project that was open when
@@ -1839,8 +1695,7 @@ bool ZCam::restoreLastProject() {
       // Skip CAM data update at startup — the user can trigger a
       // refresh manually via the Cam button when needed.
       return openProject(path, /*skipCamUpdate=*/true);
-      }
-
+}
 //---------------------------------------------------------
 //   writeProjectFile
 //---------------------------------------------------------
@@ -1850,12 +1705,12 @@ bool ZCam::writeProjectFile(const std::string& path) {
       if (!tl) {
             Warning("no toplevel");
             return false;
-            }
+      }
       std::ofstream f(path);
       if (!f.is_open()) {
             Warning("ZCam: cannot open for writing:", path);
             return false;
-            }
+      }
       // Minimal JSON skeleton – replace with full scene serialisation
       nlohmann::ordered_json root;
       root["version"]     = "1.0";
@@ -1863,8 +1718,7 @@ bool ZCam::writeProjectFile(const std::string& path) {
       root["toplevel"]    = tl->toJson();
       f << root.dump(4);
       return true;
-      }
-
+}
 //---------------------------------------------------------
 //   readProjectFile
 //---------------------------------------------------------
@@ -1874,7 +1728,7 @@ bool ZCam::readProjectFile(const std::string& path, bool skipCamUpdate) {
       if (!f.is_open()) {
             Warning("ZCam: cannot open for reading:", path);
             return false;
-            }
+      }
 
       json jdata;
       try {
@@ -1932,19 +1786,19 @@ bool ZCam::readProjectFile(const std::string& path, bool skipCamUpdate) {
                   project()->updateCadLayerVisibility();
                   if (!skipCamUpdate && project()->cam())
                         project()->cam()->updateCam();
-                  }
+            }
             auto func = [](this auto& self, Element* e) -> void {
                   for (auto c : e->children()) {
                         c->fixup();
                         self(c);
-                        }
-                  };
+                  }
+            };
             func(project());
-            }
+      }
       catch (const nlohmann::json::parse_error& err) {
             Warning("JSON parse error:", err.what());
             return false;
-            }
+      }
 
       return true;
-      }
+}

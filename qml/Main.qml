@@ -172,24 +172,6 @@ Window {
         }
 
     Action {
-        id: actionSaveAssetsBu
-        text: qsTr("Save Assets Backup")
-        onTriggered: {
-            if (ZCam.saveAssetsBackup())
-                assetsBuDialog.open()
-            }
-        }
-
-    Action {
-        id: actionRestoreAssetsBu
-        text: qsTr("Restore Assets Backup")
-        onTriggered: {
-            if (ZCam.restoreAssetsBackup())
-                assetsBuDialog.open()
-            }
-        }
-
-    Action {
         id: actionQuit
         text: qsTr("&Quit")
         shortcut: StandardKey.Quit
@@ -286,18 +268,6 @@ Window {
         nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
         onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
-        }
-
-    // Feedback dialog for save/restore assets backup
-    Dialog {
-        id: assetsBuDialog
-        title: qsTr("Assets Backup")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Ok
-        Label {
-            text: qsTr("Assets backup operation completed.")
-            }
         }
 
     // =========================================================================
@@ -522,13 +492,6 @@ Window {
                 MenuSeparator {}
                 MenuItem {
                     action: actionImport
-                    }
-                MenuSeparator {}
-                MenuItem {
-                    action: actionSaveAssetsBu
-                    }
-                MenuItem {
-                    action: actionRestoreAssetsBu
                     }
                 MenuSeparator {}
                 MenuItem {

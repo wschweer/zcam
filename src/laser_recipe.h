@@ -15,13 +15,12 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 #include "macros.h"
-
 //---------------------------------------------------------
 //   LaserLayerSetting
 //---------------------------------------------------------
 
 class LaserPass
-      {
+{
       Q_GADGET
       QML_VALUE_TYPE(laserLayerSetting)
 
@@ -113,27 +112,25 @@ class LaserPass
       json toJson() const;
       void fromJson(const json&);
       const std::string_view properties() const { return _properties; }
-      };
-
+};
 //---------------------------------------------------------
 //   LaserLayersSettings
 //---------------------------------------------------------
 
 class LaserPasses : public std::vector<LaserPass>
-      {
+{
       Q_GADGET
 
     public:
       json toJson() const;
       void fromJson(const json&);
-      };
-
+};
 //---------------------------------------------------------
 //   Recipe
 //---------------------------------------------------------
 
 class LaserRecipe
-      {
+{
       Q_GADGET
       QML_VALUE_TYPE(recipe)
 
@@ -150,14 +147,13 @@ class LaserRecipe
       const LaserPass* layer(int idx) const { return &_passes[idx]; }
       LaserPasses* passes() { return &_passes; }
       LaserPass* pass(int idx) { return &_passes[idx]; }
-      };
-
+};
 //---------------------------------------------------------
 //   Recipes
 //---------------------------------------------------------
 
 class LaserReceipes : public QObject
-      {
+{
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no no")
@@ -176,13 +172,13 @@ class LaserReceipes : public QObject
             if (idx >= 0 && idx < static_cast<int>(recipes.size()))
                   return recipes[idx];
             return LaserRecipe();
-            }
+      }
       int recipeCount() const { return static_cast<int>(recipes.size()); }
       LaserRecipe* recipePtr(int idx) {
             if (idx >= 0 && idx < static_cast<int>(recipes.size()))
                   return &recipes[idx];
             return nullptr;
-            }
+      }
       Q_INVOKABLE void updateRecipe(int idx, const LaserRecipe& r);
       Q_INVOKABLE void addRecipe(const QString& name);
       Q_INVOKABLE void removeRecipe(int idx);
@@ -196,7 +192,12 @@ class LaserReceipes : public QObject
       QStringList recipeModel() const;
       json toJson() const;
       void fromJson(const json&);
-      };
+
+      /// Load all recipe files (one .json per recipe) from dir.
+      void loadFromDirectory(const QString& dir);
+      /// Save all recipes as individual .json files into dir.
+      void saveToDirectory(const QString& dir) const;
+};
 
 Q_DECLARE_METATYPE(LaserPass)
 Q_DECLARE_METATYPE(LaserRecipe)

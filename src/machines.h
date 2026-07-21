@@ -20,13 +20,16 @@ using json = nlohmann::json;
 #include "machine.h"
 
 class MachineModel;
-
 //---------------------------------------------------------
 //   Machines
+//    Loads machine definitions from individual JSON files in a
+//    configurable directory.  Each file contains one machine
+//    record.  Changes are held in memory and only written back
+//    to disk when saveToDirectory() is called.
 //---------------------------------------------------------
 
 class Machines : public QObject
-      {
+{
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no no")
@@ -52,7 +55,11 @@ class Machines : public QObject
 
       QStringList machinesModel() const;
       MachineModel* machineModel() const { return _machineModel; }
-
       json toJson() const;
       void fromJson(const json&);
-      };
+
+      /// Load all machine files (one .json per machine) from dir.
+      void loadFromDirectory(const QString& dir);
+      /// Save all machines as individual .json files into dir.
+      void saveToDirectory(const QString& dir) const;
+};
