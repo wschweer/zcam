@@ -357,6 +357,17 @@ void ZCam::parseAssetsData(const QByteArray& data) {
 void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       if (!element || !element->draggable())
             return;
+      // If startElementDrag() was not called before the first drag
+      // event (e.g. because a segment was selected on the second
+      // click, which skipped startElementDrag in QML), lazily
+      // initialize the drag state here.  Also clear any segment
+      // selection so the bounding box reappears during the drag.
+      if (!_elementDragElement) {
+            startElementDrag(element);
+            auto* poly = qobject_cast<Polygon*>(element);
+            if (poly && poly->selectedSegment() >= 0)
+                  poly->clearSegmentSelection();
+            }
       // The delta from QML is in world (root) space coordinates, but
       // element->pos() is in the parent's local coordinate system.
       // If the parent (e.g. a Layer) has a non-identity scale, the
@@ -462,6 +473,9 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
 void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modifiers) {
       if (!element || !element->draggable())
             return;
+      // Lazily initialize drag state if startElementDrag() was skipped.
+      if (!_elementDragElement)
+            startElementDrag(element);
       QVector3D newRot = element->rot() + deltaRotation;
       element->set_rot(newRot);
       }
@@ -476,6 +490,9 @@ void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modif
 void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers, const QVector3D& pivot) {
       if (!element || !element->draggable())
             return;
+      // Lazily initialize drag state if startElementDrag() was skipped.
+      if (!_elementDragElement)
+            startElementDrag(element);
 
       // Compute the element's world-space origin BEFORE the scale
       // change.  The origin (0,0,0) in local coords maps to the
