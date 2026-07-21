@@ -263,6 +263,15 @@ class ZCam : public QObject
       QVector3D _elementDragOrigPos;
       QVector3D _elementDragOrigRot;
       QVector3D _elementDragOrigScale;
+
+      // Pending segment-selection state: when the user clicks on an
+      // already-selected polygon, the segment selection is deferred to
+      // endElementDrag() so that click+drag moves the polygon (with
+      // bounding box visible) while a pure click (no drag) selects the
+      // nearest segment.
+      QPointer<Element3d> _pendingSegmentElement;
+      QVector3D _pendingSegmentClickPos;
+      bool _pendingSegmentToggleOff {false};
       // State for magnetic grid snap during element drag.
       // The reference point for each element is (0,0) in local coords.
       // When the reference point crosses a grid line, the element "snaps"

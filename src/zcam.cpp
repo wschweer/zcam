@@ -360,10 +360,15 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       // If startElementDrag() was not called before the first drag
       // event (e.g. because a segment was selected on the second
       // click, which skipped startElementDrag in QML), lazily
-      // initialize the drag state here.  Also clear any segment
-      // selection so the bounding box reappears during the drag.
+      // initialize the drag state here.
       if (!_elementDragElement) {
             startElementDrag(element);
+            // A drag is now in progress — discard any pending segment
+            // selection so the bounding box remains visible throughout
+            // the drag and after release.
+            _pendingSegmentElement = nullptr;
+            // Clear any pre-existing segment selection so the bounding
+            // box reappears during the drag.
             auto* poly = qobject_cast<Polygon*>(element);
             if (poly && poly->selectedSegment() >= 0)
                   poly->clearSegmentSelection();
@@ -569,8 +574,32 @@ void ZCam::startElementDrag(Element3d* element) {
 //---------------------------------------------------------
 
 void ZCam::endElementDrag() {
-      if (!_elementDragElement)
+      // Helper lambda: apply the pending segment selection if any.
+      // Called when no actual drag movement occurred (pure click).
+      auto applyPendingSegment = [this]() {
+            if (!_pendingSegmentElement)
+                  return;
+            auto* poly = qobject_cast<Polygon*>(_pendingSegmentElement);
+            if (poly) {
+                  if (_pendingSegmentToggleOff)
+                        poly->clearSegmentSelection();
+                  else {
+                        int nearest = poly->findNearestSegment(_pendingSegmentClickPos);
+                        if (nearest >= 0)
+                              poly->setSelectedSegment(nearest);
+                        }
+                  }
+            _pendingSegmentElement = nullptr;
+            };
+
+      if (!_elementDragElement) {
+            // startElementDrag() was never called — apply pending
+            // segment selection if any (e.g. click on already-selected
+            // polygon without any movement).
+            applyPendingSegment();
             return;
+            }
+
       Element3d* el      = _elementDragElement;
       QVector3D newPos   = el->pos();
       QVector3D newRot   = el->rot();
@@ -581,7 +610,21 @@ void ZCam::endElementDrag() {
                      (newRot - _elementDragOrigRot).length() > 0.001 ||
                      (newScale - _elementDragOrigScale).length() > 0.001;
 
-      if (changed && _projectManager) {
+      if (!changed) {
+            // No movement — this is a pure click.  Apply pending
+            // segment selection (e.g. clicking on an already-selected
+            // polygon to select a segment).
+            applyPendingSegment();
+            _elementDragElement = nullptr;
+            _snapState.reset();
+            return;
+            }
+
+      // A drag occurred — discard any pending segment selection so the
+      // bounding box stays visible after the drag ends.
+      _pendingSegmentElement = nullptr;
+
+      if (_projectManager) {
             // Use a single PropertyChangeCommand for pos; the undo command
             // records the old/new pos.  Rot and scale are captured in
             // additional commands pushed together.
@@ -806,8 +849,12 @@ Element3d* ZCam::pickElement(double x, double y) {
 
 void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, double y) {
       Debug("{} x: {} y: {}", element ? element->name() : "--", x, y);
-      // If the same polygon is already selected, select the nearest
-      // segment instead of re-selecting the whole polygon.
+      // If the same polygon is already selected, defer segment selection
+      // to endElementDrag().  This allows click+drag to move the polygon
+      // (with bounding box visible) while a pure click (no drag) selects
+      // the nearest segment.  Previously, segment selection happened
+      // immediately here, which replaced the bounding box with a segment
+      // line before the drag started, making the bounding box disappear.
       if (element && element == _currentElement) {
             auto* poly = qobject_cast<Polygon*>(element);
             if (poly) {
@@ -815,11 +862,14 @@ void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, 
                   int nearest = poly->findNearestSegment(worldPos);
                   if (nearest < 0)
                         return;
-                  // If the same segment is already selected, toggle it off.
-                  if (nearest == poly->selectedSegment())
-                        poly->clearSegmentSelection();
-                  else
-                        poly->setSelectedSegment(nearest);
+                  // Remember the click for later.  If the same segment
+                  // is already selected, we will toggle it off.
+                  _pendingSegmentElement   = element;
+                  _pendingSegmentClickPos  = worldPos;
+                  _pendingSegmentToggleOff = (nearest == poly->selectedSegment());
+                  // Do NOT select the segment here — let the drag proceed
+                  // with the bounding box visible.  The segment will be
+                  // selected in endElementDrag() if no drag occurred.
                   return;
                   }
             }
