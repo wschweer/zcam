@@ -52,6 +52,12 @@ class Layer : public Element3d
                       "label": "State"
                     },
                     {
+                      "name": "laserLayer",
+                      "label": "LaserLayer",
+                      "type": "laserLayer",
+                      "default": ""
+                    },
+                    {
                       "name": "pos",
                       "label": "Pos.",
                       "type": "vector3d",

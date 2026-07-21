@@ -58,6 +58,12 @@ class Rectangle : public Element3d
                       "label": "State"
                     },
                     {
+                      "name": "laserLayer",
+                      "label": "LaserLayer",
+                      "type": "laserLayer",
+                      "default": ""
+                    },
+                    {
                       "name": "color",
                       "label": "Color",
                       "type": "color",

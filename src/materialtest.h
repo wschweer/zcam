@@ -36,8 +36,8 @@ class MaterialTest : public Element3d
       PROPV(double, columnMin, 10.0)
       PROPV(double, columnMax, 80.0)
       PROPV(Recipe*, materialLayer, nullptr)
-      PROPV(Recipe*, textLayer,     nullptr)
-      PROPV(Recipe*, borderLayer,   nullptr)
+      PROPV(Recipe*, textLayer, nullptr)
+      PROPV(Recipe*, borderLayer, nullptr)
       PROPV(bool, showBorder, true)
       PROPV(bool, showText, true)
 
@@ -59,6 +59,12 @@ class MaterialTest : public Element3d
                         }
                       },
                       "label": "State"
+                    },
+                    {
+                      "name": "laserLayer",
+                      "label": "LaserLayer",
+                      "type": "laserLayer",
+                      "default": ""
                     },
                     {
                       "name": "description",
@@ -214,8 +220,8 @@ class MaterialTest : public Element3d
                   ]
                       })json"};
 
-      Layer* borderL { nullptr };
-      Layer* textL { nullptr };
+      Layer* borderL {nullptr};
+      Layer* textL {nullptr};
 
       QString genRowText(int row) const;
       QString genColText(int col) const;

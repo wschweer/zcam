@@ -45,6 +45,12 @@ class Cad : public Element3d
                       "label": "Visibility"
                     },
                     {
+                      "name": "laserLayer",
+                      "label": "LaserLayer",
+                      "type": "laserLayer",
+                      "default": ""
+                    },
+                    {
                       "name": "pos",
                       "label": "Pos.",
                       "type": "vector3d",
@@ -85,12 +91,6 @@ class Cad : public Element3d
                       "label": "Lock",
                       "type": "lockScale",
                       "default": 2
-                    },
-                    {
-                      "name": "laserLayer",
-                      "label": "LaserLayer",
-                      "type": "laserLayer",
-                      "default": ""
                     }
                   ]
                       })json"};
