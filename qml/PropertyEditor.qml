@@ -386,7 +386,8 @@ Item {
                         case "singleline":return singlelineDelegate
                         case "line":      return lineDelegate
                         case "color":     return colorDelegate
-                        case "layer":     return layerDelegate
+                        case "layer":      return layerDelegate
+                        case "laserLayer": return laserLayerDelegate
                         case "recipe":    return recipeDelegate
                         case "machine":   return machineDelegate
                         case "machineName": return machineNameDelegate
@@ -691,7 +692,8 @@ Item {
                                         case "multiline": return multilineDelegate
                                         case "singleline":return singlelineDelegate
                                         case "color":     return colorDelegate
-                                        case "layer":     return layerDelegate
+                                        case "layer":      return layerDelegate
+                                        case "laserLayer": return laserLayerDelegate
                                         case "recipe":    return recipeDelegate
                                         case "machine":   return machineDelegate
                                         case "machineType": return machineTypeDelegate
@@ -2155,6 +2157,86 @@ Item {
                 }
             }
 
+
+        // ── laserLayer: ComboBox for LaserLayer selection ──────────────────
+        //    Shows "(inherited)" when the property is null (i.e. the
+        //    element inherits the LaserLayer from its parent).
+        Component {
+            id: laserLayerDelegate
+
+            RowLayout {
+                id: rowLaserLayer
+                width: parent ? parent.width : 0
+                spacing: 6
+
+                property string propName
+                property var propValue
+                property var meta
+                property int propIndex
+                property var setModelValue: function(v) {}
+
+                Label {
+                    text: rowLaserLayer.meta ? rowLaserLayer.meta.label ?? "" : ""
+                    Layout.preferredWidth: root.labelWidth
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
+                    color: Material.foreground
+                    opacity: 0.75
+                    }
+
+                ValueBox {
+                    Layout.fillWidth: true
+
+                    ComboBox {
+                        id: laserLayerCombo
+                        anchors.fill: parent
+
+                        // Build model: prepend "(inherited)" so the user can
+                        // set the property back to null.
+                        property var baseNames: root.model.laserLayerNames ? root.model.laserLayerNames() : []
+                        model: {
+                            var list = ["(inherited)"]
+                            for (var i = 0; i < laserLayerCombo.baseNames.length; ++i)
+                                list.push(laserLayerCombo.baseNames[i])
+                            return list
+                            }
+
+                        property string currentName: {
+                            if (rowLaserLayer.propValue === undefined || rowLaserLayer.propValue === null)
+                                return "(inherited)"
+                            return root.model.laserLayerToName ? root.model.laserLayerToName(rowLaserLayer.propValue) : ""
+                            }
+
+                        currentIndex: {
+                            let idx = laserLayerCombo.find(laserLayerCombo.currentName)
+                            return idx >= 0 ? idx : 0
+                            }
+
+                        onActivated: index => {
+                            if (index === 0)
+                                rowLaserLayer.setModelValue(null)
+                            else {
+                                let name = laserLayerCombo.model[index]
+                                let ptr = root.model.nameToLaserLayer ? root.model.nameToLaserLayer(name) : null
+                                rowLaserLayer.setModelValue(ptr)
+                                }
+                            }
+
+                        background: Item {}
+                        padding: 2
+                        contentItem: Text {
+                            text: laserLayerCombo.currentName
+                            font.bold: true
+                            color: laserLayerCombo.currentName === "(inherited)" ? "#888888" : "#ffffff"
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            }
+                        indicator: Item {}
+                        }
+                    }
+                }
+            }
         // ── recipe: ComboBox for Recipe selection ───────────────────────────
         Component {
             id: recipeDelegate
