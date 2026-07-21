@@ -23,11 +23,11 @@
 class ZCam;
 class Cad;
 class Cam;
-class Layer;
+class Group;
 class Element;
 class Element3d;
 class Fixture;
-class LaserLayer;
+class Recipe;
 class Rectangle;
 class Polygon;
 class Ellipse;
@@ -111,9 +111,9 @@ class RenameElementCommand : public UndoCommand
 class AddLayerCommand : public UndoCommand
       {
       QPointer<Cad> _cad;
-      QPointer<Layer> _layer;
+      QPointer<Group> _layer;
       QPointer<Fixture> _fixture;
-      QPointer<LaserLayer> _laserLayer;
+      QPointer<Recipe> _laserLayer;
       QPointer<ZCam> _zcam;
       int _row {-1};   ///< position within cad's children
       int _llRow {-1}; ///< position within fixture's children
@@ -154,7 +154,7 @@ class AddLaserLayerCommand : public UndoCommand
       {
       QPointer<ZCam> _zcam;
       QPointer<Fixture> _fixture;
-      QPointer<LaserLayer> _laserLayer;
+      QPointer<Recipe> _laserLayer;
       int _row {-1}; ///< position within fixture's children
 
     public:
@@ -177,12 +177,12 @@ class AddLaserLayerCommand : public UndoCommand
 class AddRectangleCommand : public UndoCommand
       {
       QPointer<ZCam> _zcam;
-      QPointer<Layer> _layer;
+      QPointer<Group> _layer;
       QPointer<Rectangle> _rect;
       int _row {-1}; ///< position within layer's children
 
     public:
-      AddRectangleCommand(ZCam* zcam, Layer* layer, double x, double y);
+      AddRectangleCommand(ZCam* zcam, Group* layer, double x, double y);
 
       void undo() override;
       void redo() override;
@@ -202,12 +202,12 @@ class AddRectangleCommand : public UndoCommand
 class AddPolygonCommand : public UndoCommand
       {
       QPointer<ZCam> _zcam;
-      QPointer<Layer> _layer;
+      QPointer<Group> _layer;
       QPointer<Polygon> _poly;
       int _row {-1}; ///< position within layer's children
 
     public:
-      AddPolygonCommand(ZCam* zcam, Layer* layer, double x, double y);
+      AddPolygonCommand(ZCam* zcam, Group* layer, double x, double y);
 
       void undo() override;
       void redo() override;
@@ -227,12 +227,12 @@ class AddPolygonCommand : public UndoCommand
 class AddEllipseCommand : public UndoCommand
       {
       QPointer<ZCam> _zcam;
-      QPointer<Layer> _layer;
+      QPointer<Group> _layer;
       QPointer<Ellipse> _ellipse;
       int _row {-1}; ///< position within layer's children
 
     public:
-      AddEllipseCommand(ZCam* zcam, Layer* layer, double x, double y);
+      AddEllipseCommand(ZCam* zcam, Group* layer, double x, double y);
 
       void undo() override;
       void redo() override;
@@ -250,12 +250,12 @@ class AddEllipseCommand : public UndoCommand
 class AddTextCommand : public UndoCommand
       {
       QPointer<ZCam> _zcam;
-      QPointer<Layer> _layer;
+      QPointer<Group> _layer;
       QPointer<Text> _text;
       int _row {-1}; ///< position within layer's children
 
     public:
-      AddTextCommand(ZCam* zcam, Layer* layer, double x, double y);
+      AddTextCommand(ZCam* zcam, Group* layer, double x, double y);
 
       void undo() override;
       void redo() override;
@@ -307,7 +307,7 @@ class RemoveElementCommand : public UndoCommand
       ///< together with the Layer.
       struct LinkedLaserLayer {
             QPointer<Fixture> parent;
-            QPointer<LaserLayer> ll;
+            QPointer<Recipe> ll;
             int row {-1};
             };
       std::vector<LinkedLaserLayer> _linkedLaserLayers;

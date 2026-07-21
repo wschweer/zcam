@@ -14,7 +14,7 @@
 #include "project.h"
 #include "fixture.h"
 #include "framing.h"
-#include "laserlayer.h"
+#include "recipe.h"
 #include "geometryworker.h"
 
 #include <QPointer>
@@ -184,9 +184,9 @@ void Cam::updateCam() {
       input.panelVDistance = panelVDistance();
 
       for (auto e : fixture->children()) {
-            if (!isType<LaserLayer>(e))
+            if (!isType<Recipe>(e))
                   continue;
-            auto* ll = toType<LaserLayer>(e);
+            auto* ll = toType<Recipe>(e);
 
             Clipper2Lib::PathsD tileLines = ll->collectDisplayLines();
             if (tileLines.size() < 2) {
@@ -231,9 +231,9 @@ Clipper2Lib::PathD Cam::convexHull() const {
       double panelVD = panelVDistance();
 
       for (auto e : fixture->children()) {
-            if (!isType<LaserLayer>(e))
+            if (!isType<Recipe>(e))
                   continue;
-            auto* layer = toType<LaserLayer>(e);
+            auto* layer = toType<Recipe>(e);
             if (!layer->burn())
                   continue;
 
@@ -281,9 +281,9 @@ Clipper2Lib::RectD Cam::boundingBox() const {
       bool found = false;
 
       for (auto e : fixture->children()) {
-            if (!isType<LaserLayer>(e))
+            if (!isType<Recipe>(e))
                   continue;
-            auto* layer = toType<LaserLayer>(e);
+            auto* layer = toType<Recipe>(e);
             if (!layer->burn())
                   continue;
 

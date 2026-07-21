@@ -17,14 +17,14 @@
 class ZCam;
 
 //---------------------------------------------------------
-//   Layer  (display name: "Group")
+//   Group
 //    Serves only as a display grouping of elements.  It has a
 //    local coordinate system like all Element3d but has nothing
 //    to display itself.  Every element (Polygon, Rectangle, etc.)
 //    can also form a group by having children.
 //---------------------------------------------------------
 
-class Layer : public Element3d
+class Group : public Element3d
       {
       Q_OBJECT
       QML_ELEMENT
@@ -121,7 +121,7 @@ class Layer : public Element3d
                       })json"};
 
     public:
-      Layer(ZCam*, Element* parent = nullptr);
+      Group(ZCam*, Element* parent = nullptr);
       virtual QString typeName() override { return QStringLiteral("group"); }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool deletable() const override { return true; }

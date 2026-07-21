@@ -35,9 +35,9 @@ class MaterialTest : public Element3d
       PROPV(double, rowMax, 1000.0)
       PROPV(double, columnMin, 10.0)
       PROPV(double, columnMax, 80.0)
-      PROPV(Recipe*, materialLayer, nullptr)
-      PROPV(Recipe*, textLayer, nullptr)
-      PROPV(Recipe*, borderLayer, nullptr)
+      PROPV(LaserRecipe*, materialLayer, nullptr)
+      PROPV(LaserRecipe*, textLayer, nullptr)
+      PROPV(LaserRecipe*, borderLayer, nullptr)
       PROPV(bool, showBorder, true)
       PROPV(bool, showText, true)
 
@@ -220,15 +220,15 @@ class MaterialTest : public Element3d
                   ]
                       })json"};
 
-      Layer* borderL {nullptr};
-      Layer* textL {nullptr};
+      Group* borderL {nullptr};
+      Group* textL {nullptr};
 
       QString genRowText(int row) const;
       QString genColText(int col) const;
       double rowValue(int row) const;
       double columnValue(int col) const;
       void updateChildren();
-      void addText(double x, double y, const QString& s, Layer* layer, double pt, double rot);
+      void addText(double x, double y, const QString& s, Group* layer, double pt, double rot);
       void createChildren();
 
     public:

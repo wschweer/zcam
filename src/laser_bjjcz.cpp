@@ -12,7 +12,7 @@
 #include <algorithm>
 #include "laserengine.h"
 #include "usb.h"
-#include "layer.h"
+#include "group.h"
 #include "zcam.h"
 #include "project.h"
 #include "laser_bjjcz.h"

@@ -13,7 +13,7 @@
 #include <nanosvg/nanosvg.h>
 #include "zcam.h"
 #include "polygon.h"
-#include "layer.h"
+#include "group.h"
 #include "cad.h"
 #include "project.h"
 #include "undo.h"
@@ -103,7 +103,7 @@ void ZCam::importSvg(const QString& path) {
             return;
             }
 
-      Layer* layer = findFirstVisibleLayer(_project->cad());
+      Group* layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
             Critical("importSvg: no visible layer");
             return;
@@ -237,7 +237,7 @@ void ZCam::importSvgAt(const QString& path, double x, double y) {
             return;
             }
 
-      Layer* layer = findFirstVisibleLayer(_project->cad());
+      Group* layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
             Critical("importSvgAt: no visible layer");
             return;

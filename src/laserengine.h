@@ -16,16 +16,14 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QtQml/qqmlregistration.h>
-#include "recipe.h"
-
+#include "laser_recipe.h"
 #include "logger.h"
-// #include "clipper2/clipper.h"
 #include "types.h"
 
 class Usb;
 class LaserEngine;
-class Layer;
-class LaserLayer;
+class Group;
+class Recipe;
 class LaserSettings;
 class Fixture;
 class ZCam;

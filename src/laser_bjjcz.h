@@ -25,8 +25,8 @@
 
 class Usb;
 class LaserEngine;
-class Layer;
-class LaserLayer;
+class Group;
+class Recipe;
 class LaserSettings;
 class Fixture;
 class ZCam;

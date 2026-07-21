@@ -16,8 +16,8 @@
 #include "cad.h"
 #include "cam.h"
 #include "fixture.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "polygon.h"
 #include "ellipse.h"
 #include "text.h"
@@ -46,7 +46,7 @@
 class DxfReaderInterface final : public DRW_Interface
       {
       ZCam* m_zcam;
-      Layer* m_defaultLayer;                                ///< the single layer created for this import
+      Group* m_defaultLayer;                                ///< the single layer created for this import
       double m_unitScale;                                   ///< conversion factor to mm
       QString m_baseName;                                   ///< file base name for element naming
       std::unordered_map<std::string, int> m_layerColorMap; ///< layer name -> color index
@@ -80,7 +80,7 @@ class DxfReaderInterface final : public DRW_Interface
       bool m_inBlock {false};
 
     public:
-      DxfReaderInterface(ZCam* zcam, Layer* layer, const QString& baseName)
+      DxfReaderInterface(ZCam* zcam, Group* layer, const QString& baseName)
           : m_zcam(zcam), m_defaultLayer(layer), m_unitScale(1.0), m_baseName(baseName) {}
       double unitScale() const { return m_unitScale; }
       void setUnitScale(double s) { m_unitScale = s; }
@@ -810,7 +810,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
       Cad* cad = zcam->project()->cad();
 
       // Create a new Layer for this DXF file
-      auto* layer = new Layer(zcam, cad);
+      auto* layer = new Group(zcam, cad);
       layer->setName(fi.baseName());
       layer->setExpanded(true);
 
@@ -827,7 +827,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
                   fixture = zcam->project()->fixtures().at(0);
             }
       if (fixture) {
-            auto* ll = new LaserLayer(zcam, fixture);
+            auto* ll = new Recipe(zcam, fixture);
             ll->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
             ll->setExpanded(false);
             layer->set_laserLayer(ll);

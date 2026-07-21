@@ -13,8 +13,8 @@
 #include "zcam.h"
 #include "clipper2/clipper.h"
 #include "propertyjson.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "recipe.h"
 #include "machine.h"
 #include "machines.h"
@@ -105,17 +105,17 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
       QVariant value   = mp.read(element);
 
       if (type == "layer") {
-            Layer* layer = value.value<Layer*>();
+            Group* layer = value.value<Group*>();
             data[name]   = layer ? layer->name().toStdString() : "";
             return true;
             }
       else if (type == "recipe") {
-            Recipe* recipe = value.value<Recipe*>();
+            LaserRecipe* recipe = value.value<LaserRecipe*>();
             data[name]     = recipe ? recipe->name().toStdString() : "";
             return true;
             }
       else if (type == "laserLayer") {
-            LaserLayer* ll = value.value<LaserLayer*>();
+            Recipe* ll = value.value<Recipe*>();
             data[name]     = ll ? ll->name().toStdString() : "";
             return true;
             }
@@ -159,19 +159,19 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
 
       if (type == "layer") {
             QString layerName = QString::fromStdString(jval.get<std::string>());
-            Layer* layer      = element->zcamInstance()->layerPtr(layerName);
+            Group* layer      = element->zcamInstance()->layerPtr(layerName);
             mp.write(element, QVariant::fromValue(layer));
             return true;
             }
       else if (type == "recipe") {
             QString recipeName = QString::fromStdString(jval.get<std::string>());
-            Recipe* recipe     = element->zcamInstance()->recipePtr(recipeName);
+            LaserRecipe* recipe     = element->zcamInstance()->recipePtr(recipeName);
             mp.write(element, QVariant::fromValue(recipe));
             return true;
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
-            LaserLayer* ll = element->zcamInstance()->laserLayerPtr(llName);
+            Recipe* ll = element->zcamInstance()->laserLayerPtr(llName);
             mp.write(element, QVariant::fromValue(ll));
             return true;
             }
@@ -309,7 +309,7 @@ bool Element3d::ancestorsShow() const {
 //    if no ancestor (including self) has a laserLayer set.
 //---------------------------------------------------------
 
-LaserLayer* Element3d::effectiveLaserLayer() const {
+Recipe* Element3d::effectiveLaserLayer() const {
       const Element3d* e = this;
       while (e) {
             if (e->_laserLayer)

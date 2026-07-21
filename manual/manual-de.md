@@ -10,9 +10,40 @@
 - [Installation](install-de.md)
 
 
-## GUI
-### 3D Panel
-#### Navigation
+# GUI
+## Übersicht
+
+Die Gui besteht aus mehreren Panels zwischen denen über Buttons in der Panelleiste gewechselt werden kann.
+
+- `Main`          Dies ist die Hauptarbeitsfläche.
+- `Receipes`      Hier findest du ein Archiv von Laser Settings.
+- `Maschines`     Hier konfigurierst du deine Maschine(n).
+- `Config`        Hier kannst du diverse Einstellungen vornehmen.
+
+## Das `Main` Panel
+
+Das Main Panel ist horizontal in Subpanel unterteilt, die du teilweise optional ein/ausblenden kannst.
+
+ <div style="display: flex; align-items: center;">
+  <div style="flex: 1; padding-right: 20px;">
+    <img src="project.png" alt="Beispielbild" width=200px>
+  </div>
+  <div style="flex: 2;">
+
+- `Project`       Diese Panel ist vertikal in den `Projekt Baum` und den `Inspector`  geteilt.
+
+`Projekt Baum` zeigt eine hierarchische Ansicht der Projekt Elemente. In der oberen Hälfte stehen
+CAD Elemente die den Input des CAM Prozessors darstellen. Unten siehst du CAM Elemente die den CAD Input
+verarbeiten und den Output für `Maschine` erzeugen.
+
+`Inspector` zeigt die Eigenschaften ("Properties") eines Projekt Elements.
+
+  </div>
+</div>
+
+
+## 3D Panel
+### Navigation
 
 | Action | Input |
 | :--- | :--- |

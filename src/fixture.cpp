@@ -14,8 +14,8 @@
 
 #include "zcam.h"
 #include "fixture.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "project.h"
 #include "cad.h"
 
@@ -44,9 +44,9 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
       Clipper2Lib::PathsD pl;
 
       for (auto e : children()) {
-            if (!isType<LaserLayer>(e))
+            if (!isType<Recipe>(e))
                   continue;
-            auto layer = toType<LaserLayer>(e);
+            auto layer = toType<Recipe>(e);
             if (!layer->burn())
                   continue;
             auto elements = layer->collectElements();

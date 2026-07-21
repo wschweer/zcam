@@ -96,6 +96,7 @@ qt_add_qml_module(zcam
         src/layersettingmodel.cpp src/layersettingmodel.h
         src/propertyjson.cpp src/propertyjson.h
         src/recipe.cpp src/recipe.h
+        src/laser_recipe.cpp src/laser_recipe.h
         src/spacemouse.cpp
         src/spacemouse.h
         src/tessgeometry.cpp src/tessgeometry.h
@@ -118,7 +119,7 @@ qt_add_qml_module(zcam
         src/grid.cpp src/grid.h
 
         src/laser.cpp src/laser.h
-        src/laserlayer.cpp src/laserlayer.h
+#        src/laserlayer.cpp src/laserlayer.h
         src/laser.h src/laserengine.h
         src/laser_bjjcz.cpp src/laser_bjjcz.h
         src/laser_rkq.cpp src/laser_rkq.h
@@ -127,7 +128,7 @@ qt_add_qml_module(zcam
 
         src/usb.cpp src/usb.h
         src/clipper.cpp src/clipper.h
-        src/layer.cpp src/layer.h
+        src/group.cpp src/group.h
         src/materialtest.cpp src/materialtest.h
         src/undo.h
         src/svg.cpp

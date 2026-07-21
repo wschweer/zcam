@@ -12,7 +12,7 @@
 #include "laser.h"
 #include "laser_bjjcz.h"
 #include "laser_rkq.h"
-#include "laserlayer.h"
+#include "recipe.h"
 #include "zcam.h"
 
 //---------------------------------------------------------
@@ -273,13 +273,13 @@ void Laser::doStartMarking() {
             stopMarking    = false;
 
             for (auto e : fixture->children()) {
-                  if (!isType<LaserLayer>(e))
+                  if (!isType<Recipe>(e))
                         continue;
-                  auto ll = toType<LaserLayer>(e);
+                  auto ll = toType<Recipe>(e);
                   if (!ll->burn())
                         continue;
                   LaserPath spl        = ll->collectLaserPath();
-                  const Recipe* recipe = ll->recipe();
+                  const LaserRecipe* recipe = ll->recipe();
                   if (!recipe)
                         Fatal("no recipe for <{}>", ll->name());
 

@@ -18,8 +18,8 @@
 #include "cam.h"
 #include "framing.h"
 #include "grid.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "text.h"
 #include "rectangle.h"
 #include "polygon.h"
@@ -99,7 +99,7 @@ void Element::fromJson(const json& data) {
                               element->fromJson(value);
                               }
                         else if (key == "layer" || key == "group") {
-                              element = new Layer(zcam, this);
+                              element = new Group(zcam, this);
                               element->fromJson(value);
                               }
                         else if (key == "stock") {
@@ -119,7 +119,7 @@ void Element::fromJson(const json& data) {
                               element->fromJson(value);
                               }
                         else if (key == "laserLayer") {
-                              element = new LaserLayer(zcam, this);
+                              element = new Recipe(zcam, this);
                               element->fromJson(value);
                               }
                         else if (key == "rectangle") {

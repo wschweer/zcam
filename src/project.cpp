@@ -12,8 +12,8 @@
 #include "project.h"
 #include "cad.h"
 #include "cam.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "element3d.h"
 #include "rectangle.h"
 #include "polygon.h"
@@ -272,10 +272,10 @@ void Project::updateCadLayerVisibility() {
       // active fixture.  Also show Layers that contain children which
       // have a laserLayer set to one of the fixture's LaserLayers.
       // For now, simply show all layers (the old baseElement logic is gone).
-      QSet<Layer*> referencedLayers;
+      QSet<Group*> referencedLayers;
       if (_fixture) {
             for (const auto c : _fixture->children()) {
-                  auto* ll = qobject_cast<LaserLayer*>(c);
+                  auto* ll = qobject_cast<Recipe*>(c);
                   if (ll) {
                         // Walk the Cad subtree to find elements referencing this LaserLayer
                         if (_cad) {
@@ -284,9 +284,9 @@ void Project::updateCadLayerVisibility() {
                                     if (e3d && e3d->effectiveLaserLayer() == ll) {
                                           // Mark the nearest Layer ancestor as referenced
                                           Element* p = e3d;
-                                          while (p && !isType<Layer>(p))
+                                          while (p && !isType<Group>(p))
                                                 p = p->parent();
-                                          if (auto* layer = qobject_cast<Layer*>(p))
+                                          if (auto* layer = qobject_cast<Group*>(p))
                                                 referencedLayers.insert(layer);
                                           }
                                     for (auto* child : e->children())
@@ -299,7 +299,7 @@ void Project::updateCadLayerVisibility() {
             }
 
       for (const auto c : _cad->children()) {
-            auto* layer = qobject_cast<Layer*>(c);
+            auto* layer = qobject_cast<Group*>(c);
             if (!layer)
                   continue;
             // Set show to true only if this layer is referenced by
@@ -399,7 +399,7 @@ void Project::removeFixture(Fixture* f) {
 
 AddLayerCommand::AddLayerCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
     : _cad(cad), _fixture(fixture), _zcam(zcam) {
-      _layer = new Layer(zcam, nullptr);
+      _layer = new Group(zcam, nullptr);
       // No longer create a LaserLayer automatically.
       // The user creates LaserLayers explicitly and assigns
       // elements to them via the laserLayer property.
@@ -547,7 +547,7 @@ QString AddFixtureCommand::description() const {
 //---------------------------------------------------------
 
 AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture) : _zcam(zcam), _fixture(fixture) {
-      _laserLayer = new LaserLayer(zcam, nullptr);
+      _laserLayer = new Recipe(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
       // The user assigns elements to this LaserLayer via the laserLayer property.
       _laserLayer->setName(QStringLiteral("LaserLayer"));
@@ -594,7 +594,7 @@ QString AddLaserLayerCommand::description() const {
 //   AddRectangleCommand implementation
 //---------------------------------------------------------
 
-AddRectangleCommand::AddRectangleCommand(ZCam* zcam, Layer* layer, double x, double y)
+AddRectangleCommand::AddRectangleCommand(ZCam* zcam, Group* layer, double x, double y)
     : _zcam(zcam), _layer(layer) {
       _rect = new Rectangle(zcam, nullptr);
       _rect->set_size(QVector2D(0.0, 0.0));
@@ -646,7 +646,7 @@ Rectangle* AddRectangleCommand::rectangle() const {
 //   AddPolygonCommand implementation
 //---------------------------------------------------------
 
-AddPolygonCommand::AddPolygonCommand(ZCam* zcam, Layer* layer, double x, double y)
+AddPolygonCommand::AddPolygonCommand(ZCam* zcam, Group* layer, double x, double y)
     : _zcam(zcam), _layer(layer) {
       _poly = new Polygon(zcam, nullptr);
       _poly->set_pos(QVector3D(x, y, 0.0));
@@ -697,7 +697,7 @@ Polygon* AddPolygonCommand::polygon() const {
 //   AddEllipseCommand implementation
 //---------------------------------------------------------
 
-AddEllipseCommand::AddEllipseCommand(ZCam* zcam, Layer* layer, double x, double y)
+AddEllipseCommand::AddEllipseCommand(ZCam* zcam, Group* layer, double x, double y)
     : _zcam(zcam), _layer(layer) {
       _ellipse = new Ellipse(zcam, nullptr);
       _ellipse->set_size(QVector2D(0.0, 0.0));
@@ -749,7 +749,7 @@ Ellipse* AddEllipseCommand::ellipse() const {
 //   AddTextCommand implementation
 //---------------------------------------------------------
 
-AddTextCommand::AddTextCommand(ZCam* zcam, Layer* layer, double x, double y) : _zcam(zcam), _layer(layer) {
+AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y) : _zcam(zcam), _layer(layer) {
       _text = new Text(zcam, nullptr);
       _text->set_text("");
       _text->set_pos(QVector3D(x, y, 0.0));
@@ -1105,12 +1105,12 @@ void Project::removeElement(Element* el) {
       // If the element is a Layer, find all elements in the Cad tree
       // whose effectiveLaserLayer references a LaserLayer that is a child
       // of the current fixture, so we can also remove those LaserLayers.
-      auto layer = qobject_cast<Layer*>(el);
+      auto layer = qobject_cast<Group*>(el);
       if (layer && _fixture) {
             // Find LaserLayers in the fixture whose collectElements()
             // includes any element under the removed Layer.
             for (const auto c : _fixture->children()) {
-                  auto ll = qobject_cast<LaserLayer*>(c);
+                  auto ll = qobject_cast<Recipe*>(c);
                   if (!ll)
                         continue;
                   // Check if any element in the LaserLayer's collection

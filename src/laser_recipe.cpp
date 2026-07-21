@@ -105,7 +105,7 @@ void LaserPasses::fromJson(const json& data) {
 //   Recipe
 //---------------------------------------------------------
 
-json Recipe::toJson() const {
+json LaserRecipe::toJson() const {
       json data;
       data["name"]        = _name.toStdString();
       data["description"] = _description.toStdString();
@@ -118,7 +118,7 @@ json Recipe::toJson() const {
 //   fromJson
 //---------------------------------------------------------
 
-void Recipe::fromJson(const json& data) {
+void LaserRecipe::fromJson(const json& data) {
       if (data.contains("name"))
             _name = QString::fromStdString(data.at("name").get<std::string>());
       if (data.contains("description"))
@@ -133,7 +133,7 @@ void Recipe::fromJson(const json& data) {
 //   Recipes
 //---------------------------------------------------------
 
-void Recipes::updateRecipe(int idx, const Recipe& r) {
+void LaserReceipes::updateRecipe(int idx, const LaserRecipe& r) {
       if (idx >= 0 && idx < recipes.size()) {
             recipes[idx] = r;
             emit recipeModelChanged();
@@ -141,21 +141,21 @@ void Recipes::updateRecipe(int idx, const Recipe& r) {
             }
       }
 
-void Recipes::addRecipe(const QString& name) {
-      Recipe r;
+void LaserReceipes::addRecipe(const QString& name) {
+      LaserRecipe r;
       r.set_name(name);
       recipes.push_back(r);
       emit recipeModelChanged();
       }
 
-void Recipes::removeRecipe(int idx) {
+void LaserReceipes::removeRecipe(int idx) {
       if (idx >= 0 && idx < recipes.size()) {
             recipes.erase(recipes.begin() + idx);
             emit recipeModelChanged();
             }
       }
 
-LaserPass Recipes::layer(int recipeIdx, int layerIdx) {
+LaserPass LaserReceipes::layer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             const auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.layers()->size())
@@ -164,7 +164,7 @@ LaserPass Recipes::layer(int recipeIdx, int layerIdx) {
       return LaserPass();
       }
 
-LaserPass* Recipes::layerPtr(int recipeIdx, int layerIdx) {
+LaserPass* LaserReceipes::layerPtr(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes()->size())
@@ -173,7 +173,7 @@ LaserPass* Recipes::layerPtr(int recipeIdx, int layerIdx) {
       return nullptr;
       }
 
-void Recipes::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
+void LaserReceipes::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes()->size()) {
@@ -183,7 +183,7 @@ void Recipes::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
             }
       }
 
-void Recipes::addLayer(int recipeIdx, const QString& name) {
+void LaserReceipes::addLayer(int recipeIdx, const QString& name) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             LaserPass l;
             l.set_name(name);
@@ -192,7 +192,7 @@ void Recipes::addLayer(int recipeIdx, const QString& name) {
             }
       }
 
-void Recipes::removeLayer(int recipeIdx, int layerIdx) {
+void LaserReceipes::removeLayer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes()->size()) {
@@ -202,7 +202,7 @@ void Recipes::removeLayer(int recipeIdx, int layerIdx) {
             }
       }
 
-QStringList Recipes::layerModel(int recipeIdx) const {
+QStringList LaserReceipes::layerModel(int recipeIdx) const {
       QStringList names;
       if (recipeIdx >= 0 && recipeIdx < recipes.size())
             for (const auto& l : *recipes[recipeIdx].layers())
@@ -210,7 +210,7 @@ QStringList Recipes::layerModel(int recipeIdx) const {
       return names;
       }
 
-QStringList Recipes::recipeModel() const {
+QStringList LaserReceipes::recipeModel() const {
       QStringList names;
       for (const auto& r : recipes)
             names.append(r.name());
@@ -221,7 +221,7 @@ QStringList Recipes::recipeModel() const {
 //   toJson
 //---------------------------------------------------------
 
-json Recipes::toJson() const {
+json LaserReceipes::toJson() const {
       json data = json::array();
       for (const auto& r : recipes)
             data.push_back(r.toJson());
@@ -232,11 +232,11 @@ json Recipes::toJson() const {
 //   fromJson
 //---------------------------------------------------------
 
-void Recipes::fromJson(const json& data) {
+void LaserReceipes::fromJson(const json& data) {
       recipes.clear();
       if (data.is_array()) {
             for (const auto& r : data) {
-                  Recipe recipe;
+                  LaserRecipe recipe;
                   recipe.fromJson(r);
                   recipes.push_back(recipe);
                   }

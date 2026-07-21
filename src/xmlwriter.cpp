@@ -15,8 +15,6 @@
 
 #include "logger.h"
 #include "xmlwriter.h"
-// #include "tool.h"
-// #include "laserlayer.h"
 
 //---------------------------------------------------------
 //   putLevel

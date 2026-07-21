@@ -15,7 +15,7 @@
 #include "machines.h"
 #include "project.h"
 #include "element.h"
-#include "layer.h"
+#include "group.h"
 #include "recipe.h"
 #include "laser.h"
 #include "laserengine.h"
@@ -709,7 +709,7 @@ QStringList InspectorModel::recipeNames() const {
 //---------------------------------------------------------
 
 QString InspectorModel::layerToName(QVariant layer) const {
-      Layer* ptr = layer.value<Layer*>();
+      Group* ptr = layer.value<Group*>();
       if (!ptr)
             return {};
       return ptr->name();
@@ -720,7 +720,7 @@ QString InspectorModel::layerToName(QVariant layer) const {
 //    Resolve a name string back to a Layer* pointer.
 //---------------------------------------------------------
 
-Layer* InspectorModel::nameToLayer(const QString& name) const {
+Group* InspectorModel::nameToLayer(const QString& name) const {
       if (!_element || name.isEmpty())
             return nullptr;
       ZCam* zc    = nullptr;
@@ -755,7 +755,7 @@ QStringList InspectorModel::laserLayerNames() const {
 //---------------------------------------------------------
 
 QString InspectorModel::laserLayerToName(QVariant ll) const {
-      LaserLayer* ptr = ll.value<LaserLayer*>();
+      Recipe* ptr = ll.value<Recipe*>();
       if (!ptr)
             return {};
       return ptr->name();
@@ -766,7 +766,7 @@ QString InspectorModel::laserLayerToName(QVariant ll) const {
 //    Resolve a name string back to a LaserLayer* pointer.
 //---------------------------------------------------------
 
-LaserLayer* InspectorModel::nameToLaserLayer(const QString& name) const {
+Recipe* InspectorModel::nameToLaserLayer(const QString& name) const {
       if (!_element || name.isEmpty())
             return nullptr;
       ZCam* zc    = nullptr;
@@ -783,7 +783,7 @@ LaserLayer* InspectorModel::nameToLaserLayer(const QString& name) const {
 //    Resolve a Recipe* pointer to its name string.
 //---------------------------------------------------------
 
-QString InspectorModel::recipeToName(Recipe* recipe) const {
+QString InspectorModel::recipeToName(LaserRecipe* recipe) const {
       if (!recipe)
             return {};
       return recipe->name();
@@ -794,7 +794,7 @@ QString InspectorModel::recipeToName(Recipe* recipe) const {
 //    Resolve a name string back to a Recipe* pointer.
 //---------------------------------------------------------
 
-Recipe* InspectorModel::nameToRecipe(const QString& name) const {
+LaserRecipe* InspectorModel::nameToRecipe(const QString& name) const {
       if (!_element || name.isEmpty())
             return nullptr;
       ZCam* zc    = nullptr;

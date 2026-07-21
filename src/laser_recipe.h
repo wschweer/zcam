@@ -132,7 +132,7 @@ class LaserPasses : public std::vector<LaserPass>
 //   Recipe
 //---------------------------------------------------------
 
-class Recipe
+class LaserRecipe
       {
       Q_GADGET
       QML_VALUE_TYPE(recipe)
@@ -143,7 +143,7 @@ class Recipe
       LaserPasses _passes;
 
     public:
-      Recipe() {}
+      LaserRecipe() {}
       json toJson() const;
       void fromJson(const json&);
       const LaserPasses* layers() const { return &_passes; }
@@ -156,7 +156,7 @@ class Recipe
 //   Recipes
 //---------------------------------------------------------
 
-class Recipes : public QObject
+class LaserReceipes : public QObject
       {
       Q_OBJECT
       QML_ELEMENT
@@ -164,26 +164,26 @@ class Recipes : public QObject
 
       Q_PROPERTY(QStringList recipeModel READ recipeModel NOTIFY recipeModelChanged)
 
-      std::vector<Recipe> recipes;
+      std::vector<LaserRecipe> recipes;
 
     signals:
       void recipeModelChanged();
       void recipeChanged(int idx);
 
     public:
-      Recipes(QObject* parent = nullptr) : QObject(parent) {}
-      Q_INVOKABLE Recipe recipe(int idx) const {
+      LaserReceipes(QObject* parent = nullptr) : QObject(parent) {}
+      Q_INVOKABLE LaserRecipe recipe(int idx) const {
             if (idx >= 0 && idx < static_cast<int>(recipes.size()))
                   return recipes[idx];
-            return Recipe();
+            return LaserRecipe();
             }
       int recipeCount() const { return static_cast<int>(recipes.size()); }
-      Recipe* recipePtr(int idx) {
+      LaserRecipe* recipePtr(int idx) {
             if (idx >= 0 && idx < static_cast<int>(recipes.size()))
                   return &recipes[idx];
             return nullptr;
             }
-      Q_INVOKABLE void updateRecipe(int idx, const Recipe& r);
+      Q_INVOKABLE void updateRecipe(int idx, const LaserRecipe& r);
       Q_INVOKABLE void addRecipe(const QString& name);
       Q_INVOKABLE void removeRecipe(int idx);
 
@@ -199,4 +199,4 @@ class Recipes : public QObject
       };
 
 Q_DECLARE_METATYPE(LaserPass)
-Q_DECLARE_METATYPE(Recipe)
+Q_DECLARE_METATYPE(LaserRecipe)

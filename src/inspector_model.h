@@ -17,8 +17,8 @@
 #include <QVariantList>
 #include "element3d.h"
 #include "text.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "recipe.h"
 #include "machine.h"
 
@@ -88,7 +88,7 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE QString layerToName(QVariant layer) const;
 
       // Resolve a name back to a Layer* pointer.
-      Q_INVOKABLE Layer* nameToLayer(const QString& name) const;
+      Q_INVOKABLE Group* nameToLayer(const QString& name) const;
 
       // Called from QML delegates for "laserLayer" type properties: returns
       // the list of available LaserLayer names in the current project.
@@ -98,13 +98,13 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE QString laserLayerToName(QVariant ll) const;
 
       // Resolve a name back to a LaserLayer* pointer.
-      Q_INVOKABLE LaserLayer* nameToLaserLayer(const QString& name) const;
+      Q_INVOKABLE Recipe* nameToLaserLayer(const QString& name) const;
 
       // Resolve a Recipe* pointer to its name (for display in ComboBox).
-      Q_INVOKABLE QString recipeToName(Recipe* recipe) const;
+      Q_INVOKABLE QString recipeToName(LaserRecipe* recipe) const;
 
       // Resolve a name back to a Recipe* pointer.
-      Q_INVOKABLE Recipe* nameToRecipe(const QString& name) const;
+      Q_INVOKABLE LaserRecipe* nameToRecipe(const QString& name) const;
 
       // Called from QML delegates for "override" type properties: returns
       // the list of available ParameterType names from laserengine.h.

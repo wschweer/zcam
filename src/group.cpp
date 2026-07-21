@@ -10,7 +10,7 @@
 //=============================================================================
 
 #include "element3d.h"
-#include "layer.h"
+#include "group.h"
 #include "zcam.h"
 #include "clipper.h"
 
@@ -18,7 +18,7 @@
 //   Layer
 //---------------------------------------------------------
 
-Layer::Layer(ZCam* w, Element* parent)
+Group::Group(ZCam* w, Element* parent)
    : Element3d(w, parent)
       {
       setName("layer");

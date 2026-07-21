@@ -24,7 +24,7 @@
 #include "project.h"
 #include "recipe.h"
 #include "machines.h"
-#include "layer.h"
+#include "group.h"
 
 class Project;
 class Element3d;
@@ -257,7 +257,7 @@ class ZCam : public QObject
       PROPV(Element3d*, hoverElement, nullptr)
       PROPV(TreeModel*, treeModel, nullptr)
       PROPV(Machines*, machines, nullptr)
-      PROPV(Recipes*, recipes, nullptr)
+      PROPV(LaserReceipes*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
 
       void initAssets();
@@ -309,13 +309,13 @@ class ZCam : public QObject
       QString _svgDragPath;
       QRectF _svgDragBBox;
 
-      Layer* findFirstVisibleLayer(Element* root) const;
+      Group* findFirstVisibleLayer(Element* root) const;
       /// Find the Layer that is the current element itself, or the
       /// nearest Layer ancestor of the current element, walking up
       /// the parent chain until Cad is reached.  Returns nullptr if
       /// there is no current element, no Layer is found in the chain,
       /// or the found Layer is not visible.
-      Layer* findCurrentLayer() const;
+      Group* findCurrentLayer() const;
 
     signals:
       void camDirtyChanged();
@@ -457,17 +457,17 @@ class ZCam : public QObject
       /// Returns a list of all Layer element names in the current project.
       Q_INVOKABLE QStringList layerNames() const;
       /// Returns the Layer* pointer for a given layer name, or nullptr.
-      Q_INVOKABLE Layer* layerPtr(const QString& name) const;
+      Q_INVOKABLE Group* layerPtr(const QString& name) const;
 
       /// Returns a list of all LaserLayer element names in the current project.
       Q_INVOKABLE QStringList laserLayerNames() const;
       /// Returns the LaserLayer* pointer for a given name, or nullptr.
-      Q_INVOKABLE LaserLayer* laserLayerPtr(const QString& name) const;
+      Q_INVOKABLE Recipe* laserLayerPtr(const QString& name) const;
 
       /// Returns a list of all Recipe names from ZCam::recipes.
       Q_INVOKABLE QStringList recipeNames() const;
       /// Returns the Recipe* pointer for a given recipe name, or nullptr.
-      Q_INVOKABLE Recipe* recipePtr(const QString& name) const;
+      Q_INVOKABLE LaserRecipe* recipePtr(const QString& name) const;
 
       /// Create a new Rectangle element at the given world position
       /// and add it to the current Layer (the Layer of the selected

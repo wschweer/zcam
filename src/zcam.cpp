@@ -13,8 +13,8 @@
 #include "project.h"
 #include "cad.h"
 #include "text.h"
-#include "layer.h"
-#include "laserlayer.h"
+#include "group.h"
+#include "recipe.h"
 #include "rectangle.h"
 #include "polygon.h"
 #include "ellipse.h"
@@ -64,7 +64,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       // Reason: we cannot easily manage the object order in QObject tree
 
       _machines = new Machines(this);
-      _recipes  = new Recipes(this);
+      _recipes  = new LaserReceipes(this);
 
       loadAssets();
 
@@ -1005,7 +1005,7 @@ int ZCam::selectNearestSegment(Element3d* element, const QVector3D& worldPos) {
 static void collectLayers(Element* root, QStringList& names) {
       if (!root)
             return;
-      if (isType<Layer>(root))
+      if (isType<Group>(root))
             names.append(root->name());
       for (Element* child : root->children())
             collectLayers(child, names);
@@ -1027,11 +1027,11 @@ QStringList ZCam::layerNames() const {
 //    Return the Layer* for a given name, or nullptr.
 //---------------------------------------------------------
 
-Layer* ZCam::layerPtr(const QString& name) const {
+Group* ZCam::layerPtr(const QString& name) const {
       Element* e = Element::byName(name);
       if (!e)
             return nullptr;
-      return qobject_cast<Layer*>(e);
+      return qobject_cast<Group*>(e);
       }
 
 //---------------------------------------------------------
@@ -1042,7 +1042,7 @@ Layer* ZCam::layerPtr(const QString& name) const {
 static void collectLaserLayers(Element* root, QStringList& names) {
       if (!root)
             return;
-      if (isType<LaserLayer>(root))
+      if (isType<Recipe>(root))
             names.append(root->name());
       for (Element* child : root->children())
             collectLaserLayers(child, names);
@@ -1059,11 +1059,11 @@ QStringList ZCam::laserLayerNames() const {
 //    Return the LaserLayer* for a given name, or nullptr.
 //---------------------------------------------------------
 
-LaserLayer* ZCam::laserLayerPtr(const QString& name) const {
+Recipe* ZCam::laserLayerPtr(const QString& name) const {
       Element* e = Element::byName(name);
       if (!e)
             return nullptr;
-      return qobject_cast<LaserLayer*>(e);
+      return qobject_cast<Recipe*>(e);
       }
 
 //---------------------------------------------------------
@@ -1085,11 +1085,11 @@ QStringList ZCam::recipeNames() const {
 //    until recipeModelChanged is emitted.
 //---------------------------------------------------------
 
-Recipe* ZCam::recipePtr(const QString& name) const {
+LaserRecipe* ZCam::recipePtr(const QString& name) const {
       if (!_recipes)
             return nullptr;
       for (int i = 0; i < _recipes->recipeCount(); ++i) {
-            const Recipe* r = _recipes->recipePtr(i);
+            const LaserRecipe* r = _recipes->recipePtr(i);
             if (r->name() == name)
                   return _recipes->recipePtr(i);
             }
@@ -1131,10 +1131,10 @@ bool Config::fromJson(const nlohmann::json& data) {
 //    Layer that is currently visible (show == true).
 //---------------------------------------------------------
 
-Layer* ZCam::findFirstVisibleLayer(Element* root) const {
+Group* ZCam::findFirstVisibleLayer(Element* root) const {
       if (!root)
             return nullptr;
-      if (auto* layer = qobject_cast<Layer*>(root)) {
+      if (auto* layer = qobject_cast<Group*>(root)) {
             if (layer->show() && layer->ancestorsShow())
                   return layer;
             }
@@ -1165,7 +1165,7 @@ Layer* ZCam::findFirstVisibleLayer(Element* root) const {
 //        ancestor has show == false)
 //---------------------------------------------------------
 
-Layer* ZCam::findCurrentLayer() const {
+Group* ZCam::findCurrentLayer() const {
       if (!_currentElement)
             return nullptr;
 
@@ -1178,7 +1178,7 @@ Layer* ZCam::findCurrentLayer() const {
             if (isType<Cad>(e))
                   return nullptr;
 
-            if (auto* layer = qobject_cast<Layer*>(e)) {
+            if (auto* layer = qobject_cast<Group*>(e)) {
                   if (layer->show() && layer->ancestorsShow())
                         return layer;
                   return nullptr;
@@ -1206,7 +1206,7 @@ Element3d* ZCam::createRectangle(double x, double y) {
       // Find the layer to host the new rectangle: prefer the layer
       // of the currently selected element, fall back to the first
       // visible layer in the tree.
-      Layer* layer = findCurrentLayer();
+      Group* layer = findCurrentLayer();
       if (!layer)
             layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
@@ -1243,7 +1243,7 @@ Element3d* ZCam::createPolygon(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
 
-      Layer* layer = findCurrentLayer();
+      Group* layer = findCurrentLayer();
       if (!layer)
             layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
@@ -1280,7 +1280,7 @@ Element3d* ZCam::createEllipse(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
 
-      Layer* layer = findCurrentLayer();
+      Group* layer = findCurrentLayer();
       if (!layer)
             layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
@@ -1326,7 +1326,7 @@ Element3d* ZCam::createText(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
 
-      Layer* layer = findCurrentLayer();
+      Group* layer = findCurrentLayer();
       if (!layer)
             layer = findFirstVisibleLayer(_project->cad());
       if (!layer) {
@@ -1586,12 +1586,12 @@ void ZCam::newProject(bool clearPersistedPath) {
       auto fixture = project->fixture();
       auto cam     = project->cam();
       auto cad     = project->cad();
-      auto ll      = new LaserLayer(this, fixture);
+      auto ll      = new Recipe(this, fixture);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));
       auto stock = new Stock(this, cam);
-      auto layer = new Layer(this, cad);
+      auto layer = new Group(this, cad);
       // Set the LaserLayer on the Layer so all children inherit it.
       layer->set_laserLayer(ll);
       auto text  = new Text(this, layer);

@@ -18,7 +18,7 @@
 #include "text.h"
 #include "cad.h"
 #include "cam.h"
-#include "laserlayer.h"
+#include "recipe.h"
 #include "fixture.h"
 #include "framing.h"
 #include "grid.h"
@@ -132,7 +132,7 @@ void ZCam::createMaterialTest() {
       fixture->setExpanded(false);
 
       // Create a Pattern layer holding the MaterialTest element
-      auto layer = new Layer(this, cad);
+      auto layer = new Group(this, cad);
       layer->setName("Pattern");
       layer->setExpanded(true);
       cad->addChild(layer);
@@ -156,7 +156,7 @@ void ZCam::createMaterialTest() {
       layer->addChild(mtest);
 
       // Create a LaserLayer linked to the pattern layer
-      auto ll = new LaserLayer(this, fixture);
+      auto ll = new Recipe(this, fixture);
       ll->setName("LL-Pattern");
       // Set the LaserLayer on the Pattern layer so all children inherit it.
       layer->set_laserLayer(ll);
@@ -265,7 +265,7 @@ void MaterialTest::createChildren() {
       if (fixture) {
             QList<Element*> toDelete;
             for (Element* c : fixture->children()) {
-                  auto* ll = qobject_cast<LaserLayer*>(c);
+                  auto* ll = qobject_cast<Recipe*>(c);
                   if (!ll)
                         continue;
                   // Check if this LaserLayer's collectElements() includes
@@ -338,13 +338,13 @@ void MaterialTest::createChildren() {
                   //    - create LaserLayer for Layer
                   //=====================================================================
 
-                  Layer* layer = new Layer(zcam, this);
+                  Group* layer = new Group(zcam, this);
                   layer->setName(format("layer-{}-{}", row, column).c_str());
                   layer->setExpanded(false);
                   addChild(layer);
 
                   double cv      = columnValue(column);
-                  LaserLayer* ll = new LaserLayer(zcam, fixture);
+                  Recipe* ll = new Recipe(zcam, fixture);
                   ll->setName(format("ll-{}-{}", row, column).c_str());
                   ll->set_recipe(materialLayer());
                   layer->set_laserLayer(ll);
@@ -367,11 +367,11 @@ void MaterialTest::createChildren() {
                   }
             }
       if (showBorder()) {
-            borderL = new Layer(zcam, this);
+            borderL = new Group(zcam, this);
             borderL->setName("layer-border");
             addChild(borderL);
 
-            LaserLayer* ll = new LaserLayer(zcam, fixture);
+            Recipe* ll = new Recipe(zcam, fixture);
             ll->setName("ll-border");
             borderL->set_laserLayer(ll);
             ll->set_recipe(borderLayer());
@@ -387,11 +387,11 @@ void MaterialTest::createChildren() {
             borderL->addChild(r);
             }
       if (showText()) {
-            textL = new Layer(zcam, this);
+            textL = new Group(zcam, this);
             textL->setName("layer-text");
             addChild(textL);
 
-            const Recipe* lls   = materialLayer();
+            const LaserRecipe* lls   = materialLayer();
             const LaserPass* ls = nullptr;
             if (lls) {
                   // the laser values of the first pass are marked on the
@@ -464,7 +464,7 @@ void MaterialTest::createChildren() {
             addText(samples.right() + 9, samples.top() + samples.height() * .5 - textWidth * .5,
                     label(ParameterType(rowParameter())), textL, 6.0, 90.0);
 
-            LaserLayer* ll = new LaserLayer(zcam, fixture);
+            Recipe* ll = new Recipe(zcam, fixture);
             ll->setName("ll-text");
             textL->set_laserLayer(ll);
             ll->set_recipe(textLayer());
@@ -491,7 +491,7 @@ void MaterialTest::createChildren() {
       // Also emit add3dElement for new fixture LaserLayers
       if (fixture) {
             for (Element* c : fixture->children()) {
-                  auto* ll = qobject_cast<LaserLayer*>(c);
+                  auto* ll = qobject_cast<Recipe*>(c);
                   if (!ll)
                         continue;
                   // Check if this LaserLayer's collection includes
@@ -518,7 +518,7 @@ void MaterialTest::createChildren() {
 //   addText
 //---------------------------------------------------------
 
-void MaterialTest::addText(double x, double y, const QString& s, Layer* layer, double pt, double rot) {
+void MaterialTest::addText(double x, double y, const QString& s, Group* layer, double pt, double rot) {
       auto r = new Text(zcam, layer);
       r->setName("text");
       r->set_text(s);
@@ -611,7 +611,7 @@ void ZCam::createGalvoTest() {
       fixture->setExpanded(false);
 
       // Create a single layer for the galvo test pattern
-      auto layer = new Layer(this, cad);
+      auto layer = new Group(this, cad);
       layer->setName("GalvoPattern");
       layer->setExpanded(true);
       cad->addChild(layer);
@@ -695,7 +695,7 @@ void ZCam::createGalvoTest() {
       layer->addChild(label);
 
       // Create a LaserLayer linked to the galvo pattern layer
-      auto ll = new LaserLayer(this, fixture);
+      auto ll = new Recipe(this, fixture);
       ll->setName("LL-GalvoPattern");
       layer->set_laserLayer(ll);
       auto recipes = this->recipes();
