@@ -121,24 +121,32 @@ class Config : public QObject
                       }
                     },
                     {
-                      "name": "showGrid",
-                      "label": "Show Grid",
-                      "type": "bool",
-                      "cat": "View",
-                      "default": true
-                    },
-                    {
-                      "name": "gridSpacing",
-                      "label": "Grid Spacing",
-                      "type": "float",
-                      "cat": "View",
-                      "unit": "mm",
-                      "min": 1.0,
-                      "max": 100.0,
-                      "default": 10.0,
-                      "precision": 1,
-                      "step": 0.5,
-                      "bigStep": 5.0
+                      "columns": {
+                        "count": 2,
+                        "cat": "View",
+                        "items": [
+                          {
+                            "name": "showGrid",
+                            "label": "Show Grid",
+                            "type": "bool",
+                            "cat": "View",
+                            "default": true
+                          },
+                          {
+                            "name": "gridSpacing",
+                            "label": "Grid Spacing",
+                            "type": "float",
+                            "cat": "View",
+                            "unit": "mm",
+                            "min": 1.0,
+                            "max": 100.0,
+                            "default": 10.0,
+                            "precision": 1,
+                            "step": 0.5,
+                            "bigStep": 5.0
+                          }
+                        ]
+                      }
                     },
                     {
                       "columns": {
@@ -185,25 +193,34 @@ class Config : public QObject
                       }
                     },
                     {
-                      "name": "defaultMachine",
-                      "label": "Default Machine",
-                      "type": "machineName",
-                      "cat": "Project",
-                      "default": ""
-                    },
-                    {
-                      "name": "artworkDirectory",
-                      "label": "Artwork Directory",
-                      "type": "singleline",
-                      "cat": "Project",
-                      "default": ""
-                    },
-                    {
-                      "name": "iconDirectory",
-                      "label": "Icon Directory",
-                      "type": "singleline",
-                      "cat": "Project",
-                      "default": "/usr/share/icons"
+                      "columns": {
+                        "count": 2,
+                        "cat": "Project",
+                        "items": [
+                          {
+                            "name": "defaultMachine",
+                            "label": "Default Machine",
+                            "type": "machineName",
+                            "cat": "Project",
+                            "default": ""
+                          },
+                          {
+                            "name": "artworkDirectory",
+                            "label": "Artwork Directory",
+                            "type": "singleline",
+                            "cat": "Project",
+                            "default": ""
+                          },
+                          {
+                            "name": "iconDirectory",
+                            "label": "Icon Directory",
+                            "type": "singleline",
+                            "cat": "Project",
+                            "default": "/usr/share/icons",
+                            "colSpan": 2
+                          }
+                        ]
+                      }
                     }
                   ]
                       })json"};
