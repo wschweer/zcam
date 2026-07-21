@@ -55,7 +55,6 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       // Reason: we cannot easily manage the object order in QObject tree
 
       _machines = new Machines(this);
-      _laser    = new Laser(this, this);
       _recipes  = new Recipes(this);
 
       loadAssets();
@@ -90,8 +89,6 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       // with a bounded timeout.
       QObject::connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
             GeometryWorker::instance().shutdown();
-            if (_laser)
-                  _laser->shutdown();
             saveAssets();
             });
       }

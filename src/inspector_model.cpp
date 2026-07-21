@@ -17,6 +17,7 @@
 #include "element.h"
 #include "layer.h"
 #include "recipe.h"
+#include "laser.h"
 #include "laserengine.h"
 #include <nlohmann/json.hpp>
 
@@ -784,10 +785,13 @@ QStringList InspectorModel::pulsewidthNames() const {
       Element* el = qobject_cast<Element*>(_element);
       if (el)
             zc = el->zcamInstance();
-      if (!zc || !zc->laser() || !zc->laser()->engine())
+      if (!zc || !zc->project() || !zc->project()->machine())
+            return {};
+      auto laser = zc->project()->machine()->laser();
+      if (!laser)
             return {};
       QStringList sl;
-      for (const auto& p : zc->laser()->engine()->pulseTable())
+      for (const auto& p : laser->engine()->pulseTable())
             sl << QString::number(p.pulseWidth);
       return sl;
       }

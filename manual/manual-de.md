@@ -1,9 +1,14 @@
------
-# ZCad - Manual
+---
 
------
+<span style="font-size:48px">ZCad - Manual</span>
+
+---
 
 [TOC]
+
+- [Entwicklung](development-de.md)
+- [Installation](install-de.md)
+
 
 ## GUI
 ### 3D Panel
@@ -47,63 +52,3 @@ Der Arbeitsbereich (Scanfeld) hängt von der Brennweite der installierten Optik 
 | F-290 / F-300 | 290 mm |200 x 200 mm |ca. 320–350 mm |Groß (ca. 55–60 µm)        |Große Flächen. Gravuren werden spürbar flacher. Hauptsächlich für Beschriftungen oder starke Laser (50W+).  |
 | F-330 / F-350 | 330 mm |220 x 220 mm |ca. 350–390 mm |Sehr Groß (ca. 65–75 µm)   |Große Bauteile, Gehäusebeschriftungen, Farbumschlag auf Kunststoffen.                                       |
 | F-420         | 420 mm |300 x 300 mm |ca. 460–480 mm |Sehr Groß (ca. 80–90 µm)   |Maximale Feldgröße. Nur für sehr starke Laser (50W–100W) oder reine Oberflächenmarkierungen sinnvoll.       |
-
-# Entwicklung
-## Übersicht
-
-### Technologie und Tools
-
-- C++24
-- Qt 6.11
-- QML
-- Qt Quick 3D
-
-Die GUI nutzt Qt 6.11 mit QML für die UI und nicht den klassischen Ansatz über QQWidgets.
-Das Hauptfenster ist ein 3D Canvas der mit QML aufgebaut wird.
-Die Hauptmasse des Codes ist jedoch C++.
-
-### Element
-Die Klasse Element ist die Basisklasse aller grafischen Elemente in ZCam. Sie implementiert ein
-Geometry Element (TessGeometry), dessen Basisklasse QQuick3DGeometry() ist und von Qt Quick 3D
-zum Aufbau der 3D-Szene benötigt wird.
-
-### Interface Qt Quick 3D - C++
-
-Das Basis-3D Element ist eine Node. Der 3D Canvas baut eine Baumstruktur von Nodes auf die
-ihr Gegenstück auf der C++ Seite haben. C++ Modul und Canvas sind über Signal/Slots miteinander
-verbunden. Folgende Signale in Zcam steuern den Canvas:
-
-```c++
-      void remove3dElement(Element*);           // signal 3d gui to remove an element from the scene graph
-      void add3dElement(Element*);              // signal 3d gui to add a new element into the scene graph
-      void addSubElement(Element*, Element*);   // signal 3d gui to add a new subelement into the scene graph
-      void rootElementChanged(Element*);        // signal 3d gui to rebuild scene graph
-```
-
-Die Wurzel des Node-Baumes findet sich in Zcam::topLevel():
-
-```cpp
-  class ZCam : public QObject
-      {
-      ...
-      Q_PROPERTY(TopLevel* topLevel READ topLevel WRITE setTopLevel NOTIFY topLevelChanged)
-      ...
-      TopLevel* _topLevel{nullptr};
-      ...
-```
-
-`setTopLevel(...element...)` löst das Signal `topLevelChanged()` aus welches dem Qml Part
-in ProjectTree.qml: `base.onRootElementChanged()` signalisiert, das das Projekt neu gerendered
-werden muss.
-
-```qml
-function onRootElementChanged(e) {
-   // destroy old tree
-   var n = base.children.length;
-   for (var i = 0; i < n; ++i) {
-       base.children[i].destroy(100);
-       }
-   if (e)
-       base.addElement(base, e);    // add Shape component
-   }
-```

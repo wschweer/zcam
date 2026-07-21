@@ -15,7 +15,9 @@
 #include "layer.h"
 #include "zcam.h"
 #include "project.h"
-#include "types.h"
+#include "laser_bjjcz.h"
+
+// #include "types.h"
 //#include "clipper.h"
 // #include "cal.h"
 
@@ -215,15 +217,16 @@ void dump(Packet6* p, bool single) {
       }
 
 //---------------------------------------------------------
-//   LaserEngine
+//   LaserBJJCZ
 //---------------------------------------------------------
 
-LaserEngine::LaserEngine(ZCam* w, QObject* parent) : QObject(parent), laserState(this), list(this), zcam(w) {
+LaserBJJCZ::LaserBJJCZ(ZCam* w, QObject* parent)
+   : LaserEngine(w, parent), laserState(this), list(this) {
       usb = new Usb();
       laserState.clear();
       }
 
-LaserEngine::~LaserEngine() {
+LaserBJJCZ::~LaserBJJCZ() {
       delete usb;
       }
 
@@ -231,7 +234,7 @@ LaserEngine::~LaserEngine() {
 //   init
 //---------------------------------------------------------
 
-bool LaserEngine::init(bool _dryRun) {
+bool LaserBJJCZ::init(bool _dryRun) {
       setDryRun(_dryRun);
 
       try {
@@ -327,7 +330,7 @@ bool LaserEngine::init(bool _dryRun) {
 //   initPosition
 //---------------------------------------------------------
 
-void LaserEngine::initPosition() {
+void LaserBJJCZ::initPosition() {
       auto d = get_position_xy();
       gotoXY(d[1] + 1, d[2] + 1);
       };
@@ -336,7 +339,7 @@ void LaserEngine::initPosition() {
 //   getSerialNumber
 //---------------------------------------------------------
 
-Packet4 LaserEngine::getSerialNumber() {
+Packet4 LaserBJJCZ::getSerialNumber() {
       return command({GetSerialNo});
       }
 
@@ -344,7 +347,7 @@ Packet4 LaserEngine::getSerialNumber() {
 //   command
 //---------------------------------------------------------
 
-Packet4 LaserEngine::command(Packet6 data, bool read) const {
+Packet4 LaserBJJCZ::command(Packet6 data, bool read) const {
       if (aborting)
             return {0xffff, 0xffff, 0xffff, 0xffff};
       if (!send(data))
@@ -364,7 +367,7 @@ Packet4 LaserEngine::command(Packet6 data, bool read) const {
 //   send
 //---------------------------------------------------------
 
-bool LaserEngine::send(const CmdList& data) const {
+bool LaserBJJCZ::send(const CmdList& data) const {
       if (aborting)
             return false;
       if (!usb->write((uchar*)data[0].data(), LIST_SIZE * 12)) {
@@ -378,7 +381,7 @@ bool LaserEngine::send(const CmdList& data) const {
 //   send
 //---------------------------------------------------------
 
-bool LaserEngine::send(const Packet6& data) const {
+bool LaserBJJCZ::send(const Packet6& data) const {
       if (aborting)
             return false;
       if (!usb->write((uchar*)data.data(), sizeof(Packet6))) {
@@ -392,7 +395,7 @@ bool LaserEngine::send(const Packet6& data) const {
 //   set_travel_speed
 //---------------------------------------------------------
 
-void LaserEngine::set_travel_speed(double speed) {
+void LaserBJJCZ::set_travel_speed(double speed) {
       if (laserState.currentTravelSpeed == speed)
             return;
       list_jump_speed(uint16_t(speed * galvos * 0.001));
@@ -403,7 +406,7 @@ void LaserEngine::set_travel_speed(double speed) {
 //   set_mark_speed
 //---------------------------------------------------------
 
-void LaserEngine::set_mark_speed(double speed) {
+void LaserBJJCZ::set_mark_speed(double speed) {
       Debug("{}", speed);
       if (laserState.markSpeed == speed)
             return;
@@ -415,7 +418,7 @@ void LaserEngine::set_mark_speed(double speed) {
 //   set_delay_on
 //---------------------------------------------------------
 
-void LaserEngine::set_delay_on(double delay) {
+void LaserBJJCZ::set_delay_on(double delay) {
       if (laserState.delay_on == delay)
             return;
       list_laser_on_delay(delay);
@@ -426,7 +429,7 @@ void LaserEngine::set_delay_on(double delay) {
 //   set_delay_off
 //---------------------------------------------------------
 
-void LaserEngine::set_delay_off(double delay) {
+void LaserBJJCZ::set_delay_off(double delay) {
       if (laserState.delay_off == delay)
             return;
       list_laser_off_delay(delay);
@@ -437,7 +440,7 @@ void LaserEngine::set_delay_off(double delay) {
 //   set_delay_polygon
 //---------------------------------------------------------
 
-void LaserEngine::set_delay_polygon(double delay) {
+void LaserBJJCZ::set_delay_polygon(double delay) {
       if (laserState.delay_poly == delay)
             return;
       list_polygon_delay(delay);
@@ -449,7 +452,7 @@ void LaserEngine::set_delay_polygon(double delay) {
 //    Accepts power in percent, automatically converts to power command.
 //---------------------------------------------------------
 
-void LaserEngine::set_power(double power) {
+void LaserBJJCZ::set_power(double power) {
       if (_testMode)
             power = 15.0;
 
@@ -461,7 +464,7 @@ void LaserEngine::set_power(double power) {
 //   set_pulse_width
 //---------------------------------------------------------
 
-void LaserEngine::set_pulse_width(double pw) {
+void LaserBJJCZ::set_pulse_width(double pw) {
       if (laserState.pulseWidth == pw)
             return;
       list_fiber_open_mo(0);
@@ -477,7 +480,7 @@ void LaserEngine::set_pulse_width(double pw) {
 //   list_jump_speed
 //---------------------------------------------------------
 
-void LaserEngine::list_jump_speed(uint16_t speed) {
+void LaserBJJCZ::list_jump_speed(uint16_t speed) {
       if (speed > 0xffff) {
             Critical("jump speed too hight: {}", speed);
             speed = 0xffff;
@@ -489,7 +492,7 @@ void LaserEngine::list_jump_speed(uint16_t speed) {
 //   list_write
 //---------------------------------------------------------
 
-void LaserEngine::list_write(const Packet6& p) {
+void LaserBJJCZ::list_write(const Packet6& p) {
       list.write(p);
       }
 
@@ -497,7 +500,7 @@ void LaserEngine::list_write(const Packet6& p) {
 //   list_end
 //---------------------------------------------------------
 
-void LaserEngine::list_end() {
+void LaserBJJCZ::list_end() {
       //      Debug("--{} packets {}", list.size(), number_of_list_packets);
       if (list.empty()) // if list is empty
             return;
@@ -522,7 +525,7 @@ void LaserEngine::list_end() {
 //   light_off
 //---------------------------------------------------------
 
-void LaserEngine::light_off(bool use_list) {
+void LaserBJJCZ::light_off(bool use_list) {
       if (!is_port(light_pin)) // Was already off.
             return;
       port_off(light_pin);
@@ -536,7 +539,7 @@ void LaserEngine::light_off(bool use_list) {
 //   light_on
 //---------------------------------------------------------
 
-void LaserEngine::light_on(bool use_list) {
+void LaserBJJCZ::light_on(bool use_list) {
       if (is_port(light_pin)) // Was already on.
             return;
       port_on(light_pin);
@@ -550,7 +553,7 @@ void LaserEngine::light_on(bool use_list) {
 //   wait_finished
 //---------------------------------------------------------
 
-void LaserEngine::wait_finished() const {
+void LaserBJJCZ::wait_finished() const {
       for (int i = 0;; ++i) {
             if (aborting)
                   return;
@@ -568,7 +571,7 @@ void LaserEngine::wait_finished() const {
 //   wait_axis
 //---------------------------------------------------------
 
-void LaserEngine::wait_axis() const {
+void LaserBJJCZ::wait_axis() const {
       for (int i = 0; is_axis(); ++i) {
             usleep(1000 * 10); // 10ms
             if (aborting)
@@ -582,7 +585,7 @@ void LaserEngine::wait_axis() const {
 //   wait_ready
 //---------------------------------------------------------
 
-void LaserEngine::wait_ready() {
+void LaserBJJCZ::wait_ready() {
       for (int i = 0; !is_ready(); ++i) {
             usleep(1000 * 10); // 10ms
             if (aborting) {
@@ -598,7 +601,7 @@ void LaserEngine::wait_ready() {
 //   wait_idle
 //---------------------------------------------------------
 
-void LaserEngine::wait_idle() const {
+void LaserBJJCZ::wait_idle() const {
       for (int i = 0; is_busy(); ++i) {
             usleep(1000 * 10);
             if (aborting) {
@@ -614,11 +617,11 @@ void LaserEngine::wait_idle() const {
 //   exit
 //---------------------------------------------------------
 
-void LaserEngine::exit() {
+void LaserBJJCZ::exit() {
       stop_list();
       stop_execute();
       aborting = true;
-      LaserEngine::abort(false);
+      LaserBJJCZ::abort(false);
       stop();
       usb->close();
       }
@@ -627,7 +630,7 @@ void LaserEngine::exit() {
 //   abort
 //---------------------------------------------------------
 
-void LaserEngine::abort(bool dummyPacket) {
+void LaserBJJCZ::abort(bool dummyPacket) {
       Debug("abort {}", dummyPacket);
       command({StopExecute});
       command({StopList});
@@ -668,7 +671,7 @@ int FiberLaserState::distance(int x, int y) {
 //   mark
 //---------------------------------------------------------
 
-void LaserEngine::mark(double x, double y) {
+void LaserBJJCZ::mark(double x, double y) {
       LaserPosition pos = mapToGalvo(x, y);
       Debug("mark {} {}", pos.x, pos.y);
       laserState.mark(pos.x, pos.y);
@@ -708,7 +711,7 @@ void FiberLaserState::mark(int x, int y) {
 //    mark one scanline which may contain several line segments
 //-------------------------------------------------------------------
 
-void LaserEngine::markLines(PathsD& pl, bool reverse) {
+void LaserBJJCZ::markLines(PathsD& pl, bool reverse) {
       if (pl.empty())
             return;
 
@@ -761,7 +764,7 @@ PathsD dotCorrection(const PathsD& paths, double offset) {
 //    PathD represents a line strip
 //---------------------------------------------------------
 
-void LaserEngine::mark(const PathD& p) {
+void LaserBJJCZ::mark(const PathD& p) {
       bool first     = true;
       bool firstMove = true;
       for (const auto& pt : p) {
@@ -786,21 +789,10 @@ void LaserEngine::mark(const PathD& p) {
       }
 
 //---------------------------------------------------------
-//   pulseList
-//---------------------------------------------------------
-
-QStringList LaserEngine::laserPulseList() const {
-      QStringList sl;
-      for (const auto& p : _pulseTable)
-            sl << QString("%1").arg(p.pulseWidth);
-      return sl;
-      }
-
-//---------------------------------------------------------
 //   setLaser
 //---------------------------------------------------------
 
-void LaserEngine::setLaser(const LaserParameterSet& l) {
+void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
       set_pulse_width(l.pulseWidth);
 
       Debug("{}% markSpeed {} travelSpeed {} {}kHz {}ns delay {} {} {}", l.power, l.speed, l.travelSpeed,
@@ -826,7 +818,7 @@ void LaserEngine::setLaser(const LaserParameterSet& l) {
 //    start framing from idle state
 //---------------------------------------------------------
 
-bool LaserEngine::startFraming() {
+bool LaserBJJCZ::startFraming() {
       aborting = false;
       laserState.clear();
       reset_list();
@@ -852,12 +844,12 @@ bool LaserEngine::startFraming() {
 //    stop framing and go to idle
 //---------------------------------------------------------
 
-void LaserEngine::stopFraming() {
+void LaserBJJCZ::stopFraming() {
       stop_list();
       stop_execute();
       aborting = true;
       Debug("=========== set aborting to true");
-      LaserEngine::abort(false);
+      LaserBJJCZ::abort(false);
       //      stop();
       }
 
@@ -865,7 +857,7 @@ void LaserEngine::stopFraming() {
 //   startMarking
 //---------------------------------------------------------
 
-void LaserEngine::startMarking() {
+void LaserBJJCZ::startMarking() {
       aborting = false;
       laserState.clear();
       reset_list();
@@ -889,11 +881,11 @@ void LaserEngine::startMarking() {
 //   stopMarking
 //---------------------------------------------------------
 
-void LaserEngine::stopMarking() {
+void LaserBJJCZ::stopMarking() {
       Debug("stop marking");
       stop_list();
       stop_execute();
-      LaserEngine::abort(false);
+      LaserBJJCZ::abort(false);
       stop();
       }
 
@@ -904,7 +896,7 @@ void LaserEngine::stopMarking() {
 //    wait for finish
 //---------------------------------------------------------
 
-void LaserEngine::endMarking() {
+void LaserBJJCZ::endMarking() {
       list_end();
       if (!list_executing && number_of_list_packets)
             execute_list();
@@ -921,7 +913,7 @@ void LaserEngine::endMarking() {
 //   stop
 //---------------------------------------------------------
 
-void LaserEngine::stop() {
+void LaserBJJCZ::stop() {
       list_end_of_list();
       list_end();
       if (!list_executing && number_of_list_packets)
@@ -940,7 +932,7 @@ void LaserEngine::stop() {
 //   move (goto)
 //---------------------------------------------------------
 
-void LaserEngine::move(double x, double y) {
+void LaserBJJCZ::move(double x, double y) {
       LaserPosition pos = mapToGalvo(x, y);
       laserState.move(pos.x, pos.y);
       }
@@ -951,7 +943,7 @@ void LaserEngine::move(double x, double y) {
 //    return false if result is out of range
 //---------------------------------------------------------
 
-LaserPosition LaserEngine::mapToGalvo(double x, double y) {
+LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
       Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
       if (!machine)
             return LaserPosition(0, 0);
@@ -1005,7 +997,7 @@ void FiberLaserState::move(int x, int y) {
 //    delay time in 10 microseconds units
 //---------------------------------------------------------
 
-void LaserEngine::list_delay_time(double time) {
+void LaserBJJCZ::list_delay_time(double time) {
       list_write({listDelayTime, uint16_t(time)});
       }
 
@@ -1014,7 +1006,7 @@ void LaserEngine::list_delay_time(double time) {
 //    Marks one sublayer with fixed laser settings
 //---------------------------------------------------------
 
-void LaserEngine::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
+void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
       setLaser(sl); // configure the laser engine
 
       bool first  = true;
@@ -1048,7 +1040,7 @@ void LaserEngine::markLayer(const LaserPath& path, const LaserParameterSet& sl) 
 //   writeCorrectionTable
 //---------------------------------------------------------
 
-void LaserEngine::writeCorrectionTable() {
+void LaserBJJCZ::writeCorrectionTable() {
       Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
 #if 0
       QString corFile = machine->corfile();

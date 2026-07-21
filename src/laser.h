@@ -20,6 +20,7 @@
 #include "laserengine.h"
 
 class ZCam;
+class Machine;
 
 enum class LaserState {
       Off,
@@ -92,6 +93,6 @@ class Laser : public QObject
       void startMarking();
 
     public:
-      Laser(ZCam*, QObject* parent = nullptr);
+      Laser(ZCam*, Machine*, QObject* parent = nullptr);
       ~Laser();
       };

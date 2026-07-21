@@ -11,7 +11,7 @@
 
 #include "logger.h"
 #include "usb.h"
-#include "laserengine.h"
+#include "laser_bjjcz.h"
 #include <libusb-1.0/libusb.h>
 
 static const int WRITE_ENDPOINT = 0x02;

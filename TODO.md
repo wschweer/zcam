@@ -1,1 +1,4 @@
-** Font browser
+-  Selektion/Picking über bounding box
+-  explicit edit mode
+-  nested layer
+-  icon browser

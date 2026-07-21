@@ -27,6 +27,7 @@
 #include "projectmanager.h"
 #include "treemodel.h"
 #include "logger.h"
+#include "laser.h"
 
 //---------------------------------------------------------
 //   MaterialTest
@@ -519,7 +520,7 @@ double MaterialTest::rowValue(int row) const {
       switch (ParameterType(rowParameter())) {
             case ParameterType::Pulse: {
                   int val                        = (rowMax() - rowMin()) / (rows() - 1) * row + rowMin();
-                  const std::vector<Pulse33>& pt = zcam->laser()->engine()->pulseTable();
+                  const std::vector<Pulse33>& pt = zcam->project()->machine()->laser()->engine()->pulseTable();
                   for (int i = 0; i < sizeof(pt); ++i) {
                         double tp = pt[i].pulseWidth;
                         if (val < tp) {
@@ -545,7 +546,7 @@ double MaterialTest::columnValue(int col) const {
       switch (ParameterType(columnParameter())) {
             case ParameterType::Pulse: {
                   int val = (columnMax() - columnMin()) / (columns() - 1) * col + columnMin();
-                  const std::vector<Pulse33>& pt = zcam->laser()->engine()->pulseTable();
+                  const std::vector<Pulse33>& pt = zcam->project()->machine()->laser()->engine()->pulseTable();
                   for (int i = 0; i < sizeof(pt); ++i) {
                         double tp = pt[i].pulseWidth;
                         if (val < tp) {

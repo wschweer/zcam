@@ -11,6 +11,10 @@ ${PROJECT}:
 	#export QT_FATAL_WARNINGS=true
 	cd build; cmake --build . --parallel 32 && cd .. && build/${PROJECT}
 
+uv:
+	#export QT_FATAL_WARNINGS=true
+	cd build; cmake --build . --parallel 32 && sudo setcap cap_net_raw+ep zcam && cd .. && build/${PROJECT}
+
 #
 #     "test" target
 #

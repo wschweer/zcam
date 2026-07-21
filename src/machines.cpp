@@ -16,7 +16,7 @@
 //   Machines
 //---------------------------------------------------------
 
-Machines::Machines(QObject* parent) : QObject(parent) {
+Machines::Machines(ZCam* zc, QObject* parent) : QObject(parent), zcam(zc) {
       _machineModel = new MachineModel(this);
       }
 
@@ -53,7 +53,7 @@ void Machines::updateMachine(int idx, Machine* r) {
       }
 
 void Machines::addMachine(const QString& name) {
-      Machine* m = new Machine(this);
+      Machine* m = new Machine(zcam, this);
       m->set_name(name);
       machines.push_back(m);
       emit machinesModelChanged();
@@ -94,7 +94,7 @@ void Machines::fromJson(const json& data) {
       machines.clear();
       if (data.is_array()) {
             for (const auto& jm : data) {
-                  Machine* m = new Machine(this);
+                  Machine* m = new Machine(zcam, this);
                   m->fromJson(jm);
                   machines.push_back(m);
                   }

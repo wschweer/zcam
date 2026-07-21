@@ -25,7 +25,6 @@
 #include "projectmanager.h"
 #include "recipe.h"
 #include "machines.h"
-#include "laser.h"
 #include "layer.h"
 
 class Project;
@@ -243,7 +242,6 @@ class ZCam : public QObject
       PROPV(Element3d*, hoverElement, nullptr)
       PROPV(TreeModel*, treeModel, nullptr)
       PROPV(Machines*, machines, nullptr)
-      PROPV(Laser*, laser, nullptr)
       PROPV(Recipes*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
 
@@ -288,11 +286,13 @@ class ZCam : public QObject
       QString _svgDragPath;
       QRectF _svgDragBBox;
 
-    public:
-      bool camDirty() const { return _camDirty; }
-      void setCamDirty(bool v);
-      Element3d* currentElement() const { return _currentElement; }
-      void setCurrentElement(Element3d* el);
+      Layer* findFirstVisibleLayer(Element* root) const;
+      /// Find the Layer that is the current element itself, or the
+      /// nearest Layer ancestor of the current element, walking up
+      /// the parent chain until Cad is reached.  Returns nullptr if
+      /// there is no current element, no Layer is found in the chain,
+      /// or the found Layer is not visible.
+      Layer* findCurrentLayer() const;
 
     signals:
       void camDirtyChanged();
@@ -313,6 +313,11 @@ class ZCam : public QObject
       ProjectManager* projectManager() const { return _projectManager; }
       void loadAssets();
       Q_INVOKABLE void saveAssets();
+
+      bool camDirty() const { return _camDirty; }
+      void setCamDirty(bool v);
+      Element3d* currentElement() const { return _currentElement; }
+      void setCurrentElement(Element3d* el);
 
       /// Save current assets (recipes, machines, config) to a backup
       /// file named "assets-bu" in the application data directory.
@@ -474,13 +479,4 @@ class ZCam : public QObject
       /// SVG drag operation, or nullptr when no drag is active.
       Q_PROPERTY(TessGeometry* dragPreviewGeometry READ dragPreviewGeometry NOTIFY dragPreviewGeometryChanged)
       TessGeometry* dragPreviewGeometry() const { return _dragPreviewGeometry; }
-
-    private:
-      Layer* findFirstVisibleLayer(Element* root) const;
-      /// Find the Layer that is the current element itself, or the
-      /// nearest Layer ancestor of the current element, walking up
-      /// the parent chain until Cad is reached.  Returns nullptr if
-      /// there is no current element, no Layer is found in the chain,
-      /// or the found Layer is not visible.
-      Layer* findCurrentLayer() const;
       };

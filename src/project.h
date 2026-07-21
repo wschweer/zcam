@@ -18,6 +18,8 @@
 #include "machine.h"
 #include <QPointer>
 
+class Laser;
+
 //---------------------------------------------------------
 //   TopLevel
 //---------------------------------------------------------
@@ -56,6 +58,7 @@ class Project : public Element3d
 
     public:
       Project(ZCam*, Element* parent = nullptr);
+      ~Project();
       virtual QString typeName() override { return QStringLiteral("project"); }
       virtual const std::string_view properties() const override { return _properties; }
       Machine* machine() const { return _machine; }

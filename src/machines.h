@@ -36,12 +36,13 @@ class Machines : public QObject
 
       std::vector<Machine*> machines;
       MachineModel* _machineModel;
+      ZCam* zcam;
 
     signals:
       void machinesModelChanged();
 
     public:
-      Machines(QObject* parent = nullptr);
+      Machines(ZCam*, QObject* parent = nullptr);
       ~Machines();
 
       Q_INVOKABLE Machine* machine(int idx);

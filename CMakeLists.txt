@@ -10,15 +10,18 @@ set(QT_QML_GENERATE_QMLLS_INI On)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 set(CMAKE_BUILD_TYPE Debug)
 # set(CMAKE_BUILD_TYPE Release)
-#set(CMAKE_BUILD_TYPE RelWithDebInfo)
+# set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_AUTOMOC ON)
 
 # linuxdeploy handles library bundling; skip RPATH rewriting on install
 set(CMAKE_SKIP_INSTALL_RPATH ON)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration)
+get_target_property(QT_CORE_LIB Qt6::Core LOCATION)
+get_filename_component(QT_LIB_DIR "${QT_CORE_LIB}" DIRECTORY)
+set(CMAKE_BUILD_RPATH "${QT_LIB_DIR}")
 
 pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(UDEV REQUIRED IMPORTED_TARGET libudev)

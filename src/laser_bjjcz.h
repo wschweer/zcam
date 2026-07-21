@@ -13,16 +13,15 @@
 
 #include <QObject>
 #include <QVector2D>
-// #include <QTransform>
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QtQml/qqmlregistration.h>
-#include "recipe.h"
+// #include "recipe.h"
 
 #include "logger.h"
-#include "clipper2/clipper.h"
-#include "types.h"
-#include "laser_bjjcz.h"
+// #include "clipper2/clipper.h"
+// #include "types.h"
+#include "laserengine.h"
 
 class Usb;
 class LaserEngine;
@@ -31,9 +30,11 @@ class LaserLayer;
 class LaserSettings;
 class Fixture;
 class ZCam;
+class LaserBJJCZ;
 
 using PathsD = Clipper2Lib::PathsD;
 using PathD  = Clipper2Lib::PathD;
+
 
 //---------------------------------------------------------
 //   FiberLaserState
@@ -41,7 +42,7 @@ using PathD  = Clipper2Lib::PathD;
 
 class FiberLaserState
       {
-      LaserEngine* laser;
+      LaserBJJCZ* laser;
       double _frequency;
 
     public:
@@ -57,7 +58,7 @@ class FiberLaserState
       double lastDir;
       bool dirValid;
       double markSpeed;
-      FiberLaserState(LaserEngine* l) : laser(l) { clear(); }
+      FiberLaserState(LaserBJJCZ* l) : laser(l) { clear(); }
       void clear() {
             power              = -1;
             _frequency         = -1;
@@ -222,10 +223,10 @@ static const int LIST_SIZE = 256; // number of Packet6 structures
 class CmdList : public std::array<Packet6, LIST_SIZE>
       {
       int index {0};
-      LaserEngine* laser;
+      LaserBJJCZ* laser;
 
     public:
-      CmdList(LaserEngine* l) : laser(l) {}
+      CmdList(LaserBJJCZ* l) : laser(l) {}
       void write(const Packet6& p);
       void clear() {
             fill(Packet6());
@@ -252,7 +253,6 @@ class LaserBJJCZ : public LaserEngine
       QML_UNCREATABLE("no no no")
 
     private:
-      Q_PROPERTY(QStringList laserPulseList READ laserPulseList NOTIFY pulseListChanged);
 
       //      double p1 = 0.0;
       //      double p2 = 0.0;
@@ -309,7 +309,6 @@ class LaserBJJCZ : public LaserEngine
       int number_of_list_packets {0};
       uint16_t port_bits {0};
 
-      volatile bool aborting {false};
 
       QTimer markTimer;
 
@@ -497,41 +496,30 @@ class LaserBJJCZ : public LaserEngine
 
     public:
       LaserBJJCZ(ZCam* w, QObject* parent = nullptr);
-      ~LaserBJJCZ();
-      bool init(bool dryRun);
-      void exit();
+      virtual ~LaserBJJCZ();
+      virtual bool init(bool dryRun) override;
+      virtual void exit() override;
+      virtual void stop() override;
 
       void abort(bool dummyPacket = true);
-      void setAbortFlag() { aborting = true; }
 
       friend class CmdList;
       friend class FiberLaserState;
       QElapsedTimer markTime;
-      int maxFrequency(int pw) const {
-            for (const auto& p : _pulseTable)
-                  if (p.pulseWidth == pw)
-                        return p.maxFrequency;
-            return -1;
-            }
-      int cutoffFrequency(int pw) const {
-            for (const auto& p : _pulseTable)
-                  if (p.pulseWidth == pw)
-                        return p.cutOffFrequency;
-            return -1;
-            }
       QStringList laserPulseList() const;
 
-      void stop();
 
-      bool startFraming();
-      void stopFraming();
+      virtual bool startFraming() override;
+      virtual void stopFraming() override;
 
-      void startMarking();
-      void stopMarking();
-      void endMarking();
-      void mark(const PathD&);
-      void move(double x, double y);
-      void markLayer(const LaserPath& path, const LaserParameterSet& sl);
+      virtual void startMarking() override;
+      virtual void stopMarking() override;
+      virtual void endMarking() override;
+
+      virtual void mark(const PathD&) override;
+      virtual void move(double x, double y) override;
+      virtual void markLayer(const LaserPath& path, const LaserParameterSet& sl) override;
+
       LaserPosition mapToGalvo(double, double);
       };
 

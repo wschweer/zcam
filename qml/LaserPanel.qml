@@ -19,6 +19,7 @@ Rectangle {
     focus: true
     id: laserPanel
     color: Material.color(Material.BlueGrey, Material.Shade800)
+    property var laser: ZCam.project?.machine?.laser ?? null
 
     ColumnLayout {
         spacing: 0
@@ -41,26 +42,26 @@ Rectangle {
             Layout.alignment: Qt.AlignCenter
             Layout.fillWidth: true
             hoverEnabled: false
-            checked: ZCam.laser.enabled
+            checked: laserPanel.laser && laserPanel.laser.enabled
             onClicked: {
                 console.log("toggled "+checked);
-                checked ? ZCam.laser.exit() : ZCam.laser.init()
+                checked ? laserPanel.laser.exit() : laserPanel.laser.init()
                 }
             }
         Label {
             id: statusLabel
             Layout.alignment: Qt.AlignCenter
-            text: ZCam.laser.stateText
+            text: laserPanel.laser?.stateText ?? ""
             color: Material.foreground
             }
 
         Slider {
             id: elapsedTime
             from: 0
-            to: ZCam.laser.estimatedEnd
-            value: ZCam.laser.currentTime
+            to: ZCam.project?.machine?.laser.estimatedEnd ?? 0
+            value: laserPanel.laser?.currentTime ?? 0
             Layout.fillWidth: true
-            enabled: ZCam.laser.enabled
+            enabled: laserPanel.laser?.enabled ?? false
             Layout.margins: 10
             }
 
@@ -68,27 +69,27 @@ Rectangle {
             Layout.margins: 5
             implicitHeight: 20
             Button {
-                height: parent.height
+                implicitHeight: parent.height
                 id: framingButton
                 text: "Framing"
                 checkable: true
-                enabled: ZCam.laser.enabled
-                checked: ZCam.laser.framing
+                enabled: laserPanel.laser?.enabled ?? false
+                checked: laserPanel.laser?.framing ?? false
                 Layout.fillWidth: true
                 Layout.horizontalStretchFactor: 2
-                onClicked: { ZCam.laser.startFraming()}
+                onClicked: { laserPanel.laser.startFraming()}
                 Material.foreground: "black"
                 }
             Button {
-                height: parent.height
+                implicitHeight: parent.height
                 id: startButton
                 Layout.fillWidth: true
                 Layout.horizontalStretchFactor: 2
                 text: "Start"
                 Material.foreground: "black"
-                enabled: ZCam.laser.enabled
-                checked: ZCam.laser.marking
-                onClicked: { ZCam.laser.startMarking() }
+                enabled: laserPanel.laser?.enabled ?? false
+                checked: laserPanel.laser?.marking ?? false
+                onClicked: { laserPanel.laser.startMarking() }
                 }
             }
         RowLayout {
@@ -98,9 +99,9 @@ Rectangle {
                 id: stopButton
                 text: "Stop"
                 Material.foreground: "black"
-                enabled: ZCam.laser.enabled
+                enabled: laserPanel.laser?.enabled ?? false
                 Layout.fillWidth: true
-                onClicked: { ZCam.laser.stop() }
+                onClicked: { laserPanel.laser.stop() }
                 }
             }
 
@@ -112,7 +113,7 @@ Rectangle {
                 id: testMode
                 text: "Test-Mode"
                 Synchronizer on checked {
-                    sourceObject: ZCam.laser
+                    sourceObject: laserPanel.laser
                     sourceProperty: "testMode"
                     }
                 }
@@ -120,7 +121,7 @@ Rectangle {
                 id: dryRun
                 text: "Dry Run"
                 Synchronizer on checked {
-                    sourceObject: ZCam.laser
+                    sourceObject: laserPanel.laser
                     sourceProperty: "dryRun"
                     }
                 }
