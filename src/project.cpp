@@ -144,25 +144,46 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
       QVariant oldValue = element->property(pn.constData());
 
       // If newValue is null/invalid but the property is a pointer type,
-      // convert newValue to a typed null pointer so that setProperty()
-      // writes nullptr instead of silently failing.
-      QVariant normalizedNew = newValue;
-      if (!normalizedNew.isValid() || normalizedNew.isNull()) {
+      // we need to write a null pointer directly via QMetaProperty::write()
+      // because setProperty() with an invalid QVariant silently does nothing.
+      bool isNullPointerWrite = false;
+      if (!newValue.isValid()) {
             int propIdx = element->metaObject()->indexOfProperty(pn.constData());
             if (propIdx >= 0) {
                   QMetaProperty mp = element->metaObject()->property(propIdx);
-                  int tid = mp.metaType().id();
-                  // Check if the property type is a pointer type (id >= QMetaType::User
-                  // or QObjectStar).  We use the metatype's id() and create a
-                  // default-constructed (null) QVariant of the same type.
-                  if (mp.metaType().flags().testFlag(QMetaType::PointerToQObject)
-                      || tid == QMetaType::QObjectStar) {
-                        normalizedNew = QVariant(mp.metaType(), nullptr);
+                  QMetaType mt = mp.metaType();
+                  if (mt.id() == QMetaType::QObjectStar
+                      || (mt.id() >= QMetaType::User && mt.sizeOf() == sizeof(void*))) {
+                        isNullPointerWrite = true;
                         }
                   }
             }
 
-      if (oldValue == normalizedNew)
+      if (isNullPointerWrite) {
+            // Directly write a null pointer via the meta property.
+            // We construct a QVariant of the correct metatype containing
+            // a null pointer value by default-constructing it.
+            int propIdx = element->metaObject()->indexOfProperty(pn.constData());
+            QMetaProperty mp = element->metaObject()->property(propIdx);
+            QMetaType mt = mp.metaType();
+            void* nullPtr = nullptr;
+            // QVariant(QMetaType, const void* data) copies sizeOf() bytes
+            // from data.  For a pointer type, we need to provide the
+            // address of a null pointer, not null itself.
+            QVariant typedNull(mt, &nullPtr);
+            if (oldValue == typedNull)
+                  return;
+            // Bypass the normal PropertyChangeCommand path and write
+            // directly, then create the undo command with the correct types.
+            auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, typedNull);
+            cmd->redo();
+            pushCommand(std::move(cmd));
+            setDirty(true);
+            zcam->setCamDirty(true);
+            return;
+            }
+
+      if (oldValue == newValue)
             return;
       // For the "name" property, use RenameElementCommand which stores
       // the actual de-duplicated name that Element::setName() assigns,
@@ -183,7 +204,7 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
             zcam->setCamDirty(true);
             return;
             }
-      auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, normalizedNew);
+      auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, newValue);
       cmd->redo(); // apply the new value immediately
       pushCommand(std::move(cmd));
       setDirty(true);
