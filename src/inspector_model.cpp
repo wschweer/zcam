@@ -708,10 +708,11 @@ QStringList InspectorModel::recipeNames() const {
 //    Resolve a Layer* pointer to its name string.
 //---------------------------------------------------------
 
-QString InspectorModel::layerToName(Layer* layer) const {
-      if (!layer)
+QString InspectorModel::layerToName(QVariant layer) const {
+      Layer* ptr = layer.value<Layer*>();
+      if (!ptr)
             return {};
-      return layer->name();
+      return ptr->name();
       }
 
 //---------------------------------------------------------
@@ -753,10 +754,11 @@ QStringList InspectorModel::laserLayerNames() const {
 //    Resolve a LaserLayer* pointer to its name string.
 //---------------------------------------------------------
 
-QString InspectorModel::laserLayerToName(LaserLayer* ll) const {
-      if (!ll)
+QString InspectorModel::laserLayerToName(QVariant ll) const {
+      LaserLayer* ptr = ll.value<LaserLayer*>();
+      if (!ptr)
             return {};
-      return ll->name();
+      return ptr->name();
       }
 
 //---------------------------------------------------------
@@ -919,10 +921,11 @@ QStringList InspectorModel::machineNames() const {
 //    Resolve a Machine* pointer to its name string.
 //---------------------------------------------------------
 
-QString InspectorModel::machineToName(Machine* machine) const {
-      if (!machine)
+QString InspectorModel::machineToName(QVariant machine) const {
+      Machine* ptr = machine.value<Machine*>();
+      if (!ptr)
             return {};
-      return machine->name();
+      return ptr->name();
       }
 
 //---------------------------------------------------------

@@ -85,7 +85,7 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE QStringList recipeNames() const;
 
       // Resolve a Layer* pointer to its name (for display in ComboBox).
-      Q_INVOKABLE QString layerToName(Layer* layer) const;
+      Q_INVOKABLE QString layerToName(QVariant layer) const;
 
       // Resolve a name back to a Layer* pointer.
       Q_INVOKABLE Layer* nameToLayer(const QString& name) const;
@@ -95,7 +95,7 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE QStringList laserLayerNames() const;
 
       // Resolve a LaserLayer* pointer to its name (for display in ComboBox).
-      Q_INVOKABLE QString laserLayerToName(LaserLayer* ll) const;
+      Q_INVOKABLE QString laserLayerToName(QVariant ll) const;
 
       // Resolve a name back to a LaserLayer* pointer.
       Q_INVOKABLE LaserLayer* nameToLaserLayer(const QString& name) const;
@@ -143,7 +143,7 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE QStringList machineNames() const;
 
       // Resolve a Machine* pointer to its name (for display in ComboBox).
-      Q_INVOKABLE QString machineToName(Machine* machine) const;
+      Q_INVOKABLE QString machineToName(QVariant machine) const;
 
       // Resolve a name back to a Machine* pointer.
       Q_INVOKABLE Machine* nameToMachine(const QString& name) const;

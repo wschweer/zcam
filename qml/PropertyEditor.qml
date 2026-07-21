@@ -2201,11 +2201,17 @@ Item {
                             return list
                             }
 
-                        property string currentName: {
-                            if (rowLaserLayer.propValue === undefined || rowLaserLayer.propValue === null)
-                                return "(inherited)"
-                            return root.model.laserLayerToName ? root.model.laserLayerToName(rowLaserLayer.propValue) : ""
+                        // Resolve the pointer to a name.  A null pointer
+                        // (QVariant(LaserLayer*, 0x0)) yields an empty string
+                        // from laserLayerToName(), which we map to "(inherited)".
+                        property string resolvedName: {
+                            if (rowLaserLayer.propValue === undefined)
+                                return ""
+                            if (root.model.laserLayerToName)
+                                return root.model.laserLayerToName(rowLaserLayer.propValue)
+                            return ""
                             }
+                        property string currentName: resolvedName.length > 0 ? resolvedName : "(inherited)"
 
                         currentIndex: {
                             let idx = laserLayerCombo.find(laserLayerCombo.currentName)
@@ -2213,8 +2219,12 @@ Item {
                             }
 
                         onActivated: index => {
-                            if (index === 0)
+                            if (index === 0) {
+                                // Setting to null: pass a null LaserLayer* so
+                                // the PROPV setter accepts it (QVariant(nullptr)
+                                // maps to a null pointer for Q_DECLARE_OPAQUE_POINTER types).
                                 rowLaserLayer.setModelValue(null)
+                                }
                             else {
                                 let name = laserLayerCombo.model[index]
                                 let ptr = root.model.nameToLaserLayer ? root.model.nameToLaserLayer(name) : null

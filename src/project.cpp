@@ -26,6 +26,7 @@
 #include "logger.h"
 
 #include <QSet>
+#include <QMetaProperty>
 #include <QFileInfo>
 #include <functional>
 
@@ -141,7 +142,27 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
             return;
       QByteArray pn     = propName.toUtf8();
       QVariant oldValue = element->property(pn.constData());
-      if (oldValue == newValue)
+
+      // If newValue is null/invalid but the property is a pointer type,
+      // convert newValue to a typed null pointer so that setProperty()
+      // writes nullptr instead of silently failing.
+      QVariant normalizedNew = newValue;
+      if (!normalizedNew.isValid() || normalizedNew.isNull()) {
+            int propIdx = element->metaObject()->indexOfProperty(pn.constData());
+            if (propIdx >= 0) {
+                  QMetaProperty mp = element->metaObject()->property(propIdx);
+                  int tid = mp.metaType().id();
+                  // Check if the property type is a pointer type (id >= QMetaType::User
+                  // or QObjectStar).  We use the metatype's id() and create a
+                  // default-constructed (null) QVariant of the same type.
+                  if (mp.metaType().flags().testFlag(QMetaType::PointerToQObject)
+                      || tid == QMetaType::QObjectStar) {
+                        normalizedNew = QVariant(mp.metaType(), nullptr);
+                        }
+                  }
+            }
+
+      if (oldValue == normalizedNew)
             return;
       // For the "name" property, use RenameElementCommand which stores
       // the actual de-duplicated name that Element::setName() assigns,
@@ -162,7 +183,7 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
             zcam->setCamDirty(true);
             return;
             }
-      auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, newValue);
+      auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, normalizedNew);
       cmd->redo(); // apply the new value immediately
       pushCommand(std::move(cmd));
       setDirty(true);
