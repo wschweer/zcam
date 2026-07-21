@@ -406,6 +406,8 @@ Item {
                     }
 
                 onLoaded: {
+                    if (!item)
+                        return
                     if (delegateRoot.model.isRow) {
                         item.propName   = delegateRoot.model.propName
                         item.subProps   = delegateRoot.model.subProps
@@ -566,6 +568,8 @@ Item {
                             }
 
                         onLoaded: {
+                            if (!item)
+                                return
                             item.subName  = subLoader.subName
                             item.subValue = Qt.binding(() => subLoader.subValue)
                             item.subMeta   = subLoader.subMeta
@@ -707,6 +711,8 @@ Item {
 
                                 onLoaded: {
                                     const d = colLoader.itemData
+                                    if (!d || !item)
+                                        return
                                     if (d.isLine)
                                         return
                                     if (d.isRow) {
@@ -840,6 +846,8 @@ Item {
                             }
 
                         onLoaded: {
+                            if (!item)
+                                return
                             item.subName  = subLoaderCol.subName
                             item.subValue = Qt.binding(() => subLoaderCol.subValue)
                             item.subMeta   = subLoaderCol.subMeta
