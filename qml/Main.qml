@@ -669,11 +669,9 @@ Window {
                     id: laserPanelBtn
                     action: actionShowLaserPanel
                     display: AbstractButton.IconOnly
-                    icon.color: laserPanelBtn.checked ? Material.accentColor
-                               : (laserPanelBtn.hovered ? Material.foreground
-                                  : Material.color(Material.Grey, Material.Shade400))
+                    icon.color: "transparent"
                     background: Rectangle {
-                        color: laserPanelBtn.checked ? Material.color(Material.Teal, Material.Shade800)
+                        color: laserPanelBtn.checked ? Material.color(Material.Teal, Material.Shade700)
                                : "transparent"
                         radius: 4
                         }
