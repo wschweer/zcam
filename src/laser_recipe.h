@@ -10,7 +10,9 @@
 //=============================================================================
 
 #pragma once
+
 #include <QObject>
+#include <QAbstractItemModel>
 #include <QtQml/qqmlregistration.h>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -139,6 +141,11 @@ class LaserRecipe
       PROPV_GADGET(int, numPasses, 1)
       LaserPasses _passes;
 
+      // Internal metadata: relative file path within the recipes directory.
+      // Not serialized in toJson() / not read from fromJson().
+      // Set during loadFromDirectory() or when a new recipe is created.
+      QString _relativeFilePath;
+
     public:
       LaserRecipe() {}
       json toJson() const;
@@ -147,6 +154,59 @@ class LaserRecipe
       const LaserPass* layer(int idx) const { return &_passes[idx]; }
       LaserPasses* passes() { return &_passes; }
       LaserPass* pass(int idx) { return &_passes[idx]; }
+      QString relativeFilePath() const { return _relativeFilePath; }
+      void setRelativeFilePath(const QString& p) { _relativeFilePath = p; }
+};
+//=========================================================
+//   RecipeTreeModel
+//    A QAbstractItemModel that represents the recipe directory
+//    structure as a tree.  Folders are branch nodes, recipe
+//    files are leaf nodes.  Each leaf carries a recipeIdx that
+//    indexes into LaserReceipes::recipes.
+//=========================================================
+
+class RecipeTreeModel : public QAbstractItemModel
+{
+      Q_OBJECT
+      QML_ELEMENT
+
+    public:
+      explicit RecipeTreeModel(QObject* parent = nullptr);
+      ~RecipeTreeModel();
+
+      QModelIndex index(int row, int column, const QModelIndex& parent = QModelIndex()) const override;
+      QModelIndex parent(const QModelIndex& child) const override;
+      int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+      int columnCount(const QModelIndex& parent = QModelIndex()) const override;
+      QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+      QHash<int, QByteArray> roleNames() const override;
+      enum Roles { NameRole = Qt::UserRole + 1, IsDirRole, RecipeIdxRole, PathRole };
+      // ── Public API used by LaserReceipes ───────────────────────────
+      void clear();
+      void beginBuild();
+      void endBuild();
+
+      // Add a directory node under parent (or root if parent is null).
+      // Returns the created node pointer.
+      void* addDirNode(const QString& name, const QString& relativePath, void* parent);
+
+      // Add a recipe leaf node under parent (or root if parent is null).
+      void* addRecipeNode(const QString& name, const QString& relativePath, int recipeIdx, void* parent);
+
+      // Remove the node at the given model index (and all its children).
+      void removeNode(const QModelIndex& idx);
+
+      // Q_INVOKABLE helpers for QML
+      Q_INVOKABLE int recipeIndex(const QModelIndex& idx) const;
+      Q_INVOKABLE bool isDir(const QModelIndex& idx) const;
+      Q_INVOKABLE QString path(const QModelIndex& idx) const;
+      Q_INVOKABLE QModelIndex rootIndex() const { return {}; }
+
+    private:
+      struct Node;
+      std::unique_ptr<Node> _root;
+      Node* nodeForIndex(const QModelIndex& idx) const;
+      QModelIndex indexForNode(Node* node) const;
 };
 //---------------------------------------------------------
 //   Recipes
@@ -159,15 +219,22 @@ class LaserReceipes : public QObject
       QML_UNCREATABLE("no no")
 
       Q_PROPERTY(QStringList recipeModel READ recipeModel NOTIFY recipeModelChanged)
+      Q_PROPERTY(RecipeTreeModel* recipeTreeModel READ recipeTreeModel CONSTANT)
 
       std::vector<LaserRecipe> recipes;
+      RecipeTreeModel* _treeModel;
+      QString _rootDir; // root directory, saved for folder operations
+
+      /// Rebuild the tree model from the in-memory recipes list.
+      void rebuildTreeModel();
 
     signals:
       void recipeModelChanged();
       void recipeChanged(int idx);
 
     public:
-      LaserReceipes(QObject* parent = nullptr) : QObject(parent) {}
+      LaserReceipes(QObject* parent = nullptr);
+      ~LaserReceipes();
       Q_INVOKABLE LaserRecipe recipe(int idx) const {
             if (idx >= 0 && idx < static_cast<int>(recipes.size()))
                   return recipes[idx];
@@ -190,13 +257,28 @@ class LaserReceipes : public QObject
       Q_INVOKABLE void removeLayer(int recipeIdx, int layerIdx);
       Q_INVOKABLE QStringList layerModel(int recipeIdx) const;
       QStringList recipeModel() const;
+      RecipeTreeModel* recipeTreeModel() const { return _treeModel; }
       json toJson() const;
       void fromJson(const json&);
 
-      /// Load all recipe files (one .json per recipe) from dir.
+      /// Load all recipe files (one .json per recipe) from dir,
+      /// recursively descending into subdirectories.
       void loadFromDirectory(const QString& dir);
-      /// Save all recipes as individual .json files into dir.
+      /// Save all recipes as individual .json files into dir,
+      /// preserving subdirectory structure.
       void saveToDirectory(const QString& dir) const;
+
+      /// Create a new recipe in the given subdirectory (relative to root).
+      /// If relDir is empty, the recipe is created in the root.
+      Q_INVOKABLE void addRecipeInDir(const QString& name, const QString& relDir);
+
+      /// Create a new subdirectory under the given parent directory
+      /// (relative to root).  If parentRelDir is empty, the folder is
+      /// created in the root.
+      Q_INVOKABLE bool addFolder(const QString& folderName, const QString& parentRelDir);
+
+      /// Remove a folder and all recipes inside it.
+      Q_INVOKABLE bool removeFolder(const QString& relDir);
 };
 
 Q_DECLARE_METATYPE(LaserPass)
