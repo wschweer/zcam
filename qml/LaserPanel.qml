@@ -68,12 +68,11 @@ Rectangle {
         RowLayout {
             Layout.margins: 5
             implicitHeight: 20
+                enabled: laserPanel.laser?.enabled ?? false
             Button {
-                implicitHeight: parent.height
                 id: framingButton
                 text: "Framing"
                 checkable: true
-                enabled: laserPanel.laser?.enabled ?? false
                 checked: laserPanel.laser?.framing ?? false
                 Layout.fillWidth: true
                 Layout.horizontalStretchFactor: 2
@@ -81,11 +80,9 @@ Rectangle {
                 Material.foreground: "black"
                 }
             Button {
-                implicitHeight: parent.height
                 id: startButton
                 Layout.fillWidth: true
-                Layout.horizontalStretchFactor: 2
-                text: "Start"
+                text: "Marking"
                 Material.foreground: "black"
                 enabled: laserPanel.laser?.enabled ?? false
                 checked: laserPanel.laser?.marking ?? false

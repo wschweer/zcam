@@ -43,7 +43,8 @@ class Laser : public QObject
       QML_UNCREATABLE("no")
       QML_ELEMENT
 
-      ZCam* zcam;
+      ZCam* zcam { nullptr };
+      Machine* machine { nullptr };
       PROPV(bool, enabled, false)
       PROPV(bool, framing, false)
       PROPV(bool, framing1, false)

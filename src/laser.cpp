@@ -19,8 +19,9 @@
 //   Laser
 //---------------------------------------------------------
 
-Laser::Laser(ZCam* zc, Machine* machine, QObject* parent) : QObject(parent) {
+Laser::Laser(ZCam* zc, Machine* m, QObject* parent) : QObject(parent) {
       zcam = zc;
+      machine = m;
       Debug("{}: board type <{}>", machine->name(), machine->boardType());
       if (machine->boardType() == "RKQ-LM-441") {
             set_engine(new LaserRKQ(zcam, this));
@@ -32,7 +33,6 @@ Laser::Laser(ZCam* zc, Machine* machine, QObject* parent) : QObject(parent) {
       connect(machine, &Machine::boardTypeChanged, [this] {
             delete engine();
             Debug("machine board type changed");
-            Machine* machine = zcam->project()->machine();
             if (machine->boardType() == "RKQ-LM-441")
                   set_engine(new LaserBJJCZ(zcam, this));
             else

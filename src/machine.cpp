@@ -697,7 +697,7 @@ static constexpr std::string_view _properties[] = {
                            "default": 0.0
                          }
                        },
-                       "label": ""
+                       "label": " "
                      },
                      {
                        "name": "galvoRotate",
