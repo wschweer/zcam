@@ -647,12 +647,18 @@ Window {
                     display: AbstractButton.TextOnly
                     text: "M"
                     font.bold: true
+                    contentItem: Text {
+                        text: parent.text
+                        color: "black"
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Show Media Browser")
                     Layout.rightMargin: 4
                     }
                 ToolButton {
-                    //                    Layout.alignment: Qt.AlignRight
                     action: actionShowLaserPanel
                     display: AbstractButton.IconOnly
                     icon.color: "transparent"
