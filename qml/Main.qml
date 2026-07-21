@@ -643,25 +643,40 @@ Window {
 
                 // Media Browser toggle button — placed left of the Laser button
                 ToolButton {
+                    id: mediaBrowserBtn
                     action: actionShowMediaBrowser
                     display: AbstractButton.TextOnly
                     text: "M"
                     font.bold: true
                     contentItem: Text {
-                        text: parent.text
-                        color: "black"
-                        font: parent.font
+                        text: mediaBrowserBtn.text
+                        color: mediaBrowserBtn.checked ? "white" : "black"
+                        font: mediaBrowserBtn.font
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
+                        }
+                    background: Rectangle {
+                        color: mediaBrowserBtn.checked ? Material.color(Material.Teal, Material.Shade700)
+                               : (mediaBrowserBtn.hovered ? Material.color(Material.BlueGrey, Material.Shade600)
+                                  : "transparent")
+                        radius: 4
                         }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Show Media Browser")
                     Layout.rightMargin: 4
                     }
                 ToolButton {
+                    id: laserPanelBtn
                     action: actionShowLaserPanel
                     display: AbstractButton.IconOnly
-                    icon.color: "transparent"
+                    icon.color: laserPanelBtn.checked ? Material.accentColor
+                               : (laserPanelBtn.hovered ? Material.foreground
+                                  : Material.color(Material.Grey, Material.Shade400))
+                    background: Rectangle {
+                        color: laserPanelBtn.checked ? Material.color(Material.Teal, Material.Shade800)
+                               : "transparent"
+                        radius: 4
+                        }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Show Laser Panel")
                     }
