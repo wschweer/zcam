@@ -98,7 +98,7 @@ void Element::fromJson(const json& data) {
                               element = new Text(zcam, this);
                               element->fromJson(value);
                               }
-                        else if (key == "layer") {
+                        else if (key == "layer" || key == "group") {
                               element = new Layer(zcam, this);
                               element->fromJson(value);
                               }
