@@ -160,23 +160,21 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
             }
 
       if (isNullPointerWrite) {
-            // Directly write a null pointer via the meta property.
-            // We construct a QVariant of the correct metatype containing
-            // a null pointer value by default-constructing it.
-            int propIdx = element->metaObject()->indexOfProperty(pn.constData());
-            QMetaProperty mp = element->metaObject()->property(propIdx);
-            QMetaType mt = mp.metaType();
-            void* nullPtr = nullptr;
-            // QVariant(QMetaType, const void* data) copies sizeOf() bytes
-            // from data.  For a pointer type, we need to provide the
-            // address of a null pointer, not null itself.
-            QVariant typedNull(mt, &nullPtr);
+            // Directly call the setter with a typed null pointer.
+            // We bypass the QVariant pipeline entirely because
+            // QMetaProperty::write() may silently fail for
+            // Q_DECLARE_OPAQUE_POINTER types.
+            //
+            // Since LaserLayer is fully defined in this TU, we can
+            // use QVariant::fromValue<LaserLayer*>(nullptr) which
+            // creates a properly-typed QVariant at compile time.
+            QVariant typedNull = QVariant::fromValue<LaserLayer*>(nullptr);
             if (oldValue == typedNull)
                   return;
-            // Bypass the normal PropertyChangeCommand path and write
-            // directly, then create the undo command with the correct types.
+            // Write the null pointer directly.
+            element->setProperty(pn.constData(), typedNull);
+            // Create undo command for the change.
             auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, typedNull);
-            cmd->redo();
             pushCommand(std::move(cmd));
             setDirty(true);
             zcam->setCamDirty(true);
