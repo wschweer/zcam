@@ -13,16 +13,18 @@
 #pragma once
 
 #include "element3d.h"
-#include "layer.h"
 #include "laserengine.h"
 #include "recipe.h"
 #include "clipper.h"
 
 //---------------------------------------------------------
 //   LaserLayer
-//    - corresponds to a Layer
-//    - all children of Layer are burned with parameters from
-//      an LaserLayerTemplate
+//    - Contains the laser parameters (recipe, overrides, etc.)
+//    - No longer references a specific Layer as baseElement.
+//    - Instead, each Element3d in the project tree (from Cad
+//      downward) can reference a LaserLayer via its laserLayer
+//      property.  Elements that don't set it inherit the
+//      LaserLayer from their parent.
 //    - material test can override up to two parameters
 //---------------------------------------------------------
 
@@ -32,7 +34,6 @@ class LaserLayer : public Element3d
       QML_ELEMENT
       QML_UNCREATABLE("no")
 
-      PROPV(Layer*, baseElement, nullptr)
       PROPV(const Recipe*, recipe, nullptr)
 
       // override types are defined in laserengine.h
@@ -60,7 +61,6 @@ class LaserLayer : public Element3d
                         "label": "State"
                      },
 
-                  { "name": "baseElement", "label": "CadLayer", "type": "layer" },
                   { "name": "recipe",      "label": "Recipe", "type": "recipe" },
                   { "name": "invert",      "label": "Invert", "type": "bool",  "default": false },
                   { "name": "kerfOffset",  "label": "Kerf",   "type": "float", "min": 0.0, "max": 0.001, "default": 0.03 },
@@ -106,6 +106,11 @@ class LaserLayer : public Element3d
       PathsD spl;
       PathD glLines;
       Clipper2Lib::PathsD createFill(Clipper2Lib::PathsD& spdi) const;
+
+      /// Collect all Element3d items in the project tree (from Cad
+      /// downward) whose effectiveLaserLayer() equals this LaserLayer.
+      /// This replaces the old baseElement-based collection.
+      std::vector<const Element3d*> collectElements() const;
 
       /// Return polygon list for a single tile (no panel-grid offsets).
       /// Used by Cam for the convex-hull / framing computation.

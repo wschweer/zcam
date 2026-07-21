@@ -732,6 +732,51 @@ Layer* InspectorModel::nameToLayer(const QString& name) const {
       }
 
 //---------------------------------------------------------
+//   laserLayerNames
+//    Return all LaserLayer names in the current project.
+//---------------------------------------------------------
+
+QStringList InspectorModel::laserLayerNames() const {
+      if (!_element)
+            return {};
+      ZCam* zc    = nullptr;
+      Element* el = qobject_cast<Element*>(_element);
+      if (el)
+            zc = el->zcamInstance();
+      if (!zc)
+            return {};
+      return zc->laserLayerNames();
+      }
+
+//---------------------------------------------------------
+//   laserLayerToName
+//    Resolve a LaserLayer* pointer to its name string.
+//---------------------------------------------------------
+
+QString InspectorModel::laserLayerToName(LaserLayer* ll) const {
+      if (!ll)
+            return {};
+      return ll->name();
+      }
+
+//---------------------------------------------------------
+//   nameToLaserLayer
+//    Resolve a name string back to a LaserLayer* pointer.
+//---------------------------------------------------------
+
+LaserLayer* InspectorModel::nameToLaserLayer(const QString& name) const {
+      if (!_element || name.isEmpty())
+            return nullptr;
+      ZCam* zc    = nullptr;
+      Element* el = qobject_cast<Element*>(_element);
+      if (el)
+            zc = el->zcamInstance();
+      if (!zc)
+            return nullptr;
+      return zc->laserLayerPtr(name);
+      }
+
+//---------------------------------------------------------
 //   recipeToName
 //    Resolve a Recipe* pointer to its name string.
 //---------------------------------------------------------

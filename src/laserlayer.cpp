@@ -15,7 +15,8 @@
 #include "clipper.h"
 #include "element3d.h"
 #include "fixture.h"
-#include "layer.h"
+#include "project.h"
+#include "cad.h"
 #include "zcam.h"
 
 #include <algorithm>
@@ -27,24 +28,49 @@
 #include <vector>
 
 //---------------------------------------------------------
-//   collectBurnElements
+//   collectBurnElementsForLaserLayer
 //    Recursively collect all burnable Element3d children under the
-//    given element.  This traverses the full subtree (including
-//    nested Cad groups) so that elements at any depth are found.
+//    given element whose effectiveLaserLayer() equals the given
+//    LaserLayer.  This traverses the full subtree so that elements
+//    at any depth are found, as long as they resolve to this LaserLayer.
 //---------------------------------------------------------
 
-static void collectBurnElements(Element* parent, std::vector<const Element3d*>& out) {
+static void collectBurnElementsForLaserLayer(Element* parent, const LaserLayer* ll,
+                                             std::vector<const Element3d*>& out) {
       for (Element* child : parent->children()) {
             auto* ce = qobject_cast<Element3d*>(child);
             if (!ce)
                   continue;
-            if (ce->burn() && !ce->pathList().empty())
+            // Skip LaserLayer elements themselves — they are not geometry.
+            if (isType<LaserLayer>(ce))
+                  continue;
+            // Check if this element's effective LaserLayer is the one we're looking for.
+            if (ce->effectiveLaserLayer() == ll && ce->burn() && !ce->pathList().empty())
                   out.push_back(ce);
-            // Recurse into children regardless of burn flag on the
-            // parent — a group (Cad) may have burn=false but still
-            // contain burnable children.
-            collectBurnElements(child, out);
+            // Recurse into children regardless — a child may resolve to a
+            // different LaserLayer or to this one via inheritance.
+            collectBurnElementsForLaserLayer(child, ll, out);
             }
+      }
+
+//---------------------------------------------------------
+//   collectElements
+//    Collect all Element3d items in the project tree (from Cad
+//    downward) whose effectiveLaserLayer() equals this LaserLayer.
+//    The search starts at the Cad element and traverses the full
+//    subtree recursively.
+//---------------------------------------------------------
+
+std::vector<const Element3d*> LaserLayer::collectElements() const {
+      std::vector<const Element3d*> elements;
+      Project* proj = zcam->project();
+      if (!proj)
+            return elements;
+      Cad* cad = proj->cad();
+      if (!cad)
+            return elements;
+      collectBurnElementsForLaserLayer(cad, this, elements);
+      return elements;
       }
 
 //---------------------------------------------------------
@@ -86,14 +112,7 @@ LaserLayer::~LaserLayer() {
 
 PathsD LaserLayer::collectLayerPath() {
       spl.clear();
-      Layer* layer = baseElement();
-      if (!layer) {
-            Critical("no base element");
-            return spl;
-            }
-
-      std::vector<const Element3d*> elements;
-      collectBurnElements(layer, elements);
+      auto elements = collectElements();
 
       for (const auto* ce : elements) {
             const auto& pl = ce->pathList();
@@ -127,13 +146,8 @@ Clipper2Lib::PathsD LaserLayer::processTileLines() const {
             return {};
             }
 
-      Layer* layer = baseElement();
-      if (!layer)
-            return {};
-
       Clipper2Lib::PathsD lineList;
-      std::vector<const Element3d*> elements;
-      collectBurnElements(layer, elements);
+      auto elements = collectElements();
 
       for (const auto* ce : elements) {
             PathList pl = ce->pathList();
@@ -258,7 +272,6 @@ LaserPath LaserLayer::collectLaserPath() const {
             return LaserPath();
             }
 
-      Layer* layer = baseElement();
       Cam* cam     = zcam->project()->cam();
 
       double panelHD = cam->panelHDistance();
@@ -266,16 +279,15 @@ LaserPath LaserLayer::collectLaserPath() const {
       double w, h;
       zcam->project()->fixture()->size(w, h);
 
+      auto elements = collectElements();
+
       Clipper2Lib::PathsD lineList;
       for (int row = 0; row < cam->panelRows(); ++row) {
             for (int column = 0; column < cam->panelColumns(); ++column) {
                   double xo = (panelHD + w) * column;
                   double yo = (panelVD + h) * row;
 
-                  for (const auto e : layer->children()) {
-                        const auto* ce = toType<Element3d>(e);
-                        if (!ce->burn())
-                              continue;
+                  for (const auto* ce : elements) {
                         PathList pl = ce->pathList();
 
                         QMatrix4x4 matrix = ce->globalMatrix();

@@ -1035,6 +1035,38 @@ Layer* ZCam::layerPtr(const QString& name) const {
       }
 
 //---------------------------------------------------------
+//   laserLayerNames
+//    Collect all LaserLayer element names by traversing the project tree.
+//---------------------------------------------------------
+
+static void collectLaserLayers(Element* root, QStringList& names) {
+      if (!root)
+            return;
+      if (isType<LaserLayer>(root))
+            names.append(root->name());
+      for (Element* child : root->children())
+            collectLaserLayers(child, names);
+      }
+
+QStringList ZCam::laserLayerNames() const {
+      QStringList names;
+      collectLaserLayers(rootElement(), names);
+      return names;
+      }
+
+//---------------------------------------------------------
+//   laserLayerPtr
+//    Return the LaserLayer* for a given name, or nullptr.
+//---------------------------------------------------------
+
+LaserLayer* ZCam::laserLayerPtr(const QString& name) const {
+      Element* e = Element::byName(name);
+      if (!e)
+            return nullptr;
+      return qobject_cast<LaserLayer*>(e);
+      }
+
+//---------------------------------------------------------
 //   recipeNames
 //    Return all recipe names from ZCam::recipes.
 //---------------------------------------------------------
@@ -1560,6 +1592,8 @@ void ZCam::newProject(bool clearPersistedPath) {
             ll->set_recipe(recipes->recipePtr(0));
       auto stock = new Stock(this, cam);
       auto layer = new Layer(this, cad);
+      // Set the LaserLayer on the Layer so all children inherit it.
+      layer->set_laserLayer(ll);
       auto text  = new Text(this, layer);
       text->setColor("yellow");
       text->set_text("ZCam");
@@ -1589,7 +1623,6 @@ void ZCam::newProject(bool clearPersistedPath) {
       ell->set_fill(false);
 
       ll->setName(QString("LL-%1").arg(layer->name()));
-      ll->set_baseElement(layer);
 
       auto grid = new Grid(this, project);
 

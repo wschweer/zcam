@@ -22,7 +22,6 @@ Layer::Layer(ZCam* w, Element* parent)
    : Element3d(w, parent)
       {
       setName("layer");
-      connect(this, &Cad::showChanged, [this] { Debug("========{}", show()); });
       }
 
 //---------------------------------------------------------

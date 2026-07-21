@@ -16,6 +16,8 @@
 #include "fixture.h"
 #include "layer.h"
 #include "laserlayer.h"
+#include "project.h"
+#include "cad.h"
 
 //---------------------------------------------------------
 //   Fixture
@@ -47,14 +49,8 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
             auto layer = toType<LaserLayer>(e);
             if (!layer->burn())
                   continue;
-            if (!layer->baseElement()) {
-                  Critical("no base element for <{}>", layer->name());
-                  continue;
-                  }
-            for (auto e : layer->baseElement()->children()) {
-                  auto* ce = toType<Element3d>(e);
-                  if (!ce->burn())
-                        continue;
+            auto elements = layer->collectElements();
+            for (const auto* ce : elements) {
                   // Single-tile geometry in project-root space.
                   QMatrix4x4 m = ce->globalMatrix();
 

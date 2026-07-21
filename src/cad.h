@@ -85,6 +85,12 @@ class Cad : public Element3d
                       "label": "Lock",
                       "type": "lockScale",
                       "default": 2
+                    },
+                    {
+                      "name": "laserLayer",
+                      "label": "LaserLayer",
+                      "type": "laserLayer",
+                      "default": ""
                     }
                   ]
                       })json"};

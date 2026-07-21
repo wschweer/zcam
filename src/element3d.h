@@ -22,6 +22,9 @@
 #include "tessgeometry.h"
 #include "painterpath.h"
 
+class LaserLayer;
+Q_DECLARE_OPAQUE_POINTER(LaserLayer*)
+
 static constexpr double FONT_SCALE    = 0.352778 * .1;
 static constexpr double FONT_SCALE_UP = 10.0;
 
@@ -48,6 +51,11 @@ class Element3d : public Element
 
       PROPV(bool, show, true)
       PROPV(bool, burn, true)
+      // Reference to a LaserLayer.  Can be null, in which case the
+      // element inherits the LaserLayer from its parent (see
+      // effectiveLaserLayer()).  This replaces the old Layer→LaserLayer
+      // association via LaserLayer::baseElement.
+      PROPV(LaserLayer*, laserLayer, nullptr)
       PROPV(TessGeometry*, geometry, nullptr)
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
@@ -182,6 +190,10 @@ class Element3d : public Element
       // Used to grey-out child visibility icons when a parent is hidden.
       bool ancestorsShow() const;
 
+      /// Returns the effective LaserLayer for this element by walking
+      /// up the parent chain until a non-null laserLayer is found.
+      /// Returns nullptr if no ancestor (including self) has a laserLayer set.
+      LaserLayer* effectiveLaserLayer() const;
       QRectF boundingBox() const;
       /// Returns the axis-aligned bounding box in world (root) coordinates
       /// by transforming the local boundingBox() through globalMatrix().

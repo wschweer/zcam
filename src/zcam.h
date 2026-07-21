@@ -459,6 +459,11 @@ class ZCam : public QObject
       /// Returns the Layer* pointer for a given layer name, or nullptr.
       Q_INVOKABLE Layer* layerPtr(const QString& name) const;
 
+      /// Returns a list of all LaserLayer element names in the current project.
+      Q_INVOKABLE QStringList laserLayerNames() const;
+      /// Returns the LaserLayer* pointer for a given name, or nullptr.
+      Q_INVOKABLE LaserLayer* laserLayerPtr(const QString& name) const;
+
       /// Returns a list of all Recipe names from ZCam::recipes.
       Q_INVOKABLE QStringList recipeNames() const;
       /// Returns the Recipe* pointer for a given recipe name, or nullptr.

@@ -187,10 +187,6 @@ void Cam::updateCam() {
             if (!isType<LaserLayer>(e))
                   continue;
             auto* ll = toType<LaserLayer>(e);
-            if (!ll->baseElement()) {
-                  Debug("no base element");
-                  continue;
-                  }
 
             Clipper2Lib::PathsD tileLines = ll->collectDisplayLines();
             if (tileLines.size() < 2) {

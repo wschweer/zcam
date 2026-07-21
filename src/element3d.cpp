@@ -14,6 +14,7 @@
 #include "clipper2/clipper.h"
 #include "propertyjson.h"
 #include "layer.h"
+#include "laserlayer.h"
 #include "recipe.h"
 #include "machine.h"
 #include "machines.h"
@@ -113,6 +114,11 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
             data[name]     = recipe ? recipe->name().toStdString() : "";
             return true;
             }
+      else if (type == "laserLayer") {
+            LaserLayer* ll = value.value<LaserLayer*>();
+            data[name]     = ll ? ll->name().toStdString() : "";
+            return true;
+            }
       else if (type == "machine") {
             // machine is stored as a Machine*, serialized as its name string.
             // A null pointer is serialized as JSON null.
@@ -163,6 +169,12 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
             mp.write(element, QVariant::fromValue(recipe));
             return true;
             }
+      else if (type == "laserLayer") {
+            QString llName = QString::fromStdString(jval.get<std::string>());
+            LaserLayer* ll = element->zcamInstance()->laserLayerPtr(llName);
+            mp.write(element, QVariant::fromValue(ll));
+            return true;
+            }
       else if (type == "machine") {
             // machine is stored as a Machine* pointer; resolve from name
             QString machineName = QString::fromStdString(jval.get<std::string>());
@@ -205,7 +217,7 @@ json Element3d::toJson() const {
 
       const QMetaObject* meta = this->metaObject();
       for (const auto& [name, type] : propNames)
-            if (type == "layer" || type == "recipe" || type == "machine")
+            if (type == "layer" || type == "recipe" || type == "machine" || type == "laserLayer")
                   writeLayerOrRecipe(data, this, name, type);
             else
                   propjson::writePropertyToJson(data, this, meta, false, name, type);
@@ -258,7 +270,7 @@ void Element3d::fromJson(const json& json) {
             for (const auto& [name, type] : propNames) {
                   if (type == "lockScale" || type == "lockSize")
                         continue; // already loaded in first pass
-                  if (type == "layer" || type == "recipe" || type == "machine")
+                  if (type == "layer" || type == "recipe" || type == "machine" || type == "laserLayer")
                         readLayerOrRecipe(json, this, name, type);
                   else
                         propjson::readPropertyFromJson(json, this, meta, false, name, type);
@@ -288,6 +300,24 @@ bool Element3d::ancestorsShow() const {
             p = p->parent();
             }
       return true;
+      }
+
+//---------------------------------------------------------
+//   effectiveLaserLayer
+//    Walk up the parent chain from this element and return the
+//    first non-null laserLayer reference found.  Returns nullptr
+//    if no ancestor (including self) has a laserLayer set.
+//---------------------------------------------------------
+
+LaserLayer* Element3d::effectiveLaserLayer() const {
+      const Element3d* e = this;
+      while (e) {
+            if (e->_laserLayer)
+                  return e->_laserLayer;
+            auto* p = e->parent();
+            e = qobject_cast<const Element3d*>(p);
+            }
+      return nullptr;
       }
 
 //---------------------------------------------------------

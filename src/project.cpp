@@ -27,6 +27,7 @@
 
 #include <QSet>
 #include <QFileInfo>
+#include <functional>
 
 //---------------------------------------------------------
 //   HandleDragCommand implementation
@@ -228,14 +229,34 @@ void Project::updateCadLayerVisibility() {
       if (!_cad)
             return;
 
-      // Build a set of all Layer pointers referenced by LaserLayers
-      // in the active fixture.
+      // Build a set of all Layer pointers that have at least one
+      // LaserLayer referencing them via laserLayer property in the
+      // active fixture.  Also show Layers that contain children which
+      // have a laserLayer set to one of the fixture's LaserLayers.
+      // For now, simply show all layers (the old baseElement logic is gone).
       QSet<Layer*> referencedLayers;
       if (_fixture) {
             for (const auto c : _fixture->children()) {
                   auto* ll = qobject_cast<LaserLayer*>(c);
-                  if (ll && ll->baseElement())
-                        referencedLayers.insert(ll->baseElement());
+                  if (ll) {
+                        // Walk the Cad subtree to find elements referencing this LaserLayer
+                        if (_cad) {
+                              std::function<void(Element*)> walk = [&](Element* e) {
+                                    auto* e3d = qobject_cast<Element3d*>(e);
+                                    if (e3d && e3d->effectiveLaserLayer() == ll) {
+                                          // Mark the nearest Layer ancestor as referenced
+                                          Element* p = e3d;
+                                          while (p && !isType<Layer>(p))
+                                                p = p->parent();
+                                          if (auto* layer = qobject_cast<Layer*>(p))
+                                                referencedLayers.insert(layer);
+                                          }
+                                    for (auto* child : e->children())
+                                          walk(child);
+                                    };
+                              walk(_cad);
+                              }
+                        }
                   }
             }
 
@@ -341,11 +362,9 @@ void Project::removeFixture(Fixture* f) {
 AddLayerCommand::AddLayerCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
     : _cad(cad), _fixture(fixture), _zcam(zcam) {
       _layer = new Layer(zcam, nullptr);
-      if (_fixture) {
-            _laserLayer = new LaserLayer(zcam, nullptr);
-            _laserLayer->set_baseElement(_layer);
-            _laserLayer->setName(QString("LL-%1").arg(_layer->name()));
-            }
+      // No longer create a LaserLayer automatically.
+      // The user creates LaserLayers explicitly and assigns
+      // elements to them via the laserLayer property.
       }
 
 void AddLayerCommand::redo() {
@@ -491,20 +510,9 @@ QString AddFixtureCommand::description() const {
 
 AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture) : _zcam(zcam), _fixture(fixture) {
       _laserLayer = new LaserLayer(zcam, nullptr);
-      // Auto-link to the first Cad Layer if available
-      if (zcam && zcam->project() && zcam->project()->cad()) {
-            Cad* cad = zcam->project()->cad();
-            for (const auto c : cad->children()) {
-                  auto* layer = qobject_cast<Layer*>(c);
-                  if (layer) {
-                        _laserLayer->set_baseElement(layer);
-                        _laserLayer->setName(QString("LL-%1").arg(layer->name()));
-                        break;
-                        }
-                  }
-            }
-      if (_laserLayer->name().isEmpty())
-            _laserLayer->setName(QStringLiteral("LaserLayer"));
+      // No longer auto-link to the first Cad Layer via baseElement.
+      // The user assigns elements to this LaserLayer via the laserLayer property.
+      _laserLayer->setName(QStringLiteral("LaserLayer"));
       }
 
 void AddLaserLayerCommand::redo() {
@@ -1056,12 +1064,34 @@ void Project::removeElement(Element* el) {
             }
       auto cmd = std::make_unique<RemoveElementCommand>(zc, parent, el, row);
 
-      // If the element is a Layer, find all LaserLayers that reference it
+      // If the element is a Layer, find all elements in the Cad tree
+      // whose effectiveLaserLayer references a LaserLayer that is a child
+      // of the current fixture, so we can also remove those LaserLayers.
       auto layer = qobject_cast<Layer*>(el);
       if (layer && _fixture) {
+            // Find LaserLayers in the fixture whose collectElements()
+            // includes any element under the removed Layer.
             for (const auto c : _fixture->children()) {
                   auto ll = qobject_cast<LaserLayer*>(c);
-                  if (ll && ll->baseElement() == layer) {
+                  if (!ll)
+                        continue;
+                  // Check if any element in the LaserLayer's collection
+                  // is a descendant of the removed Layer.
+                  auto elements = ll->collectElements();
+                  bool hasDescendant = false;
+                  for (const auto* elem : elements) {
+                        const Element* p = elem;
+                        while (p) {
+                              if (p == layer) {
+                                    hasDescendant = true;
+                                    break;
+                                    }
+                              p = p->parent();
+                              }
+                        if (hasDescendant)
+                              break;
+                        }
+                  if (hasDescendant) {
                         int llRow = 0;
                         for (const auto cc : _fixture->children()) {
                               if (cc == ll)

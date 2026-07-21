@@ -830,7 +830,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             auto* ll = new LaserLayer(zcam, fixture);
             ll->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
             ll->setExpanded(false);
-            ll->set_baseElement(layer);
+            layer->set_laserLayer(ll);
             ll->set_kerfOffset(-0.05);
             auto cmd = std::make_unique<InsertElementCommand>(zcam, fixture, ll, -1);
             cmd->redo();

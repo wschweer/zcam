@@ -158,7 +158,8 @@ void ZCam::createMaterialTest() {
       // Create a LaserLayer linked to the pattern layer
       auto ll = new LaserLayer(this, fixture);
       ll->setName("LL-Pattern");
-      ll->set_baseElement(layer);
+      // Set the LaserLayer on the Pattern layer so all children inherit it.
+      layer->set_laserLayer(ll);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));
@@ -243,17 +244,15 @@ void MaterialTest::updateChildren() {
 //---------------------------------------------------------
 
 void MaterialTest::createChildren() {
-      // First delete the fixture LaserLayers whose baseElement is a
-      // child of this MaterialTest (i.e. the ones created by previous
-      // createChildren() calls).  Preserve LaserLayers created
-      // externally (e.g. LL-Pattern whose baseElement is the parent
-      // Pattern layer).
+      // First delete the fixture LaserLayers whose laserLayer is set
+      // to one whose element collection includes children of this MaterialTest.
+      // Preserve LaserLayers created externally (e.g. LL-Pattern whose
+      // laserLayer is set on the parent Pattern layer, not on children of this).
       //
       // This MUST be done before deleting the MaterialTest children,
-      // because the LaserLayers hold raw baseElement pointers to those
+      // because the LaserLayers hold references to those
       // Layer children.  Deleting the Layers first would leave dangling
-      // pointers, causing use-after-free when we try to check
-      // baseElement()->parent().
+      // pointers, causing use-after-free.
       //
       // emit remove3dElement BEFORE deleting so QML can synchronously
       // destroy the corresponding Model node while the C++ element is
@@ -267,7 +266,19 @@ void MaterialTest::createChildren() {
             QList<Element*> toDelete;
             for (Element* c : fixture->children()) {
                   auto* ll = qobject_cast<LaserLayer*>(c);
-                  if (ll && ll->baseElement() && ll->baseElement()->parent() == this)
+                  if (!ll)
+                        continue;
+                  // Check if this LaserLayer's collectElements() includes
+                  // any element whose parent is this MaterialTest.
+                  auto elements = ll->collectElements();
+                  bool isChild = false;
+                  for (const auto* elem : elements) {
+                        if (elem->parent() == this) {
+                              isChild = true;
+                              break;
+                              }
+                        }
+                  if (isChild)
                         toDelete.append(c);
                   }
             for (Element* c : toDelete)
@@ -336,7 +347,7 @@ void MaterialTest::createChildren() {
                   LaserLayer* ll = new LaserLayer(zcam, fixture);
                   ll->setName(format("ll-{}-{}", row, column).c_str());
                   ll->set_recipe(materialLayer());
-                  ll->set_baseElement(layer);
+                  layer->set_laserLayer(ll);
                   ll->set_overrideType1(int(rowParameter()));
                   ll->set_overrideValue1(rv);
                   ll->set_overrideType2(int(columnParameter()));
@@ -362,7 +373,7 @@ void MaterialTest::createChildren() {
 
             LaserLayer* ll = new LaserLayer(zcam, fixture);
             ll->setName("ll-border");
-            ll->set_baseElement(borderL);
+            borderL->set_laserLayer(ll);
             ll->set_recipe(borderLayer());
             fixture->addChild(ll);
 
@@ -455,7 +466,7 @@ void MaterialTest::createChildren() {
 
             LaserLayer* ll = new LaserLayer(zcam, fixture);
             ll->setName("ll-text");
-            ll->set_baseElement(textL);
+            textL->set_laserLayer(ll);
             ll->set_recipe(textLayer());
             fixture->addChild(ll);
             }
@@ -481,7 +492,19 @@ void MaterialTest::createChildren() {
       if (fixture) {
             for (Element* c : fixture->children()) {
                   auto* ll = qobject_cast<LaserLayer*>(c);
-                  if (ll && ll->baseElement() && ll->baseElement()->parent() == this)
+                  if (!ll)
+                        continue;
+                  // Check if this LaserLayer's collection includes
+                  // any element whose parent is this MaterialTest.
+                  auto elements = ll->collectElements();
+                  bool isChild = false;
+                  for (const auto* elem : elements) {
+                        if (elem->parent() == this) {
+                              isChild = true;
+                              break;
+                              }
+                        }
+                  if (isChild)
                         emit zcam->add3dElement(ll);
                   }
             }
@@ -674,7 +697,7 @@ void ZCam::createGalvoTest() {
       // Create a LaserLayer linked to the galvo pattern layer
       auto ll = new LaserLayer(this, fixture);
       ll->setName("LL-GalvoPattern");
-      ll->set_baseElement(layer);
+      layer->set_laserLayer(ll);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));

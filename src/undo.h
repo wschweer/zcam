@@ -302,8 +302,9 @@ class RemoveElementCommand : public UndoCommand
       int _row {-1}; ///< original position within parent's children
 
     public:
-      ///< Associated LaserLayers that reference the Layer as baseElement.
-      ///< Stored so they can be removed/restored together with the Layer.
+      ///< Associated LaserLayers that reference elements under the Layer
+      ///< via the laserLayer property.  Stored so they can be removed/restored
+      ///< together with the Layer.
       struct LinkedLaserLayer {
             QPointer<Fixture> parent;
             QPointer<LaserLayer> ll;

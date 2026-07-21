@@ -18,6 +18,7 @@
 #include "element3d.h"
 #include "text.h"
 #include "layer.h"
+#include "laserlayer.h"
 #include "recipe.h"
 #include "machine.h"
 
@@ -88,6 +89,16 @@ class InspectorModel : public QAbstractListModel
 
       // Resolve a name back to a Layer* pointer.
       Q_INVOKABLE Layer* nameToLayer(const QString& name) const;
+
+      // Called from QML delegates for "laserLayer" type properties: returns
+      // the list of available LaserLayer names in the current project.
+      Q_INVOKABLE QStringList laserLayerNames() const;
+
+      // Resolve a LaserLayer* pointer to its name (for display in ComboBox).
+      Q_INVOKABLE QString laserLayerToName(LaserLayer* ll) const;
+
+      // Resolve a name back to a LaserLayer* pointer.
+      Q_INVOKABLE LaserLayer* nameToLaserLayer(const QString& name) const;
 
       // Resolve a Recipe* pointer to its name (for display in ComboBox).
       Q_INVOKABLE QString recipeToName(Recipe* recipe) const;
