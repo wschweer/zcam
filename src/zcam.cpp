@@ -473,9 +473,16 @@ void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modif
 //    The undo record is created once at endElementDrag().
 //---------------------------------------------------------
 
-void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers) {
+void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers, const QVector3D& pivot) {
       if (!element || !element->draggable())
             return;
+
+      // Compute the element's world-space origin BEFORE the scale
+      // change.  The origin (0,0,0) in local coords maps to the
+      // translation part of globalMatrix(); it does not depend on
+      // the current scale value.
+      QVector3D worldOrigin = element->globalMatrix().map(QVector3D(0.0f, 0.0f, 0.0f));
+
       // Use set_scaleAR() instead of set_scale() so that the lockScale
       // enforcement (Off / Lock / Square) is applied.  set_scale() bypasses
       // the lock constraints, which would allow non-uniform scaling even
@@ -483,6 +490,39 @@ void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifier
       QVector3D cur = element->scale();
       QVector3D newScale(cur.x() * scaleFactor.x(), cur.y() * scaleFactor.y(), cur.z() * scaleFactor.z());
       element->set_scaleAR(newScale);
+
+      // Determine the effective uniform scale factor.  set_scaleAR()
+      // may adjust the requested scale when lockScale is Square or
+      // Lock, so we compute the actual ratio from the resulting
+      // scale values.
+      QVector3D actualNew = element->scale();
+      float sd            = (cur.x() != 0.0f) ? actualNew.x() / cur.x() : 1.0f;
+
+      // To scale around the pivot point (in world coords), the
+      // element's world-space origin must move so that the pivot
+      // stays fixed.  The required world-space displacement is:
+      //    worldDelta = (1 - sd) * (pivot - worldOrigin)
+      // This is analogous to how the canvas zoom keeps the cursor
+      // position fixed: root.position += cursorScenePos - root.position) * (1 - sd).
+      QVector3D worldDelta = (1.0f - sd) * (pivot - worldOrigin);
+
+      // Convert the world-space delta to the parent's local
+      // coordinate system, analogous to dragged() and
+      // centerOnWorkspace().  mapVector() applies only
+      // rotation+scale, not translation, which is correct for
+      // direction vectors.
+      QVector3D localDelta = worldDelta;
+      if (auto* p = qobject_cast<Element3d*>(element->parent())) {
+            QMatrix4x4 parentGlobal = p->globalMatrix();
+            bool ok                 = false;
+            QMatrix4x4 inv          = parentGlobal.inverted(&ok);
+            if (ok)
+                  localDelta = inv.mapVector(worldDelta);
+            }
+
+      element->beginBatchUpdate();
+      element->set_pos(element->pos() + localDelta);
+      element->endBatchUpdate();
       }
 
 //---------------------------------------------------------
@@ -704,7 +744,6 @@ void ZCam::hover(Element3d* element) {
             }
       }
 
-
 //---------------------------------------------------------
 //   pickElement
 //    Custom picking: traverse the element tree depth-first and
@@ -740,7 +779,7 @@ Element3d* ZCam::pickElement(double x, double y) {
             return nullptr;
       // Return the element with the smallest area (innermost).
       auto it = std::min_element(candidates.begin(), candidates.end(),
-            [](const auto& a, const auto& b) { return a.first < b.first; });
+                                 [](const auto& a, const auto& b) { return a.first < b.first; });
       return it->second;
       }
 

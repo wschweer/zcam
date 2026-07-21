@@ -547,11 +547,18 @@ Item {
             // the canvas (Text, Polygon, Ellipse, Rectangle etc.) and
             // actually shown (show == true and ancestors visible) are
             // eligible for element scaling.
+            //
+            // The scale center is the current mouse position in scene
+            // coordinates, analogous to how the canvas zoom keeps the
+            // cursor position fixed.
             var el = ZCam.currentElement;
             if (el && el.visible() && el.show && el.ancestorsShow && el.draggable) {
+                var pivot = screenToScene(mouse.x, mouse.y);
+                if (!pivot)
+                    return;
                 var scaleFactor = Qt.vector3d(sd, sd, sd);
                 ZCam.startElementDrag(el);
-                ZCam.scaled(el, scaleFactor, mouse.modifiers);
+                ZCam.scaled(el, scaleFactor, mouse.modifiers, pivot);
                 ZCam.endElementDrag();
                 return;
                 }

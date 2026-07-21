@@ -313,7 +313,6 @@ class ZCam : public QObject
       ProjectManager* projectManager() const { return _projectManager; }
       void loadAssets();
       Q_INVOKABLE void saveAssets();
-
       bool camDirty() const { return _camDirty; }
       void setCamDirty(bool v);
       Element3d* currentElement() const { return _currentElement; }
@@ -342,8 +341,12 @@ class ZCam : public QObject
       Q_INVOKABLE void rotated(Element3d* element, const QVector3D& deltaRotation, int modifiers);
 
       /// Called from QML when an element is scaled in the 3D viewport.
-      Q_INVOKABLE void scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers);
-
+      /// The pivot point (in world/root coordinates) is the center of
+      /// the scaling operation — typically the current mouse position.
+      /// The element's position is adjusted so that the pivot point
+      /// stays fixed in world space, analogous to zooming the canvas.
+      Q_INVOKABLE void scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers,
+                              const QVector3D& pivot);
       /// Called from QML when the user starts dragging an element.
       /// Records the original transform for the undo command and
       /// resets the magnetic-snap state.
