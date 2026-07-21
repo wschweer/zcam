@@ -124,6 +124,8 @@ qt_add_qml_module(zcam
         src/laser_bjjcz.cpp src/laser_bjjcz.h
         src/laser_rkq.cpp src/laser_rkq.h
 
+#        src/importipc2581.cpp
+
         src/usb.cpp src/usb.h
         src/clipper.cpp src/clipper.h
         src/layer.cpp src/layer.h
