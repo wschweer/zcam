@@ -573,7 +573,7 @@ Item {
                     // Element::setName() may de-duplicate the name (e.g.
                     // "foo" -> "foo-1"); the actual name flows back through
                     // nameChanged -> Label binding automatically.
-                    ZCam.projectManager.changeProperty(model.element, "name", nameEdit.text);
+                    ZCam.project.changeProperty(model.element, "name", nameEdit.text);
                     }
                 }
 

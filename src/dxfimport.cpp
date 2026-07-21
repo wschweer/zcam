@@ -22,7 +22,6 @@
 #include "ellipse.h"
 #include "text.h"
 #include "undo.h"
-#include "projectmanager.h"
 #include "logger.h"
 #include "types.h"
 
@@ -602,7 +601,7 @@ class DxfReaderInterface final : public DRW_Interface
       void insertElement(Element3d* el) {
             auto cmd = std::make_unique<InsertElementCommand>(m_zcam, m_defaultLayer, el, -1);
             cmd->redo();
-            m_zcam->projectManager()->pushCommand(std::move(cmd));
+            m_zcam->project()->pushCommand(std::move(cmd));
             }
       //---------------------------------------------------------
       //   addTextEntity
@@ -818,7 +817,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             {
             auto cmd = std::make_unique<InsertElementCommand>(zcam, cad, layer, -1);
             cmd->redo();
-            zcam->projectManager()->pushCommand(std::move(cmd));
+            zcam->project()->pushCommand(std::move(cmd));
             }
 
       // Create a LaserLayer linked to this Layer
@@ -835,7 +834,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             ll->set_kerfOffset(-0.05);
             auto cmd = std::make_unique<InsertElementCommand>(zcam, fixture, ll, -1);
             cmd->redo();
-            zcam->projectManager()->pushCommand(std::move(cmd));
+            zcam->project()->pushCommand(std::move(cmd));
             }
 
       // Read the DXF file using libdxfrw
@@ -843,7 +842,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
       dxfRW dxf(path.toUtf8().constData());
       bool ok = dxf.read(&reader, false);
 
-      zcam->projectManager()->markDirty();
+      zcam->project()->markDirty();
       zcam->setCamDirty(true);
 
       if (!ok)

@@ -24,7 +24,6 @@
 #include "grid.h"
 #include "stock.h"
 #include "project.h"
-#include "projectmanager.h"
 #include "treemodel.h"
 #include "logger.h"
 #include "laser.h"
@@ -62,15 +61,14 @@ MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Element3d(zcam, parent
 //---------------------------------------------------------
 
 static Project* createFiberLaserProject(ZCam* zcam) {
-      ProjectManager* pm = zcam->projectManager();
       // newProject() clears the undo stack, destroys the old tree,
       // creates a fresh RootElement + Project with demo content.
       // The default machine from Config is applied by startNewProject().
-      pm->startNewProject();
+      zcam->startNewProject();
 
       Project* project = zcam->project();
 
-      pm->endNewProject();
+      zcam->endNewProject();
       return project;
       }
 
@@ -82,13 +80,12 @@ static Project* createFiberLaserProject(ZCam* zcam) {
 //---------------------------------------------------------
 
 static void finalizeProject(ZCam* zcam) {
-      // Use update() which correctly handles the root element relationship.
       // Do NOT call setRoot(zcam->rootElement()) directly because
       // rootElement() returns Project (a child of RootElement) while
       // treeModel->_root is RootElement — passing Project to setRoot()
       // would trigger deleteLater() on RootElement, destroying the
       // entire element tree.
-      zcam->projectManager()->update();
+      zcam->update();
 
       // Notify QML that the grid element may have changed.
       if (zcam->project())
@@ -111,13 +108,12 @@ static void finalizeProject(ZCam* zcam) {
 //---------------------------------------------------------
 
 void ZCam::createMaterialTest() {
-      ProjectManager* pm = projectManager();
       // Preserve the machine from the current project before
       // creating a new one.  The Machine* is owned by the
       // Machines asset (not by the Project), so the pointer
       // remains valid across project recreation.
       Machine* savedMachine = project() ? project()->machine() : nullptr;
-      pm->startNewProject();
+      startNewProject();
 
       // Restore the machine to the new project so the material
       // test pattern uses the same machine as the current project.
@@ -176,8 +172,8 @@ void ZCam::createMaterialTest() {
       emit project() -> gridElementChanged();
 
       //      finalizeProject(this);
-      pm->markDirty();
-      pm->endNewProject();
+      project()->markDirty();
+      endNewProject();
       }
 
 //---------------------------------------------------------
@@ -519,8 +515,9 @@ void MaterialTest::addText(double x, double y, const QString& s, Layer* layer, d
 double MaterialTest::rowValue(int row) const {
       switch (ParameterType(rowParameter())) {
             case ParameterType::Pulse: {
-                  int val                        = (rowMax() - rowMin()) / (rows() - 1) * row + rowMin();
-                  const std::vector<Pulse33>& pt = zcam->project()->machine()->laser()->engine()->pulseTable();
+                  int val = (rowMax() - rowMin()) / (rows() - 1) * row + rowMin();
+                  const std::vector<Pulse33>& pt =
+                      zcam->project()->machine()->laser()->engine()->pulseTable();
                   for (int i = 0; i < sizeof(pt); ++i) {
                         double tp = pt[i].pulseWidth;
                         if (val < tp) {
@@ -546,7 +543,8 @@ double MaterialTest::columnValue(int col) const {
       switch (ParameterType(columnParameter())) {
             case ParameterType::Pulse: {
                   int val = (columnMax() - columnMin()) / (columns() - 1) * col + columnMin();
-                  const std::vector<Pulse33>& pt = zcam->project()->machine()->laser()->engine()->pulseTable();
+                  const std::vector<Pulse33>& pt =
+                      zcam->project()->machine()->laser()->engine()->pulseTable();
                   for (int i = 0; i < sizeof(pt); ++i) {
                         double tp = pt[i].pulseWidth;
                         if (val < tp) {
@@ -683,7 +681,7 @@ void ZCam::createGalvoTest() {
       fixture->addChild(ll);
 
       finalizeProject(this);
-      _projectManager->markDirty();
+      project()->markDirty();
       }
 
 //---------------------------------------------------------
@@ -694,5 +692,5 @@ void ZCam::createGalvoTest() {
 void MaterialTest::fixup() {
       createChildren();
       zcam->project()->fixture()->_saveChildren = false;
-      _saveChildren = false;
+      _saveChildren                             = false;
       }

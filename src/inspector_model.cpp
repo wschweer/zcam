@@ -13,7 +13,7 @@
 #include <QMetaProperty>
 #include "zcam.h"
 #include "machines.h"
-#include "projectmanager.h"
+#include "project.h"
 #include "element.h"
 #include "layer.h"
 #include "recipe.h"
@@ -553,14 +553,14 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
       QVariant oldValue   = _element->property(name.toUtf8().constData());
       if (oldValue == value)
             return false;
-      // Route through the ProjectManager undo system so that every
+      // Route through the Project undo system so that every
       // property edit is recorded for undo/redo and marks the project dirty.
       ZCam* zc    = nullptr;
       Element* el = qobject_cast<Element*>(_element);
       if (el)
             zc = el->zcamInstance();
-      if (zc && zc->projectManager()) {
-            zc->projectManager()->changeProperty(_element, name, value);
+      if (zc && zc->project()) {
+            zc->project()->changeProperty(_element, name, value);
             // changeProperty() triggers the element's NOTIFY signal,
             // which propertyChangedSlot() catches and defers a
             // dataChanged emission.  We must NOT emit dataChanged
@@ -599,8 +599,8 @@ bool InspectorModel::setSubProperty(int row, const QString& subName, const QVari
       Element* el = qobject_cast<Element*>(_element);
       if (el)
             zc = el->zcamInstance();
-      if (zc && zc->projectManager()) {
-            zc->projectManager()->changeProperty(_element, subName, value);
+      if (zc && zc->project()) {
+            zc->project()->changeProperty(_element, subName, value);
             return true;
             }
       else {
@@ -637,8 +637,8 @@ bool InspectorModel::setColumnProperty(int modelRow, const QString& propName, co
       Element* el = qobject_cast<Element*>(_element);
       if (el)
             zc = el->zcamInstance();
-      if (zc && zc->projectManager()) {
-            zc->projectManager()->changeProperty(_element, propName, value);
+      if (zc && zc->project()) {
+            zc->project()->changeProperty(_element, propName, value);
             return true;
             }
       else {

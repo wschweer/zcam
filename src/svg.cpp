@@ -16,7 +16,6 @@
 #include "layer.h"
 #include "cad.h"
 #include "project.h"
-#include "projectmanager.h"
 #include "undo.h"
 #include "logger.h"
 #include <QFileInfo>
@@ -121,9 +120,9 @@ void ZCam::importSvg(const QString& path) {
 
       auto cmd = std::make_unique<InsertElementCommand>(this, layer, poly, -1);
       cmd->redo(); // apply immediately
-      _projectManager->pushCommand(std::move(cmd));
+      _project->pushCommand(std::move(cmd));
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
       Debug("---ok3");
       }
@@ -143,7 +142,7 @@ QRectF ZCam::svgBoundingBox(const QString& path) {
             return {};
 
       constexpr double pxToMm = 25.4 / 96.0;
-      const double svgHeight = image->height;
+      const double svgHeight  = image->height;
 
       double minX = std::numeric_limits<double>::max();
       double minY = std::numeric_limits<double>::max();
@@ -156,10 +155,10 @@ QRectF ZCam::svgBoundingBox(const QString& path) {
                         float* p = &svgPath->pts[i * 2];
                         double x = p[0] * pxToMm;
                         double y = (svgHeight - p[1]) * pxToMm;
-                        minX = std::min(minX, x);
-                        minY = std::min(minY, y);
-                        maxX = std::max(maxX, x);
-                        maxY = std::max(maxY, y);
+                        minX     = std::min(minX, x);
+                        minY     = std::min(minY, y);
+                        maxX     = std::max(maxX, x);
+                        maxY     = std::max(maxY, y);
                         }
                   }
             }
@@ -197,7 +196,7 @@ void ZCam::importSvgAt(const QString& path, double x, double y) {
             }
 
       constexpr double pxToMm = 25.4 / 96.0;
-      const double svgHeight = image->height;
+      const double svgHeight  = image->height;
 
       PainterPath pp;
       for (NSVGshape* shape = image->shapes; shape; shape = shape->next) {
@@ -258,9 +257,9 @@ void ZCam::importSvgAt(const QString& path, double x, double y) {
 
       auto cmd = std::make_unique<InsertElementCommand>(this, layer, poly, -1);
       cmd->redo(); // apply immediately
-      _projectManager->pushCommand(std::move(cmd));
+      _project->pushCommand(std::move(cmd));
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
       }
 
@@ -290,14 +289,14 @@ void ZCam::startSvgDrag(const QString& path) {
 
       // Build a rectangle outline (4 edges as line segments).
       Clipper2Lib::PathD rect;
-      rect.push_back({_svgDragBBox.left(),  _svgDragBBox.top()});
+      rect.push_back({_svgDragBBox.left(), _svgDragBBox.top()});
       rect.push_back({_svgDragBBox.right(), _svgDragBBox.top()});
       rect.push_back({_svgDragBBox.right(), _svgDragBBox.top()});
       rect.push_back({_svgDragBBox.right(), _svgDragBBox.bottom()});
       rect.push_back({_svgDragBBox.right(), _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.left(),  _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.left(),  _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.left(),  _svgDragBBox.top()});
+      rect.push_back({_svgDragBBox.left(), _svgDragBBox.bottom()});
+      rect.push_back({_svgDragBBox.left(), _svgDragBBox.bottom()});
+      rect.push_back({_svgDragBBox.left(), _svgDragBBox.top()});
       Clipper2Lib::PathsD lines;
       lines.push_back(rect);
       _dragPreviewGeometry->setLines(lines);

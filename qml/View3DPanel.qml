@@ -405,9 +405,9 @@ Item {
     // Reset the 3D camera when a new project is created.
     // This covers newProject(), createMaterialTest() and
     // createGalvoTest() — all emit projectCreated() via
-    // ProjectManager::endNewProject().
+    // ZCam::endNewProject().
     Connections {
-        target: ZCam.projectManager
+        target: ZCam
         function onProjectCreated() {
             resetCamera();
             }
@@ -974,11 +974,11 @@ Item {
                         if (dropPos)
                             ZCam.importSvgAt(path, dropPos.x, dropPos.y);
                         else
-                            ZCam.projectManager.importFile(path);
+                            ZCam.importFile(path);
                         imported = true;
                         }
                     else if (lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
-                        ZCam.projectManager.importFile(path);
+                        ZCam.importFile(path);
                         imported = true;
                         }
                     }
@@ -989,7 +989,7 @@ Item {
                     if (artworkPath.toLowerCase().endsWith(".svg") && dropPos)
                         ZCam.importSvgAt(artworkPath, dropPos.x, dropPos.y);
                     else
-                        ZCam.projectManager.importFile(artworkPath);
+                        ZCam.importFile(artworkPath);
                     imported = true;
                     }
                 }

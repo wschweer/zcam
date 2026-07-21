@@ -14,6 +14,7 @@
 #include "cad.h"
 #include "text.h"
 #include "layer.h"
+#include "laserlayer.h"
 #include "rectangle.h"
 #include "polygon.h"
 #include "ellipse.h"
@@ -27,6 +28,14 @@
 #include "propertyjson.h"
 #include "geometryworker.h"
 #include "grid.h"
+#include "fixture.h"
+#include "framing.h"
+#include "stock.h"
+#include "dxfimport.h"
+
+#include <QSettings>
+#include <QFileInfo>
+#include <fstream>
 
 #include <cmath>
 #include <algorithm>
@@ -59,8 +68,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
 
       loadAssets();
 
-      _treeModel      = new TreeModel(this);
-      _projectManager = new ProjectManager(this, this);
+      _treeModel = new TreeModel(this);
 
       // Create an initial empty project as a valid default state.
       // The QML layer calls restoreLastProject() from Component.onCompleted
@@ -69,7 +77,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       //
       // IMPORTANT: newProject() must NOT clear the persisted lastPath here,
       // otherwise restoreLastProject() has nothing to read.
-      _projectManager->newProject(false);
+      newProject(false);
 
       // When the machines list changes (e.g. machines added/removed/renamed),
       // re-resolve the Project's Machine* from the stored machine name.
@@ -123,7 +131,7 @@ void ZCam::setCurrentElement(Element3d* el) {
 //---------------------------------------------------------
 //   applyFontToCurrentText
 //    Apply a font family to the currently selected Text
-//    element. The change goes through ProjectManager so it
+//    element. The change goes through the Project undo system so it
 //    is undoable and marks the project dirty.
 //---------------------------------------------------------
 
@@ -135,7 +143,7 @@ void ZCam::applyFontToCurrentText(const QString& family) {
             return;
       if (!text->fontFamily().isEmpty() && text->fontFamily() == family)
             return;
-      _projectManager->changeProperty(text, "fontFamily", family);
+      _project->changeProperty(text, "fontFamily", family);
       }
 
 //---------------------------------------------------------
@@ -217,12 +225,12 @@ void ZCam::centerOnWorkspace(Element3d* element) {
       if ((newPos - oldPos).length() < 0.001)
             return;
 
-      if (_projectManager) {
+      if (_project) {
             auto cmd = std::make_unique<PropertyChangeCommand>(
                 element, QByteArrayLiteral("pos"), QVariant::fromValue(oldPos), QVariant::fromValue(newPos));
             cmd->redo(); // apply the new position immediately
-            _projectManager->pushCommand(std::move(cmd));
-            _projectManager->markDirty();
+            _project->pushCommand(std::move(cmd));
+            _project->markDirty();
             }
 
       if (_project)
@@ -624,7 +632,7 @@ void ZCam::endElementDrag() {
       // bounding box stays visible after the drag ends.
       _pendingSegmentElement = nullptr;
 
-      if (_projectManager) {
+      if (_project) {
             // Use a single PropertyChangeCommand for pos; the undo command
             // records the old/new pos.  Rot and scale are captured in
             // additional commands pushed together.
@@ -635,21 +643,21 @@ void ZCam::endElementDrag() {
                   auto cmd = std::make_unique<PropertyChangeCommand>(el, QByteArrayLiteral("pos"),
                                                                      QVariant::fromValue(_elementDragOrigPos),
                                                                      QVariant::fromValue(newPos));
-                  _projectManager->pushCommand(std::move(cmd));
+                  _project->pushCommand(std::move(cmd));
                   }
                   {
                   auto cmd = std::make_unique<PropertyChangeCommand>(el, QByteArrayLiteral("rot"),
                                                                      QVariant::fromValue(_elementDragOrigRot),
                                                                      QVariant::fromValue(newRot));
-                  _projectManager->pushCommand(std::move(cmd));
+                  _project->pushCommand(std::move(cmd));
                   }
                   {
                   auto cmd = std::make_unique<PropertyChangeCommand>(
                       el, QByteArrayLiteral("scale"), QVariant::fromValue(_elementDragOrigScale),
                       QVariant::fromValue(newScale));
-                  _projectManager->pushCommand(std::move(cmd));
+                  _project->pushCommand(std::move(cmd));
                   }
-            _projectManager->markDirty();
+            _project->markDirty();
             }
 
       // Cam display is NOT refreshed automatically at end of drag.
@@ -929,10 +937,10 @@ void ZCam::endVertexDrag(Element3d* element, int vertexIndex) {
             _vertexDragElement = nullptr;
             return;
             }
-      if (_projectManager) {
+      if (_project) {
             auto cmd = std::make_unique<HandleDragCommand>(element, vertexIndex, _vertexDragOrigPos, newPos);
-            _projectManager->pushCommand(std::move(cmd));
-            _projectManager->markDirty();
+            _project->pushCommand(std::move(cmd));
+            _project->markDirty();
             }
       // Cam display is NOT refreshed automatically at end of drag.
       // The user triggers it manually via the refresh button.
@@ -1177,12 +1185,12 @@ Element3d* ZCam::createRectangle(double x, double y) {
       auto cmd = std::make_unique<AddRectangleCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
       Element3d* rect = cmd->rectangle();
-      _projectManager->pushCommand(std::move(cmd));
+      _project->pushCommand(std::move(cmd));
 
       // Select the new rectangle so vertex handles appear.
       setCurrentElement(rect);
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
 
       return rect;
@@ -1214,11 +1222,11 @@ Element3d* ZCam::createPolygon(double x, double y) {
       auto cmd = std::make_unique<AddPolygonCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
       Element3d* poly = cmd->polygon();
-      _projectManager->pushCommand(std::move(cmd));
+      _project->pushCommand(std::move(cmd));
 
       setCurrentElement(poly);
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
 
       return poly;
@@ -1251,11 +1259,11 @@ Element3d* ZCam::createEllipse(double x, double y) {
       auto cmd = std::make_unique<AddEllipseCommand>(this, layer, x, y);
       cmd->redo(); // apply immediately
       Element3d* ell = cmd->ellipse();
-      _projectManager->pushCommand(std::move(cmd));
+      _project->pushCommand(std::move(cmd));
 
       setCurrentElement(ell);
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
 
       return ell;
@@ -1331,11 +1339,11 @@ Element3d* ZCam::createText(double x, double y) {
                   }
             }
 
-      _projectManager->pushCommand(std::move(cmd));
+      _project->pushCommand(std::move(cmd));
 
       setCurrentElement(text);
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
 
       return text;
@@ -1446,24 +1454,24 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
       // These must be pushed BEFORE the MoveElementCommand so that
       // undo undoes the move first (restoring the old parent), then
       // the transforms (restoring the old pos/rot/scale).
-      if (_projectManager) {
+      if (_project) {
                   {
                   auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("pos"),
                                                                      QVariant::fromValue(origPos),
                                                                      QVariant::fromValue(newPos));
-                  _projectManager->pushCommand(std::move(cmd));
+                  _project->pushCommand(std::move(cmd));
                   }
                   {
                   auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("rot"),
                                                                      QVariant::fromValue(origRot),
                                                                      QVariant::fromValue(newRot));
-                  _projectManager->pushCommand(std::move(cmd));
+                  _project->pushCommand(std::move(cmd));
                   }
                   {
                   auto cmd = std::make_unique<PropertyChangeCommand>(element, QByteArrayLiteral("scale"),
                                                                      QVariant::fromValue(origScale),
                                                                      QVariant::fromValue(newScale));
-                  _projectManager->pushCommand(std::move(cmd));
+                  _project->pushCommand(std::move(cmd));
                   }
             }
 
@@ -1486,7 +1494,7 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
             Debug("reparentElement: no project");
             }
 
-      _projectManager->markDirty();
+      _project->markDirty();
       setCamDirty(true);
       }
 
@@ -1513,4 +1521,397 @@ void ZCam::deleteCurrentElement() {
       // bindings don't dereference a dangling pointer.
       setCurrentElement(nullptr);
       _project->removeElement(el);
+      }
+
+//=========================================================
+//  Project lifecycle methods (moved from ProjectManager)
+//=========================================================
+
+//---------------------------------------------------------
+//   saveLastProjectPath / lastProjectPath
+//    Persist the current project path in QSettings so it can be
+//    restored on the next application start.
+//---------------------------------------------------------
+
+static void saveLastProjectPath(const QString& path) {
+      QSettings settings;
+      settings.setValue("project/lastPath", path);
+      }
+
+static QString lastProjectPath() {
+      QSettings settings;
+      return settings.value("project/lastPath").toString();
+      }
+
+//---------------------------------------------------------
+//   newProject
+//---------------------------------------------------------
+
+void ZCam::newProject(bool clearPersistedPath) {
+      startNewProject(clearPersistedPath);
+
+      auto project = this->project();
+      auto fixture = project->fixture();
+      auto cam     = project->cam();
+      auto cad     = project->cad();
+      auto ll      = new LaserLayer(this, fixture);
+      auto recipes = this->recipes();
+      if (recipes && recipes->recipeCount() > 0)
+            ll->set_recipe(recipes->recipePtr(0));
+      auto stock = new Stock(this, cam);
+      auto layer = new Layer(this, cad);
+      auto text  = new Text(this, layer);
+      text->setColor("yellow");
+      text->set_text("ZCam");
+
+      auto rectangle = new Rectangle(this, layer);
+      rectangle->set_size(QVector2D(40.0, 30.0));
+      rectangle->set_pos(QVector3D(50.0, 50.0, 0.0));
+      rectangle->setColor(QColor("blue"));
+      rectangle->set_corner(5.0);
+      rectangle->set_lineWidth(1.0);
+      rectangle->set_fill(false);
+
+      auto poly = new Polygon(this, layer);
+      poly->set_pos(QVector3D(10.0, 25.0, 0.0));
+      poly->setColor(QColor("green"));
+      poly->set_lineWidth(1.0);
+      poly->moveTo({0.0, 0.0});
+      poly->lineTo({20.0, 20.0});
+      poly->lineTo({10.0, 5.0});
+      poly->set_fill(true);
+
+      auto ell = new Ellipse(this, layer);
+      ell->set_size(QVector2D(25.0, 25.0));
+      ell->set_pos(QVector3D(-30.0, 40.0, 0.0));
+      ell->setColor(QColor("magenta"));
+      ell->set_lineWidth(1.0);
+      ell->set_fill(false);
+
+      ll->setName(QString("LL-%1").arg(layer->name()));
+      ll->set_baseElement(layer);
+
+      auto grid = new Grid(this, project);
+
+      // build project tree
+      cad->addChild(layer);
+      layer->addChild(text);
+      layer->addChild(rectangle);
+      layer->addChild(poly);
+      layer->addChild(ell);
+      project->addChild(grid);
+      cam->addChild(stock);
+      fixture->addChild(ll);
+
+      endNewProject();
+      }
+
+//---------------------------------------------------------
+//   startNewProject
+//---------------------------------------------------------
+
+void ZCam::startNewProject(bool clearPersistedPath) {
+      // Caller is responsible for checking unsaved changes via QML dialog
+      // before invoking this method.
+      if (_project)
+            _project->clearUndoStack();
+      Element::clearProject(); // clear global name hash
+
+      // Clear the current/hover element pointers BEFORE destroying the old
+      // tree.  If these are left pointing at soon-to-be-deleted Element3d
+      // objects, any subsequent QML access (e.g. the InspectorPanel binding
+      //   element: ZCam.currentElement
+      // or the Shape.qml binding
+      //   visible: element && ZCam.currentElement === element
+      // ) will dereference a dangling pointer and crash in
+      // QQmlData::wasDeleted() inside QObjectWrapper::wrap().
+      setCurrentElement(nullptr);
+      set_hoverElement(nullptr);
+
+      // Synchronously destroy the old element tree before creating new
+      // elements.  TreeModel::setRoot(nullptr) schedules deleteLater() on
+      // the old root; we must flush those deferred deletes NOW, otherwise
+      // the old elements' destructors would run later (after new elements
+      // with the same names have been created) and accidentally remove
+      // the new elements from the Element::names hash.
+      _treeModel->setRoot(nullptr);
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+      set_rootElement(nullptr);
+      set_project(nullptr);
+      //
+      // construct a demo project
+      //
+      if (clearPersistedPath)
+            saveLastProjectPath(QString());
+
+      auto root = new RootElement(this, nullptr);
+      set_rootElement(root);
+      auto top = new Project(this, root);
+      set_project(top);
+
+      top->setProjectPath(QString());
+      top->setDirty(false);
+
+      // Set the default machine from the Config, if configured.
+      if (_config && !_config->defaultMachine().isEmpty() && _machines) {
+            QStringList model = _machines->machinesModel();
+            int idx           = model.indexOf(_config->defaultMachine());
+            if (idx >= 0)
+                  top->set_machine(_machines->machine(idx));
+            }
+
+      auto cad     = new Cad(this, top);
+      auto cam     = new Cam(this, top);
+      auto fixture = new Fixture(this, cam);
+      auto framing = new Framing(this, cam);
+      top->addChild(cad);
+      top->addChild(cam);
+      cam->addChild(fixture);
+      cam->addChild(framing);
+      connect(top, &Project::updateFraming, framing, &Framing::update);
+      }
+
+//---------------------------------------------------------
+//   endNewProject
+//---------------------------------------------------------
+
+void ZCam::endNewProject() {
+      rootElement()->addChild(project());
+      update();
+
+      // Notify QML that the grid element may have changed so the
+      // background View3D can re-evaluate its GridShape binding.
+      if (project())
+            emit project() -> gridElementChanged();
+
+      // Re-resolve the Project's Machine* after the project is replaced.
+      if (project())
+            project()->resolveMachine();
+
+      emit projectCreated();
+      // Update CAD layer visibility based on the active fixture.
+      // The CAM data is NOT refreshed automatically here because the
+      // processTileLines() call inside Cam::updateCam() may need to
+      // run createFill() for filled elements (e.g. Text), which can
+      // be extremely expensive on the main thread when the recipe
+      // has many passes or a small interval.  Instead, the camDirty
+      // flag is set so the user can trigger a refresh manually via
+      // the Cam refresh button when ready.
+      if (project())
+            project()->updateCadLayerVisibility();
+      setCamDirty(true);
+      }
+
+//---------------------------------------------------------
+//   update
+//    updates the tree view and triggers update of 3DCanvas
+//---------------------------------------------------------
+
+void ZCam::update() {
+      _treeModel->setRoot(rootElement()); // update project tree view
+      set_rootElement(project());         // build and show the scene
+      }
+
+//---------------------------------------------------------
+//   openProject
+//---------------------------------------------------------
+
+bool ZCam::openProject(const QString& path, bool skipCamUpdate) {
+      if (path.isEmpty()) {
+            Warning("ZCam::openProject: empty path");
+            return false;
+            }
+      if (!readProjectFile(path.toStdString(), skipCamUpdate)) {
+            Warning("ZCam::openProject: failed to read", path);
+            return false;
+            }
+      _project->setProjectPath(path);
+      _project->clearUndoStack();
+      _project->setDirty(false);
+      saveLastProjectPath(path);
+      emit projectLoaded(path);
+      // cam data is fresh after loading a project, unless the CAM update
+      // was skipped (e.g. at startup) — in that case, mark it as dirty
+      // so the refresh button is enabled and the user can update manually.
+      setCamDirty(skipCamUpdate);
+      return true;
+      }
+
+//---------------------------------------------------------
+//   save
+//---------------------------------------------------------
+
+bool ZCam::save() {
+      if (!_project || _project->projectPath().isEmpty())
+            return false; // QML should call saveAs with a chosen path
+      if (!writeProjectFile(_project->projectPath().toStdString()))
+            return false;
+      _project->setDirty(false);
+      saveLastProjectPath(_project->projectPath());
+      emit projectSaved(_project->projectPath());
+      return true;
+      }
+
+//---------------------------------------------------------
+//   saveAs
+//---------------------------------------------------------
+
+bool ZCam::saveAs(const QString& path) {
+      if (path.isEmpty() || !_project)
+            return false;
+      if (!writeProjectFile(path.toStdString()))
+            return false;
+      _project->setProjectPath(path);
+      _project->setDirty(false);
+      saveLastProjectPath(path);
+      emit projectSaved(path);
+      return true;
+      }
+
+//---------------------------------------------------------
+//   importFile
+//---------------------------------------------------------
+
+bool ZCam::importFile(const QString& path) {
+      if (path.isEmpty())
+            return false;
+      QFileInfo fi(path);
+      QString suffix = fi.suffix().toLower();
+      if (suffix == QStringLiteral("svg"))
+            importSvg(path);
+      else if (suffix == QStringLiteral("dxf") || suffix == QStringLiteral("dwg"))
+            return DxfImport::import(this, path);
+      else {
+            Warning("ZCam::importFile: unsupported file type: {}", suffix);
+            return false;
+            }
+      _project->markDirty();
+      setCamDirty(true);
+      return true;
+      }
+
+//---------------------------------------------------------
+//   restoreLastProject
+//    Called at startup to re-open the project that was open when
+//    the application was last closed.
+//---------------------------------------------------------
+
+bool ZCam::restoreLastProject() {
+      QString path = lastProjectPath();
+      if (path.isEmpty())
+            return false;
+      QFileInfo fi(path);
+      if (!fi.exists() || !fi.isFile())
+            return false;
+      // Skip CAM data update at startup — the user can trigger a
+      // refresh manually via the Cam button when needed.
+      return openProject(path, /*skipCamUpdate=*/true);
+      }
+
+//---------------------------------------------------------
+//   writeProjectFile
+//---------------------------------------------------------
+
+bool ZCam::writeProjectFile(const std::string& path) {
+      Project* tl = _project;
+      if (!tl) {
+            Warning("no toplevel");
+            return false;
+            }
+      std::ofstream f(path);
+      if (!f.is_open()) {
+            Warning("ZCam: cannot open for writing:", path);
+            return false;
+            }
+      // Minimal JSON skeleton – replace with full scene serialisation
+      nlohmann::ordered_json root;
+      root["version"]     = "1.0";
+      root["application"] = "zcam";
+      root["toplevel"]    = tl->toJson();
+      f << root.dump(4);
+      return true;
+      }
+
+//---------------------------------------------------------
+//   readProjectFile
+//---------------------------------------------------------
+
+bool ZCam::readProjectFile(const std::string& path, bool skipCamUpdate) {
+      std::ifstream f(path);
+      if (!f.is_open()) {
+            Warning("ZCam: cannot open for reading:", path);
+            return false;
+            }
+
+      json jdata;
+      try {
+            f >> jdata;
+            std::string version = jdata.value("version", "unknown");
+            Debug("ZCam: loaded project version <{}>", version);
+            //
+            //  destroy old project
+            //
+            //  Clear the global name registry first, then synchronously
+            //  delete the old element tree.  We cannot rely on
+            //  deleteLater() here because it is asynchronous: the old
+            //  elements would still be alive (and registered in the
+            //  Element::names hash) when the new tree is built below,
+            //  causing spurious name collisions.
+            //
+            Element::clearProject();
+
+            // Clear the current/hover element pointers BEFORE destroying
+            // the old tree to avoid dangling-pointer dereferences in QML.
+            // See newProject() for a detailed explanation.
+            setCurrentElement(nullptr);
+            set_hoverElement(nullptr);
+
+            _treeModel->setRoot(nullptr);
+            set_rootElement(nullptr); // detach scene
+            set_project(nullptr);
+
+            // Process pending deleteLater() calls so the old tree is
+            // truly gone before we build the new one.
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+            auto root = new RootElement(this, nullptr);
+            auto top  = new Project(this, root);
+            root->addChild(top);
+            set_project(top);
+            top->fromJson(jdata.at("toplevel"));
+            _treeModel->setRoot(root);
+            set_rootElement(project()); // build and show the scene
+
+            // Notify QML that the grid element may have changed.
+            emit top->gridElementChanged();
+
+            // Re-resolve the Project's Machine* after loading.
+            if (project())
+                  project()->resolveMachine();
+
+            // Initial CAD layer visibility update and CAM refresh so
+            // display geometry is populated after load.
+            // When skipCamUpdate is true (e.g. at startup when restoring
+            // the last project), the expensive Cam::updateCam() call is
+            // skipped — the user can trigger it manually via the Cam
+            // refresh button.
+            if (project()) {
+                  project()->updateCadLayerVisibility();
+                  if (!skipCamUpdate && project()->cam())
+                        project()->cam()->updateCam();
+                  }
+            auto func = [](this auto& self, Element* e) -> void {
+                  for (auto c : e->children()) {
+                        c->fixup();
+                        self(c);
+                        }
+                  };
+            func(project());
+            }
+      catch (const nlohmann::json::parse_error& err) {
+            Warning("JSON parse error:", err.what());
+            return false;
+            }
+
+      return true;
       }

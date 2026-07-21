@@ -22,7 +22,6 @@
 #include <nlohmann/json.hpp>
 
 #include "project.h"
-#include "projectmanager.h"
 #include "recipe.h"
 #include "machines.h"
 #include "layer.h"
@@ -242,7 +241,6 @@ class ZCam : public QObject
       QML_ELEMENT
       QML_SINGLETON
 
-      Q_PROPERTY(ProjectManager* projectManager READ projectManager CONSTANT)
       Q_PROPERTY(bool camDirty READ camDirty NOTIFY camDirtyChanged)
 
       PROPV(Config*, config, nullptr)
@@ -262,7 +260,6 @@ class ZCam : public QObject
       PROPV(Recipes*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
 
-      ProjectManager* _projectManager;
       void initAssets();
       void parseAssetsData(const QByteArray& data);
 
@@ -332,12 +329,50 @@ class ZCam : public QObject
       //      void rootElementChanged(Element3d*);        // signal 3d gui to rebuild scene graph
       void startDragElement(Element3d*); // signal 3d gui to drag this element
 
+      /// Emitted when a brand-new empty project was created.
+      void projectCreated();
+      /// Emitted after a project file was successfully loaded.
+      void projectLoaded(const QString& path);
+      /// Emitted after the project was saved.
+      void projectSaved(const QString& path);
+
     public:
       explicit ZCam(QObject* parent = nullptr);
       static ZCam* create(QQmlEngine*, QJSEngine*);
       void undoChangeProperty(Element*, const char*, QVariant) {}
-      ProjectManager* projectManager() const { return _projectManager; }
       void loadAssets();
+
+      // ── Project lifecycle (moved from ProjectManager) ───────────────────
+      /// Start a fresh, unnamed project.  Returns false if user cancelled.
+      Q_INVOKABLE void newProject(bool clearPersistedPath = true);
+      void startNewProject(bool clearPersistedPath = true);
+      void endNewProject();
+
+      /// Open a project from *path*.  Pass an empty string to trigger the
+      /// file-dialog logic from C++.  When *skipCamUpdate* is true, the
+      /// expensive Cam::updateCam() call is skipped.
+      Q_INVOKABLE bool openProject(const QString& path, bool skipCamUpdate = false);
+
+      /// Save to the current path; falls through to saveAs if none is set.
+      Q_INVOKABLE bool save();
+
+      /// Save under a new path.
+      Q_INVOKABLE bool saveAs(const QString& path);
+
+      /// Import an external file into the current project.
+      Q_INVOKABLE bool importFile(const QString& path);
+
+      /// Try to restore the last-opened project at application startup.
+      Q_INVOKABLE bool restoreLastProject();
+
+      /// update 3d canvas and project tree
+      void update();
+
+    private:
+      bool writeProjectFile(const std::string& path);
+      bool readProjectFile(const std::string& path, bool skipCamUpdate = false);
+
+    public:
       Q_INVOKABLE void saveAssets();
       bool camDirty() const { return _camDirty; }
       void setCamDirty(bool v);

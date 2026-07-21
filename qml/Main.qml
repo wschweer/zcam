@@ -26,7 +26,7 @@ Window {
     x: settings.windowX >= 0 ? settings.windowX : Screen.width / 2 - width / 2
     y: settings.windowY >= 0 ? settings.windowY : Screen.height / 2 - height / 2
     visible: true
-    title: ZCam.projectManager.projectName + (ZCam.projectManager.dirty ? " *" : "") + " – ZCam"
+    title: ZCam.project.projectName + (ZCam.project.dirty ? " *" : "") + " – ZCam"
 
     Material.theme: Material.Dark
     Material.accent: Material.Teal
@@ -58,7 +58,7 @@ Window {
     //   still dirty (e.g. after the user chose "Discard").
     property bool closeConfirmed: false
     onClosing: function (close) {
-        if (ZCam.projectManager.dirty && !closeConfirmed) {
+        if (ZCam.project.dirty && !closeConfirmed) {
             close.accepted = false;
             exitDialog.open();
             }
@@ -74,7 +74,7 @@ Window {
     Timer {
         id: restoreTimer
         interval: 0
-        onTriggered: ZCam.projectManager.restoreLastProject()
+        onTriggered: ZCam.restoreLastProject()
         }
 
     // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -121,10 +121,10 @@ Window {
         icon.source: "qrc:/icons/dark/file-new.svg"
         shortcut: StandardKey.New
         onTriggered: {
-            if (ZCam.projectManager.dirty) {
+            if (ZCam.project.dirty) {
                 newGuard.open();
                 } else {
-                ZCam.projectManager.newProject();
+                ZCam.newProject();
                 }
             }
         }
@@ -135,7 +135,7 @@ Window {
         icon.source: "qrc:/icons/dark/file-open.svg"
         shortcut: StandardKey.Open
         onTriggered: {
-            if (ZCam.projectManager.dirty) {
+            if (ZCam.project.dirty) {
                 openGuard.open();
                 } else {
                 openFileDialog.open();
@@ -149,10 +149,10 @@ Window {
         icon.source: "qrc:/icons/dark/file-save.svg"
         shortcut: StandardKey.Save
         onTriggered: {
-            if (ZCam.projectManager.projectPath === "")
+            if (ZCam.project.projectPath === "")
                 saveAsFileDialog.open();
             else
-                ZCam.projectManager.save();
+                ZCam.save();
             }
         }
 
@@ -201,8 +201,8 @@ Window {
         text: qsTr("&Undo")
         icon.source: "qrc:/icons/dark/edit-undo.svg"
         shortcut: StandardKey.Undo
-        enabled: ZCam.projectManager.canUndo
-        onTriggered: ZCam.projectManager.undo()
+        enabled: ZCam.project.canUndo
+        onTriggered: ZCam.project.undo()
         }
 
     Action {
@@ -210,8 +210,8 @@ Window {
         text: qsTr("&Redo")
         icon.source: "qrc:/icons/dark/edit-redo.svg"
         shortcut: StandardKey.Redo
-        enabled: ZCam.projectManager.canRedo
-        onTriggered: ZCam.projectManager.redo()
+        enabled: ZCam.project.canRedo
+        onTriggered: ZCam.project.redo()
         }
 
     Action {
@@ -224,7 +224,7 @@ Window {
         id: actionMaterialTest
         text: qsTr("Material Test")
         onTriggered: {
-            if (ZCam.projectManager.dirty) {
+            if (ZCam.project.dirty) {
                 materialTestGuard.open();
                 } else {
                 ZCam.createMaterialTest();
@@ -236,7 +236,7 @@ Window {
         id: actionGalvoTest
         text: qsTr("Galvo Test")
         onTriggered: {
-            if (ZCam.projectManager.dirty) {
+            if (ZCam.project.dirty) {
                 galvoTestGuard.open();
                 } else {
                 ZCam.createGalvoTest();
@@ -268,7 +268,7 @@ Window {
         title: qsTr("Open Project")
         nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
-        onAccepted: ZCam.projectManager.openProject(selectedFile.toString().replace("file://", ""))
+        onAccepted: ZCam.openProject(selectedFile.toString().replace("file://", ""))
         }
 
     FileDialog {
@@ -277,7 +277,7 @@ Window {
         nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
-        onAccepted: ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""))
+        onAccepted: ZCam.saveAs(selectedFile.toString().replace("file://", ""))
         }
 
     FileDialog {
@@ -285,7 +285,7 @@ Window {
         title: qsTr("Import File")
         nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
-        onAccepted: ZCam.projectManager.importFile(selectedFile.toString().replace("file://", ""))
+        onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
         }
 
     // Feedback dialog for save/restore assets backup
@@ -315,15 +315,15 @@ Window {
             text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a new project?")
             }
         onAccepted: {   // Save
-            if (ZCam.projectManager.projectPath === "")
+            if (ZCam.project.projectPath === "")
                 newSaveAsFileDialog.open();
             else {
-                ZCam.projectManager.save();
-                ZCam.projectManager.newProject();
+                ZCam.save();
+                ZCam.newProject();
                 }
             }
         onDiscarded: Qt.callLater(function () {
-            ZCam.projectManager.newProject();
+            ZCam.newProject();
             })   // Discard
         }
 
@@ -335,8 +335,8 @@ Window {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
-            ZCam.projectManager.newProject();
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.newProject();
             }
         }
 
@@ -351,10 +351,10 @@ Window {
             text: qsTr("The current project has unsaved changes.\nDo you want to save before opening another project?")
             }
         onAccepted: {
-            if (ZCam.projectManager.projectPath === "")
+            if (ZCam.project.projectPath === "")
                 openSaveAsFileDialog.open();
             else {
-                ZCam.projectManager.save();
+                ZCam.save();
                 openFileDialog.open();
                 }
             }
@@ -371,7 +371,7 @@ Window {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
             openFileDialog.open();
             }
         }
@@ -388,10 +388,10 @@ Window {
             }
         onAccepted: {
             closeConfirmed = true;
-            if (ZCam.projectManager.projectPath === "")
+            if (ZCam.project.projectPath === "")
                 exitSaveAsFileDialog.open();
             else {
-                ZCam.projectManager.save();
+                ZCam.save();
                 Qt.quit();
                 }
             }
@@ -412,7 +412,7 @@ Window {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
             Qt.quit();
             }
         onRejected: {
@@ -431,10 +431,10 @@ Window {
             text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a Material Test?")
             }
         onAccepted: {   // Save
-            if (ZCam.projectManager.projectPath === "")
+            if (ZCam.project.projectPath === "")
                 materialTestSaveAsFileDialog.open();
             else {
-                ZCam.projectManager.save();
+                ZCam.save();
                 ZCam.createMaterialTest();
                 }
             }
@@ -450,7 +450,7 @@ Window {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
             ZCam.createMaterialTest();
             }
         }
@@ -466,10 +466,10 @@ Window {
             text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?")
             }
         onAccepted: {   // Save
-            if (ZCam.projectManager.projectPath === "")
+            if (ZCam.project.projectPath === "")
                 galvoTestSaveAsFileDialog.open();
             else {
-                ZCam.projectManager.save();
+                ZCam.save();
                 ZCam.createGalvoTest();
                 }
             }
@@ -485,7 +485,7 @@ Window {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.projectManager.saveAs(selectedFile.toString().replace("file://", ""));
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
             ZCam.createGalvoTest();
             }
         }

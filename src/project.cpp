@@ -21,12 +21,12 @@
 #include "text.h"
 #include "grid.h"
 #include "zcam.h"
-#include "projectmanager.h"
 #include "treemodel.h"
 #include "undo.h"
 #include "logger.h"
 
 #include <QSet>
+#include <QFileInfo>
 
 //---------------------------------------------------------
 //   HandleDragCommand implementation
@@ -62,6 +62,159 @@ Project::Project(ZCam* z, Element* parent) : Element3d(z, parent) {
       }
 
 Project::~Project() {
+      }
+
+//---------------------------------------------------------
+//   projectName
+//---------------------------------------------------------
+
+QString Project::projectName() const {
+      if (_projectPath.isEmpty())
+            return QStringLiteral("Untitled");
+      return QFileInfo(_projectPath).baseName();
+      }
+
+//---------------------------------------------------------
+//   setDirty
+//---------------------------------------------------------
+
+void Project::setDirty(bool v) {
+      if (v == _dirty)
+            return;
+      _dirty = v;
+      emit dirtyChanged();
+      }
+
+//---------------------------------------------------------
+//   setProjectPath
+//---------------------------------------------------------
+
+void Project::setProjectPath(const QString& v) {
+      if (v == _projectPath)
+            return;
+      _projectPath = v;
+      emit projectPathChanged();
+      }
+
+//---------------------------------------------------------
+//   markDirty
+//---------------------------------------------------------
+
+void Project::markDirty() {
+      setDirty(true);
+      }
+
+//---------------------------------------------------------
+//   clearUndoStack
+//---------------------------------------------------------
+
+void Project::clearUndoStack() {
+      _undoStack.clear();
+      _undoIndex = 0;
+      emit undoStateChanged();
+      }
+
+//---------------------------------------------------------
+//   pushCommand
+//    Push a new undo command onto the stack, discarding any
+//    redo entries that come after the current index.
+//---------------------------------------------------------
+
+void Project::pushCommand(std::unique_ptr<UndoCommand> cmd) {
+      // Discard any redo entries after the current index
+      while (static_cast<int>(_undoStack.size()) > _undoIndex)
+            _undoStack.pop_back();
+      _undoStack.push_back(std::move(cmd));
+      _undoIndex = static_cast<int>(_undoStack.size());
+      emit undoStateChanged();
+      }
+
+//---------------------------------------------------------
+//   changeProperty
+//    Public API used by the Inspector to route a property change
+//    through the undo system and set the dirty flag.
+//---------------------------------------------------------
+
+void Project::changeProperty(QObject* element, const QString& propName, const QVariant& newValue) {
+      if (!element)
+            return;
+      QByteArray pn     = propName.toUtf8();
+      QVariant oldValue = element->property(pn.constData());
+      if (oldValue == newValue)
+            return;
+      // For the "name" property, use RenameElementCommand which stores
+      // the actual de-duplicated name that Element::setName() assigns,
+      // not the user-typed text.  This ensures undo/redo restores the
+      // exact same name even when de-duplication occurred.
+      if (pn == "name") {
+            auto el = qobject_cast<Element*>(element);
+            if (!el)
+                  return;
+            QString oldName = el->name();
+            // Apply the new name first to capture the de-duplicated result
+            el->setName(newValue.toString());
+            QString actualName = el->name();
+            auto cmd           = std::make_unique<RenameElementCommand>(el, oldName, actualName);
+            pushCommand(std::move(cmd));
+            setDirty(true);
+            // mark cam data as stale so the Cam refresh button enables
+            zcam->setCamDirty(true);
+            return;
+            }
+      auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, newValue);
+      cmd->redo(); // apply the new value immediately
+      pushCommand(std::move(cmd));
+      setDirty(true);
+      // mark cam data as stale so the Cam refresh button enables
+      zcam->setCamDirty(true);
+      }
+
+//---------------------------------------------------------
+//   checkUnsavedChanges
+//   Returns true if it is safe to proceed (no pending changes, or user
+//   chose to discard).  When dirty the caller should show a dialog; this
+//   stub always returns true so QML-level dialogs can take over.
+//---------------------------------------------------------
+
+bool Project::checkUnsavedChanges() {
+      // The actual "Save changes?" dialog is driven from QML.
+      // This method is kept as a synchronous fast-path for cases where the
+      // project is already clean.
+      return !_dirty;
+      }
+
+//---------------------------------------------------------
+//   undo
+//---------------------------------------------------------
+
+void Project::undo() {
+      if (!canUndo())
+            return;
+      --_undoIndex;
+      _undoStack[_undoIndex]->undo();
+      emit undoStateChanged();
+      setDirty(true);
+      zcam->setCamDirty(true);
+      // Cam display is NOT refreshed automatically after undo.
+      // The user triggers it manually via the refresh button.
+      updateCadLayerVisibility();
+      }
+
+//---------------------------------------------------------
+//   redo
+//---------------------------------------------------------
+
+void Project::redo() {
+      if (!canRedo())
+            return;
+      _undoStack[_undoIndex]->redo();
+      ++_undoIndex;
+      emit undoStateChanged();
+      setDirty(true);
+      zcam->setCamDirty(true);
+      // Cam display is NOT refreshed automatically after redo.
+      // The user triggers it manually via the refresh button.
+      updateCadLayerVisibility();
       }
 
 //---------------------------------------------------------
@@ -614,15 +767,10 @@ void Project::addFixtureCmd() {
             Critical("Project::addFixtureCmd: no Cam element");
             return;
             }
-      auto pm = zc->projectManager();
-      if (!pm) {
-            Critical("Project::addFixtureCmd: no ProjectManager");
-            return;
-            }
       auto cmd = std::make_unique<AddFixtureCommand>(zc, cam);
       cmd->redo(); // apply immediately
-      pm->pushCommand(std::move(cmd));
-      pm->markDirty();
+      pushCommand(std::move(cmd));
+      markDirty();
       zc->setCamDirty(true);
       }
 
@@ -646,15 +794,10 @@ void Project::addLayer() {
             return;
             }
       Fixture* fixture = _fixture;
-      auto pm          = zc->projectManager();
-      if (!pm) {
-            Critical("Project::addLayer: no ProjectManager");
-            return;
-            }
-      auto cmd = std::make_unique<AddLayerCommand>(zc, cad, fixture);
+      auto cmd         = std::make_unique<AddLayerCommand>(zc, cad, fixture);
       cmd->redo(); // apply immediately
-      pm->pushCommand(std::move(cmd));
-      pm->markDirty();
+      pushCommand(std::move(cmd));
+      markDirty();
       zc->setCamDirty(true);
       // The new Layer is referenced by a LaserLayer in the active fixture,
       // so make it visible on the 3D canvas.
@@ -679,15 +822,10 @@ void Project::addLaserLayerCmd(Fixture* fixture) {
             Critical("Project::addLaserLayerCmd: no Fixture element");
             return;
             }
-      auto pm = zc->projectManager();
-      if (!pm) {
-            Critical("Project::addLaserLayerCmd: no ProjectManager");
-            return;
-            }
       auto cmd = std::make_unique<AddLaserLayerCommand>(zc, fixture);
       cmd->redo(); // apply immediately
-      pm->pushCommand(std::move(cmd));
-      pm->markDirty();
+      pushCommand(std::move(cmd));
+      markDirty();
       zc->setCamDirty(true);
       updateCadLayerVisibility();
       }
@@ -916,11 +1054,6 @@ void Project::removeElement(Element* el) {
                   break;
             ++row;
             }
-      auto pm = zc->projectManager();
-      if (!pm) {
-            Critical("Project::removeElement: no ProjectManager");
-            return;
-            }
       auto cmd = std::make_unique<RemoveElementCommand>(zc, parent, el, row);
 
       // If the element is a Layer, find all LaserLayers that reference it
@@ -941,8 +1074,8 @@ void Project::removeElement(Element* el) {
             }
 
       cmd->redo(); // apply immediately
-      pm->pushCommand(std::move(cmd));
-      pm->markDirty();
+      pushCommand(std::move(cmd));
+      markDirty();
       zc->setCamDirty(true);
       // Update CAD layer visibility since removing a Layer or LaserLayer
       // may change which layers are referenced by the active fixture.
@@ -994,15 +1127,10 @@ void Project::moveElement(Element* element, Element* newParent, int newRow) {
             if (adjustedNew == oldRow || adjustedNew == oldRow + 1)
                   return;
             }
-      auto pm = zc->projectManager();
-      if (!pm) {
-            Critical("Project::moveElement: no ProjectManager");
-            return;
-            }
       auto cmd = std::make_unique<MoveElementCommand>(zc, element, oldParent, oldRow, newParent, newRow);
       cmd->redo(); // apply immediately
-      pm->pushCommand(std::move(cmd));
-      pm->markDirty();
+      pushCommand(std::move(cmd));
+      markDirty();
       zc->setCamDirty(true);
       updateCadLayerVisibility();
       }

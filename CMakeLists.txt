@@ -96,7 +96,6 @@ qt_add_qml_module(zcam
         src/layersettingmodel.cpp src/layersettingmodel.h
         src/propertyjson.cpp src/propertyjson.h
         src/recipe.cpp src/recipe.h
-        src/projectmanager.cpp src/projectmanager.h
         src/spacemouse.cpp
         src/spacemouse.h
         src/tessgeometry.cpp src/tessgeometry.h
