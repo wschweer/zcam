@@ -553,6 +553,12 @@ static constexpr std::string_view _properties[] = {
                    "count": 2,
                    "items": [
                      {
+                       "name": "ethDevice",
+                       "label": "Ethernet Device",
+                       "type": "ethDevice",
+                       "default": ""
+                     },
+                     {
                        "name": "maxTravel",
                        "label": "Travel",
                        "type": "vector3d",
@@ -593,38 +599,6 @@ static constexpr std::string_view _properties[] = {
                        ]
                      },
                      {
-                       "name": "maxAcceleration",
-                       "label": "Max Accel",
-                       "type": "vector3d",
-                       "unit": "mm/s²",
-                       "default": [
-                         0.0,
-                         0.0,
-                         0.0
-                       ]
-                     },
-                     {
-                       "row": {
-                         "minSpindle": {
-                           "label": "Min",
-                           "type": "float",
-                           "unit": "rpm",
-                           "min": 0.0,
-                           "max": 1000000.0,
-                           "default": 0.0
-                         },
-                         "maxSpindle": {
-                           "label": "Max",
-                           "type": "float",
-                           "unit": "rpm",
-                           "min": 0.0,
-                           "max": 1000000.0,
-                           "default": 0.0
-                         }
-                       },
-                       "label": "Spindle"
-                     },
-                     {
                        "name": "line",
                        "type": "line",
                        "colSpan": 2
@@ -648,19 +622,18 @@ static constexpr std::string_view _properties[] = {
                            "max": 10.0,
                            "precision": 3,
                            "default": 0.001
+                         },
+                         "circlePrecision": {
+                           "label": "Circle Prec",
+                           "type": "float",
+                           "unit": "mm",
+                           "min": 0.001,
+                           "max": 10.0,
+                           "precision": 3,
+                           "default": 0.001
                          }
                        },
                        "label": "Precision"
-                     },
-                     {
-                       "name": "circlePrecision",
-                       "label": "Circle Prec",
-                       "type": "float",
-                       "unit": "mm",
-                       "min": 0.001,
-                       "max": 10.0,
-                       "precision": 3,
-                       "default": 0.001
                      },
                      {
                        "name": "line",
@@ -724,7 +697,7 @@ static constexpr std::string_view _properties[] = {
                            "default": 0.0
                          }
                        },
-                       "label": "Galvo Shear"
+                       "label": ""
                      },
                      {
                        "name": "galvoRotate",
@@ -741,12 +714,6 @@ static constexpr std::string_view _properties[] = {
                        "label": "Galvo Swap XY",
                        "type": "bool",
                        "default": false
-                     },
-                     {
-                       "name": "ethDevice",
-                       "label": "Ethernet Device",
-                       "type": "ethDevice",
-                       "default": ""
                      }
                    ]
                  }
