@@ -27,7 +27,12 @@
 
 #include <QFileInfo>
 #include <QString>
+#include <QVector3D>
 #include <format>
+#include <cmath>
+#include <limits>
+#include <unordered_map>
+#include <vector>
 
 #include "libdxfrw.h"
 #include "drw_interface.h"
@@ -94,21 +99,27 @@ class DxfReaderInterface final : public DRW_Interface
       //---- DRW_Interface overrides (read side) -------------------------
       void addHeader(const DRW_Header* data) override {
             // Determine unit scale from $INSUNITS.
-            // $INSUNITS=0 means "unspecified" — in that case we leave
-            // the scale at 1.0 (values are already in drawing units).
-            // Only when $INSUNITS is entirely absent from the header AND
-            // $MEASUREMENT says English do we fall back to 25.4 mm/inch.
-            bool insunitsFound = false;
-            auto it            = data->vars.find("$INSUNITS");
+            // $INSUNITS=0 means "unspecified". In that case the DXF values
+            // are assumed to be in pixel units and are converted to mm
+            // using the configured dxfScale (dots per millimeter).
+            // Only when $INSUNITS is entirely absent from the header do we
+            // fall back to $MEASUREMENT as a last resort.
+            auto it = data->vars.find("$INSUNITS");
             if (it != data->vars.end() && it->second->type() == DRW_Variant::INTEGER) {
                   int unit = it->second->content.i;
-                  if (unit != 0) { // 0 = unspecified, skip
-                        m_unitScale   = unitToMm(unit);
-                        insunitsFound = true;
+                  if (unit == 0) {
+                        // pixel units -> apply configured dpmm scale
+                        double dpmm = m_zcam->config() ? m_zcam->config()->dxfScale() : 1.0;
+                        if (dpmm <= 0.0)
+                              dpmm = 1.0;
+                        m_unitScale = 1.0 / dpmm;
+                        }
+                  else {
+                        m_unitScale = unitToMm(unit);
                         }
                   }
-            if (!insunitsFound) {
-                  // Fall back to $MEASUREMENT only when $INSUNITS was not set
+            else {
+                  // Fall back to $MEASUREMENT only when $INSUNITS was not present
                   auto mit = data->vars.find("$MEASUREMENT");
                   if (mit != data->vars.end() && mit->second->type() == DRW_Variant::INTEGER) {
                         if (mit->second->content.i == 0) // English
@@ -614,8 +625,12 @@ class DxfReaderInterface final : public DRW_Interface
             textEl->set_pos(QVector3D(mm(pos.x), mm(pos.y), 0.0));
             // Height is in drawing units; convert to mm
             double h = mm(height);
-            // Convert mm height to point size (1pt = 0.352778mm)
-            textEl->set_pointSize(h / FONT_SCALE);
+            // Convert mm height to logical point size. The Text element
+            // internally renders at FONT_SCALE_UP * FONT_SCALE mm per point,
+            // so the logical point size is mm / (FONT_SCALE_UP * FONT_SCALE).
+            // 1 pt = 0.352778 mm.
+            constexpr double mmPerPoint = 0.352778;
+            textEl->set_pointSize(h / mmPerPoint);
             textEl->update();
             insertElement(textEl);
             }
@@ -851,4 +866,401 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             Debug("DXF import completed: {}", path.toUtf8().data());
 
       return ok;
+      }
+
+//=========================================================
+//   DxfBBoxCollector
+//    A minimal DRW_Interface implementation that only
+//    collects the bounding box of all entities in a DXF
+//    file.  It mirrors the unit-scale logic of
+//    DxfReaderInterface so the bounding box is in mm.
+//=========================================================
+
+class DxfBBoxCollector final : public DRW_Interface {
+      double m_unitScale {1.0};
+      double m_dxfScale  {72.0};
+      double m_minX {std::numeric_limits<double>::max()};
+      double m_minY {std::numeric_limits<double>::max()};
+      double m_maxX {std::numeric_limits<double>::lowest()};
+      double m_maxY {std::numeric_limits<double>::lowest()};
+      // Block support
+      struct BlockEntity {
+            enum class Type { Line, Arc, Circle, LWPolyline, Ellipse, Point };
+            Type type;
+            DRW_Coord p1, p2;
+            double radius {0.0};
+            double startAng {0.0};
+            double endAng {0.0};
+            double ratio {0.0};
+            double staparam {0.0};
+            double endparam {0.0};
+            int isccw {1};
+            std::vector<DRW_Vertex2D> vertices;
+            int flags {0};
+            };
+      std::unordered_map<std::string, std::vector<BlockEntity>> m_blocks;
+      std::string m_currentBlockName;
+      bool m_inBlock {false};
+
+      double mm(double v) const { return v * m_unitScale; }
+
+      void expand(double x, double y) {
+            if (x < m_minX) m_minX = x;
+            if (x > m_maxX) m_maxX = x;
+            if (y < m_minY) m_minY = y;
+            if (y > m_maxY) m_maxY = y;
+            }
+
+      static double unitToMm(int unit) {
+            switch (unit) {
+                  case 0:  return 1.0;
+                  case 1:  return 25.4;
+                  case 2:  return 25.4 * 12;
+                  case 3:  return 1609344.0;
+                  case 4:  return 1.0;
+                  case 5:  return 10.0;
+                  case 6:  return 1000.0;
+                  case 7:  return 1000000.0;
+                  case 8:  return 25.4 / 1000000.0;
+                  case 9:  return 25.4 / 1000.0;
+                  case 10: return 25.4 * 36;
+                  default: return 1.0;
+                  }
+            }
+
+public:
+      explicit DxfBBoxCollector(double dxfScale) : m_dxfScale(dxfScale > 0.0 ? dxfScale : 72.0) {}
+
+      QRectF result() const {
+            if (m_minX > m_maxX || m_minY > m_maxY)
+                  return {};
+            return QRectF(m_minX, m_minY, m_maxX - m_minX, m_maxY - m_minY);
+            }
+
+      void addHeader(const DRW_Header* data) override {
+            auto it = data->vars.find("$INSUNITS");
+            if (it != data->vars.end() && it->second->type() == DRW_Variant::INTEGER) {
+                  int unit = it->second->content.i;
+                  if (unit == 0)
+                        m_unitScale = 1.0 / m_dxfScale;
+                  else
+                        m_unitScale = unitToMm(unit);
+                  }
+            else {
+                  auto mit = data->vars.find("$MEASUREMENT");
+                  if (mit != data->vars.end() && mit->second->type() == DRW_Variant::INTEGER) {
+                        if (mit->second->content.i == 0)
+                              m_unitScale = 25.4;
+                        }
+                  }
+            }
+      void addLType(const DRW_LType&) override {}
+      void addLayer(const DRW_Layer&) override {}
+      void addDimStyle(const DRW_Dimstyle&) override {}
+      void addVport(const DRW_Vport&) override {}
+      void addTextStyle(const DRW_Textstyle&) override {}
+      void addAppId(const DRW_AppId&) override {}
+      void addBlock(const DRW_Block& data) override {
+            m_currentBlockName = data.name;
+            m_blocks[m_currentBlockName].clear();
+            m_inBlock = true;
+            }
+      void setBlock(int) override {}
+      void endBlock() override { m_inBlock = false; m_currentBlockName.clear(); }
+
+      void addPoint(const DRW_Point& data) override {
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::Point; e.p1 = data.basePoint;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            expand(mm(data.basePoint.x), mm(data.basePoint.y));
+            }
+      void addLine(const DRW_Line& data) override {
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::Line; e.p1 = data.basePoint; e.p2 = data.secPoint;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            expand(mm(data.basePoint.x), mm(data.basePoint.y));
+            expand(mm(data.secPoint.x), mm(data.secPoint.y));
+            }
+      void addRay(const DRW_Ray&) override {}
+      void addXline(const DRW_Xline&) override {}
+      void addArc(const DRW_Arc& data) override {
+            double r = mm(data.radious);
+            if (r <= 0.0) return;
+            double cx = mm(data.basePoint.x);
+            double cy = mm(data.basePoint.y);
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::Arc; e.p1 = data.basePoint;
+                  e.radius = data.radious; e.startAng = data.staangle; e.endAng = data.endangle; e.isccw = data.isccw;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            // For arcs, expand by the actual arc extent, not the full
+            // circle bbox.  Many DXF files have arcs with very large radii
+            // but small sweep angles, where the full circle bbox would be
+            // far larger than the actual drawing.
+            double sa = data.staangle;
+            double ea = data.endangle;
+            if (data.isccw == 0)
+                  std::swap(sa, ea);
+            if (sa > ea)
+                  ea += 2.0 * std::numbers::pi;
+            // Start and end points of the arc
+            expand(cx + r * std::cos(sa), cy + r * std::sin(sa));
+            expand(cx + r * std::cos(ea), cy + r * std::sin(ea));
+            // Also expand by any axis-crossing points within the arc sweep
+            // (0, 90, 180, 270 degrees) where the arc reaches its extremes.
+            for (double a : {0.0, std::numbers::pi / 2, std::numbers::pi, 3.0 * std::numbers::pi / 2}) {
+                  double na = a;
+                  while (na < sa)
+                        na += 2.0 * std::numbers::pi;
+                  while (na > sa + 2.0 * std::numbers::pi + 1e-10)
+                        na -= 2.0 * std::numbers::pi;
+                  if (na >= sa - 1e-10 && na <= ea + 1e-10)
+                        expand(cx + r * std::cos(na), cy + r * std::sin(na));
+                  }
+            }
+      void addCircle(const DRW_Circle& data) override {
+            double r = mm(data.radious);
+            if (r <= 0.0) return;
+            double cx = mm(data.basePoint.x);
+            double cy = mm(data.basePoint.y);
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::Circle; e.p1 = data.basePoint; e.radius = data.radious;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            expand(cx - r, cy - r);
+            expand(cx + r, cy + r);
+            }
+      void addEllipse(const DRW_Ellipse& data) override {
+            double majorR = std::sqrt(data.secPoint.x * data.secPoint.x + data.secPoint.y * data.secPoint.y);
+            majorR = mm(majorR);
+            double cx = mm(data.basePoint.x);
+            double cy = mm(data.basePoint.y);
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::Ellipse; e.p1 = data.basePoint; e.p2 = data.secPoint;
+                  e.ratio = data.ratio; e.staparam = data.staparam; e.endparam = data.endparam; e.isccw = data.isccw;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            expand(cx - majorR, cy - majorR);
+            expand(cx + majorR, cy + majorR);
+            }
+      void addLWPolyline(const DRW_LWPolyline& data) override {
+            if (data.vertlist.empty()) return;
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::LWPolyline;
+                  for (const auto& v : data.vertlist) e.vertices.push_back(*v);
+                  e.flags = data.flags;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            for (const auto& v : data.vertlist)
+                  expand(mm(v->x), mm(v->y));
+            }
+      void addPolyline(const DRW_Polyline& data) override {
+            if (m_inBlock) {
+                  BlockEntity e; e.type = BlockEntity::Type::LWPolyline;
+                  for (const auto& v : data.vertlist) e.vertices.push_back(DRW_Vertex2D(v->basePoint.x, v->basePoint.y, v->bulge));
+                  e.flags = data.flags;
+                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  }
+            for (const auto& v : data.vertlist)
+                  expand(mm(v->basePoint.x), mm(v->basePoint.y));
+            }
+      void addSpline(const DRW_Spline* data) override {
+            if (!data) return;
+            if (m_inBlock) {
+                  // Splines in blocks are not expanded; they would inflate
+                  // the bbox for blocks that may never be inserted.
+                  return;
+                  }
+            // Prefer fit points (which lie on the curve) over control points
+            // (which form the convex hull and can be far outside the curve).
+            if (!data->fitlist.empty()) {
+                  for (const auto& fp : data->fitlist)
+                        expand(mm(fp->x), mm(fp->y));
+                  }
+            else if (!data->controllist.empty()) {
+                  for (const auto& cp : data->controllist)
+                        expand(mm(cp->x), mm(cp->y));
+                  }
+            }
+      void addKnot(const DRW_Entity&) override {}
+      void addInsert(const DRW_Insert& data) override {
+            auto it = m_blocks.find(data.name);
+            if (it == m_blocks.end()) return;
+            double ang = data.angle;
+            double sx = data.xscale;
+            double sy = data.yscale;
+            double cx = mm(data.basePoint.x);
+            double cy = mm(data.basePoint.y);
+            double cosA = std::cos(ang);
+            double sinA = std::sin(ang);
+            auto apply = [&](const DRW_Coord& p) {
+                  double px = p.x * sx;
+                  double py = p.y * sy;
+                  double rx = px * cosA - py * sinA;
+                  double ry = px * sinA + py * cosA;
+                  return std::make_pair(mm(rx) + cx, mm(ry) + cy);
+                  };
+            for (const auto& e : it->second) {
+                  switch (e.type) {
+                        case BlockEntity::Type::Line: {
+                              auto p1 = apply(e.p1);
+                              auto p2 = apply(e.p2);
+                              expand(p1.first, p1.second);
+                              expand(p2.first, p2.second);
+                              break;
+                              }
+                        case BlockEntity::Type::Circle: {
+                              double r = mm(e.radius) * std::abs(sx);
+                              auto c = apply(e.p1);
+                              expand(c.first - r, c.second - r);
+                              expand(c.first + r, c.second + r);
+                              break;
+                              }
+                        case BlockEntity::Type::Arc: {
+                              // Expand by actual arc extent, not full circle bbox.
+                              double r = mm(e.radius);
+                              auto c = apply(e.p1);
+                              double sa = e.startAng;
+                              double ea = e.endAng;
+                              if (e.isccw == 0)
+                                    std::swap(sa, ea);
+                              if (sa > ea)
+                                    ea += 2.0 * std::numbers::pi;
+                              // Endpoints
+                              expand(c.first + r * std::cos(sa), c.second + r * std::sin(sa));
+                              expand(c.first + r * std::cos(ea), c.second + r * std::sin(ea));
+                              // Axis-crossing points within sweep
+                              for (double a : {0.0, std::numbers::pi / 2, std::numbers::pi, 3.0 * std::numbers::pi / 2}) {
+                                    double na = a;
+                                    while (na < sa) na += 2.0 * std::numbers::pi;
+                                    while (na > sa + 2.0 * std::numbers::pi + 1e-10) na -= 2.0 * std::numbers::pi;
+                                    if (na >= sa - 1e-10 && na <= ea + 1e-10)
+                                          expand(c.first + r * std::cos(na), c.second + r * std::sin(na));
+                                    }
+                              break;
+                              }
+                        case BlockEntity::Type::LWPolyline: {
+                              for (const auto& v : e.vertices) {
+                                    auto p = apply(DRW_Coord(v.x, v.y, 0));
+                                    expand(p.first, p.second);
+                                    }
+                              break;
+                              }
+                        case BlockEntity::Type::Point: {
+                              auto p = apply(e.p1);
+                              expand(p.first, p.second);
+                              break;
+                              }
+                        case BlockEntity::Type::Ellipse: {
+                              double majorR = std::sqrt(e.p2.x * e.p2.x + e.p2.y * e.p2.y);
+                              majorR = mm(majorR);
+                              auto c = apply(e.p1);
+                              expand(c.first - majorR, c.second - majorR);
+                              expand(c.first + majorR, c.second + majorR);
+                              break;
+                              }
+                        }
+                  }
+            }
+      void addTrace(const DRW_Trace& data) override {
+            expand(mm(data.basePoint.x), mm(data.basePoint.y));
+            expand(mm(data.secPoint.x), mm(data.secPoint.y));
+            expand(mm(data.thirdPoint.x), mm(data.thirdPoint.y));
+            expand(mm(data.fourPoint.x), mm(data.fourPoint.y));
+            }
+      void add3dFace(const DRW_3Dface& data) override {
+            expand(mm(data.basePoint.x), mm(data.basePoint.y));
+            expand(mm(data.secPoint.x), mm(data.secPoint.y));
+            expand(mm(data.thirdPoint.x), mm(data.thirdPoint.y));
+            if (!(data.invisibleflag & DRW_3Dface::FourthEdge))
+                  expand(mm(data.fourPoint.x), mm(data.fourPoint.y));
+            }
+      void addSolid(const DRW_Solid& data) override {
+            expand(mm(data.basePoint.x), mm(data.basePoint.y));
+            expand(mm(data.secPoint.x), mm(data.secPoint.y));
+            expand(mm(data.thirdPoint.x), mm(data.thirdPoint.y));
+            expand(mm(data.fourPoint.x), mm(data.fourPoint.y));
+            }
+      void addMText(const DRW_MText&) override {}
+      void addText(const DRW_Text&) override {}
+      void addDimAlign(const DRW_DimAligned*) override {}
+      void addDimLinear(const DRW_DimLinear*) override {}
+      void addDimRadial(const DRW_DimRadial*) override {}
+      void addDimDiametric(const DRW_DimDiametric*) override {}
+      void addDimAngular(const DRW_DimAngular*) override {}
+      void addDimAngular3P(const DRW_DimAngular3p*) override {}
+      void addDimOrdinate(const DRW_DimOrdinate*) override {}
+      void addLeader(const DRW_Leader*) override {}
+      void addHatch(const DRW_Hatch*) override {}
+      void addViewport(const DRW_Viewport&) override {}
+      void addImage(const DRW_Image*) override {}
+      void linkImage(const DRW_ImageDef*) override {}
+      void addComment(const char*) override {}
+      void addPlotSettings(const DRW_PlotSettings*) override {}
+      void writeHeader(DRW_Header&) override {}
+      void writeBlocks() override {}
+      void writeBlockRecords() override {}
+      void writeEntities() override {}
+      void writeLTypes() override {}
+      void writeLayers() override {}
+      void writeTextstyles() override {}
+      void writeVports() override {}
+      void writeDimstyles() override {}
+      void writeObjects() override {}
+      void writeAppId() override {}
+      };
+
+//---------------------------------------------------------
+//   DxfImport::boundingBox
+//    Compute the bounding box of all entities in a DXF file,
+//    in millimetres.  Returns an empty QRectF on failure.
+//---------------------------------------------------------
+
+QRectF DxfImport::boundingBox(ZCam* zcam, const QString& path) {
+      double dxfScale = zcam->config() ? zcam->config()->dxfScale() : 72.0;
+      DxfBBoxCollector collector(dxfScale);
+      dxfRW dxf(path.toUtf8().constData());
+      if (!dxf.read(&collector, false)) {
+            Warning("DxfImport::boundingBox: failed to read DXF: {}", path.toUtf8().constData());
+            return {};
+            }
+      return collector.result();
+      }
+
+//---------------------------------------------------------
+//   DxfImport::importAt
+//    Import a DXF file and offset all created elements so
+//    that the bounding box's bottom-left corner is at (x, y).
+//---------------------------------------------------------
+
+bool DxfImport::importAt(ZCam* zcam, const QString& path, double x, double y) {
+      QRectF bbox = boundingBox(zcam, path);
+      if (bbox.isNull() || bbox.isEmpty())
+            return import(zcam, path);
+
+      // Import normally, then shift the layer position.
+      bool ok = import(zcam, path);
+      if (!ok)
+            return false;
+
+      // The import creates a new layer as the last child of CAD.
+      // Offset that layer so the DXF bbox bottom-left lands at (x, y).
+      Cad* cad = zcam->project()->cad();
+      if (!cad || cad->children().isEmpty())
+            return true;
+      // The import always inserts at the end (-1), so the last child
+      // is the layer we just created.
+      auto& kids = cad->children();
+      Element* lastChild = kids.last();
+      if (!lastChild)
+            return true;
+      double offX = x - bbox.left();
+      double offY = y - bbox.top();
+      // The DXF import creates a Group (which is an Element3d) so it has set_pos.
+      auto* lastGroup = qobject_cast<Group*>(lastChild);
+      if (lastGroup)
+            lastGroup->set_pos(QVector3D(offX, offY, 0));
+      return true;
       }

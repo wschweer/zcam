@@ -195,6 +195,12 @@ class Element3d : public Element
       /// Returns nullptr if no ancestor (including self) has a laserLayer set.
       Recipe* effectiveLaserLayer() const;
       QRectF boundingBox() const;
+      /// Returns the axis-aligned bounding box of all child Element3d
+      /// in this element's local coordinate system.  Used by Group
+      /// and any element that has children but no own path data.
+      /// Recursively transforms each child's boundingBox() through
+      /// the child's local matrix and unions the result.
+      virtual QRectF childrenBoundingBox() const;
       /// Returns the axis-aligned bounding box in world (root) coordinates
       /// by transforming the local boundingBox() through globalMatrix().
       QRectF worldBoundingBox() const;

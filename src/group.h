@@ -126,6 +126,18 @@ class Group : public Element3d
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool deletable() const override { return true; }
       Q_INVOKABLE virtual bool visible() const override { return true; }
+      Q_INVOKABLE bool draggable() const override { return true; }
+
+    public slots:
+      void update(int flags = -1) override;
+
+    private slots:
+      // Called when any child's geometry or visibility changes so
+      // the Group's selection bounding box stays in sync.
+      void onChildChanged();
+
+    protected:
+      void updateSelectionGeometry() override;
       };
 
 extern Clipper2Lib::PathD wobble(const Clipper2Lib::PathD& path, double step, double r);

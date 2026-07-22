@@ -27,25 +27,50 @@ Item {
     // Visibility is persisted by Main.qml via settings.mediaBrowserVisible.
     property bool mediaBrowserVisible: false
 
+    // Flag: suppress split-state saving while restoring a saved width
+    property bool _restoringSplit: false
+
     // ── Persistent splitter states ────────────────────────────────────────────
+    // outerSplit and innerSplit use saveState()/restoreState() because all
+    // their children are always visible.
+    // mediaSplit tracks the MediaBrowser width explicitly via a bindable
+    // preferredWidth property so that the last expanded width is preserved
+    // even when the panel is collapsed and the app is restarted.
     Settings {
         id: panelSettings
         category: "MainPanel"
         property var outerSplitState
         property var innerSplitState
-        property var mediaSplitState
+        property int mediaBrowserWidth: 300
         }
+
+    // Bindable preferred width — initialised from settings, updated on resize
+    // and on restore. Bound to MediaBrowser's SplitView.preferredWidth so
+    // the SplitView honours the saved width when the item (re)appears.
+    property int mediaBrowserPrefWidth: panelSettings.mediaBrowserWidth >= 250
+        ? panelSettings.mediaBrowserWidth : 300
 
     Component.onCompleted: {
         if (panelSettings.outerSplitState)
             outerSplit.restoreState(panelSettings.outerSplitState);
         if (panelSettings.innerSplitState)
             innerSplit.restoreState(panelSettings.innerSplitState);
-        if (panelSettings.mediaSplitState && mediaBrowser.visible)
-            mediaSplit.restoreState(panelSettings.mediaSplitState);
-        // Ensure the media browser gets a sensible width when first shown
-        if (mediaBrowser.visible && mediaBrowser.width < 250)
-            mediaBrowser.width = 300;
+        }
+
+    // ── Restore MediaBrowser width when it becomes visible ───────────────────
+    //   When the panel is toggled on, the SplitView uses the current
+    //   preferredWidth to lay out the item. We update it from the saved
+    //   value and suppress state saving until the restore has settled.
+    onMediaBrowserVisibleChanged: {
+        if (mediaBrowserVisible) {
+            _restoringSplit = true;
+            var w = panelSettings.mediaBrowserWidth >= 250
+                ? panelSettings.mediaBrowserWidth : 300;
+            mediaBrowserPrefWidth = w;
+            Qt.callLater(function () {
+                _restoringSplit = false;
+                });
+            }
         }
 
     // ── Outer horizontal split: left panel | 3-D viewport (+ media browser) ─
@@ -112,12 +137,16 @@ Item {
                 id: mediaBrowser
                 objectName: "mediaBrowser"
                 visible: root.mediaBrowserVisible
-                SplitView.preferredWidth: 300
+                SplitView.preferredWidth: root.mediaBrowserPrefWidth
                 SplitView.minimumWidth: 250
                 }
 
-            onResizingChanged: if (!resizing)
-                panelSettings.mediaSplitState = saveState()
+            // Only save the width when the MediaBrowser is visible and not
+            // being restored, so the collapsed width is never persisted.
+            onResizingChanged: if (!resizing && mediaBrowser.visible && !_restoringSplit) {
+                panelSettings.mediaBrowserWidth = Math.round(mediaBrowser.width)
+                mediaBrowserPrefWidth = Math.round(mediaBrowser.width)
+                }
             }
         }
     }

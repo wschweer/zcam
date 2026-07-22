@@ -120,9 +120,24 @@ void Project::clearUndoStack() {
 //   pushCommand
 //    Push a new undo command onto the stack, discarding any
 //    redo entries that come after the current index.
+//    When the last command on the stack can coalesce with the
+//    new one (e.g. same element + same property), the new value
+//    is merged into the existing entry instead of creating a
+//    new history entry.
 //---------------------------------------------------------
 
 void Project::pushCommand(std::unique_ptr<UndoCommand> cmd) {
+      // Try to coalesce with the most recent command at the current
+      // undo index.  This avoids creating a new history entry when
+      // consecutive changes target the same element + property.
+      if (_undoIndex > 0) {
+            auto& last = _undoStack[_undoIndex - 1];
+            if (last && last->canCoalesceWith(*cmd)) {
+                  last->coalesceFrom(*cmd);
+                  emit undoStateChanged();
+                  return;
+                  }
+            }
       // Discard any redo entries after the current index
       while (static_cast<int>(_undoStack.size()) > _undoIndex)
             _undoStack.pop_back();
@@ -155,8 +170,9 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
             if (propIdx >= 0) {
                   QMetaProperty mp = element->metaObject()->property(propIdx);
                   propertyMetaType = mp.metaType();
-                  if (propertyMetaType.id() == QMetaType::QObjectStar
-                      || (propertyMetaType.id() >= QMetaType::User && propertyMetaType.sizeOf() == sizeof(void*))) {
+                  if (propertyMetaType.id() == QMetaType::QObjectStar ||
+                      (propertyMetaType.id() >= QMetaType::User &&
+                       propertyMetaType.sizeOf() == sizeof(void*))) {
                         isNullPointerWrite = true;
                         }
                   }
@@ -1115,7 +1131,7 @@ void Project::removeElement(Element* el) {
                         continue;
                   // Check if any element in the LaserLayer's collection
                   // is a descendant of the removed Layer.
-                  auto elements = ll->collectElements();
+                  auto elements      = ll->collectElements();
                   bool hasDescendant = false;
                   for (const auto* elem : elements) {
                         const Element* p = elem;

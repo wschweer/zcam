@@ -18,6 +18,7 @@
 #include "project.h"
 #include "undo.h"
 #include "logger.h"
+#include "dxfimport.h"
 #include <QFileInfo>
 #include <QJSEngine>
 #include <limits>
@@ -288,18 +289,66 @@ void ZCam::startSvgDrag(const QString& path) {
       QJSEngine::setObjectOwnership(_dragPreviewGeometry, QJSEngine::CppOwnership);
 
       // Build a rectangle outline (4 edges as line segments).
+      // Translate to origin so the bottom-left corner is at (0,0).
+      // The QML layer positions the preview Model at the cursor
+      // position, so a geometry starting at (0,0) aligns correctly.
+      double rw = _svgDragBBox.width();
+      double rh = _svgDragBBox.height();
       Clipper2Lib::PathD rect;
-      rect.push_back({_svgDragBBox.left(), _svgDragBBox.top()});
-      rect.push_back({_svgDragBBox.right(), _svgDragBBox.top()});
-      rect.push_back({_svgDragBBox.right(), _svgDragBBox.top()});
-      rect.push_back({_svgDragBBox.right(), _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.right(), _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.left(), _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.left(), _svgDragBBox.bottom()});
-      rect.push_back({_svgDragBBox.left(), _svgDragBBox.top()});
+      rect.push_back({0.0, 0.0});
+      rect.push_back({rw, 0.0});
+      rect.push_back({rw, 0.0});
+      rect.push_back({rw, rh});
+      rect.push_back({rw, rh});
+      rect.push_back({0.0, rh});
+      rect.push_back({0.0, rh});
+      rect.push_back({0.0, 0.0});
       Clipper2Lib::PathsD lines;
       lines.push_back(rect);
       _dragPreviewGeometry->setLines(lines);
+
+      emit dragPreviewGeometryChanged();
+      }
+
+//---------------------------------------------------------
+//   startDxfDrag
+//    Compute the bounding box of a DXF file and create a
+//    drag-preview geometry (rectangle outline) the same way
+//    startSvgDrag does for SVG files.
+//---------------------------------------------------------
+
+void ZCam::startDxfDrag(const QString& path) {
+      _svgDragPath = path;
+      _svgDragBBox = DxfImport::boundingBox(this, path);
+
+      if (_svgDragBBox.isNull() || _svgDragBBox.isEmpty()) {
+            _dragPreviewGeometry = nullptr;
+            emit dragPreviewGeometryChanged();
+            return;
+            }
+
+      // Create a standalone TessGeometry (not tied to any element).
+      if (_dragPreviewGeometry)
+            delete _dragPreviewGeometry;
+      _dragPreviewGeometry = new TessGeometry(nullptr);
+      QJSEngine::setObjectOwnership(_dragPreviewGeometry, QJSEngine::CppOwnership);
+
+      // Build a rectangle outline (4 edges as line segments).
+      // Translate to origin so the bottom-left corner is at (0,0).
+      double rw2 = _svgDragBBox.width();
+      double rh2 = _svgDragBBox.height();
+      Clipper2Lib::PathD rect2;
+      rect2.push_back({0.0, 0.0});
+      rect2.push_back({rw2, 0.0});
+      rect2.push_back({rw2, 0.0});
+      rect2.push_back({rw2, rh2});
+      rect2.push_back({rw2, rh2});
+      rect2.push_back({0.0, rh2});
+      rect2.push_back({0.0, rh2});
+      rect2.push_back({0.0, 0.0});
+      Clipper2Lib::PathsD lines2;
+      lines2.push_back(rect2);
+      _dragPreviewGeometry->setLines(lines2);
 
       emit dragPreviewGeometryChanged();
       }

@@ -42,7 +42,7 @@ class Config : public QObject
       PROPV(int, iconSize, 32)
       PROPV(int, navCubeSize, 200)
       PROPV(double, handleSize, 0.02)
-      PROPV(QFont, font, QFont("NotoSans"))
+      PROPV(QString, font, QStringLiteral("NotoSans"))
       PROPV(int, fontSize, 12)
       PROPV(QColor, panelBG, QColor("darkGray"))
       PROPV(QColor, accentColor, QColor("teal"))
@@ -57,6 +57,8 @@ class Config : public QObject
       PROPV(QString, iconDirectory, QString::fromUtf8("/usr/share/icons"))
       PROPV(QString, machinesDirectory, QString())
       PROPV(QString, recipesDirectory, QString())
+
+      PROPV(double, dxfScale, 72.0)
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -206,34 +208,44 @@ class Config : public QObject
                           },
                           {
                             "name": "artworkDirectory",
-                            "label": "Artwork Directory",
-                            "type": "singleline",
+                            "label": "Artwork Path",
+                            "type": "path",
                             "cat": "Project",
                             "default": ""
                           },
                           {
                             "name": "iconDirectory",
-                            "label": "Icon Directory",
-                            "type": "singleline",
+                            "label": "Icon Path",
+                            "type": "path",
                             "cat": "Project",
-                            "default": "/usr/share/icons",
-                            "colSpan": 2
+                            "default": "~/ZCam/icons"
                           },
                           {
                             "name": "machinesDirectory",
-                            "label": "Machines Directory",
-                            "type": "singleline",
+                            "label": "Machines Path",
+                            "type": "path",
                             "cat": "Project",
-                            "default": "",
-                            "colSpan": 2
+                            "default": ""
                           },
                           {
                             "name": "recipesDirectory",
-                            "label": "Recipes Directory",
-                            "type": "singleline",
+                            "label": "Recipes Path",
+                            "type": "path",
                             "cat": "Project",
-                            "default": "",
-                            "colSpan": 2
+                            "default": ""
+                          },
+                          {
+                            "name": "dxfScale",
+                            "label": "DXF Scale",
+                            "type": "float",
+                            "cat": "Project",
+                            "unit": "dpmm",
+                            "min": 0.001,
+                            "max": 1000.0,
+                            "default": 72.0,
+                            "precision": 3,
+                            "step": 0.1,
+                            "bigStep": 1.0
                           }
                         ]
                       }
@@ -396,10 +408,16 @@ class ZCam : public QObject
       static QString defaultMachinesDirectory();
       /// Return the default recipes directory: $(HOME)/ZCam/recipes
       static QString defaultRecipesDirectory();
+      /// Return the default artwork directory: $(HOME)/ZCam/artwork
+      static QString defaultArtworkDirectory();
+      /// Return the default icon directory: ~/ZCam/icons
+      static QString defaultIconDirectory();
       /// Return the configured machines directory, or the default if empty.
       QString machinesDirectory() const;
       /// Return the configured recipes directory, or the default if empty.
       QString recipesDirectory() const;
+      /// Expand a leading '~' to the user's home directory.
+      Q_INVOKABLE static QString expandPath(const QString& path);
 
       /// Called from QML when an element is dragged in the 3D viewport.
       /// When the project's Grid has snap enabled, grid lines act
@@ -439,6 +457,15 @@ class ZCam : public QObject
       /// are searched from innermost (smallest area) to outermost.
       /// Returns nullptr if no element is hit.
       Q_INVOKABLE Element3d* pickElement(double x, double y);
+
+      /// Picking variant used at the start of a left-button drag.
+      /// When the currently selected element is a Group and the point
+      /// lies inside the Group's world bounding box, the Group itself is
+      /// returned instead of any smaller child underneath.  This turns
+      /// the visible selection bounding box into a drag handle: dragging
+      /// it moves the whole Group (and therefore all its children).
+      /// In all other cases this delegates to pickElement().
+      Q_INVOKABLE Element3d* pickDragTarget(double x, double y);
 
       /// Called from QML when the user starts dragging a handle.
       /// Records the original handle position for the undo command.
@@ -553,7 +580,15 @@ class ZCam : public QObject
       /// The geometry is a rectangle outline matching the SVG bounding box.
       /// Call endSvgDrag() to clean up.
       Q_INVOKABLE void startSvgDrag(const QString& path);
+      Q_INVOKABLE void startDxfDrag(const QString& path);
       Q_INVOKABLE void endSvgDrag();
+
+      /// Compute the bounding box of a DXF file in millimetres.
+      Q_INVOKABLE QRectF dxfBoundingBox(const QString& path);
+
+      /// Import a DXF/DWG file and position it so the bounding box's
+      /// bottom-left corner is at (x, y) in scene coordinates.
+      Q_INVOKABLE bool importDxfAt(const QString& path, double x, double y);
 
       /// The drag-preview geometry (rectangle outline) for the current
       /// SVG drag operation, or nullptr when no drag is active.

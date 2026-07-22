@@ -688,7 +688,11 @@ Item {
                 // (select the element, show bounding box) and a
                 // second click on an already-selected polygon
                 // (select a segment instead).
-                curNode = pickModel(mouse.x, mouse.y);
+                // For drag purposes, if the current element is a Group
+                // and the click falls inside its world bounding box,
+                // the Group is returned so the visible selection box
+                // acts as a drag handle for the whole group.
+                curNode = pickDragTarget(mouse.x, mouse.y);
                 if (curNode && curNode.element) {
                     if (!curNode.element.draggable)
                         curNode = null;
@@ -778,6 +782,21 @@ Item {
                 return null;
             // Return a pseudo-result object with .element so the
             // callers that expect { element: ... } still work.
+            return { element: el, objectHit: null, bounds: null };
+            }
+
+        // Picking variant used to start a left-button drag.
+        // When the currently selected element is a Group and the click
+        // lies inside the Group's world bounding box, return the Group
+        // itself so the visible selection bounding box acts as a drag
+        // handle for the whole group (and its children).
+        function pickDragTarget(x, y) {
+            var scenePos = screenToScene(x, y);
+            if (!scenePos)
+                return null;
+            var el = ZCam.pickDragTarget(scenePos.x, scenePos.y);
+            if (!el)
+                return null;
             return { element: el, objectHit: null, bounds: null };
             }
 
@@ -871,7 +890,7 @@ Item {
         z: 100  // above the 3D view and mouse area
 
         property bool _hasImportDrop: false
-        property string _pendingSvgPath: ""   // SVG path being dragged
+        property string _pendingImportPath: ""   // file being dragged
 
         // Accept drags that contain at least one supported file.
         // We evaluate this in onEntered and onPositionChanged so
@@ -909,13 +928,14 @@ Item {
             return "";
             }
 
-        // Extract the first SVG path from the drop (either from
-        // urls or from an artwork panel drag source).
-        function getSvgPath(drop) {
+        // Extract the first importable file path from the drop (either
+        // from urls or from an artwork panel drag source).
+        function getImportPath(drop) {
             if (drop.urls && drop.urls.length > 0) {
                 for (var i = 0; i < drop.urls.length; ++i) {
                     var path = drop.urls[i].toString();
-                    if (path.toLowerCase().endsWith(".svg")) {
+                    var lower = path.toLowerCase();
+                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
                         if (path.startsWith("file://"))
                             path = path.substring("file://".length);
                         return path;
@@ -923,9 +943,7 @@ Item {
                     }
                 }
             else if (isArtworkDrag(drop)) {
-                var artworkPath = getArtworkPath(drop);
-                if (artworkPath.toLowerCase().endsWith(".svg"))
-                    return artworkPath;
+                return getArtworkPath(drop);
                 }
             return "";
             }
@@ -936,11 +954,18 @@ Item {
             else
                 _hasImportDrop = isArtworkDrag(drop);
             drop.accepted = _hasImportDrop;
-            // Start SVG drag preview if this is an SVG
+            // Start drag preview for SVG or DXF files
             if (_hasImportDrop) {
-                _pendingSvgPath = getSvgPath(drop);
-                if (_pendingSvgPath !== "")
-                    ZCam.startSvgDrag(_pendingSvgPath);
+                _pendingImportPath = getImportPath(drop);
+                if (_pendingImportPath !== "") {
+                    var lower = _pendingImportPath.toLowerCase();
+                    if (lower.endsWith(".svg"))
+                        ZCam.startSvgDrag(_pendingImportPath);
+                    else if (lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
+                        // Start DXF drag preview using the same geometry mechanism
+                        ZCam.startDxfDrag(_pendingImportPath);
+                        }
+                    }
                 }
             }
 
@@ -951,7 +976,7 @@ Item {
                 _hasImportDrop = isArtworkDrag(drop);
             drop.accepted = _hasImportDrop;
             // Update the preview box position to follow the mouse
-            if (_hasImportDrop && _pendingSvgPath !== "") {
+            if (_hasImportDrop && _pendingImportPath !== "") {
                 var scenePos = mouseArea.screenToScene(drop.x, drop.y);
                 if (scenePos)
                     svgDragPreview.position = Qt.vector3d(scenePos.x, scenePos.y, 0);
@@ -978,7 +1003,10 @@ Item {
                         imported = true;
                         }
                     else if (lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
-                        ZCam.importFile(path);
+                        if (dropPos)
+                            ZCam.importDxfAt(path, dropPos.x, dropPos.y);
+                        else
+                            ZCam.importFile(path);
                         imported = true;
                         }
                     }
@@ -986,22 +1014,25 @@ Item {
             else if (isArtworkDrag(drop)) {
                 var artworkPath = getArtworkPath(drop);
                 if (artworkPath !== "") {
-                    if (artworkPath.toLowerCase().endsWith(".svg") && dropPos)
+                    var artLower = artworkPath.toLowerCase();
+                    if (artLower.endsWith(".svg") && dropPos)
                         ZCam.importSvgAt(artworkPath, dropPos.x, dropPos.y);
+                    else if ((artLower.endsWith(".dxf") || artLower.endsWith(".dwg")) && dropPos)
+                        ZCam.importDxfAt(artworkPath, dropPos.x, dropPos.y);
                     else
                         ZCam.importFile(artworkPath);
                     imported = true;
                     }
                 }
-            // End SVG drag preview
-            _pendingSvgPath = "";
+            // End drag preview
+            _pendingImportPath = "";
             ZCam.endSvgDrag();
             drop.accepted = imported;
             }
 
         onExited: {
             _hasImportDrop = false;
-            _pendingSvgPath = "";
+            _pendingImportPath = "";
             ZCam.endSvgDrag();
             }
         }

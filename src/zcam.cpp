@@ -84,6 +84,19 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
                   _project->resolveMachine();
       });
 
+      // Reload machines and recipes when their configured directory changes
+      // at runtime (e.g. via the Config Panel).
+      if (_config) {
+            connect(_config, &Config::machinesDirectoryChanged, this, [this]() {
+                  if (_machines)
+                        _machines->loadFromDirectory(machinesDirectory());
+            });
+            connect(_config, &Config::recipesDirectoryChanged, this, [this]() {
+                  if (_recipes)
+                        _recipes->loadFromDirectory(recipesDirectory());
+            });
+      }
+
       // Automatically save assets (machines, recipes) and stop the laser
       // when the application is about to quit so changes are not lost and
       // background threads are cleanly joined before the event loop stops.
@@ -123,6 +136,12 @@ void ZCam::setCurrentElement(Element3d* el) {
             emit oldElement->curColorChanged();
       if (el)
             emit el->curColorChanged();
+      // When the new selection is a Group, refresh it now so its
+      // selection bounding box is up-to-date when the bbox overlay
+      // becomes visible.
+      if (auto* group = qobject_cast<Group*>(el)) {
+            group->update();
+            }
 }
 //---------------------------------------------------------
 //   applyFontToCurrentText
@@ -256,27 +275,51 @@ ZCam* ZCam::create(QQmlEngine*, QJSEngine*) {
 //---------------------------------------------------------
 
 QString ZCam::defaultMachinesDirectory() {
-      QString home = QDir::homePath();
-      return QDir(home).filePath("ZCam/machines");
-}
+      return QStringLiteral("~/ZCam/machines");
+      }
 //---------------------------------------------------------
 //   defaultRecipesDirectory
 //---------------------------------------------------------
 
 QString ZCam::defaultRecipesDirectory() {
-      QString home = QDir::homePath();
-      return QDir(home).filePath("ZCam/recipes");
-}
+      return QStringLiteral("~/ZCam/recipes");
+      }
+//---------------------------------------------------------
+//   defaultArtworkDirectory
+//---------------------------------------------------------
+
+QString ZCam::defaultArtworkDirectory() {
+      return QStringLiteral("~/ZCam/artwork");
+      }
+//---------------------------------------------------------
+//   defaultIconDirectory
+//---------------------------------------------------------
+
+QString ZCam::defaultIconDirectory() {
+      return QStringLiteral("~/ZCam/icons");
+      }
+//---------------------------------------------------------
+//   expandPath
+//    Expand a leading '~' to the user's home directory.
+//    Returns the path unchanged if it does not start with '~'.
+//---------------------------------------------------------
+
+QString ZCam::expandPath(const QString& path) {
+      if (path.startsWith('~'))
+            return QDir::homePath() + path.mid(1);
+      return path;
+      }
 //---------------------------------------------------------
 //   machinesDirectory
 //    Return the configured machines directory, or the default.
+//    A leading '~' is expanded to the user's home directory.
 //---------------------------------------------------------
 
 QString ZCam::machinesDirectory() const {
       if (_config && !_config->machinesDirectory().isEmpty())
-            return _config->machinesDirectory();
-      return defaultMachinesDirectory();
-}
+            return expandPath(_config->machinesDirectory());
+      return expandPath(defaultMachinesDirectory());
+      }
 //---------------------------------------------------------
 //   recipesDirectory
 //    Return the configured recipes directory, or the default.
@@ -284,9 +327,9 @@ QString ZCam::machinesDirectory() const {
 
 QString ZCam::recipesDirectory() const {
       if (_config && !_config->recipesDirectory().isEmpty())
-            return _config->recipesDirectory();
-      return defaultRecipesDirectory();
-}
+            return expandPath(_config->recipesDirectory());
+      return expandPath(defaultRecipesDirectory());
+      }
 //---------------------------------------------------------
 //   loadAssets
 //    Load config from assets.json in the AppDataLocation,
@@ -315,6 +358,20 @@ void ZCam::loadAssets() {
                         qWarning() << "Failed to parse assets.json:" << e.what();
                   }
             }
+      }
+
+      // If the config did not specify explicit directories, populate
+      // the Config properties with the default values so they are visible
+      // in the Config Panel and persisted on save.
+      if (_config) {
+            if (_config->machinesDirectory().isEmpty())
+                  _config->set_machinesDirectory(defaultMachinesDirectory());
+            if (_config->recipesDirectory().isEmpty())
+                  _config->set_recipesDirectory(defaultRecipesDirectory());
+            if (_config->artworkDirectory().isEmpty())
+                  _config->set_artworkDirectory(defaultArtworkDirectory());
+            if (_config->iconDirectory().isEmpty())
+                  _config->set_iconDirectory(defaultIconDirectory());
       }
 
       // Load machines from individual files in the machines directory
@@ -712,7 +769,9 @@ void ZCam::hover(Element3d* element) {
 //    contains the given world-space point (x, y).  Return the
 //    one with the smallest area (innermost).  Only elements
 //    that are visible (show == true, ancestorsShow == true),
-//    selectable, and have a non-empty path list are considered.
+//    selectable, and have a non-empty world bounding box are
+//    considered.  This includes Group elements whose bounding
+//    box is derived from their children.
 //---------------------------------------------------------
 
 static void collectPickCandidates(Element* root, double x, double y,
@@ -742,6 +801,30 @@ Element3d* ZCam::pickElement(double x, double y) {
                                  [](const auto& a, const auto& b) { return a.first < b.first; });
       return it->second;
 }
+
+//---------------------------------------------------------
+//   pickDragTarget
+//    Picking helper used when the user starts a left-button drag.
+//    If the currently selected element is a Group and the drag point
+//    lies inside the Group's world bounding box, return the Group
+//    itself.  This makes the visible selection bounding box act as a
+//    drag handle: dragging anywhere inside the box moves the whole
+//    Group together with its children.  In all other cases the
+//    behaviour is identical to pickElement().
+//---------------------------------------------------------
+
+Element3d* ZCam::pickDragTarget(double x, double y) {
+      auto* group = qobject_cast<Group*>(_currentElement);
+      if (group && group->show() && group->ancestorsShow() && group->draggable()) {
+            QRectF wb = group->worldBoundingBox();
+            if (!wb.isNull() && !wb.isEmpty()) {
+                  if (x >= wb.left() && x <= wb.right() && y >= wb.top() && y <= wb.bottom())
+                        return group;
+                  }
+            }
+      return pickElement(x, y);
+      }
+
 //---------------------------------------------------------
 //   mousePress
 //---------------------------------------------------------
@@ -1389,6 +1472,13 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
             Debug("reparentElement: calling moveElement: element={} oldParent={} newParent={}",
                   element->name(), oldParent ? oldParent->name() : "null", newParent->name());
             _project->moveElement(element, newParent, -1);
+            // Refresh the new and old parent's selection geometry so
+            // the Group bounding box updates to include/exclude the
+            // moved element.
+            if (auto* np = qobject_cast<Element3d*>(newParent))
+                  np->update();
+            if (auto* op = qobject_cast<Element3d*>(oldParent))
+                  op->update();
       }
       else {
             Debug("reparentElement: no project");
@@ -1679,6 +1769,25 @@ bool ZCam::importFile(const QString& path) {
       setCamDirty(true);
       return true;
 }
+
+//---------------------------------------------------------
+//   dxfBoundingBox
+//    Compute the bounding box of a DXF/DWG file in millimetres.
+//---------------------------------------------------------
+
+QRectF ZCam::dxfBoundingBox(const QString& path) {
+      return DxfImport::boundingBox(this, path);
+      }
+
+//---------------------------------------------------------
+//   importDxfAt
+//    Import a DXF/DWG file and position it so the bounding
+//    box's bottom-left corner is at (x, y) in scene coordinates.
+//---------------------------------------------------------
+
+bool ZCam::importDxfAt(const QString& path, double x, double y) {
+      return DxfImport::importAt(this, path, x, y);
+      }
 //---------------------------------------------------------
 //   restoreLastProject
 //    Called at startup to re-open the project that was open when

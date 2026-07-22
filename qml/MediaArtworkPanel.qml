@@ -20,6 +20,7 @@ Item {
     id: root
 
     property real tileScale: 1.0
+    property real baseTileSize: 120
     property string selectedFilePath: ""
     property string selectedFileType: ""
 
@@ -221,7 +222,7 @@ Item {
                     text: {
                         if (currentDirPath === "")
                             return qsTr("Images")
-                        let root = ZCam.config ? ZCam.config.artworkDirectory : ""
+                        let root = ZCam.config ? ZCam.expandPath(ZCam.config.artworkDirectory) : ""
                         if (root !== "" && currentDirPath.startsWith(root + "/"))
                             return currentDirPath.substring(root.length + 1)
                         return currentDirPath
@@ -247,8 +248,21 @@ Item {
                         width: parent.width
                         height: parent.height
                         clip: true
-                        cellWidth: 120 * root.tileScale
-                        cellHeight: 120 * root.tileScale
+
+                        // Number of columns that fit based on the nominal tile width
+                        readonly property int columnCount: {
+                            if (width <= 0)
+                                return 1
+                            var nominal = root.baseTileSize * root.tileScale
+                            return Math.max(1, Math.floor(width / nominal))
+                        }
+
+                        // Actual cell width: distribute the full grid width
+                        // evenly across all columns so no empty margin remains
+                        cellWidth: width > 0 && columnCount > 0
+                                   ? width / columnCount
+                                   : root.baseTileSize * root.tileScale
+                        cellHeight: root.baseTileSize * root.tileScale
 
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -257,22 +271,33 @@ Item {
                             height: imageGrid.cellHeight
 
                             property bool isSelected: false
+                            // Cache DXF-to-SVG preview URL (file:// path to temp SVG file)
+                            property string dxfPreviewUrl: {
+                                if (modelData.fileType.toLowerCase() === "dxf")
+                                    return artworkModel.dxfToSvgFile(modelData.filePath, ZCam.config ? ZCam.config.dxfScale : 72.0)
+                                return ""
+                                }
 
                             Rectangle {
                                 id: tileBg
                                 anchors.fill: parent
                                 anchors.margins: 4
-                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "transparent"
-                                border.width: isSelected ? 3 : 1
-                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
+                                color: "transparent"
                                 radius: 4
                                 clip: true
 
-                                // Checkerboard background for transparent images
+                                // Checkerboard background for transparent images (not DXF)
                                 Loader {
                                     anchors.fill: parent
-                                    active: !isSelected
+                                    active: modelData.fileType.toLowerCase() !== "dxf"
                                     sourceComponent: checkerboardComponent
+                                }
+
+                                // Plain light gray background for DXF previews
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: "#e0e0e0"
+                                    visible: modelData.fileType.toLowerCase() === "dxf"
                                 }
 
                                 ColumnLayout {
@@ -287,22 +312,28 @@ Item {
 
                                         Image {
                                             anchors.fill: parent
+                                            property bool isDxf: modelData.fileType.toLowerCase() === "dxf"
                                             source: {
                                                 var ft = modelData.fileType.toLowerCase()
                                                 if (ft === "png" || ft === "svg")
                                                     return "file://" + modelData.filePath
+                                                if (ft === "dxf" && dxfPreviewUrl.length > 0)
+                                                    return dxfPreviewUrl
                                                 return ""
                                                 }
                                             fillMode: Image.PreserveAspectFit
-                                            sourceSize.width: 200
-                                            sourceSize.height: 200
+                                            sourceSize.width: isDxf ? 1024 : 200
+                                            sourceSize.height: isDxf ? 1024 : 200
+                                            cache: false
+                                            mipmap: true
+                                            smooth: true
                                             }
 
-                                        // DXF icon fallback
+                                        // DXF fallback label (shown when conversion fails)
                                         Label {
                                             anchors.centerIn: parent
                                             text: "DXF"
-                                            visible: modelData.fileType.toLowerCase() === "dxf"
+                                            visible: modelData.fileType.toLowerCase() === "dxf" && dxfPreviewUrl.length === 0
                                             color: "#333333"
                                             font.bold: true
                                             font.pixelSize: 24
@@ -321,6 +352,16 @@ Item {
                                         }
                                     }
                                 }
+
+                            // Selection border — drawn on top of all content
+                            Rectangle {
+                                anchors.fill: tileBg
+                                color: "transparent"
+                                border.width: isSelected ? 3 : 1
+                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
+                                radius: 4
+                                z: 100
+                            }
 
                             // Click to select + drag to 3D canvas
                             MouseArea {

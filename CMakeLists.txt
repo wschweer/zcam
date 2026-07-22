@@ -194,6 +194,7 @@ qt_add_resources(zcam icons FILES
       icons/edit-undo.svg
       icons/edit-redo.svg
       icons/config.svg
+      icons/folder-browse.svg
       # dark/black icons (used in main toolbar)
       icons/dark/file-new.svg
       icons/dark/file-open.svg

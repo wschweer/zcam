@@ -33,14 +33,19 @@ Model {
 
     // Bounding-box overlay: shown when this element is the current
     // selection or when it is being edited (text input mode).
-    // The C++ side keeps element.selectionGeometry up to date with a rectangle
-    // built from the element's path data.
+    // Rendered as a sibling of the main model so it stays visible even
+    // when the main model has no own geometry (e.g. Group elements whose
+    // main geometry is the same selection rectangle).
     Model {
         id: bboxOverlay
-        parent: model
-        geometry: model.element ? model.element.selectionGeometry : null
-        visible: model.element && (ZCam.currentElement === model.element
-               || (model.element.editing !== undefined && model.element.editing))
+        parent: model.parent
+        property alias element: model.element
+        geometry: element ? element.selectionGeometry : null
+        visible: element && (ZCam.currentElement === element
+               || (element.editing !== undefined && element.editing))
+        position: model.position
+        eulerRotation: model.eulerRotation
+        scale: model.scale
         pickable: false
         materials: [
             PrincipledMaterial {

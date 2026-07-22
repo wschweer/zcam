@@ -138,6 +138,10 @@ Node {
                 instance.geometry = Qt.binding(function () {
                     return element.geometry;
                     });
+            // Note: elements without own geometry (e.g. Group) keep a null
+            // main geometry. Their selection bounding box is rendered by the
+            // bboxOverlay inside Shape.qml, which is only visible when the
+            // element is selected.
             if (element.constantSize)
                 instance.scale = Qt.binding(function () {
                     return Qt.vector3d(10. / root.scale.x, 10. / root.scale.y, 10. / root.scale.z);

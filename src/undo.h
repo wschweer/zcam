@@ -45,6 +45,16 @@ class UndoCommand
       virtual void undo()    = 0;
       virtual void redo()    = 0;
       virtual QString description() const { return {}; }
+      /// Returns true when *this command can absorb the information
+      /// from \a other (e.g. same element + same property), so that
+      /// no new history entry needs to be created.
+      virtual bool canCoalesceWith(const UndoCommand& other) const {
+            (void)other;
+            return false;
+            }
+      /// Merge the new value from \a other into this command.
+      /// Called only after canCoalesceWith() returned true.
+      virtual void coalesceFrom(const UndoCommand& other) { (void)other; }
       };
 
 //---------------------------------------------------------
@@ -71,6 +81,20 @@ class PropertyChangeCommand : public UndoCommand
       void redo() override {
             if (_element)
                   _element->setProperty(_propName.constData(), _newValue);
+            }
+      /// Coalesce when both commands target the same live element and
+      /// the same property name.  The old value of the first command is
+      /// kept; only the new value is updated from @a other.
+      bool canCoalesceWith(const UndoCommand& other) const override {
+            const auto* o = dynamic_cast<const PropertyChangeCommand*>(&other);
+            if (!o)
+                  return false;
+            return _element != nullptr && _element == o->_element && _propName == o->_propName;
+            }
+      void coalesceFrom(const UndoCommand& other) override {
+            const auto* o = dynamic_cast<const PropertyChangeCommand*>(&other);
+            if (o)
+                  _newValue = o->_newValue;
             }
       QString description() const override {
             return QStringLiteral("Change %1").arg(QString::fromUtf8(_propName));

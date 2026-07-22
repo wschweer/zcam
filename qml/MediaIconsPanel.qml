@@ -20,6 +20,7 @@ Item {
     id: root
 
     property real tileScale: 1.0
+    property real baseTileSize: 120
     property string selectedFilePath: ""
     property string selectedFileType: ""
 
@@ -225,7 +226,7 @@ Item {
                     text: {
                         if (currentDirPath === "")
                             return qsTr("Icons")
-                        let root = ZCam.config ? ZCam.config.iconDirectory : ""
+                        let root = ZCam.config ? ZCam.expandPath(ZCam.config.iconDirectory) : ""
                         if (root !== "" && currentDirPath.startsWith(root + "/"))
                             return currentDirPath.substring(root.length + 1)
                         return currentDirPath
@@ -251,8 +252,21 @@ Item {
                         width: parent.width
                         height: parent.height
                         clip: true
-                        cellWidth: 120 * root.tileScale
-                        cellHeight: 120 * root.tileScale
+
+                        // Number of columns that fit based on the nominal tile width
+                        readonly property int columnCount: {
+                            if (width <= 0)
+                                return 1
+                            var nominal = root.baseTileSize * root.tileScale
+                            return Math.max(1, Math.floor(width / nominal))
+                        }
+
+                        // Actual cell width: distribute the full grid width
+                        // evenly across all columns so no empty margin remains
+                        cellWidth: width > 0 && columnCount > 0
+                                   ? width / columnCount
+                                   : root.baseTileSize * root.tileScale
+                        cellHeight: root.baseTileSize * root.tileScale
 
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -266,16 +280,14 @@ Item {
                                 id: tileBg
                                 anchors.fill: parent
                                 anchors.margins: 4
-                                color: isSelected ? Material.color(Material.Teal, Material.Shade700) : "transparent"
-                                border.width: isSelected ? 3 : 1
-                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
+                                color: "transparent"
                                 radius: 4
                                 clip: true
 
                                 // Checkerboard background for transparent icons
                                 Loader {
                                     anchors.fill: parent
-                                    active: !isSelected
+                                    active: true
                                     sourceComponent: checkerboardComponent
                                 }
 
@@ -335,6 +347,16 @@ Item {
                                         }
                                     }
                                 }
+                            }
+
+                            // Selection border — drawn on top of all content
+                            Rectangle {
+                                anchors.fill: tileBg
+                                color: "transparent"
+                                border.width: isSelected ? 3 : 1
+                                border.color: isSelected ? Material.accentColor : Material.color(Material.BlueGrey, Material.Shade300)
+                                radius: 4
+                                z: 100
                             }
 
                             // Click to select + drag to 3D canvas

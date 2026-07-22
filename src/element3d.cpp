@@ -111,12 +111,12 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
             }
       else if (type == "recipe") {
             LaserRecipe* recipe = value.value<LaserRecipe*>();
-            data[name]     = recipe ? recipe->name().toStdString() : "";
+            data[name]          = recipe ? recipe->name().toStdString() : "";
             return true;
             }
       else if (type == "laserLayer") {
             Recipe* ll = value.value<Recipe*>();
-            data[name]     = ll ? ll->name().toStdString() : "";
+            data[name] = ll ? ll->name().toStdString() : "";
             return true;
             }
       else if (type == "machine") {
@@ -164,14 +164,14 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
             return true;
             }
       else if (type == "recipe") {
-            QString recipeName = QString::fromStdString(jval.get<std::string>());
-            LaserRecipe* recipe     = element->zcamInstance()->recipePtr(recipeName);
+            QString recipeName  = QString::fromStdString(jval.get<std::string>());
+            LaserRecipe* recipe = element->zcamInstance()->recipePtr(recipeName);
             mp.write(element, QVariant::fromValue(recipe));
             return true;
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
-            Recipe* ll = element->zcamInstance()->laserLayerPtr(llName);
+            Recipe* ll     = element->zcamInstance()->laserLayerPtr(llName);
             mp.write(element, QVariant::fromValue(ll));
             return true;
             }
@@ -315,19 +315,21 @@ Recipe* Element3d::effectiveLaserLayer() const {
             if (e->_laserLayer)
                   return e->_laserLayer;
             auto* p = e->parent();
-            e = qobject_cast<const Element3d*>(p);
+            e       = qobject_cast<const Element3d*>(p);
             }
       return nullptr;
       }
 
 //---------------------------------------------------------
 //   boundingBox
-//    compute the axis-aligned bounding box of all path vertices
+//    compute the axis-aligned bounding box of all path vertices.
+//    If the element has no own path data but has children, the
+//    bounding box is computed from the children's bounding boxes.
 //---------------------------------------------------------
 
 QRectF Element3d::boundingBox() const {
       if (_pathList.empty())
-            return {};
+            return childrenBoundingBox();
       double minX = std::numeric_limits<double>::max();
       double minY = std::numeric_limits<double>::max();
       double maxX = std::numeric_limits<double>::lowest();
@@ -341,6 +343,47 @@ QRectF Element3d::boundingBox() const {
                   }
             }
       if (minX > maxX || minY > maxY)
+            return childrenBoundingBox();
+      return QRectF(minX, minY, maxX - minX, maxY - minY);
+      }
+
+//---------------------------------------------------------
+//   childrenBoundingBox
+//    Compute the axis-aligned bounding box of all child Element3d
+//    in this element's local coordinate system.  Each child's
+//    own boundingBox() is transformed through the child's local
+//    matrix() and the results are unioned.
+//---------------------------------------------------------
+
+QRectF Element3d::childrenBoundingBox() const {
+      bool hasValidChild = false;
+      double minX        = std::numeric_limits<double>::max();
+      double minY        = std::numeric_limits<double>::max();
+      double maxX        = std::numeric_limits<double>::lowest();
+      double maxY        = std::numeric_limits<double>::lowest();
+      for (Element* child : children()) {
+            auto* e3d = qobject_cast<Element3d*>(child);
+            if (!e3d || !e3d->show())
+                  continue;
+            QRectF cb = e3d->boundingBox();
+            if (cb.isNull() || cb.isEmpty())
+                  continue;
+            const QMatrix4x4& m  = e3d->matrix();
+            QVector3D corners[4] = {
+               m.map(QVector3D(float(cb.left()), float(cb.top()), 0.0f)),
+               m.map(QVector3D(float(cb.right()), float(cb.top()), 0.0f)),
+               m.map(QVector3D(float(cb.left()), float(cb.bottom()), 0.0f)),
+               m.map(QVector3D(float(cb.right()), float(cb.bottom()), 0.0f)),
+                  };
+            for (int i = 0; i < 4; ++i) {
+                  minX = std::min(minX, double(corners[i].x()));
+                  minY = std::min(minY, double(corners[i].y()));
+                  maxX = std::max(maxX, double(corners[i].x()));
+                  maxY = std::max(maxY, double(corners[i].y()));
+                  }
+            hasValidChild = true;
+            }
+      if (!hasValidChild)
             return {};
       return QRectF(minX, minY, maxX - minX, maxY - minY);
       }
@@ -359,10 +402,10 @@ QRectF Element3d::worldBoundingBox() const {
       QMatrix4x4 gm = globalMatrix();
       // Transform all four corners
       QVector3D corners[4] = {
-            gm.map(QVector3D(float(local.left()),  float(local.top()),    0.0f)),
-            gm.map(QVector3D(float(local.right()), float(local.top()),    0.0f)),
-            gm.map(QVector3D(float(local.left()),  float(local.bottom()), 0.0f)),
-            gm.map(QVector3D(float(local.right()), float(local.bottom()), 0.0f)),
+         gm.map(QVector3D(float(local.left()), float(local.top()), 0.0f)),
+         gm.map(QVector3D(float(local.right()), float(local.top()), 0.0f)),
+         gm.map(QVector3D(float(local.left()), float(local.bottom()), 0.0f)),
+         gm.map(QVector3D(float(local.right()), float(local.bottom()), 0.0f)),
             };
       double minX = corners[0].x(), maxX = minX;
       double minY = corners[0].y(), maxY = minY;

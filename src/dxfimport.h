@@ -12,6 +12,7 @@
 #pragma once
 
 #include <QString>
+#include <QRectF>
 
 class ZCam;
 
@@ -24,4 +25,6 @@ class ZCam;
 
 namespace DxfImport {
 bool import(ZCam* zcam, const QString& path);
-      }
+bool importAt(ZCam* zcam, const QString& path, double x, double y);
+QRectF boundingBox(ZCam* zcam, const QString& path);
+      } //namespace DxfImport

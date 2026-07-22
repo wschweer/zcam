@@ -384,6 +384,7 @@ Item {
                         case "halign":    return halignDelegate
                         case "multiline": return multilineDelegate
                         case "singleline":return singlelineDelegate
+                        case "path":      return pathDelegate
                         case "line":      return lineDelegate
                         case "color":     return colorDelegate
                         case "layer":      return layerDelegate
@@ -691,11 +692,13 @@ Item {
                                         case "halign":    return halignDelegate
                                         case "multiline": return multilineDelegate
                                         case "singleline":return singlelineDelegate
+                                        case "path":      return pathDelegate
                                         case "color":     return colorDelegate
                                         case "layer":      return layerDelegate
                                         case "laserLayer": return laserLayerDelegate
                                         case "recipe":    return recipeDelegate
                                         case "machine":   return machineDelegate
+                                        case "machineName": return machineNameDelegate
                                         case "machineType": return machineTypeDelegate
                                         case "boardType":  return boardTypeDelegate
                                         case "override":  return overrideDelegate
@@ -2049,6 +2052,101 @@ Item {
                     }
                 }
             }
+
+        // ── path: TextInput + folder button with FolderDialog ────────────
+        Component {
+            id: pathDelegate
+
+            RowLayout {
+                id: rowPath
+                width: parent ? parent.width : 0
+                spacing: 4
+
+                property string propName
+                property var propValue
+                property var meta
+                property int propIndex
+                property var setModelValue: function(v) {}
+
+                Label {
+                    text: rowPath.meta ? rowPath.meta.label ?? "" : ""
+                    Layout.preferredWidth: root.labelWidth
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
+                    color: Material.foreground
+                    opacity: 0.75
+                    }
+
+                ValueBox {
+                    Layout.fillWidth: true
+
+                    TextInput {
+                        id: pathInput
+                        anchors.fill: parent
+                        text: rowPath.propValue !== undefined ? rowPath.propValue : ""
+                        onEditingFinished: rowPath.setModelValue(text)
+                        horizontalAlignment: TextInput.AlignLeft
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: "#ffffff"
+                        clip: true
+
+                        Connections {
+                            target: rowPath
+                            function onPropValueChanged() {
+                                if (pathInput.activeFocus)
+                                    return
+                                let v = rowPath.propValue !== undefined ? rowPath.propValue : ""
+                                if (pathInput.text !== v)
+                                    pathInput.text = v
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 28
+                    color: "#a9a9a9"
+                    radius: 4
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        source: "qrc:/icons/folder-browse.svg"
+                        fillMode: Image.PreserveAspectFit
+                        sourceSize.width: 28
+                        sourceSize.height: 28
+                    }
+
+                    MouseArea {
+                        id: pathBrowseMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        ToolTip.text: qsTr("Browse...")
+                        ToolTip.visible: containsMouse
+                        onClicked: {
+                            let cur = rowPath.propValue !== undefined ? rowPath.propValue : ""
+                            if (cur.length > 0)
+                                folderDialog.currentFolder = "file://" + ZCam.expandPath(cur)
+                            folderDialog.open()
+                        }
+                    }
+
+                    FolderDialog {
+                        id: folderDialog
+                        title: rowPath.meta ? rowPath.meta.label ?? qsTr("Select Directory") : qsTr("Select Directory")
+                        onAccepted: {
+                            let f = folderDialog.selectedFolder.toString()
+                            if (f.startsWith("file://"))
+                                f = f.substring(7)
+                            pathInput.text = f
+                            rowPath.setModelValue(f)
+                        }
+                    }
+                }
+            }
+        }
 
         // ── string: generic single-line TextInput ─────────────────────────
         Component {

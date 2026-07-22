@@ -118,6 +118,7 @@ class ArtworkTreeModel : public QAbstractItemModel
             HasImagesRole,
             HasChildrenRole,
             };
+      Q_ENUM(Roles)
       explicit ArtworkTreeModel(QObject* parent = nullptr);
       ~ArtworkTreeModel() override;
 
@@ -139,6 +140,15 @@ class ArtworkTreeModel : public QAbstractItemModel
       Q_INVOKABLE QVariantList imageFiles(const QString& dirPath) const;
       Q_INVOKABLE bool hasImages(const QString& dirPath) const;
       Q_INVOKABLE void refresh();
+
+      /// Convert a DXF file to an SVG string suitable for
+      /// preview display in the media browser. dxfScale is the
+      /// pixel density in dots per millimeter used when $INSUNITS=0.
+      Q_INVOKABLE QString dxfToSvg(const QString& filePath, double dxfScale = 72.0) const;
+
+      /// Convert a DXF file to a temporary SVG file and return
+      /// the file:// URL for use as an Image source in QML.
+      Q_INVOKABLE QString dxfToSvgFile(const QString& filePath, double dxfScale = 72.0) const;
 
       /// Returns the model index for the directory whose path matches
       /// dirPath.  All ancestor nodes are lazily loaded so the caller
