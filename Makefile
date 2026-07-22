@@ -99,6 +99,8 @@ init-gcc:
 
 #
 #     initialize the project to use the clang compiler
+#     also initializes and updates the libdxfrw git submodule
 #
 init:
+	git submodule update --init --recursive libdxfrw
 	rm -rf build; mkdir build; cd build; cmake -D CMAKE_CXX_COMPILER=clang++ -G Ninja ..

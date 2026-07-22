@@ -1,38 +1,16 @@
 ## Build
 
-- create a build directory if not already exists:
-- enter build directory
-- configure by calling cmake
-- build the app
+The build of ZCam is controlled by a Makefile:
 
-```
-mkdir build
-cd build
-cmake -G Ninja ..
-cmake --build .
-```
+Go to the project directory.
 
-or if you want to use the clang compiler:
+- ```make init``` creates a build directory and initializes necessary submodules
+- ```make``` build ZCam and starts the app
+- ```make i``` copies (installs) ZCam in ```$HOME/bin```
 
+in summary:
 ```
-mkdir build
-cd build
-cmake -D CMAKE_CXX_COMPILER=clang++ -G Ninja ..
-cmake --build .
-```
-
-usually you need to tell the build system the path of your local Qt installation:
-
-```
-export CMAKE_PREFIX_PATH=***YourPath***/Qt/6.11.0/gcc_64
-mkdir build
-cd build
-cmake -D CMAKE_CXX_COMPILER=clang++ -G Ninja ..
-cmake --build .
-```
-
-start the app
-
-```
-./zcam
+make init
+make
+make i
 ```
