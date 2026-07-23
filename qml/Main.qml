@@ -26,7 +26,7 @@ Window {
     x: settings.windowX >= 0 ? settings.windowX : Screen.width / 2 - width / 2
     y: settings.windowY >= 0 ? settings.windowY : Screen.height / 2 - height / 2
     visible: true
-    title: ZCam.project.projectName + (ZCam.project.dirty ? " *" : "") + " – ZCam"
+    title: ZCam.project ? ZCam.project.projectName + (ZCam.project.undo.dirty ? " *" : "") + " – ZCam" : "--"
 
     Material.theme: Material.Dark
     Material.accent: Material.Teal
@@ -183,8 +183,8 @@ Window {
         text: qsTr("&Undo")
         icon.source: "qrc:/icons/dark/edit-undo.svg"
         shortcut: StandardKey.Undo
-        enabled: ZCam.project.canUndo
-        onTriggered: ZCam.project.undo()
+        enabled: ZCam.project.undo.canUndo
+        onTriggered: ZCam.project.undo.undo()
         }
 
     Action {
@@ -192,8 +192,8 @@ Window {
         text: qsTr("&Redo")
         icon.source: "qrc:/icons/dark/edit-redo.svg"
         shortcut: StandardKey.Redo
-        enabled: ZCam.project.canRedo
-        onTriggered: ZCam.project.redo()
+        enabled: ZCam.project.undo.canRedo
+        onTriggered: ZCam.project.undo.redo()
         }
 
     Action {
@@ -574,8 +574,8 @@ Window {
 
                 // Separator
                 Rectangle {
-                    width: 1
-                    height: 24
+                    implicitWidth: 1
+                    implicitHeight: 24
                     color: Material.color(Material.BlueGrey, Material.Shade500)
                     }
 

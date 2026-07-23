@@ -11,20 +11,19 @@
 
 #pragma once
 
-#include <QObject>
+#include <QList>
 #include <QVariant>
 #include <QVector3D>
-#include <QByteArray>
-#include <QPointer>
-#include <QString>
-#include <memory>
-#include <vector>
+#include <QtQml/qqmlregistration.h>
 
+#include "logger.h"
+#include "element.h"
+
+class UndoCommand;
 class ZCam;
 class Cad;
 class Cam;
 class Group;
-class Element;
 class Element3d;
 class Fixture;
 class Recipe;
@@ -34,27 +33,76 @@ class Ellipse;
 class Text;
 
 //---------------------------------------------------------
-//   UndoCommand
-//    Abstract base class for all undoable operations.
+//   UndoStack
 //---------------------------------------------------------
 
-class UndoCommand
-      {
+class UndoStack : public QObject {
+      Q_OBJECT
+      QML_ELEMENT
+      QML_UNCREATABLE("no")
+
+      Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoChanged)
+      Q_PROPERTY(bool canRedo READ canRedo NOTIFY undoChanged)
+      Q_PROPERTY(bool dirty READ dirty NOTIFY undoChanged)
+
+      UndoCommand* curCmd { nullptr };
+      QList<UndoCommand*> macroStack;  ///< stack of parent macros for nesting
+      QList<UndoCommand*> list;
+      int curIdx   { 0 };
+      int cleanIdx { 0 };
+      bool _active { true };   // don't record commands if not active
+      bool inUndoRedo { false };
+
+      ZCam* zcam;
+
+   signals:
+      void undoChanged();
+      void dirtyChanged();
+
     public:
-      virtual ~UndoCommand() = default;
-      virtual void undo()    = 0;
-      virtual void redo()    = 0;
-      virtual QString description() const { return {}; }
-      /// Returns true when *this command can absorb the information
-      /// from \a other (e.g. same element + same property), so that
-      /// no new history entry needs to be created.
-      virtual bool canCoalesceWith(const UndoCommand& other) const {
-            (void)other;
-            return false;
-            }
-      /// Merge the new value from \a other into this command.
-      /// Called only after canCoalesceWith() returned true.
-      virtual void coalesceFrom(const UndoCommand& other) { (void)other; }
+      UndoStack(ZCam* zc, QObject* parent = nullptr) : QObject(parent), zcam(zc) {};
+      ~UndoStack();
+
+      void reset();
+      void beginMacro();
+      void endMacro(bool rollback = false);
+      void push(UndoCommand*); // push & execute
+      void push1(UndoCommand*);
+      void pop();
+      void setClean()      { cleanIdx = curIdx; emit dirtyChanged(); }     // this is set by project->save()
+      bool canUndo() const { return curIdx > 0; }
+      bool canRedo() const { return curIdx < list.size(); }
+      bool dirty() const   { return cleanIdx != curIdx; }
+      bool isActive() const { return curCmd != nullptr; }
+
+      Q_INVOKABLE void undo();
+      Q_INVOKABLE void redo();
+      };
+
+//---------------------------------------------------------
+//   UndoCommand
+//---------------------------------------------------------
+
+class UndoCommand {
+      QList<UndoCommand*> childList;
+
+    protected:
+      ZCam* zcam;
+      virtual void flip() {}
+
+    public:
+      UndoCommand(ZCam* w) : zcam(w) {}
+      UndoCommand(const UndoCommand&) = delete;
+      virtual ~UndoCommand();
+      virtual void undo();
+      virtual void redo();
+
+      void appendChild(UndoCommand* cmd) { childList.append(cmd); }
+      UndoCommand* removeChild()         { return childList.takeLast(); }
+      int childCount() const             { return childList.size(); }
+      void unwind();
+      virtual void cleanup(bool undo);
+      virtual std::string description() const { return "?"; }
       };
 
 //---------------------------------------------------------
@@ -65,40 +113,17 @@ class UndoCommand
 
 class PropertyChangeCommand : public UndoCommand
       {
-      QPointer<QObject> _element;
-      QByteArray _propName;
+      Element* _element;
+      std::string _propName;
       QVariant _oldValue;
       QVariant _newValue;
 
     public:
-      PropertyChangeCommand(QObject* el, const QByteArray& prop, const QVariant& oldVal,
-                            const QVariant& newVal)
-          : _element(el), _propName(prop), _oldValue(oldVal), _newValue(newVal) {}
-      void undo() override {
-            if (_element)
-                  _element->setProperty(_propName.constData(), _oldValue);
-            }
-      void redo() override {
-            if (_element)
-                  _element->setProperty(_propName.constData(), _newValue);
-            }
-      /// Coalesce when both commands target the same live element and
-      /// the same property name.  The old value of the first command is
-      /// kept; only the new value is updated from @a other.
-      bool canCoalesceWith(const UndoCommand& other) const override {
-            const auto* o = dynamic_cast<const PropertyChangeCommand*>(&other);
-            if (!o)
-                  return false;
-            return _element != nullptr && _element == o->_element && _propName == o->_propName;
-            }
-      void coalesceFrom(const UndoCommand& other) override {
-            const auto* o = dynamic_cast<const PropertyChangeCommand*>(&other);
-            if (o)
-                  _newValue = o->_newValue;
-            }
-      QString description() const override {
-            return QStringLiteral("Change %1").arg(QString::fromUtf8(_propName));
-            }
+      PropertyChangeCommand(ZCam* zc, Element* el, const std::string& n, const QVariant& ov, const QVariant& nv)
+          : UndoCommand(zc), _element(el), _propName(n), _oldValue(ov), _newValue(nv) {}
+      void undo() override;
+      void redo() override;
+      std::string description() const override { return std::format("Change {} of {}", _propName, _element->name()); }
       };
 
 //---------------------------------------------------------
@@ -111,16 +136,16 @@ class PropertyChangeCommand : public UndoCommand
 
 class RenameElementCommand : public UndoCommand
       {
-      QPointer<Element> _element;
+      Element* _element;
       QString _oldName;
       QString _newName; // actual name after de-duplication
 
     public:
-      RenameElementCommand(Element* el, const QString& oldName, const QString& newName)
-          : _element(el), _oldName(oldName), _newName(newName) {}
+      RenameElementCommand(ZCam* zc, Element* el, const QString& oldName, const QString& newName)
+          : UndoCommand(zc), _element(el), _oldName(oldName), _newName(newName) {}
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Rename element"); }
+      std::string description() const override { return std::format("Rename {} to {}", _oldName, _newName); }
       };
 
 //---------------------------------------------------------
@@ -134,11 +159,10 @@ class RenameElementCommand : public UndoCommand
 
 class AddLayerCommand : public UndoCommand
       {
-      QPointer<Cad> _cad;
-      QPointer<Group> _layer;
-      QPointer<Fixture> _fixture;
-      QPointer<Recipe> _laserLayer;
-      QPointer<ZCam> _zcam;
+      Cad* _cad;
+      Group* _layer;
+      Fixture* _fixture;
+      Recipe* _laserLayer;
       int _row {-1};   ///< position within cad's children
       int _llRow {-1}; ///< position within fixture's children
 
@@ -147,14 +171,17 @@ class AddLayerCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override;
+      std::string description() const override { return std::format("AddLayer"); }
       };
+
+//---------------------------------------------------------
+//   AddFixtureCommand
+//---------------------------------------------------------
 
 class AddFixtureCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Cam> _cam;
-      QPointer<Fixture> _fixture;
+      Cam* _cam;
+      Fixture* _fixture;
       int _row {-1}; ///< position within cam's children
 
     public:
@@ -162,7 +189,7 @@ class AddFixtureCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override;
+      std::string description() const override { return std::format("AddFixture"); }
       };
 
 //---------------------------------------------------------
@@ -176,9 +203,8 @@ class AddFixtureCommand : public UndoCommand
 
 class AddLaserLayerCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Fixture> _fixture;
-      QPointer<Recipe> _laserLayer;
+      Fixture* _fixture;
+      Recipe* _laserLayer;
       int _row {-1}; ///< position within fixture's children
 
     public:
@@ -186,7 +212,7 @@ class AddLaserLayerCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override;
+      std::string description() const override { return std::format("AddRecipe"); }
       };
 
 //---------------------------------------------------------
@@ -200,9 +226,8 @@ class AddLaserLayerCommand : public UndoCommand
 
 class AddRectangleCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Group> _layer;
-      QPointer<Rectangle> _rect;
+      Group* _layer;
+      Rectangle* _rect;
       int _row {-1}; ///< position within layer's children
 
     public:
@@ -210,7 +235,7 @@ class AddRectangleCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Add Rectangle"); }
+      std::string description() const override { return std::format("AddRectangle"); }
       Rectangle* rectangle() const;
       };
 
@@ -225,9 +250,8 @@ class AddRectangleCommand : public UndoCommand
 
 class AddPolygonCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Group> _layer;
-      QPointer<Polygon> _poly;
+      Group* _layer;
+      Polygon* _poly;
       int _row {-1}; ///< position within layer's children
 
     public:
@@ -235,7 +259,7 @@ class AddPolygonCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Add Polygon"); }
+      std::string description() const override { return std::format("Add Polygon"); }
       Polygon* polygon() const;
       };
 
@@ -250,9 +274,8 @@ class AddPolygonCommand : public UndoCommand
 
 class AddEllipseCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Group> _layer;
-      QPointer<Ellipse> _ellipse;
+      Group* _layer;
+      Ellipse* _ellipse;
       int _row {-1}; ///< position within layer's children
 
     public:
@@ -260,7 +283,7 @@ class AddEllipseCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Add Ellipse"); }
+      std::string description() const override { return std::format("Add Ellipse"); }
       Ellipse* ellipse() const;
       };
 
@@ -273,9 +296,8 @@ class AddEllipseCommand : public UndoCommand
 
 class AddTextCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Group> _layer;
-      QPointer<Text> _text;
+      Group* _layer;
+      Text* _text;
       int _row {-1}; ///< position within layer's children
 
     public:
@@ -283,7 +305,7 @@ class AddTextCommand : public UndoCommand
 
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Add Text"); }
+      std::string description() const override { return std::format("Add Text"); }
       Text* text() const;
       };
 
@@ -297,17 +319,17 @@ class AddTextCommand : public UndoCommand
 
 class HandleDragCommand : public UndoCommand
       {
-      QPointer<Element3d> _element;
+      Element3d* _element;
       int _handleIndex;
       QVector3D _oldPos;
       QVector3D _newPos;
 
     public:
-      HandleDragCommand(Element3d* el, int idx, const QVector3D& oldPos, const QVector3D& newPos)
-          : _element(el), _handleIndex(idx), _oldPos(oldPos), _newPos(newPos) {}
+      HandleDragCommand(ZCam* zc, Element3d* el, int idx, const QVector3D& oldPos, const QVector3D& newPos)
+          : UndoCommand(zc), _element(el), _handleIndex(idx), _oldPos(oldPos), _newPos(newPos) {}
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Drag handle"); }
+      std::string description() const override { return std::format("Drag handle"); }
       };
 
 //---------------------------------------------------------
@@ -320,30 +342,20 @@ class HandleDragCommand : public UndoCommand
 
 class RemoveElementCommand : public UndoCommand
       {
-      QPointer<Element> _parent;
-      QPointer<Element> _child;
-      QPointer<ZCam> _zcam;
+      Element* _parent;
+      Element* _child;
       int _row {-1}; ///< original position within parent's children
 
     public:
-      ///< Associated LaserLayers that reference elements under the Layer
-      ///< via the laserLayer property.  Stored so they can be removed/restored
-      ///< together with the Layer.
-      struct LinkedLaserLayer {
-            QPointer<Fixture> parent;
-            QPointer<Recipe> ll;
-            int row {-1};
-            };
-      std::vector<LinkedLaserLayer> _linkedLaserLayers;
       /// If the removed element is a Fixture, this stores the pointer so
       /// that redo() can remove it from the project fixture list and
       /// undo() can re-add it.
-      QPointer<Fixture> _removedFixture;
-      RemoveElementCommand(ZCam* zcam, Element* parent, Element* child, int row)
-          : _parent(parent), _child(child), _zcam(zcam), _row(row) {}
+      Fixture* _removedFixture;
+      RemoveElementCommand(ZCam* zc, Element* parent, Element* child, int row)
+          : UndoCommand(zc), _parent(parent), _child(child), _row(row) {}
       void undo() override;
       void redo() override;
-      QString description() const override;
+      std::string description() const override { return std::format("Remove Element"); }
       };
 
 //---------------------------------------------------------
@@ -357,21 +369,19 @@ class RemoveElementCommand : public UndoCommand
 
 class MoveElementCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Element> _element;
-      QPointer<Element> _oldParent;
-      QPointer<Element> _newParent;
+      Element* _element;
+      Element* _oldParent;
+      Element* _newParent;
       int _oldRow {-1}; ///< original position within old parent
       int _newRow {-1}; ///< target position within new parent
 
     public:
-      MoveElementCommand(ZCam* zcam, Element* element, Element* oldParent, int oldRow, Element* newParent,
-                         int newRow)
-          : _zcam(zcam), _element(element), _oldParent(oldParent), _newParent(newParent), _oldRow(oldRow),
+      MoveElementCommand(ZCam* zc, Element* element, Element* oldParent, int oldRow, Element* newParent, int newRow)
+          : UndoCommand(zc), _element(element), _oldParent(oldParent), _newParent(newParent), _oldRow(oldRow),
             _newRow(newRow) {}
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Move Element"); }
+      std::string description() const override { return std::format("Move Element"); }
       };
 
 //---------------------------------------------------------
@@ -384,15 +394,14 @@ class MoveElementCommand : public UndoCommand
 
 class InsertElementCommand : public UndoCommand
       {
-      QPointer<ZCam> _zcam;
-      QPointer<Element> _parent;
-      QPointer<Element> _element;
+      Element* _parent;
+      Element* _element;
       int _row {-1};
 
     public:
-      InsertElementCommand(ZCam* zcam, Element* parent, Element* element, int row)
-          : _zcam(zcam), _parent(parent), _element(element), _row(row) {}
+      InsertElementCommand(ZCam* zc, Element* parent, Element* element, int row)
+          : UndoCommand(zc), _parent(parent), _element(element), _row(row) {}
       void undo() override;
       void redo() override;
-      QString description() const override { return QStringLiteral("Insert Element"); }
+      std::string description() const override { return std::format("Insert Element"); }
       };

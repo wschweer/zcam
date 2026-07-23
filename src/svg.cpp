@@ -119,12 +119,11 @@ void ZCam::importSvg(const QString& path) {
       poly->update();
       Debug("---ok2");
 
-      auto cmd = std::make_unique<InsertElementCommand>(this, layer, poly, -1);
-      cmd->redo(); // apply immediately
-      _project->pushCommand(std::move(cmd));
+      auto cmd = new InsertElementCommand(this, layer, poly, -1);
+      _project->undo()->beginMacro();
+      _project->undo()->push(cmd);
+      _project->undo()->endMacro();
 
-      _project->markDirty();
-      setCamDirty(true);
       Debug("---ok3");
       }
 
@@ -256,12 +255,11 @@ void ZCam::importSvgAt(const QString& path, double x, double y) {
       poly->set_fill(false);
       poly->update();
 
-      auto cmd = std::make_unique<InsertElementCommand>(this, layer, poly, -1);
-      cmd->redo(); // apply immediately
-      _project->pushCommand(std::move(cmd));
+      auto cmd = new InsertElementCommand(this, layer, poly, -1);
+      _project->undo()->beginMacro();
+      _project->undo()->push(cmd);
+      _project->undo()->endMacro();
 
-      _project->markDirty();
-      setCamDirty(true);
       }
 
 //---------------------------------------------------------

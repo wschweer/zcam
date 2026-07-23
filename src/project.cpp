@@ -31,6 +31,22 @@
 #include <functional>
 
 //---------------------------------------------------------
+//   PropertyChangeCommand implementation
+//---------------------------------------------------------
+
+void PropertyChangeCommand::undo() {
+      if (_element)
+            _element->setProperty(_propName.c_str(), _oldValue);
+      zcam->setCamDirty(true);
+      }
+
+void PropertyChangeCommand::redo() {
+      if (_element)
+            _element->setProperty(_propName.c_str(), _newValue);
+      zcam->setCamDirty(true);
+      }
+
+//---------------------------------------------------------
 //   HandleDragCommand implementation
 //---------------------------------------------------------
 
@@ -38,12 +54,14 @@ void HandleDragCommand::undo() {
       if (!_element)
             return;
       _element->setVertexPos(_handleIndex, _oldPos);
+      zcam->setCamDirty(true);
       }
 
 void HandleDragCommand::redo() {
       if (!_element)
             return;
       _element->setVertexPos(_handleIndex, _newPos);
+      zcam->setCamDirty(true);
       }
 
 //---------------------------------------------------------
@@ -51,14 +69,21 @@ void HandleDragCommand::redo() {
 //---------------------------------------------------------
 
 Project::Project(ZCam* z, Element* parent) : Element3d(z, parent) {
-      Element::setName("project");
+      setName("project");
+      _undo = new UndoStack(zcam, this);
+
+      // Forward UndoStack signal changes to Project::dirtyChanged
+      // so QML bindings on project.dirty update automatically.
+      connect(_undo, &UndoStack::dirtyChanged, this, [this] {
+            emit dirtyChanged();
+            });
+
       // Switching the active fixture changes the machine-space
       // transformation chain (fixtureMatrix * camMatrix * ...),
       // so all CAM data must be recalculated.
       connect(this, &Project::fixtureChanged, [this] {
             // Cam display is NOT refreshed automatically when the fixture
             // changes.  The user triggers it manually via the refresh button.
-            zcam->setCamDirty(true);
             emit updateFraming(-1);
             });
       }
@@ -77,17 +102,6 @@ QString Project::projectName() const {
       }
 
 //---------------------------------------------------------
-//   setDirty
-//---------------------------------------------------------
-
-void Project::setDirty(bool v) {
-      if (v == _dirty)
-            return;
-      _dirty = v;
-      emit dirtyChanged();
-      }
-
-//---------------------------------------------------------
 //   setProjectPath
 //---------------------------------------------------------
 
@@ -99,51 +113,11 @@ void Project::setProjectPath(const QString& v) {
       }
 
 //---------------------------------------------------------
-//   markDirty
-//---------------------------------------------------------
-
-void Project::markDirty() {
-      setDirty(true);
-      }
-
-//---------------------------------------------------------
 //   clearUndoStack
 //---------------------------------------------------------
 
 void Project::clearUndoStack() {
-      _undoStack.clear();
-      _undoIndex = 0;
-      emit undoStateChanged();
-      }
-
-//---------------------------------------------------------
-//   pushCommand
-//    Push a new undo command onto the stack, discarding any
-//    redo entries that come after the current index.
-//    When the last command on the stack can coalesce with the
-//    new one (e.g. same element + same property), the new value
-//    is merged into the existing entry instead of creating a
-//    new history entry.
-//---------------------------------------------------------
-
-void Project::pushCommand(std::unique_ptr<UndoCommand> cmd) {
-      // Try to coalesce with the most recent command at the current
-      // undo index.  This avoids creating a new history entry when
-      // consecutive changes target the same element + property.
-      if (_undoIndex > 0) {
-            auto& last = _undoStack[_undoIndex - 1];
-            if (last && last->canCoalesceWith(*cmd)) {
-                  last->coalesceFrom(*cmd);
-                  emit undoStateChanged();
-                  return;
-                  }
-            }
-      // Discard any redo entries after the current index
-      while (static_cast<int>(_undoStack.size()) > _undoIndex)
-            _undoStack.pop_back();
-      _undoStack.push_back(std::move(cmd));
-      _undoIndex = static_cast<int>(_undoStack.size());
-      emit undoStateChanged();
+      _undo->reset();
       }
 
 //---------------------------------------------------------
@@ -152,11 +126,12 @@ void Project::pushCommand(std::unique_ptr<UndoCommand> cmd) {
 //    through the undo system and set the dirty flag.
 //---------------------------------------------------------
 
-void Project::changeProperty(QObject* element, const QString& propName, const QVariant& newValue) {
+void Project::changeProperty(Element* element, const QString& propName, const QVariant& newValue) {
       if (!element)
             return;
-      QByteArray pn     = propName.toUtf8();
-      QVariant oldValue = element->property(pn.constData());
+
+      std::string pn     = propName.toStdString();
+      QVariant oldValue = element->property(pn.c_str());
 
       // If newValue represents a null pointer (invalid QVariant or a valid
       // but null value) and the property is a pointer type, we need to write
@@ -166,7 +141,7 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
       bool isNullPointerWrite = false;
       QMetaType propertyMetaType;
       if (!newValue.isValid() || newValue.isNull()) {
-            int propIdx = element->metaObject()->indexOfProperty(pn.constData());
+            int propIdx = element->metaObject()->indexOfProperty(pn.c_str());
             if (propIdx >= 0) {
                   QMetaProperty mp = element->metaObject()->property(propIdx);
                   propertyMetaType = mp.metaType();
@@ -186,12 +161,12 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
             if (oldValue == typedNull)
                   return;
             // Write the null pointer directly.
-            element->setProperty(pn.constData(), typedNull);
+            // element->setProperty(pn.c_str(), typedNull);
             // Create undo command for the change.
-            auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, typedNull);
-            pushCommand(std::move(cmd));
-            setDirty(true);
-            zcam->setCamDirty(true);
+            _undo->beginMacro();
+            auto cmd = new PropertyChangeCommand(zcam, element, pn, oldValue, typedNull);
+            _undo->push(cmd);
+            _undo->endMacro();
             return;
             }
 
@@ -207,21 +182,25 @@ void Project::changeProperty(QObject* element, const QString& propName, const QV
                   return;
             QString oldName = el->name();
             // Apply the new name first to capture the de-duplicated result
-            el->setName(newValue.toString());
+            // el->setName(newValue.toString());
             QString actualName = el->name();
-            auto cmd           = std::make_unique<RenameElementCommand>(el, oldName, actualName);
-            pushCommand(std::move(cmd));
-            setDirty(true);
+            _undo->beginMacro();
+            auto cmd           = new RenameElementCommand(zcam, el, oldName, actualName);
+            _undo->push(cmd);
+            _undo->endMacro();
             // mark cam data as stale so the Cam refresh button enables
-            zcam->setCamDirty(true);
             return;
             }
-      auto cmd = std::make_unique<PropertyChangeCommand>(element, pn, oldValue, newValue);
-      cmd->redo(); // apply the new value immediately
-      pushCommand(std::move(cmd));
-      setDirty(true);
-      // mark cam data as stale so the Cam refresh button enables
-      zcam->setCamDirty(true);
+      Debug("change property {} of {}", pn, element->name());
+      bool active = _undo->isActive();
+      if (active) {
+            Debug(" undo is already active");
+            return;
+            }
+
+      _undo->beginMacro();
+      _undo->push(new PropertyChangeCommand(zcam, element, pn, oldValue, newValue));
+      _undo->endMacro();
       }
 
 //---------------------------------------------------------
@@ -235,41 +214,23 @@ bool Project::checkUnsavedChanges() {
       // The actual "Save changes?" dialog is driven from QML.
       // This method is kept as a synchronous fast-path for cases where the
       // project is already clean.
-      return !_dirty;
+      return !dirty();
       }
 
 //---------------------------------------------------------
 //   undo
 //---------------------------------------------------------
 
-void Project::undo() {
-      if (!canUndo())
-            return;
-      --_undoIndex;
-      _undoStack[_undoIndex]->undo();
-      emit undoStateChanged();
-      setDirty(true);
-      zcam->setCamDirty(true);
-      // Cam display is NOT refreshed automatically after undo.
-      // The user triggers it manually via the refresh button.
-      updateCadLayerVisibility();
+void Project::doUndo() {
+      _undo->undo();
       }
 
 //---------------------------------------------------------
 //   redo
 //---------------------------------------------------------
 
-void Project::redo() {
-      if (!canRedo())
-            return;
-      _undoStack[_undoIndex]->redo();
-      ++_undoIndex;
-      emit undoStateChanged();
-      setDirty(true);
-      zcam->setCamDirty(true);
-      // Cam display is NOT refreshed automatically after redo.
-      // The user triggers it manually via the refresh button.
-      updateCadLayerVisibility();
+void Project::doRedo() {
+      _undo->redo();
       }
 
 //---------------------------------------------------------
@@ -414,7 +375,7 @@ void Project::removeFixture(Fixture* f) {
 //---------------------------------------------------------
 
 AddLayerCommand::AddLayerCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
-    : _cad(cad), _fixture(fixture), _zcam(zcam) {
+    : UndoCommand(zcam), _cad(cad), _fixture(fixture) {
       _layer = new Group(zcam, nullptr);
       // No longer create a LaserLayer automatically.
       // The user creates LaserLayers explicitly and assigns
@@ -426,27 +387,28 @@ void AddLayerCommand::redo() {
             return;
       // Insert Layer into Cad
       int row = _cad->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_cad, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_cad, row);
       _cad->addChild(_layer);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_layer);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_layer);
 
       // Insert LaserLayer into Fixture
       if (_fixture && _laserLayer) {
             int llRow = _fixture->children().size();
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->beginInsertChild(_fixture, llRow);
+            if (zcam->treeModel())
+                  zcam->treeModel()->beginInsertChild(_fixture, llRow);
             _fixture->addChild(_laserLayer);
             _llRow = llRow;
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->endInsertChild();
-            if (_zcam)
-                  emit _zcam->add3dElement(_laserLayer);
+            if (zcam->treeModel())
+                  zcam->treeModel()->endInsertChild();
+            emit zcam->add3dElement(_laserLayer);
             }
+      if (zcam->project())
+            zcam->project()->updateCadLayerVisibility();
+      zcam->setCamDirty(true);
       }
 
 void AddLayerCommand::undo() {
@@ -460,14 +422,13 @@ void AddLayerCommand::undo() {
                         break;
                   ++llRow;
                   }
-            if (_zcam)
-                  emit _zcam->remove3dElement(_laserLayer);
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->beginRemoveChild(_fixture, llRow);
+            emit zcam->remove3dElement(_laserLayer);
+            if (zcam->treeModel())
+                  zcam->treeModel()->beginRemoveChild(_fixture, llRow);
             _fixture->removeChild(_laserLayer);
             _llRow = llRow;
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->endRemoveChild();
+            if (zcam->treeModel())
+                  zcam->treeModel()->endRemoveChild();
             }
 
       // Remove Layer from Cad
@@ -477,18 +438,16 @@ void AddLayerCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_layer);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_cad, row);
+      emit zcam->remove3dElement(_layer);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_cad, row);
       _cad->removeChild(_layer);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
-      }
-
-QString AddLayerCommand::description() const {
-      return QStringLiteral("Add Layer");
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      if (zcam->project())
+            zcam->project()->updateCadLayerVisibility();
+      zcam->setCamDirty(true);
       }
 
 //---------------------------------------------------------
@@ -499,19 +458,21 @@ void RenameElementCommand::redo() {
       if (!_element)
             return;
       _element->setName(_newName);
+      zcam->setCamDirty(true);
       }
 
 void RenameElementCommand::undo() {
       if (!_element)
             return;
       _element->setName(_oldName);
+      zcam->setCamDirty(true);
       }
 
 //---------------------------------------------------------
 //   AddFixtureCommand implementation
 //---------------------------------------------------------
 
-AddFixtureCommand::AddFixtureCommand(ZCam* zcam, Cam* cam) : _zcam(zcam), _cam(cam) {
+AddFixtureCommand::AddFixtureCommand(ZCam* zcam, Cam* cam) : UndoCommand(zcam), _cam(cam) {
       _fixture = new Fixture(zcam, nullptr);
       }
 
@@ -519,17 +480,17 @@ void AddFixtureCommand::redo() {
       if (!_cam || !_fixture)
             return;
       int row = _cam->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_cam, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_cam, row);
       _cam->addChild(_fixture);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_fixture);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_fixture);
       // Register in project fixture list and set as active
-      if (_zcam && _zcam->project())
-            _zcam->project()->addFixture(_fixture);
+      if (zcam->project())
+            zcam->project()->addFixture(_fixture);
+      zcam->setCamDirty(true);
       }
 
 void AddFixtureCommand::undo() {
@@ -541,28 +502,25 @@ void AddFixtureCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_fixture);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_cam, row);
+      emit zcam->remove3dElement(_fixture);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_cam, row);
       _cam->removeChild(_fixture);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
       // Remove from project fixture list
-      if (_zcam && _zcam->project())
-            _zcam->project()->removeFixture(_fixture);
-      }
-
-QString AddFixtureCommand::description() const {
-      return QStringLiteral("Add Fixture");
+      if (zcam->project())
+            zcam->project()->removeFixture(_fixture);
+      zcam->setCamDirty(true);
       }
 
 //---------------------------------------------------------
 //   AddLaserLayerCommand implementation
 //---------------------------------------------------------
 
-AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture) : _zcam(zcam), _fixture(fixture) {
+AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
+   : UndoCommand(zcam), _fixture(fixture) {
       _laserLayer = new Recipe(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
       // The user assigns elements to this LaserLayer via the laserLayer property.
@@ -573,14 +531,16 @@ void AddLaserLayerCommand::redo() {
       if (!_fixture || !_laserLayer)
             return;
       int row = _fixture->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_fixture, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_fixture, row);
       _fixture->addChild(_laserLayer);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_laserLayer);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_laserLayer);
+      if (zcam->project())
+            zcam->project()->updateCadLayerVisibility();
+      zcam->setCamDirty(true);
       }
 
 void AddLaserLayerCommand::undo() {
@@ -592,18 +552,16 @@ void AddLaserLayerCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_laserLayer);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_fixture, row);
+      emit zcam->remove3dElement(_laserLayer);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_fixture, row);
       _fixture->removeChild(_laserLayer);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
-      }
-
-QString AddLaserLayerCommand::description() const {
-      return QStringLiteral("Add LaserLayer");
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      if (zcam->project())
+            zcam->project()->updateCadLayerVisibility();
+      zcam->setCamDirty(true);
       }
 
 //---------------------------------------------------------
@@ -611,7 +569,7 @@ QString AddLaserLayerCommand::description() const {
 //---------------------------------------------------------
 
 AddRectangleCommand::AddRectangleCommand(ZCam* zcam, Group* layer, double x, double y)
-    : _zcam(zcam), _layer(layer) {
+    : UndoCommand(zcam), _layer(layer) {
       _rect = new Rectangle(zcam, nullptr);
       _rect->set_size(QVector2D(0.0, 0.0));
       _rect->set_pos(QVector3D(x, y, 0.0));
@@ -625,14 +583,14 @@ void AddRectangleCommand::redo() {
       if (!_layer || !_rect)
             return;
       int row = _layer->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_layer, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_layer, row);
       _layer->addChild(_rect);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_rect);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_rect);
+      zcam->setCamDirty(true);
       }
 
 void AddRectangleCommand::undo() {
@@ -644,14 +602,14 @@ void AddRectangleCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_rect);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_layer, row);
+      emit zcam->remove3dElement(_rect);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_layer, row);
       _layer->removeChild(_rect);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      zcam->setCamDirty(true);
       }
 
 Rectangle* AddRectangleCommand::rectangle() const {
@@ -663,7 +621,7 @@ Rectangle* AddRectangleCommand::rectangle() const {
 //---------------------------------------------------------
 
 AddPolygonCommand::AddPolygonCommand(ZCam* zcam, Group* layer, double x, double y)
-    : _zcam(zcam), _layer(layer) {
+    : UndoCommand(zcam), _layer(layer) {
       _poly = new Polygon(zcam, nullptr);
       _poly->set_pos(QVector3D(x, y, 0.0));
       _poly->setColor(QColor("cyan"));
@@ -676,14 +634,14 @@ void AddPolygonCommand::redo() {
       if (!_layer || !_poly)
             return;
       int row = _layer->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_layer, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_layer, row);
       _layer->addChild(_poly);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_poly);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_poly);
+      zcam->setCamDirty(true);
       }
 
 void AddPolygonCommand::undo() {
@@ -695,14 +653,14 @@ void AddPolygonCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_poly);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_layer, row);
+      emit zcam->remove3dElement(_poly);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_layer, row);
       _layer->removeChild(_poly);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      zcam->setCamDirty(true);
       }
 
 Polygon* AddPolygonCommand::polygon() const {
@@ -714,7 +672,7 @@ Polygon* AddPolygonCommand::polygon() const {
 //---------------------------------------------------------
 
 AddEllipseCommand::AddEllipseCommand(ZCam* zcam, Group* layer, double x, double y)
-    : _zcam(zcam), _layer(layer) {
+    : UndoCommand(zcam), _layer(layer) {
       _ellipse = new Ellipse(zcam, nullptr);
       _ellipse->set_size(QVector2D(0.0, 0.0));
       _ellipse->set_pos(QVector3D(x, y, 0.0));
@@ -728,14 +686,14 @@ void AddEllipseCommand::redo() {
       if (!_layer || !_ellipse)
             return;
       int row = _layer->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_layer, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_layer, row);
       _layer->addChild(_ellipse);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_ellipse);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_ellipse);
+      zcam->setCamDirty(true);
       }
 
 void AddEllipseCommand::undo() {
@@ -747,14 +705,14 @@ void AddEllipseCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_ellipse);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_layer, row);
+      emit zcam->remove3dElement(_ellipse);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_layer, row);
       _layer->removeChild(_ellipse);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      zcam->setCamDirty(true);
       }
 
 Ellipse* AddEllipseCommand::ellipse() const {
@@ -765,7 +723,7 @@ Ellipse* AddEllipseCommand::ellipse() const {
 //   AddTextCommand implementation
 //---------------------------------------------------------
 
-AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y) : _zcam(zcam), _layer(layer) {
+AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y) : UndoCommand(zcam), _layer(layer) {
       _text = new Text(zcam, nullptr);
       _text->set_text("");
       _text->set_pos(QVector3D(x, y, 0.0));
@@ -778,14 +736,14 @@ void AddTextCommand::redo() {
       if (!_layer || !_text)
             return;
       int row = _layer->children().size();
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_layer, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_layer, row);
       _layer->addChild(_text);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(_text);
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_text);
+      zcam->setCamDirty(true);
       }
 
 void AddTextCommand::undo() {
@@ -797,14 +755,14 @@ void AddTextCommand::undo() {
                   break;
             ++row;
             }
-      if (_zcam)
-            emit _zcam->remove3dElement(_text);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_layer, row);
+      emit zcam->remove3dElement(_text);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_layer, row);
       _layer->removeChild(_text);
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      zcam->setCamDirty(true);
       }
 
 Text* AddTextCommand::text() const {
@@ -829,11 +787,10 @@ void Project::addFixtureCmd() {
             Critical("Project::addFixtureCmd: no Cam element");
             return;
             }
-      auto cmd = std::make_unique<AddFixtureCommand>(zc, cam);
-      cmd->redo(); // apply immediately
-      pushCommand(std::move(cmd));
-      markDirty();
-      zc->setCamDirty(true);
+      auto cmd = new AddFixtureCommand(zc, cam);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
       }
 
 //---------------------------------------------------------
@@ -856,14 +813,12 @@ void Project::addLayer() {
             return;
             }
       Fixture* fixture = _fixture;
-      auto cmd         = std::make_unique<AddLayerCommand>(zc, cad, fixture);
-      cmd->redo(); // apply immediately
-      pushCommand(std::move(cmd));
-      markDirty();
-      zc->setCamDirty(true);
+      auto cmd         = new AddLayerCommand(zc, cad, fixture);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
       // The new Layer is referenced by a LaserLayer in the active fixture,
       // so make it visible on the 3D canvas.
-      updateCadLayerVisibility();
       }
 
 //---------------------------------------------------------
@@ -884,12 +839,10 @@ void Project::addLaserLayerCmd(Fixture* fixture) {
             Critical("Project::addLaserLayerCmd: no Fixture element");
             return;
             }
-      auto cmd = std::make_unique<AddLaserLayerCommand>(zc, fixture);
-      cmd->redo(); // apply immediately
-      pushCommand(std::move(cmd));
-      markDirty();
-      zc->setCamDirty(true);
-      updateCadLayerVisibility();
+      auto cmd = new AddLaserLayerCommand(zc, fixture);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
       }
 
 //---------------------------------------------------------
@@ -907,85 +860,48 @@ void RemoveElementCommand::redo() {
             ++row;
             }
       _row = row;
-      if (_zcam)
-            emit _zcam->remove3dElement(qobject_cast<Element3d*>(_child.data()));
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_parent, _row);
+      emit zcam->remove3dElement(qobject_cast<Element3d*>(_child));
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_parent, _row);
       _parent->removeChild(_child);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
 
       // If the element is a Fixture, remove it from the project fixture
       // list so the fixture selector combo box updates and the active
       // fixture pointer is adjusted (pick another or set to nullptr).
       if (!_removedFixture)
-            _removedFixture = qobject_cast<Fixture*>(_child.data());
-      if (_removedFixture && _zcam && _zcam->project())
-            _zcam->project()->removeFixture(_removedFixture);
-
-      // Remove all linked LaserLayers
-      for (auto& link : _linkedLaserLayers) {
-            if (!link.parent || !link.ll)
-                  continue;
-            int llRow = 0;
-            for (const auto c : link.parent->children()) {
-                  if (c == link.ll)
-                        break;
-                  ++llRow;
-                  }
-            link.row = llRow;
-            if (_zcam)
-                  emit _zcam->remove3dElement(qobject_cast<Element3d*>(link.ll.data()));
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->beginRemoveChild(link.parent, llRow);
-            link.parent->removeChild(link.ll);
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->endRemoveChild();
-            }
+            _removedFixture = qobject_cast<Fixture*>(_child);
+      if (_removedFixture && zcam->project())
+            zcam->project()->removeFixture(_removedFixture);
+      if (zcam->project())
+            zcam->project()->updateCadLayerVisibility();
+      zcam->setCamDirty(true);
       }
 
 void RemoveElementCommand::undo() {
       if (!_parent || !_child)
             return;
-      // Re-insert all linked LaserLayers first (in reverse order)
-      for (auto it = _linkedLaserLayers.rbegin(); it != _linkedLaserLayers.rend(); ++it) {
-            auto& link = *it;
-            if (!link.parent || !link.ll)
-                  continue;
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->beginInsertChild(link.parent, link.row);
-            link.parent->addChild(link.ll);
-            auto& kids  = const_cast<QList<Element*>&>(link.parent->children());
-            int lastRow = kids.size() - 1;
-            if (link.row >= 0 && link.row < lastRow)
-                  kids.move(lastRow, link.row);
-            if (_zcam && _zcam->treeModel())
-                  _zcam->treeModel()->endInsertChild();
-            if (_zcam)
-                  emit _zcam->add3dElement(qobject_cast<Element3d*>(link.ll.data()));
-            }
 
       // Re-insert the child
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_parent, _row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_parent, _row);
       _parent->addChild(_child);
       auto& kids  = const_cast<QList<Element*>&>(_parent->children());
       int lastRow = kids.size() - 1;
       if (_row >= 0 && _row < lastRow)
             kids.move(lastRow, _row);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(qobject_cast<Element3d*>(_child.data()));
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(qobject_cast<Element3d*>(_child));
 
       // If the element was a Fixture, re-add it to the project fixture list.
       // addFixture() will also set it as active if no fixture is currently set.
-      if (_removedFixture && _zcam && _zcam->project())
-            _zcam->project()->addFixture(_removedFixture);
-      }
-
-QString RemoveElementCommand::description() const {
-      return QStringLiteral("Remove Element");
+      if (_removedFixture && zcam->project())
+            zcam->project()->addFixture(_removedFixture);
+      if (zcam->project())
+            zcam->project()->updateCadLayerVisibility();
+      zcam->setCamDirty(true);
       }
 
 //---------------------------------------------------------
@@ -1019,30 +935,30 @@ void MoveElementCommand::redo() {
             --adjustedRow;
 
       // Remove from old parent
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_oldParent, oldRow);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_oldParent, oldRow);
       _oldParent->removeChild(_element);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
 
       // If the parent changes, notify the 3D scene about the removal
-      if (!sameParent && _zcam)
-            emit _zcam->remove3dElement(qobject_cast<Element3d*>(_element.data()));
+      if (!sameParent)
+            emit zcam->remove3dElement(qobject_cast<Element3d*>(_element));
 
       // Insert into new parent at the adjusted position
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_newParent, adjustedRow);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_newParent, adjustedRow);
       _newParent->addChild(_element);
       auto& kids  = const_cast<QList<Element*>&>(_newParent->children());
       int lastRow = kids.size() - 1;
       if (adjustedRow >= 0 && adjustedRow < lastRow)
             kids.move(lastRow, adjustedRow);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
 
       // If the parent changes, notify the 3D scene about the addition
-      if (!sameParent && _zcam)
-            emit _zcam->add3dElement(qobject_cast<Element3d*>(_element.data()));
+      if (!sameParent && zcam)
+            emit zcam->add3dElement(qobject_cast<Element3d*>(_element));
       }
 
 void MoveElementCommand::undo() {
@@ -1064,28 +980,28 @@ void MoveElementCommand::undo() {
             --oldRow;
 
       // Remove from new parent
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_newParent, curRow);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_newParent, curRow);
       _newParent->removeChild(_element);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
 
-      if (!sameParent && _zcam)
-            emit _zcam->remove3dElement(qobject_cast<Element3d*>(_element.data()));
+      if (!sameParent)
+            emit zcam->remove3dElement(qobject_cast<Element3d*>(_element));
 
       // Insert back into old parent at original position
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_oldParent, oldRow);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_oldParent, oldRow);
       _oldParent->addChild(_element);
       auto& kids  = const_cast<QList<Element*>&>(_oldParent->children());
       int lastRow = kids.size() - 1;
       if (oldRow >= 0 && oldRow < lastRow)
             kids.move(lastRow, oldRow);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
 
-      if (!sameParent && _zcam)
-            emit _zcam->add3dElement(qobject_cast<Element3d*>(_element.data()));
+      if (!sameParent)
+            emit zcam->add3dElement(qobject_cast<Element3d*>(_element));
       }
 
 //---------------------------------------------------------
@@ -1116,7 +1032,7 @@ void Project::removeElement(Element* el) {
                   break;
             ++row;
             }
-      auto cmd = std::make_unique<RemoveElementCommand>(zc, parent, el, row);
+      auto cmd = new RemoveElementCommand(zc, parent, el, row);
 
       // If the element is a Layer, find all elements in the Cad tree
       // whose effectiveLaserLayer references a LaserLayer that is a child
@@ -1152,18 +1068,16 @@ void Project::removeElement(Element* el) {
                                     break;
                               ++llRow;
                               }
-                        cmd->_linkedLaserLayers.push_back({_fixture, ll, llRow});
+                        // TODO cmd->_linkedLaserLayers.push_back({_fixture, ll, llRow});
                         }
                   }
             }
 
-      cmd->redo(); // apply immediately
-      pushCommand(std::move(cmd));
-      markDirty();
-      zc->setCamDirty(true);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
       // Update CAD layer visibility since removing a Layer or LaserLayer
       // may change which layers are referenced by the active fixture.
-      updateCadLayerVisibility();
       }
 
 //---------------------------------------------------------
@@ -1211,12 +1125,10 @@ void Project::moveElement(Element* element, Element* newParent, int newRow) {
             if (adjustedNew == oldRow || adjustedNew == oldRow + 1)
                   return;
             }
-      auto cmd = std::make_unique<MoveElementCommand>(zc, element, oldParent, oldRow, newParent, newRow);
-      cmd->redo(); // apply immediately
-      pushCommand(std::move(cmd));
-      markDirty();
-      zc->setCamDirty(true);
-      updateCadLayerVisibility();
+      auto cmd = new MoveElementCommand(zc, element, oldParent, oldRow, newParent, newRow);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
       }
 
 //---------------------------------------------------------
@@ -1230,18 +1142,17 @@ void InsertElementCommand::redo() {
       if (row < 0 || row > _parent->children().size())
             row = _parent->children().size();
       _row = row;
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginInsertChild(_parent, row);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_parent, row);
       _parent->addChild(_element);
       // addChild appends at end; move to the requested row if needed
       auto& kids  = const_cast<QList<Element*>&>(_parent->children());
       int lastRow = kids.size() - 1;
       if (row >= 0 && row < lastRow)
             kids.move(lastRow, row);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endInsertChild();
-      if (_zcam)
-            emit _zcam->add3dElement(qobject_cast<Element3d*>(_element.data()));
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(qobject_cast<Element3d*>(_element));
       }
 
 void InsertElementCommand::undo() {
@@ -1254,11 +1165,10 @@ void InsertElementCommand::undo() {
             ++row;
             }
       _row = row;
-      if (_zcam)
-            emit _zcam->remove3dElement(qobject_cast<Element3d*>(_element.data()));
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->beginRemoveChild(_parent, row);
+      emit zcam->remove3dElement(qobject_cast<Element3d*>(_element));
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_parent, row);
       _parent->removeChild(_element);
-      if (_zcam && _zcam->treeModel())
-            _zcam->treeModel()->endRemoveChild();
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
       }

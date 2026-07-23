@@ -173,7 +173,6 @@ void ZCam::createMaterialTest() {
       emit project() -> gridElementChanged();
 
       //      finalizeProject(this);
-      project()->markDirty();
       endNewProject();
       }
 
@@ -271,7 +270,7 @@ void MaterialTest::createChildren() {
                   // Check if this LaserLayer's collectElements() includes
                   // any element whose parent is this MaterialTest.
                   auto elements = ll->collectElements();
-                  bool isChild = false;
+                  bool isChild  = false;
                   for (const auto* elem : elements) {
                         if (elem->parent() == this) {
                               isChild = true;
@@ -343,7 +342,7 @@ void MaterialTest::createChildren() {
                   layer->setExpanded(false);
                   addChild(layer);
 
-                  double cv      = columnValue(column);
+                  double cv  = columnValue(column);
                   Recipe* ll = new Recipe(zcam, fixture);
                   ll->setName(format("ll-{}-{}", row, column).c_str());
                   ll->set_recipe(materialLayer());
@@ -391,8 +390,8 @@ void MaterialTest::createChildren() {
             textL->setName("layer-text");
             addChild(textL);
 
-            const LaserRecipe* lls   = materialLayer();
-            const LaserPass* ls = nullptr;
+            const LaserRecipe* lls = materialLayer();
+            const LaserPass* ls    = nullptr;
             if (lls) {
                   // the laser values of the first pass are marked on the
                   // material test card
@@ -497,7 +496,7 @@ void MaterialTest::createChildren() {
                   // Check if this LaserLayer's collection includes
                   // any element whose parent is this MaterialTest.
                   auto elements = ll->collectElements();
-                  bool isChild = false;
+                  bool isChild  = false;
                   for (const auto* elem : elements) {
                         if (elem->parent() == this) {
                               isChild = true;
@@ -704,7 +703,6 @@ void ZCam::createGalvoTest() {
       fixture->addChild(ll);
 
       finalizeProject(this);
-      project()->markDirty();
       }
 
 //---------------------------------------------------------

@@ -609,11 +609,12 @@ class DxfReaderInterface final : public DRW_Interface
       //   insertElement
       //    Push a new element into the layer via the undo stack.
       //---------------------------------------------------------
+
       void insertElement(Element3d* el) {
-            auto cmd = std::make_unique<InsertElementCommand>(m_zcam, m_defaultLayer, el, -1);
-            cmd->redo();
-            m_zcam->project()->pushCommand(std::move(cmd));
+            auto cmd = new InsertElementCommand(m_zcam, m_defaultLayer, el, -1);
+            m_zcam->project()->undo()->push(cmd);
             }
+
       //---------------------------------------------------------
       //   addTextEntity
       //---------------------------------------------------------
@@ -829,10 +830,13 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
       layer->setName(fi.baseName());
       layer->setExpanded(true);
 
+      // All undo commands generated during the DXF import (layer insertion,
+      // laser layer insertion, and individual entity insertions) are wrapped
+      // in a single macro so the entire import can be undone as one operation.
+      zcam->project()->undo()->beginMacro();
             {
-            auto cmd = std::make_unique<InsertElementCommand>(zcam, cad, layer, -1);
-            cmd->redo();
-            zcam->project()->pushCommand(std::move(cmd));
+            auto cmd = new InsertElementCommand(zcam, cad, layer, -1);
+            zcam->project()->undo()->push(cmd);
             }
 
       // Create a LaserLayer linked to this Layer
@@ -847,9 +851,8 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             ll->setExpanded(false);
             layer->set_laserLayer(ll);
             ll->set_kerfOffset(-0.05);
-            auto cmd = std::make_unique<InsertElementCommand>(zcam, fixture, ll, -1);
-            cmd->redo();
-            zcam->project()->pushCommand(std::move(cmd));
+            auto cmd = new InsertElementCommand(zcam, fixture, ll, -1);
+            zcam->project()->undo()->push(cmd);
             }
 
       // Read the DXF file using libdxfrw
@@ -857,8 +860,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
       dxfRW dxf(path.toUtf8().constData());
       bool ok = dxf.read(&reader, false);
 
-      zcam->project()->markDirty();
-      zcam->setCamDirty(true);
+      zcam->project()->undo()->endMacro();
 
       if (!ok)
             Critical("DXF import failed: {}", path.toUtf8().data());
@@ -876,9 +878,10 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
 //    DxfReaderInterface so the bounding box is in mm.
 //=========================================================
 
-class DxfBBoxCollector final : public DRW_Interface {
+class DxfBBoxCollector final : public DRW_Interface
+      {
       double m_unitScale {1.0};
-      double m_dxfScale  {72.0};
+      double m_dxfScale {72.0};
       double m_minX {std::numeric_limits<double>::max()};
       double m_minY {std::numeric_limits<double>::max()};
       double m_maxX {std::numeric_limits<double>::lowest()};
@@ -901,42 +904,41 @@ class DxfBBoxCollector final : public DRW_Interface {
       std::unordered_map<std::string, std::vector<BlockEntity>> m_blocks;
       std::string m_currentBlockName;
       bool m_inBlock {false};
-
       double mm(double v) const { return v * m_unitScale; }
-
       void expand(double x, double y) {
-            if (x < m_minX) m_minX = x;
-            if (x > m_maxX) m_maxX = x;
-            if (y < m_minY) m_minY = y;
-            if (y > m_maxY) m_maxY = y;
+            if (x < m_minX)
+                  m_minX = x;
+            if (x > m_maxX)
+                  m_maxX = x;
+            if (y < m_minY)
+                  m_minY = y;
+            if (y > m_maxY)
+                  m_maxY = y;
             }
-
       static double unitToMm(int unit) {
             switch (unit) {
-                  case 0:  return 1.0;
-                  case 1:  return 25.4;
-                  case 2:  return 25.4 * 12;
-                  case 3:  return 1609344.0;
-                  case 4:  return 1.0;
-                  case 5:  return 10.0;
-                  case 6:  return 1000.0;
-                  case 7:  return 1000000.0;
-                  case 8:  return 25.4 / 1000000.0;
-                  case 9:  return 25.4 / 1000.0;
+                  case 0: return 1.0;
+                  case 1: return 25.4;
+                  case 2: return 25.4 * 12;
+                  case 3: return 1609344.0;
+                  case 4: return 1.0;
+                  case 5: return 10.0;
+                  case 6: return 1000.0;
+                  case 7: return 1000000.0;
+                  case 8: return 25.4 / 1000000.0;
+                  case 9: return 25.4 / 1000.0;
                   case 10: return 25.4 * 36;
                   default: return 1.0;
                   }
             }
 
-public:
+    public:
       explicit DxfBBoxCollector(double dxfScale) : m_dxfScale(dxfScale > 0.0 ? dxfScale : 72.0) {}
-
       QRectF result() const {
             if (m_minX > m_maxX || m_minY > m_maxY)
                   return {};
             return QRectF(m_minX, m_minY, m_maxX - m_minX, m_maxY - m_minY);
             }
-
       void addHeader(const DRW_Header* data) override {
             auto it = data->vars.find("$INSUNITS");
             if (it != data->vars.end() && it->second->type() == DRW_Variant::INTEGER) {
@@ -966,19 +968,28 @@ public:
             m_inBlock = true;
             }
       void setBlock(int) override {}
-      void endBlock() override { m_inBlock = false; m_currentBlockName.clear(); }
-
+      void endBlock() override {
+            m_inBlock = false;
+            m_currentBlockName.clear();
+            }
       void addPoint(const DRW_Point& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Point; e.p1 = data.basePoint;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::Point;
+                  e.p1   = data.basePoint;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             expand(mm(data.basePoint.x), mm(data.basePoint.y));
             }
       void addLine(const DRW_Line& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Line; e.p1 = data.basePoint; e.p2 = data.secPoint;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::Line;
+                  e.p1   = data.basePoint;
+                  e.p2   = data.secPoint;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             expand(mm(data.basePoint.x), mm(data.basePoint.y));
             expand(mm(data.secPoint.x), mm(data.secPoint.y));
@@ -987,13 +998,20 @@ public:
       void addXline(const DRW_Xline&) override {}
       void addArc(const DRW_Arc& data) override {
             double r = mm(data.radious);
-            if (r <= 0.0) return;
+            if (r <= 0.0)
+                  return;
             double cx = mm(data.basePoint.x);
             double cy = mm(data.basePoint.y);
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Arc; e.p1 = data.basePoint;
-                  e.radius = data.radious; e.startAng = data.staangle; e.endAng = data.endangle; e.isccw = data.isccw;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type     = BlockEntity::Type::Arc;
+                  e.p1       = data.basePoint;
+                  e.radius   = data.radious;
+                  e.startAng = data.staangle;
+                  e.endAng   = data.endangle;
+                  e.isccw    = data.isccw;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             // For arcs, expand by the actual arc extent, not the full
             // circle bbox.  Many DXF files have arcs with very large radii
@@ -1022,52 +1040,72 @@ public:
             }
       void addCircle(const DRW_Circle& data) override {
             double r = mm(data.radious);
-            if (r <= 0.0) return;
+            if (r <= 0.0)
+                  return;
             double cx = mm(data.basePoint.x);
             double cy = mm(data.basePoint.y);
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Circle; e.p1 = data.basePoint; e.radius = data.radious;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type   = BlockEntity::Type::Circle;
+                  e.p1     = data.basePoint;
+                  e.radius = data.radious;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             expand(cx - r, cy - r);
             expand(cx + r, cy + r);
             }
       void addEllipse(const DRW_Ellipse& data) override {
             double majorR = std::sqrt(data.secPoint.x * data.secPoint.x + data.secPoint.y * data.secPoint.y);
-            majorR = mm(majorR);
-            double cx = mm(data.basePoint.x);
-            double cy = mm(data.basePoint.y);
+            majorR        = mm(majorR);
+            double cx     = mm(data.basePoint.x);
+            double cy     = mm(data.basePoint.y);
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Ellipse; e.p1 = data.basePoint; e.p2 = data.secPoint;
-                  e.ratio = data.ratio; e.staparam = data.staparam; e.endparam = data.endparam; e.isccw = data.isccw;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type     = BlockEntity::Type::Ellipse;
+                  e.p1       = data.basePoint;
+                  e.p2       = data.secPoint;
+                  e.ratio    = data.ratio;
+                  e.staparam = data.staparam;
+                  e.endparam = data.endparam;
+                  e.isccw    = data.isccw;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             expand(cx - majorR, cy - majorR);
             expand(cx + majorR, cy + majorR);
             }
       void addLWPolyline(const DRW_LWPolyline& data) override {
-            if (data.vertlist.empty()) return;
+            if (data.vertlist.empty())
+                  return;
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::LWPolyline;
-                  for (const auto& v : data.vertlist) e.vertices.push_back(*v);
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::LWPolyline;
+                  for (const auto& v : data.vertlist)
+                        e.vertices.push_back(*v);
                   e.flags = data.flags;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             for (const auto& v : data.vertlist)
                   expand(mm(v->x), mm(v->y));
             }
       void addPolyline(const DRW_Polyline& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::LWPolyline;
-                  for (const auto& v : data.vertlist) e.vertices.push_back(DRW_Vertex2D(v->basePoint.x, v->basePoint.y, v->bulge));
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::LWPolyline;
+                  for (const auto& v : data.vertlist)
+                        e.vertices.push_back(DRW_Vertex2D(v->basePoint.x, v->basePoint.y, v->bulge));
                   e.flags = data.flags;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             for (const auto& v : data.vertlist)
                   expand(mm(v->basePoint.x), mm(v->basePoint.y));
             }
       void addSpline(const DRW_Spline* data) override {
-            if (!data) return;
+            if (!data)
+                  return;
             if (m_inBlock) {
                   // Splines in blocks are not expanded; they would inflate
                   // the bbox for blocks that may never be inserted.
@@ -1075,27 +1113,26 @@ public:
                   }
             // Prefer fit points (which lie on the curve) over control points
             // (which form the convex hull and can be far outside the curve).
-            if (!data->fitlist.empty()) {
+            if (!data->fitlist.empty())
                   for (const auto& fp : data->fitlist)
                         expand(mm(fp->x), mm(fp->y));
-                  }
-            else if (!data->controllist.empty()) {
+            else if (!data->controllist.empty())
                   for (const auto& cp : data->controllist)
                         expand(mm(cp->x), mm(cp->y));
-                  }
             }
       void addKnot(const DRW_Entity&) override {}
       void addInsert(const DRW_Insert& data) override {
             auto it = m_blocks.find(data.name);
-            if (it == m_blocks.end()) return;
-            double ang = data.angle;
-            double sx = data.xscale;
-            double sy = data.yscale;
-            double cx = mm(data.basePoint.x);
-            double cy = mm(data.basePoint.y);
+            if (it == m_blocks.end())
+                  return;
+            double ang  = data.angle;
+            double sx   = data.xscale;
+            double sy   = data.yscale;
+            double cx   = mm(data.basePoint.x);
+            double cy   = mm(data.basePoint.y);
             double cosA = std::cos(ang);
             double sinA = std::sin(ang);
-            auto apply = [&](const DRW_Coord& p) {
+            auto apply  = [&](const DRW_Coord& p) {
                   double px = p.x * sx;
                   double py = p.y * sy;
                   double rx = px * cosA - py * sinA;
@@ -1113,15 +1150,15 @@ public:
                               }
                         case BlockEntity::Type::Circle: {
                               double r = mm(e.radius) * std::abs(sx);
-                              auto c = apply(e.p1);
+                              auto c   = apply(e.p1);
                               expand(c.first - r, c.second - r);
                               expand(c.first + r, c.second + r);
                               break;
                               }
                         case BlockEntity::Type::Arc: {
                               // Expand by actual arc extent, not full circle bbox.
-                              double r = mm(e.radius);
-                              auto c = apply(e.p1);
+                              double r  = mm(e.radius);
+                              auto c    = apply(e.p1);
                               double sa = e.startAng;
                               double ea = e.endAng;
                               if (e.isccw == 0)
@@ -1132,10 +1169,13 @@ public:
                               expand(c.first + r * std::cos(sa), c.second + r * std::sin(sa));
                               expand(c.first + r * std::cos(ea), c.second + r * std::sin(ea));
                               // Axis-crossing points within sweep
-                              for (double a : {0.0, std::numbers::pi / 2, std::numbers::pi, 3.0 * std::numbers::pi / 2}) {
+                              for (double a : {0.0, std::numbers::pi / 2, std::numbers::pi,
+                                               3.0 * std::numbers::pi / 2}) {
                                     double na = a;
-                                    while (na < sa) na += 2.0 * std::numbers::pi;
-                                    while (na > sa + 2.0 * std::numbers::pi + 1e-10) na -= 2.0 * std::numbers::pi;
+                                    while (na < sa)
+                                          na += 2.0 * std::numbers::pi;
+                                    while (na > sa + 2.0 * std::numbers::pi + 1e-10)
+                                          na -= 2.0 * std::numbers::pi;
                                     if (na >= sa - 1e-10 && na <= ea + 1e-10)
                                           expand(c.first + r * std::cos(na), c.second + r * std::sin(na));
                                     }
@@ -1155,8 +1195,8 @@ public:
                               }
                         case BlockEntity::Type::Ellipse: {
                               double majorR = std::sqrt(e.p2.x * e.p2.x + e.p2.y * e.p2.y);
-                              majorR = mm(majorR);
-                              auto c = apply(e.p1);
+                              majorR        = mm(majorR);
+                              auto c        = apply(e.p1);
                               expand(c.first - majorR, c.second - majorR);
                               expand(c.first + majorR, c.second + majorR);
                               break;
@@ -1252,7 +1292,7 @@ bool DxfImport::importAt(ZCam* zcam, const QString& path, double x, double y) {
             return true;
       // The import always inserts at the end (-1), so the last child
       // is the layer we just created.
-      auto& kids = cad->children();
+      auto& kids         = cad->children();
       Element* lastChild = kids.last();
       if (!lastChild)
             return true;

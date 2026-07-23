@@ -558,6 +558,7 @@ Item {
                     return;
                 var scaleFactor = Qt.vector3d(sd, sd, sd);
                 ZCam.startElementDrag(el);
+                console.log("=======scale")
                 ZCam.scaled(el, scaleFactor, mouse.modifiers, pivot);
                 ZCam.endElementDrag();
                 return;

@@ -29,12 +29,13 @@
 class Project;
 class Element3d;
 class TreeModel;
+
 //---------------------------------------------------------
 //   Config
 //---------------------------------------------------------
 
 class Config : public QObject
-{
+      {
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no")
@@ -251,20 +252,21 @@ class Config : public QObject
                       }
                     }
                   ]
-                })json"};
+                      })json"};
 
     public:
       explicit Config(QObject* parent = nullptr) : QObject(parent) {}
       const std::string_view properties() const { return _properties; }
       nlohmann::json toJson() const;
       bool fromJson(const nlohmann::json&);
-};
+      };
+
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
 
 class ZCam : public QObject
-{
+      {
       Q_OBJECT
       QML_ELEMENT
       QML_SINGLETON
@@ -327,8 +329,8 @@ class ZCam : public QObject
             void reset() {
                   activeX = activeY = false;
                   excessX = excessY = 0.0;
-            }
-      };
+                  }
+            };
       SnapState _snapState;
 
       // SVG drag-preview state
@@ -355,6 +357,12 @@ class ZCam : public QObject
                          Element3d*); // signal 3d gui to add a new subelement into the scene graph
       //      void rootElementChanged(Element3d*);        // signal 3d gui to rebuild scene graph
       void startDragElement(Element3d*); // signal 3d gui to drag this element
+
+      /// Emitted when an element drag/rotate/scale operation ends.
+      /// The inspector listens to this to refresh displayed values
+      /// that were suppressed during the drag (see InspectorModel::
+      /// propertyChangedSlot).
+      void elementDragEnded();
 
       /// Emitted when a brand-new empty project was created.
       void projectCreated();
@@ -455,15 +463,20 @@ class ZCam : public QObject
       /// topmost (smallest area) visible Element3d whose world bounding
       /// box contains the given world-space point (x, y).  Elements
       /// are searched from innermost (smallest area) to outermost.
+      /// If the currently selected element is among the candidates,
+      /// cycling returns the next candidate (parent).  This allows the
+      /// user to select a parent element by clicking again on the same
+      /// spot where a child was already selected.
       /// Returns nullptr if no element is hit.
       Q_INVOKABLE Element3d* pickElement(double x, double y);
 
-      /// Picking variant used at the start of a left-button drag.
-      /// When the currently selected element is a Group and the point
-      /// lies inside the Group's world bounding box, the Group itself is
-      /// returned instead of any smaller child underneath.  This turns
-      /// the visible selection bounding box into a drag handle: dragging
-      /// it moves the whole Group (and therefore all its children).
+      /// Picking helper used to select an element on click.
+      /// If the currently selected element is draggable, has children,
+      /// and the drag point lies inside its world bounding box, the
+      /// element itself is returned instead of any smaller child
+      /// underneath.  This turns the visible selection bounding box
+      /// into a drag handle: dragging it moves the whole element
+      /// (and therefore all its children).
       /// In all other cases this delegates to pickElement().
       Q_INVOKABLE Element3d* pickDragTarget(double x, double y);
 
@@ -594,4 +607,5 @@ class ZCam : public QObject
       /// SVG drag operation, or nullptr when no drag is active.
       Q_PROPERTY(TessGeometry* dragPreviewGeometry READ dragPreviewGeometry NOTIFY dragPreviewGeometryChanged)
       TessGeometry* dragPreviewGeometry() const { return _dragPreviewGeometry; }
-};
+      QPointer<Element3d> elementDragElement() { return _elementDragElement; }
+      };

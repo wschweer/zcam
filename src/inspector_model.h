@@ -158,6 +158,33 @@ class InspectorModel : public QAbstractListModel
       void connectPropertySignals();
       void disconnectPropertySignals();
 
+      // Returns true if the inspector's element is currently being
+      // dragged/rotated/scaled on the 3D canvas.  In that case the
+      // property is updated directly by ZCam::dragged()/rotated()/
+      // scaled() and the undo command is created once in
+      // endElementDrag().  The inspector must NOT write back through
+      // changeProperty() during a drag, because the element's NOTIFY
+      // signal triggers dataChanged, which makes QML re-evaluate
+      // bindings and call back into setData → changeProperty — a
+      // spurious call that corrupts the undo history.
+      bool isElementBeingDragged() const;
+
+      // Refresh all displayed values by emitting dataChanged for every row.
+      // Called after a drag operation ends (elementDragEnded signal).
+      // Sets _suppressWriteback so that the resulting QML binding
+      // re-evaluations (which fire onValueChanged/onModelValueChanged)
+      // do NOT write back through setData()/setSubProperty()/
+      // setColumnProperty(), preventing spurious changeProperty calls.
+      void refreshAll();
+
+      // When true, setData()/setSubProperty()/setColumnProperty() bail
+      // out early without writing to the model or calling changeProperty().
+      // This prevents writeback loops when dataChanged is emitted for
+      // display refresh (e.g. after a drag, during undo/redo) and QML
+      // SpinBox delegates fire onValueChanged because their rounded
+      // display value differs from the raw property value.
+      bool _suppressWriteback {false};
+
       Element3d* _element = nullptr;
       QString _title;
       QString _propertiesJson;
@@ -178,6 +205,8 @@ class InspectorModel : public QAbstractListModel
       QList<QMetaObject::Connection> _propertyConnections;
       QHash<int, int> _signalToPropIdx; // signal method index -> property row
       QMetaObject::Connection _nameChangedConnection;
+      QMetaObject::Connection _dragEndedConnection;
+      QMetaObject::Connection _undoChangedConnection;
 
       void updateTitle();
 

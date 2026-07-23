@@ -14,6 +14,7 @@
 #include "zcam.h"
 #include "machines.h"
 #include "project.h"
+#include "undo.h"
 #include "element.h"
 #include "group.h"
 #include "recipe.h"
@@ -26,6 +27,58 @@
 //---------------------------------------------------------
 
 InspectorModel::InspectorModel(QObject* parent) : QAbstractListModel(parent) {
+      }
+
+//---------------------------------------------------------
+//   isElementBeingDragged
+//    Returns true if the inspector's element is currently being
+//    dragged/rotated/scaled on the 3D canvas.  During a drag the
+//    element's transform properties (pos, rot, scale) are updated
+//    directly by ZCam::dragged()/rotated()/scaled() and a single
+//    undo command is pushed in endElementDrag().  The inspector
+//    must NOT write back through changeProperty() in this interval
+//    because the NOTIFY signal from the direct set_pos/set_rot/
+//    set_scale triggers dataChanged in the inspector, which causes
+//    QML to re-evaluate its bindings and call setData()/setSubProperty()
+//    → changeProperty() — a spurious call that corrupts the undo
+//    history.
+//---------------------------------------------------------
+
+bool InspectorModel::isElementBeingDragged() const {
+      if (!_element)
+            return false;
+      ZCam* zc = _element->zcamInstance();
+      if (!zc)
+            return false;
+      return zc->elementDragElement() == _element;
+      }
+
+//---------------------------------------------------------
+//   refreshAll
+//    Emit dataChanged for every row so QML delegates re-read
+//    current property values.  Called after a drag operation
+//    ends (ZCam::elementDragEnded) to update the inspector with
+//    the final transform values that were suppressed during the drag.
+//---------------------------------------------------------
+
+void InspectorModel::refreshAll() {
+      if (_propertyNames.isEmpty())
+            return;
+      // Suppress writeback while QML processes the dataChanged signal.
+      // SpinBox delegates round to "decimals" digits, so their onValueChanged
+      // may fire with a value that differs from the raw property value.
+      // Without this guard, that would call setData() → changeProperty(),
+      // creating a spurious undo command.
+      _suppressWriteback = true;
+      QModelIndex first = index(0, 0);
+      QModelIndex last  = index(_propertyNames.size() - 1, 0);
+      emit dataChanged(first, last, {PropValueRole, SubValuesRole, ColumnItemsRole});
+      // Clear the flag on the next event-loop iteration so that
+      // subsequent user edits are processed normally.
+      QMetaObject::invokeMethod(
+          this,
+          [this]() { _suppressWriteback = false; },
+          Qt::QueuedConnection);
       }
 
 //---------------------------------------------------------
@@ -45,6 +98,36 @@ void InspectorModel::setElement(Element3d* element) {
       if (_element) {
             _nameChangedConnection =
                 QObject::connect(_element, &Element::nameChanged, [this]() { updateTitle(); });
+            // Connect to ZCam::elementDragEnded so the inspector refreshes
+            // after a drag operation.  During the drag, propertyChangedSlot()
+            // suppresses dataChanged to prevent a binding loop that would
+            // create spurious undo commands.  After the drag ends, we need
+            // to refresh all displayed values once.
+            ZCam* zc = _element->zcamInstance();
+            if (zc) {
+                  _dragEndedConnection =
+                      QObject::connect(zc, &ZCam::elementDragEnded, [this]() {
+                            refreshAll();
+                            });
+                  // Connect to the undo stack's undoChanged signal so the
+                  // inspector refreshes after undo/redo.  During undo/redo,
+                  // propertyChangedSlot() would schedule deferred dataChanged
+                  // signals, but since inUndoRedo is cleared before the
+                  // deferred signal fires, the resulting QML binding
+                  // re-evaluation would call setData() → changeProperty(),
+                  // creating a spurious undo command and destroying the
+                  // redo stack.  By connecting to undoChanged and calling
+                  // refreshAll() (which sets _suppressWriteback), the
+                  // deferred dataChanged from propertyChangedSlot() is
+                  // suppressed (because _suppressWriteback is checked there
+                  // too), and instead a single refreshAll() updates the
+                  // display safely.
+                  if (zc->project() && zc->project()->undo()) {
+                        _undoChangedConnection =
+                            QObject::connect(zc->project()->undo(), &UndoStack::undoChanged,
+                                             [this]() { refreshAll(); });
+                        }
+                  }
             }
       }
 
@@ -57,6 +140,14 @@ void InspectorModel::disconnectPropertySignals() {
       if (_nameChangedConnection) {
             QObject::disconnect(_nameChangedConnection);
             _nameChangedConnection = QMetaObject::Connection();
+            }
+      if (_dragEndedConnection) {
+            QObject::disconnect(_dragEndedConnection);
+            _dragEndedConnection = QMetaObject::Connection();
+            }
+      if (_undoChangedConnection) {
+            QObject::disconnect(_undoChangedConnection);
+            _undoChangedConnection = QMetaObject::Connection();
             }
       }
 
@@ -214,6 +305,27 @@ void InspectorModel::propertyChangedSlot() {
       //
       // By deferring with Qt::QueuedConnection the signal is delivered
       // after the current QML handler stack unwinds, breaking the loop.
+      //
+      // However, when the element is being dragged on the 3D canvas,
+      // the property is updated directly by ZCam::dragged()/rotated()/
+      // scaled() and the undo command is created once in endElementDrag().
+      // We must NOT emit dataChanged here, because even though the
+      // emission is deferred, it fires after endElementDrag() has
+      // cleared the drag state — at which point the setData() guard
+      // no longer applies. The deferred dataChanged would trigger QML
+      // to re-evaluate bindings and call setData() → changeProperty(),
+      // creating a spurious undo command that corrupts the undo history.
+      if (isElementBeingDragged())
+            return;
+      // When _suppressWriteback is set (by refreshAll() during drag
+      // end or undo/redo), suppress the deferred dataChanged as well.
+      // refreshAll() will emit a single dataChanged for all rows with
+      // _suppressWriteback active, so individual deferred emissions
+      // from propertyChangedSlot() are unnecessary and would fire
+      // after _suppressWriteback has been cleared, causing spurious
+      // writeback.
+      if (_suppressWriteback)
+            return;
       QMetaObject::invokeMethod(
           this,
           [this, row]() {
@@ -539,6 +651,16 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
       if (role != PropValueRole || !_element)
             return false;
 
+      // Suppress write-back while the element is being dragged on
+      // the 3D canvas.  See isElementBeingDragged() for details.
+      if (isElementBeingDragged())
+            return false;
+
+      // Suppress writeback during display refresh (e.g. after a drag
+      // or undo/redo).  See _suppressWriteback for details.
+      if (_suppressWriteback)
+            return false;
+
       // For row entries, setData is not used directly; sub-properties
       // are written via setSubProperty().
       if (_propertyIsRow[index.row()])
@@ -591,6 +713,15 @@ bool InspectorModel::setSubProperty(int row, const QString& subName, const QVari
       if (!_propertyIsRow[row])
             return false;
 
+      // Suppress write-back while the element is being dragged on
+      // the 3D canvas.  See isElementBeingDragged() for details.
+      if (isElementBeingDragged())
+            return false;
+
+      // Suppress writeback during display refresh.
+      if (_suppressWriteback)
+            return false;
+
       QVariant oldValue = _element->property(subName.toUtf8().constData());
       if (oldValue == value)
             return false;
@@ -627,6 +758,15 @@ bool InspectorModel::setColumnProperty(int modelRow, const QString& propName, co
       if (!_element || modelRow < 0 || modelRow >= _propertyNames.size())
             return false;
       if (!_propertyIsColumns.value(modelRow, false))
+            return false;
+
+      // Suppress write-back while the element is being dragged on
+      // the 3D canvas.  See isElementBeingDragged() for details.
+      if (isElementBeingDragged())
+            return false;
+
+      // Suppress writeback during display refresh.
+      if (_suppressWriteback)
             return false;
 
       QVariant oldValue = _element->property(propName.toUtf8().constData());
