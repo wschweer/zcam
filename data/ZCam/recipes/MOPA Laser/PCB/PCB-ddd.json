@@ -1,0 +1,25 @@
+{
+    "description": "",
+    "layer": [
+        {
+            "angleIncrement": 0.0,
+            "enabled": true,
+            "frequency": 45.0,
+            "interleave": 1,
+            "interval": 0.05,
+            "name": "Drill",
+            "numPasses": 20,
+            "power": 90.0,
+            "pulseWidth": 200,
+            "speed": 500.0,
+            "startAngle": 0.0,
+            "travelSpeed": 500.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        }
+    ],
+    "name": "PCB-ddd",
+    "numPasses": 1
+}

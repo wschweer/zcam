@@ -13,7 +13,7 @@
 #pragma once
 
 #include "element3d.h"
-#include "laserengine.h"
+#include "laser.h"
 #include "laser_recipe.h"
 #include "clipper.h"
 
@@ -34,9 +34,9 @@ class Recipe : public Element3d
       QML_ELEMENT
       QML_UNCREATABLE("no")
 
-      PROPV(const LaserRecipe*, recipe, nullptr)
+      PROPV(LaserRecipe*, recipe, nullptr)
 
-      // override types are defined in laserengine.h
+      // override types are defined in laser.h
       // as ParameterType
 
       PROPV(int, overrideType1, 0)
@@ -51,42 +51,107 @@ class Recipe : public Element3d
       PROPV(bool, showMoves, true)
 
       inline static constexpr std::string_view _properties {R"({
-            "class": "LaserLayer",
-            "items": [
-                  { "row":
-                        {
-                              "show": { "label": "Show", "type": "bool", "default": true },
-                              "burn": { "label": "Burn", "type": "bool", "default": true }
-                        },
-                        "label": "State"
-                     },
-
-                  { "name": "recipe",      "label": "Recipe", "type": "recipe" },
-                  { "name": "invert",      "label": "Invert", "type": "bool",  "default": false },
-                  { "name": "kerfOffset",  "label": "Kerf",   "type": "float", "min": 0.0, "max": 0.001, "default": 0.03 },
-                  { "row":
-                        {
-                              "overrideType1": { "label": "type", "type": "override" },
-                              "overrideValue1": { "label": "value", "type": "float", "default": 0.0 }
-                        },
-                        "label": "Ovr1"
-                     },
-                  { "row":
-                        {
-                              "overrideType2": { "label": "type", "type": "override" },
-                              "overrideValue2": { "label": "value", "type": "float", "default": 0.0 }
-                        },
-                        "label": "Ovr2"
-                     },
-                  { "row":
-                        {
-                              "showMarks": { "label": "marks", "type": "bool", "default": true },
-                              "showMoves": { "label": "moves", "type": "bool", "default": true }
-                        },
-                        "label": "Show"
-                     }
-                  ]
-                              })"};
+    "class": "LaserLayer",
+    "rows": [
+        {
+            "label": "State",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "show",
+                    "sublabel": "Show"
+                },
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "burn",
+                    "sublabel": "Burn"
+                }
+            ]
+        },
+        {
+            "label": "Recipe",
+            "cells": [
+                {
+                    "name": "recipe",
+                    "type": "recipe"
+                }
+            ]
+        },
+        {
+            "label": "Invert",
+            "cells": [
+                {
+                    "name": "invert",
+                    "type": "bool",
+                    "default": false
+                }
+            ]
+        },
+        {
+            "label": "Kerf",
+            "cells": [
+                {
+                    "name": "kerfOffset",
+                    "type": "float",
+                    "min": 0.0,
+                    "max": 0.001,
+                    "default": 0.03
+                }
+            ]
+        },
+        {
+            "label": "Ovr1",
+            "cells": [
+                {
+                    "type": "override",
+                    "name": "overrideType1",
+                    "sublabel": "type"
+                },
+                {
+                    "type": "float",
+                    "default": 0.0,
+                    "name": "overrideValue1",
+                    "sublabel": "value"
+                }
+            ]
+        },
+        {
+            "label": "Ovr2",
+            "cells": [
+                {
+                    "type": "override",
+                    "name": "overrideType2",
+                    "sublabel": "type"
+                },
+                {
+                    "type": "float",
+                    "default": 0.0,
+                    "name": "overrideValue2",
+                    "sublabel": "value"
+                }
+            ]
+        },
+        {
+            "label": "Show",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "showMarks",
+                    "sublabel": "marks"
+                },
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "showMoves",
+                    "sublabel": "moves"
+                }
+            ]
+        }
+    ]
+            })"};
 
       /// Process one tile's geometry through the recipe (fill, wobble, lines)
       /// and return raw line segments without panel-grid offsets.
@@ -94,11 +159,11 @@ class Recipe : public Element3d
 
     public:
       Recipe(ZCam*, Element* parent = nullptr);
-      ~Recipe();
+      ~Recipe() {}
       /// No-op: LaserLayer no longer fills its own _geometry.
       /// Display geometry is collected by Cam::updateCam().
       void update(int flags = -1) override {}
-      virtual QString typeName() override { return QStringLiteral("laserLayer"); }
+      virtual QString typeName() override { return QStringLiteral("recipe"); }
       virtual const std::string_view properties() const override { return _properties; }
       // LaserLayer elements can be deleted from the project tree.
       static constexpr bool s_deletable = true;

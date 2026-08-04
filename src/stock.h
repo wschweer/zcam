@@ -23,18 +23,95 @@ class Stock : public Element3d
 
       PROP(QVector3D, size)
       inline static constexpr std::string_view _properties {R"({
-            "class": "Stock",
-            "items": [
-                  { "row": { "show": { "label": "Show",     "type": "bool", "default": true },
-                              "burn": { "label": "Burn",     "type": "bool", "default": true } },
-                    "label": "Visibility" },
-                  { "name": "color",         "label": "Color",    "type": "color","default": "green" },
-                  { "name": "pos",           "label": "Pos.",     "type": "vector3d", "unit": "mm",  "default": [0.0, 0.0, 0.0] },
-                  { "name": "rot",           "label": "Rot.",     "type": "vector3d", "unit": "°", "min": 0.0, "max": 360, "default": [0.0, 0.0, 0.0] },
-                  { "name": "scale",         "label": "Scale",    "type": "scale", "min": 0.001, "max": 1000, "default": [1.0, 1.0, 1.0] },
-                  { "name": "lockScale",     "label": "Lock", "type": "lockScale", "default": 2 }
-                  ]
-                              })"};
+    "class": "Stock",
+    "rows": [
+        {
+            "label": "Visibility",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "show",
+                    "sublabel": "Show"
+                },
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "burn",
+                    "sublabel": "Burn"
+                }
+            ]
+        },
+        {
+            "label": "Color",
+            "cells": [
+                {
+                    "name": "color",
+                    "type": "color",
+                    "default": "green"
+                }
+            ]
+        },
+        {
+            "label": "Pos.",
+            "cells": [
+                {
+                    "name": "pos",
+                    "type": "vector3d",
+                    "unit": "mm",
+                    "default": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Rot.",
+            "cells": [
+                {
+                    "name": "rot",
+                    "type": "vector3d",
+                    "unit": "°",
+                    "min": 0.0,
+                    "max": 360,
+                    "default": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Scale",
+            "cells": [
+                {
+                    "name": "scale",
+                    "type": "scale",
+                    "min": 0.001,
+                    "max": 1000,
+                    "default": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Lock",
+            "cells": [
+                {
+                    "name": "lockScale",
+                    "type": "lockScale",
+                    "default": 2
+                }
+            ]
+        }
+    ]
+})"};
 
     public slots:
       void update(int flags = -1) override;

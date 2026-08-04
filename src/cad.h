@@ -27,73 +27,95 @@ class Cad : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-                  "class": "Cad",
-                  "items": [
-                    {
-                      "row": {
-                        "show": {
-                          "label": "Show",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "burn": {
-                          "label": "Burn",
-                          "type": "bool",
-                          "default": true
-                        }
-                      },
-                      "label": "Visibility"
-                    },
-                    {
-                      "name": "laserLayer",
-                      "label": "LaserLayer",
-                      "type": "laserLayer",
-                      "default": ""
-                    },
-                    {
-                      "name": "pos",
-                      "label": "Pos.",
-                      "type": "vector3d",
-                      "unit": "mm",
-                      "default": [
+    "class": "Cad",
+    "rows": [
+        {
+            "label": "Visibility",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "show",
+                    "sublabel": "Show"
+                },
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "burn",
+                    "sublabel": "Burn"
+                }
+            ]
+        },
+        {
+            "label": "Recipe",
+            "cells": [
+                {
+                    "name": "laserLayer",
+                    "type": "laserLayer",
+                    "default": ""
+                }
+            ]
+        },
+        {
+            "label": "Pos.",
+            "cells": [
+                {
+                    "name": "pos",
+                    "type": "vector3d",
+                    "unit": "mm",
+                    "default": [
                         0.0,
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "rot",
-                      "label": "Rot.",
-                      "type": "vector3d",
-                      "unit": "°",
-                      "min": 0.0,
-                      "max": 360,
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Rot.",
+            "cells": [
+                {
+                    "name": "rot",
+                    "type": "vector3d",
+                    "unit": "°",
+                    "min": 0.0,
+                    "max": 360,
+                    "default": [
                         0.0,
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "scale",
-                      "label": "Scale",
-                      "type": "scale",
-                      "min": 0.001,
-                      "max": 1000,
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Scale",
+            "cells": [
+                {
+                    "name": "scale",
+                    "type": "scale",
+                    "min": 0.001,
+                    "max": 1000,
+                    "default": [
                         1.0,
                         1.0,
                         1.0
-                      ]
-                    },
-                    {
-                      "name": "lockScale",
-                      "label": "Lock",
-                      "type": "lockScale",
-                      "default": 2
-                    }
-                  ]
-                      })json"};
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Lock",
+            "cells": [
+                {
+                    "name": "lockScale",
+                    "type": "lockScale",
+                    "default": 2
+                }
+            ]
+        }
+    ]
+})json"};
 
     protected:
 

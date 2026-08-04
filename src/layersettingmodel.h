@@ -24,8 +24,9 @@
 
 struct LayerSettingColumnItem {
       QString name;
-      bool isRow  = false;
-      bool isLine = false;
+      bool isRow   = false;
+      bool isLine  = false;
+      bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
       int colSpan = 1;
@@ -70,6 +71,7 @@ class LayerSettingModel : public QAbstractListModel
       explicit LayerSettingModel(QObject* parent = nullptr);
       LaserPass* pass() const { return _pass; }
       void setPass(LaserPass* pass);
+      Q_INVOKABLE void clearPass();
       QString title() const { return _title; }
       QString propertiesJson() const { return _propertiesJson; }
       enum Roles {
@@ -90,4 +92,8 @@ class LayerSettingModel : public QAbstractListModel
 
       Q_INVOKABLE bool setSubProperty(int row, const QString& subName, const QVariant& value);
       Q_INVOKABLE bool setColumnProperty(int modelRow, const QString& propName, const QVariant& value);
+
+      // Read any property value from the current pass by name.
+      // Used by the QML PropertyEditor to evaluate the "enabled" keyword.
+      Q_INVOKABLE QVariant elementProperty(const QString& name) const;
       };

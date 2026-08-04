@@ -157,17 +157,17 @@ class RenameElementCommand : public UndoCommand
 //    re-inserts it.
 //---------------------------------------------------------
 
-class AddLayerCommand : public UndoCommand
+class AddGroupCommand : public UndoCommand
       {
       Cad* _cad;
       Group* _layer;
       Fixture* _fixture;
-      Recipe* _laserLayer;
+//      Recipe* _laserLayer;
       int _row {-1};   ///< position within cad's children
       int _llRow {-1}; ///< position within fixture's children
 
     public:
-      AddLayerCommand(ZCam* zcam, Cad* cad, Fixture* fixture);
+      AddGroupCommand(ZCam* zcam, Cad* cad, Fixture* fixture);
 
       void undo() override;
       void redo() override;
@@ -190,6 +190,50 @@ class AddFixtureCommand : public UndoCommand
       void undo() override;
       void redo() override;
       std::string description() const override { return std::format("AddFixture"); }
+      };
+
+//---------------------------------------------------------
+//   AddCameraCommand
+//    Undoable command that creates a CameraElement and inserts
+//    it as a child of the Project element.  undo() removes it;
+//    redo() re-inserts it.  Both operations update the tree model
+//    and emit cameraElementChanged on the project.
+//---------------------------------------------------------
+
+class AddCameraCommand : public UndoCommand
+      {
+      Element* _project;
+      class CameraElement* _camera;
+      int _row {-1}; ///< position within project's children
+
+    public:
+      AddCameraCommand(ZCam* zcam, Element* project);
+
+      void undo() override;
+      void redo() override;
+      std::string description() const override { return std::format("AddCamera"); }
+      };
+
+//---------------------------------------------------------
+//   AddGridCommand
+//    Undoable command that creates a Grid and inserts it as a
+//    child of the Project element.  undo() removes it; redo()
+//    re-inserts it.  Both operations update the tree model and
+//    emit gridElementChanged on the project.
+//---------------------------------------------------------
+
+class AddGridCommand : public UndoCommand
+      {
+      Element* _project;
+      class Grid* _grid;
+      int _row {-1}; ///< position within project's children
+
+    public:
+      AddGridCommand(ZCam* zcam, Element* project);
+
+      void undo() override;
+      void redo() override;
+      std::string description() const override { return std::format("AddGrid"); }
       };
 
 //---------------------------------------------------------
@@ -345,12 +389,12 @@ class RemoveElementCommand : public UndoCommand
       Element* _parent;
       Element* _child;
       int _row {-1}; ///< original position within parent's children
+      Fixture* _removedFixture { nullptr };
 
     public:
       /// If the removed element is a Fixture, this stores the pointer so
       /// that redo() can remove it from the project fixture list and
       /// undo() can re-add it.
-      Fixture* _removedFixture;
       RemoveElementCommand(ZCam* zc, Element* parent, Element* child, int row)
           : UndoCommand(zc), _parent(parent), _child(child), _row(row) {}
       void undo() override;

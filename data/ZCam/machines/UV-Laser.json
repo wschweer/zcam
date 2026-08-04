@@ -1,0 +1,37 @@
+{
+    "boardType": "BJJCZ",
+    "circlePrecision": 0.001,
+    "description": "Optic: 75mm\nSource: CRS-355-10L",
+    "enableFPK": true,
+    "footPin": 15,
+    "fpkIncrement": 10.0,
+    "fpkStartPower": 10.0,
+    "framingSpeed": 5000.0,
+    "galvoP1": 6.50512456189876e-310,
+    "galvoP2": 6.50512478389984e-310,
+    "galvoP3": 5.2728728331497e-310,
+    "galvoRotate": 5.27287283315127e-310,
+    "galvoScale": [
+        100.0,
+        100.0
+    ],
+    "galvoShearX": 0.0,
+    "galvoShearY": 0.0,
+    "galvoSwapxy": true,
+    "laserPin": 0,
+    "lightPin": 8,
+    "maxFreq": 150.0,
+    "maxTravel": [
+        70.0,
+        70.0,
+        0.0
+    ],
+    "minFreq": 30.0,
+    "name": "UV-Laser",
+    "ncPrecision": 0.0,
+    "precision": 5.27287283314376e-310,
+    "tickleFreq": 5.0,
+    "ticklePulse": 1.0,
+    "travelSpeed": 5000.0,
+    "type": "UV Laser"
+}

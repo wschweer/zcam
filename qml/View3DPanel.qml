@@ -26,6 +26,9 @@ Item {
 
     signal positionChanged(real x, real y)
     property bool perspectiveCamera: false
+    // Overlay visibility is driven by the project's CameraElement (show property).
+    property var _cameraElement: (ZCam.project && ZCam.project.cameraElement) ? ZCam.project.cameraElement : null
+    property bool cameraOverlayVisible: _cameraElement ? _cameraElement.show : false
 
     // Polygon drawing state
     property var _drawingPolygon: null   // the Polygon being drawn (null when idle)
@@ -195,6 +198,38 @@ Item {
         return Qt.vector3d(worldPos.x - poly.pos.x, worldPos.y - poly.pos.y, 0);
         }
 
+    function screenToScene(x, y) {
+        return mouseArea.screenToScene(x, y);
+        }
+
+    //=========================================================
+    //  Grid viewport update
+    //    Computes the currently visible scene region in local
+    //    coordinates and pushes it to the Grid element so the
+    //    grid geometry is rebuilt to cover the full visible
+    //    area at the current zoom/pan state.
+    //=========================================================
+    function updateGridViewport() {
+        var grid = ZCam.project ? ZCam.project.gridElement : null;
+        if (!grid)
+            return;
+
+        // Map the four corners of the viewport to scene (root) coordinates.
+        var tl = screenToScene(0, 0);
+        var tr = screenToScene(panel.width, 0);
+        var bl = screenToScene(0, panel.height);
+        var br = screenToScene(panel.width, panel.height);
+        if (!tl || !tr || !bl || !br)
+            return;
+
+        var left   = Math.min(tl.x, tr.x, bl.x, br.x);
+        var right  = Math.max(tl.x, tr.x, bl.x, br.x);
+        var top    = Math.min(tl.y, tr.y, bl.y, br.y);
+        var bottom = Math.max(tl.y, tr.y, bl.y, br.y);
+
+        grid.setViewport(left, top, right, bottom);
+        }
+
     //=========================================================
     //  Background View3D — renders only the Grid element so
     //  the grid is always rendered behind all other 3D geometry
@@ -334,6 +369,57 @@ Item {
             ProjectTree {
                 id: projectTree
                 }
+
+            //─────────────────────────────────────────────────────────────
+            //  Camera overlay
+            //    Live video from the project's CameraElement, shown on the
+            //    XY plane.  The element drives the transform (pos / rot /
+            //    overlaySize) and the trapezoid (keystone) correction
+            //    (trapezX / trapezY).  The mesh is a 1×1 quad whose corner
+            //    positions are sheared by the trapezoid properties.
+            //─────────────────────────────────────────────────────────────
+            Node {
+                id: cameraOverlayNode
+                visible: panel.cameraOverlayVisible
+                position: panel._cameraElement ? panel._cameraElement.pos : Qt.vector3d(0, 0, 0)
+                eulerRotation: panel._cameraElement ? panel._cameraElement.rot : Qt.vector3d(0, 0, 0)
+
+                Model {
+                    id: cameraOverlay
+                    pickable: false
+                    geometry: CameraOverlayGeometry {
+                        // Unit quad (1×1, centred at origin) sheared by the
+                        // trapezoid correction properties:
+                        //   x' = x + trapezX * y
+                        //   y' = y + trapezY * x
+                        trapezX: panel._cameraElement ? panel._cameraElement.trapezX : 0.0
+                        trapezY: panel._cameraElement ? panel._cameraElement.trapezY : 0.0
+                        }
+                    scale: panel._cameraElement ? Qt.vector3d(panel._cameraElement.overlaySize.x, panel._cameraElement.overlaySize.y, 1) : Qt.vector3d(100, 100, 1)
+                    materials: [
+                        PrincipledMaterial {
+                            cullMode: PrincipledMaterial.NoCulling
+                            lighting: PrincipledMaterial.NoLighting
+                            baseColor: "#ffffff"
+                            // Use the material's opacity property (not the
+                            // baseColor alpha channel) to control transparency.
+                            // PrincipledMaterial only enables alpha blending
+                            // when its opacity property is < 1.0; the baseColor
+                            // alpha is ignored in opaque render mode.
+                            opacity: panel._cameraElement ? panel._cameraElement.opacity : 1.0
+                            // Use the camera element's live video as the
+                            // diffuse map so the video frame is displayed
+                            // on the overlay quad.
+                            baseColorMap: Texture {
+                                id: cameraTexture
+                                textureData: CameraTextureData {
+                                    camera: panel._cameraElement
+                                    }
+                                }
+                            }
+                    ]
+                    }
+                }
             }
         }
 
@@ -400,6 +486,7 @@ Item {
         // Persist the reset values into Settings so they survive
         // the next application restart.
         viewSettings.rotation = Qt.vector3d(0, 0, 0);
+        updateGridViewport();
         }
 
     // Reset the 3D camera when a new project is created.
@@ -410,6 +497,7 @@ Item {
         target: ZCam
         function onProjectCreated() {
             resetCamera();
+            updateGridViewport();
             }
         }
 
@@ -421,6 +509,8 @@ Item {
         // value is already correct at this point.
         iCamera.checked = !panel.perspectiveCamera;
         pCamera.checked = panel.perspectiveCamera;
+        // Initialize the grid to cover the default viewport.
+        Qt.callLater(updateGridViewport);
         }
 
     SpaceMouse {
@@ -430,6 +520,7 @@ Item {
             r.y += v.y;
             r.z -= v.z;
             root.eulerRotation = r;
+            updateGridViewport();
             }
         onTranslate: v => {
             var mag = 0.3;
@@ -448,6 +539,7 @@ Item {
 
             root.position = root.position.plus(velocity);
             root.scale = root.scale.times(1.0 + delta.z);
+            updateGridViewport();
             }
         }
 
@@ -522,18 +614,18 @@ Item {
             }
 
         // Step sizes for mouse-wheel scaling/zooming:
-        //   Ctrl+wheel  → bigStep    (large step, ~20%)
-        //   plain wheel → step       (normal step, ~10%)
-        //   Shift+wheel → smallStep  (fine step, ~2%)
+        //   Ctrl+wheel   → element scaling (large step, ~20%)
+        //   plain wheel  → canvas zoom    (normal step, ~10%)
+        //   Shift+wheel  → element scaling (fine step, ~2%)
         property real wheelBigStep: 1.2
         property real wheelStep: 1.1
         property real wheelSmallStep: 1.02
 
         onWheel: mouse => {
             // Determine the scale delta based on modifier:
-            //   Ctrl+wheel  → bigStep    (large step)
-            //   plain wheel → step       (normal step)
-            //   Shift+wheel → smallStep  (fine step)
+            //   Ctrl+wheel  → bigStep    (element scaling, large step)
+            //   plain wheel → step       (canvas zoom, normal step)
+            //   Shift+wheel → smallStep  (element scaling, fine step)
             var sd;
             if (mouse.modifiers & Qt.ControlModifier)
                 sd = (mouse.angleDelta.y > 0.0) ? wheelBigStep : (1.0 / wheelBigStep);
@@ -542,29 +634,30 @@ Item {
             else
                 sd = (mouse.angleDelta.y > 0.0) ? wheelStep : (1.0 / wheelStep);
 
-            // If a visible canvas element is selected, scale the element
-            // instead of the 3D view.  Only elements that are visible on
-            // the canvas (Text, Polygon, Ellipse, Rectangle etc.) and
-            // actually shown (show == true and ancestors visible) are
-            // eligible for element scaling.
+            // Ctrl+wheel or Shift+wheel scales a visible, draggable, selected
+            // element.  Ctrl uses a large step, Shift uses a fine step.
+            // Only elements that are visible on the canvas (Text, Polygon,
+            // Ellipse, Rectangle etc.) and actually shown (show == true and
+            // ancestors visible) are eligible for element scaling.
             //
             // The scale center is the current mouse position in scene
             // coordinates, analogous to how the canvas zoom keeps the
             // cursor position fixed.
-            var el = ZCam.currentElement;
-            if (el && el.visible() && el.show && el.ancestorsShow && el.draggable) {
-                var pivot = screenToScene(mouse.x, mouse.y);
-                if (!pivot)
+            if (mouse.modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) {
+                var el = ZCam.currentElement;
+                if (el && el.visible() && el.show && el.ancestorsShow && el.draggable()) {
+                    var pivot = screenToScene(mouse.x, mouse.y);
+                    if (!pivot)
+                        return;
+                    var scaleFactor = Qt.vector3d(sd, sd, sd);
+                    ZCam.startElementDrag(el);
+                    ZCam.scaled(el, scaleFactor, mouse.modifiers, pivot);
+                    ZCam.endElementDrag();
                     return;
-                var scaleFactor = Qt.vector3d(sd, sd, sd);
-                ZCam.startElementDrag(el);
-                console.log("=======scale")
-                ZCam.scaled(el, scaleFactor, mouse.modifiers, pivot);
-                ZCam.endElementDrag();
-                return;
+                    }
                 }
 
-            // No suitable element selected — zoom the 3D view.
+            // Plain wheel — zoom the 3D view.
             var cursorScenePos;
             var localPos = screenToScene(mouse.x, mouse.y);
             if (!localPos)
@@ -573,6 +666,9 @@ Item {
 
             root.scale = root.scale.times(sd);
             root.position = root.position.plus(cursorScenePos.minus(root.position).times(1.0 - sd));
+
+            // Rebuild the grid to cover the new visible area.
+            updateGridViewport();
             }
 
         onPressed: mouse => {
@@ -695,7 +791,7 @@ Item {
                 // acts as a drag handle for the whole group.
                 curNode = pickDragTarget(mouse.x, mouse.y);
                 if (curNode && curNode.element) {
-                    if (!curNode.element.draggable)
+                    if (!curNode.element.draggable())
                         curNode = null;
                     } else {
                     // Clicked on empty space — clear selection.
@@ -716,7 +812,7 @@ Item {
                     try {
                         hasSegSel = el.selectedSegment >= 0;
                         } catch (e) {}
-                    if (el.draggable && !hasSegSel)
+                    if (el.draggable() && !hasSegSel)
                         ZCam.startElementDrag(el);
                     }
                 } else if (mouse.button == Qt.RightButton) {
@@ -727,12 +823,12 @@ Item {
                     }
                 if (!curNode)
                     curNode = pickModel(mouse.x, mouse.y);
-                if (curNode && curNode.element && !curNode.element.draggable)
+                if (curNode && curNode.element && !curNode.element.draggable())
                     curNode = null;
                 } else {
                 if (!curNode)
                     curNode = pickModel(mouse.x, mouse.y);
-                if (curNode && curNode.element && !curNode.element.draggable)
+                if (curNode && curNode.element && !curNode.element.draggable())
                     curNode = null;
                 }
             }
@@ -858,9 +954,11 @@ Item {
                     root.setEulerRotation(rotationVector);
                     }
                 lastPos = currentPos;
+                updateGridViewport();
                 } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
                 pan(delta);
                 lastPos = currentPos;
+                updateGridViewport();
                 } else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
                 if (vertexDragHandle) {
                     // The handle is a child of root, so pos3d is already

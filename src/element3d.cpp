@@ -160,19 +160,32 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
       if (type == "layer") {
             QString layerName = QString::fromStdString(jval.get<std::string>());
             Group* layer      = element->zcamInstance()->layerPtr(layerName);
-            mp.write(element, QVariant::fromValue(layer));
+            if (layer)
+                  mp.write(element, QVariant::fromValue(layer));
+            else if (!layerName.isEmpty())
+                  element->_pendingRefs.push_back({name, type, layerName});
             return true;
             }
       else if (type == "recipe") {
-            QString recipeName  = QString::fromStdString(jval.get<std::string>());
-            LaserRecipe* recipe = element->zcamInstance()->recipePtr(recipeName);
-            mp.write(element, QVariant::fromValue(recipe));
+            QString recipeName = QString::fromStdString(jval.get<std::string>());
+            // Always defer recipe pointer resolution to fixup().  Recipes
+            // are global assets stored in a std::vector<LaserRecipe> inside
+            // LaserReceipes.  During project loading, the machine type may
+            // change (triggering set_machineType → reload → recipes.clear()),
+            // which invalidates any LaserRecipe* pointers we set now.
+            // fixup() runs AFTER resolveMachine(), so the recipe vector is
+            // stable by then.
+            if (!recipeName.isEmpty())
+                  element->_pendingRefs.push_back({name, type, recipeName});
             return true;
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
             Recipe* ll     = element->zcamInstance()->laserLayerPtr(llName);
-            mp.write(element, QVariant::fromValue(ll));
+            if (ll)
+                  mp.write(element, QVariant::fromValue(ll));
+            else if (!llName.isEmpty())
+                  element->_pendingRefs.push_back({name, type, llName});
             return true;
             }
       else if (type == "machine") {
@@ -281,6 +294,54 @@ void Element3d::fromJson(const json& json) {
             }
       catch (...) {
             Warning("====json bug in properties");
+            }
+      }
+
+//---------------------------------------------------------
+//   fixup
+//    Called after the full project tree has been loaded.
+//    Resolves pending forward references that could not be
+//    resolved during fromJson() because the referenced element
+//    had not yet been created (e.g. laserLayer references from
+//    Cad elements loaded before the Fixture/LaserLayer elements).
+//---------------------------------------------------------
+
+void Element3d::fixup() {
+      if (!_pendingRefs.empty()) {
+            const QMetaObject* meta = this->metaObject();
+            for (const auto& ref : _pendingRefs) {
+                  QByteArray propName = QByteArray::fromStdString(ref.propName);
+                  int idx             = meta->indexOfProperty(propName.constData());
+                  if (idx < 0)
+                        continue;
+                  QMetaProperty mp = meta->property(idx);
+
+                  if (ref.refType == "laserLayer") {
+                        Recipe* ll = zcamInstance()->laserLayerPtr(ref.name);
+                        if (ll)
+                              mp.write(this, QVariant::fromValue(ll));
+                        else
+                              Warning("Element3d::fixup: laserLayer '{}' not found for element '{}'",
+                                      ref.name.toStdString(), name().toStdString());
+                        }
+                  else if (ref.refType == "layer") {
+                        Group* layer = zcamInstance()->layerPtr(ref.name);
+                        if (layer)
+                              mp.write(this, QVariant::fromValue(layer));
+                        else
+                              Warning("Element3d::fixup: layer '{}' not found for element '{}'",
+                                      ref.name.toStdString(), name().toStdString());
+                        }
+                  else if (ref.refType == "recipe") {
+                        LaserRecipe* recipe = zcamInstance()->recipePtr(ref.name);
+                        if (recipe)
+                              mp.write(this, QVariant::fromValue(recipe));
+                        else
+                              Warning("Element3d::fixup: recipe '{}' not found for element '{}'",
+                                      ref.name.toStdString(), name().toStdString());
+                        }
+                  }
+            _pendingRefs.clear();
             }
       }
 

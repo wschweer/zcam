@@ -1,0 +1,38 @@
+{
+    "boardType": "BJJCZ",
+    "circlePrecision": 0.001,
+    "description": "",
+    "ethDevice": "enp11s0",
+    "framingSpeed": 0.0,
+    "galvoP1": 0.0,
+    "galvoP2": 0.0,
+    "galvoP3": 0.0,
+    "galvoRotate": 0.0,
+    "galvoScale": [
+        0.0,
+        0.0
+    ],
+    "galvoShearX": 0.0,
+    "galvoShearY": 0.0,
+    "galvoSwapxy": false,
+    "maxAcceleration": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "maxFeed": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "maxTravel": [
+        100.0,
+        100.0,
+        100.0
+    ],
+    "name": "Q-Laser",
+    "ncPrecision": 0.0,
+    "precision": 0.0,
+    "travelSpeed": 0.0,
+    "type": "Q-switched Laser"
+}

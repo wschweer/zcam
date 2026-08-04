@@ -1,0 +1,25 @@
+{
+    "description": "Mark black cardboard",
+    "layer": [
+        {
+            "angleIncrement": 0.0,
+            "enabled": true,
+            "frequency": 150.0,
+            "interleave": 1,
+            "interval": 0.05,
+            "name": "SubLayer-1",
+            "numPasses": 1,
+            "power": 20.0,
+            "pulseWidth": 20,
+            "speed": 4000.0,
+            "startAngle": 45.0,
+            "travelSpeed": 4000.0,
+            "wobble": false,
+            "wobbleSize": 0.2,
+            "wobbleStep": 0.1,
+            "zigzag": true
+        }
+    ],
+    "name": "cbBlackMark",
+    "numPasses": 1
+}

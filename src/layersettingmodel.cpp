@@ -34,48 +34,22 @@ void LayerSettingModel::setPass(LaserPass* pass) {
       }
 
 //---------------------------------------------------------
-//   parseColumnsBlock
+//   clearPass
+//    Allow QML to set the pass pointer to null.  QML cannot
+//    assign null to a LaserPass* Q_PROPERTY directly because
+//    LaserPass is a Q_GADGET, not a QObject.
 //---------------------------------------------------------
 
-static void parseColumnsBlock(const nlohmann::ordered_json& block, QList<LayerSettingColumnItem>& items) {
-      if (!block.contains("items") || !block["items"].is_array())
+void LayerSettingModel::clearPass() {
+      if (!_pass)
             return;
-      for (const auto& item : block["items"]) {
-            if (item.contains("row") && item["row"].is_object()) {
-                  const auto& rowObj = item["row"];
-                  LayerSettingColumnItem ci;
-                  ci.isRow          = true;
-                  ci.name           = "row";
-                  ci.colSpan        = item.contains("colSpan") && item["colSpan"].is_number_integer()
-                                          ? item["colSpan"].get<int>()
-                                          : 1;
-                  bool allHaveLabel = true;
-                  for (auto subIt = rowObj.begin(); subIt != rowObj.end(); ++subIt) {
-                        if (!subIt.value().contains("label")) {
-                              allHaveLabel = false;
-                              break;
-                              }
-                        ci.subProps.append(QString::fromStdString(subIt.key()));
-                        }
-                  if (!allHaveLabel || ci.subProps.isEmpty())
-                        continue;
-                  if (item.contains("label") && item["label"].is_string())
-                        ci.rowLabel = QString::fromStdString(item["label"].get<std::string>());
-                  items.append(ci);
-                  }
-            else if (item.contains("name")) {
-                  LayerSettingColumnItem ci;
-                  ci.name    = QString::fromStdString(item["name"].get<std::string>());
-                  ci.colSpan = item.contains("colSpan") && item["colSpan"].is_number_integer()
-                                   ? item["colSpan"].get<int>()
-                                   : 1;
-                  if (item.contains("type") && item["type"].is_string() &&
-                      item["type"].get<std::string>() == "line")
-                        ci.isLine = true;
-                  items.append(ci);
-                  }
-            }
+      _pass = nullptr;
+      emit passChanged();
+      parseProperties();
       }
+
+//---------------------------------------------------------
+//   parseColumnsBlock
 
 //---------------------------------------------------------
 //   parseProperties
@@ -119,38 +93,93 @@ void LayerSettingModel::parseProperties() {
             else
                   _title = _pass->name();
 
-            if (j.contains("items") && j["items"].is_array()) {
-                  for (const auto& item : j["items"]) {
-                        if (item.contains("columns") && item["columns"].is_object()) {
-                              const auto& colsBlock = item["columns"];
-                              int colCount =
-                                  colsBlock.contains("count") && colsBlock["count"].is_number_integer()
-                                      ? colsBlock["count"].get<int>()
-                                      : 2;
+            // New format: top-level "rows" array
+            if (j.contains("rows") && j["rows"].is_array()) {
+                  for (const auto& row : j["rows"]) {
+                        int rowColumns = row.contains("columns") && row["columns"].is_number_integer()
+                                             ? row["columns"].get<int>()
+                                             : 1;
+
+                        if (rowColumns > 1) {
                               QList<LayerSettingColumnItem> cols;
-                              parseColumnsBlock(colsBlock, cols);
+                              if (row.contains("cells") && row["cells"].is_array()) {
+                                    for (const auto& cell : row["cells"]) {
+                                          LayerSettingColumnItem ci;
+                                          ci.colSpan =
+                                              cell.contains("colSpan") && cell["colSpan"].is_number_integer()
+                                                  ? cell["colSpan"].get<int>()
+                                                  : 1;
+                                          std::string type = cell.contains("type") && cell["type"].is_string()
+                                                                 ? cell["type"].get<std::string>()
+                                                                 : "";
+                                          if (type == "line") {
+                                                ci.isLine = true;
+                                                ci.name   = "line";
+                                                }
+                                          else if (cell.contains("cells") && cell["cells"].is_array()) {
+                                                // Row cell: has sub-cells instead of a name
+                                                ci.isRow = true;
+                                                ci.name  = "row";
+                                                for (const auto& subCell : cell["cells"]) {
+                                                      std::string subType =
+                                                          subCell.contains("type") &&
+                                                                  subCell["type"].is_string()
+                                                              ? subCell["type"].get<std::string>()
+                                                              : "";
+                                                      if (subType == "line" || !subCell.contains("name"))
+                                                            continue;
+                                                      if (subType == "empty") {
+                                                            ci.subProps.append("empty");
+                                                            continue;
+                                                            }
+                                                      ci.subProps.append(QString::fromStdString(
+                                                          subCell["name"].get<std::string>()));
+                                                      }
+                                                if (cell.contains("label") && cell["label"].is_string())
+                                                      ci.rowLabel = QString::fromStdString(
+                                                          cell["label"].get<std::string>());
+                                                }
+                                          else if (type == "empty" || !cell.contains("name")) {
+                                                ci.isEmpty = true;
+                                                ci.name    = "empty";
+                                                }
+                                          else {
+                                                ci.name =
+                                                    QString::fromStdString(cell["name"].get<std::string>());
+                                                }
+                                          cols.append(ci);
+                                          }
+                                    }
                               if (!cols.isEmpty()) {
                                     _propertyNames.append("columns");
                                     _propertyIsRow.append(false);
                                     _propertyIsColumns.append(true);
-                                    _columnCounts.append(colCount);
+                                    _columnCounts.append(rowColumns);
                                     _columnItems.append(cols);
                                     _subPropNames.append(QStringList {});
                                     _rowLabels.append(QString());
                                     }
                               }
-                        else if (item.contains("row") && item["row"].is_object()) {
-                              const auto& rowObj = item["row"];
+                        else if (row.contains("cells") && row["cells"].is_array()) {
                               QStringList subs;
-                              bool allHaveLabel = true;
-                              for (auto subIt = rowObj.begin(); subIt != rowObj.end(); ++subIt) {
-                                    if (!subIt.value().contains("label")) {
-                                          allHaveLabel = false;
-                                          break;
+                              bool hasLine = false;
+                              for (const auto& cell : row["cells"]) {
+                                    std::string type = cell.contains("type") && cell["type"].is_string()
+                                                           ? cell["type"].get<std::string>()
+                                                           : "";
+                                    if (type == "line") {
+                                          hasLine = true;
+                                          continue;
                                           }
-                                    subs.append(QString::fromStdString(subIt.key()));
+                                    if (type == "empty") {
+                                          subs.append("empty");
+                                          continue;
+                                          }
+                                    if (!cell.contains("name"))
+                                          continue;
+                                    subs.append(QString::fromStdString(cell["name"].get<std::string>()));
                                     }
-                              if (allHaveLabel && !subs.isEmpty()) {
+                              if (!subs.isEmpty()) {
                                     _propertyNames.append("row");
                                     _propertyIsRow.append(true);
                                     _propertyIsColumns.append(false);
@@ -158,13 +187,32 @@ void LayerSettingModel::parseProperties() {
                                     _columnItems.append(QList<LayerSettingColumnItem> {});
                                     _subPropNames.append(subs);
                                     QString rowLabel;
-                                    if (item.contains("label") && item["label"].is_string())
-                                          rowLabel = QString::fromStdString(item["label"].get<std::string>());
+                                    if (row.contains("label") && row["label"].is_string())
+                                          rowLabel = QString::fromStdString(row["label"].get<std::string>());
                                     _rowLabels.append(rowLabel);
                                     }
+                              else if (hasLine) {
+                                    // Row with only "line" cells → separator
+                                    _propertyNames.append("line");
+                                    _propertyIsRow.append(false);
+                                    _propertyIsColumns.append(false);
+                                    _columnCounts.append(0);
+                                    _columnItems.append(QList<LayerSettingColumnItem> {});
+                                    _subPropNames.append(QStringList {});
+                                    _rowLabels.append(QString());
+                                    }
+                              else {
+                                    _propertyNames.append("empty");
+                                    _propertyIsRow.append(false);
+                                    _propertyIsColumns.append(false);
+                                    _columnCounts.append(0);
+                                    _columnItems.append(QList<LayerSettingColumnItem> {});
+                                    _subPropNames.append(QStringList {});
+                                    _rowLabels.append(QString());
+                                    }
                               }
-                        else if (item.contains("name")) {
-                              _propertyNames.append(QString::fromStdString(item["name"].get<std::string>()));
+                        else {
+                              _propertyNames.append("empty");
                               _propertyIsRow.append(false);
                               _propertyIsColumns.append(false);
                               _columnCounts.append(0);
@@ -258,6 +306,7 @@ QVariant LayerSettingModel::data(const QModelIndex& index, int role) const {
                               m["name"]     = ci.name;
                               m["isRow"]    = ci.isRow;
                               m["isLine"]   = ci.isLine;
+                              m["isEmpty"]  = ci.isEmpty;
                               m["colSpan"]  = ci.colSpan;
                               m["rowLabel"] = ci.rowLabel;
                               QVariantList subProps;
@@ -368,6 +417,23 @@ bool LayerSettingModel::setColumnProperty(int modelRow, const QString& propName,
       emit dataChanged(qi, qi, {ColumnItemsRole});
       emit layerDataChanged();
       return true;
+      }
+
+//---------------------------------------------------------
+//   elementProperty
+//    Read any property value from the current pass by name.
+//    Used by the QML PropertyEditor to evaluate the "enabled" keyword.
+//---------------------------------------------------------
+
+QVariant LayerSettingModel::elementProperty(const QString& name) const {
+      if (!_pass || name.isEmpty())
+            return {};
+      const QMetaObject* meta = &LaserPass::staticMetaObject;
+      int idx                 = meta->indexOfProperty(name.toUtf8().constData());
+      if (idx < 0)
+            return {};
+      QMetaProperty mp = meta->property(idx);
+      return mp.readOnGadget(_pass);
       }
 
 //---------------------------------------------------------

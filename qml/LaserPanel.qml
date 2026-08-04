@@ -19,7 +19,10 @@ Rectangle {
     focus: true
     id: laserPanel
     color: Material.color(Material.BlueGrey, Material.Shade800)
-    property var laser: ZCam.project?.machine?.laser ?? null
+    // The machine itself is the laser (Laser : Machine), so we cast
+    // via qml.  If the machine is not a Laser (e.g. GCode CNC), laser is null.
+    property var machine: ZCam.project?.machine ?? null
+    property var laser: machine && machine.toString().indexOf("Laser") >= 0 ? machine : null
 
     ColumnLayout {
         spacing: 0
@@ -27,7 +30,7 @@ Rectangle {
 
         Label {
             Layout.alignment: Qt.AlignCenter
-            text: ZCam.project && ZCam.project.machineName ? ZCam.project.machineName : ""
+            text: ZCam.project && ZCam.project.machineName ? ZCam.project.machineName : "No Laser configured"
             color: Material.foreground
             }
         ToolButton {
@@ -41,12 +44,14 @@ Rectangle {
             flat: true
             Layout.alignment: Qt.AlignCenter
             Layout.fillWidth: true
-            hoverEnabled: false
+            hoverEnabled: true
             checked: laserPanel.laser && laserPanel.laser.enabled
             onClicked: {
                 console.log("toggled "+checked);
                 checked ? laserPanel.laser.exit() : laserPanel.laser.init()
                 }
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Switch Laser On")
             }
         Label {
             id: statusLabel
@@ -58,7 +63,7 @@ Rectangle {
         Slider {
             id: elapsedTime
             from: 0
-            to: ZCam.project?.machine?.laser.estimatedEnd ?? 0
+            to: laserPanel.laser?.estimatedEnd ?? 0
             value: laserPanel.laser?.currentTime ?? 0
             Layout.fillWidth: true
             enabled: laserPanel.laser?.enabled ?? false

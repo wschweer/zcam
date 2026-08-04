@@ -18,31 +18,23 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QTextStream>
+
 //---------------------------------------------------------
 //   Machines
 //---------------------------------------------------------
 
 Machines::Machines(ZCam* zc, QObject* parent) : QObject(parent), zcam(zc) {
       _machineModel = new MachineModel(this);
-}
+      }
+
 Machines::~Machines() {
-      // Machines are children of this QObject, so they are automatically
-      // deleted by the QObject destructor.  No manual cleanup needed.
-}
-//---------------------------------------------------------
-//   machine
-//    Return a raw pointer to the Machine at idx.
-//    The pointer is valid until machinesModelChanged is emitted.
-//---------------------------------------------------------
+      }
 
 Machine* Machines::machine(int idx) {
       if (idx < 0 || idx >= static_cast<int>(machines.size()))
             return nullptr;
       return machines[idx];
-}
-//---------------------------------------------------------
-//   updateMachine
-//---------------------------------------------------------
+      }
 
 void Machines::updateMachine(int idx, Machine* r) {
       if (idx >= 0 && idx < static_cast<int>(machines.size())) {
@@ -52,60 +44,90 @@ void Machines::updateMachine(int idx, Machine* r) {
                   delete machines[idx];
             machines[idx] = r;
             emit machinesModelChanged();
+            }
       }
-}
+
 void Machines::addMachine(const QString& name) {
-      Machine* m = new Machine(zcam, this);
+      // Create a default laser machine (Q-switched Laser with BJJCZ board)
+      Machine* m = Machine::create(zcam, QStringLiteral("Q-switched Laser"), QStringLiteral("BJJCZ"));
       m->set_name(name);
       machines.push_back(m);
       emit machinesModelChanged();
-}
-void Machines::removeMachine(int idx) {
-      if (idx >= 0 && idx < static_cast<int>(machines.size())) {
-            delete machines[idx];
-            machines.erase(machines.begin() + idx);
-            emit machinesModelChanged();
       }
-}
+
+void Machines::removeMachine(int idx) {
+      if (idx < 0 || idx >= static_cast<int>(machines.size()))
+            return;
+
+      // Rename the corresponding .json file on disk by appending
+      // a ".del" extension so it is not picked up on the next load.
+      if (!_loadedDirectory.isEmpty()) {
+            Machine* m = machines[idx];
+            if (m) {
+                  QString name = m->name();
+                  if (name.isEmpty())
+                        name = QStringLiteral("unnamed");
+                  name.replace(QRegularExpression("[^a-zA-Z0-9_\\-]"), "_");
+                  QString filePath = QDir(_loadedDirectory).filePath(name + ".json");
+                  QFile file(filePath);
+                  if (file.exists()) {
+                        QString delPath = filePath + ".del";
+                        if (!file.rename(delPath))
+                              Warning("Machines::removeMachine: cannot rename {} to {}",
+                                      filePath.toStdString(), delPath.toStdString());
+                        }
+                  }
+            }
+
+      delete machines[idx];
+      machines.erase(machines.begin() + idx);
+      emit machinesModelChanged();
+      }
+
 QStringList Machines::machinesModel() const {
       QStringList names;
       for (const auto& m : machines)
             names.append(m->name());
       return names;
-}
-//---------------------------------------------------------
-//   toJson
-//---------------------------------------------------------
+      }
 
 json Machines::toJson() const {
       json data = json::array();
       for (const auto& m : machines)
             data.push_back(m->toJson());
       return data;
-}
-//---------------------------------------------------------
-//   fromJson
-//---------------------------------------------------------
+      }
 
 void Machines::fromJson(const json& data) {
       qDeleteAll(machines);
       machines.clear();
       if (data.is_array()) {
             for (const auto& jm : data) {
-                  Machine* m = new Machine(zcam, this);
+                  // Read the type and boardType from JSON to determine
+                  // which concrete Machine subclass to create.
+                  QString machineType;
+                  QString boardType;
+                  if (jm.contains("type") && jm["type"].is_string())
+                        machineType = QString::fromStdString(jm["type"].get<std::string>());
+                  if (jm.contains("boardType") && jm["boardType"].is_string())
+                        boardType = QString::fromStdString(jm["boardType"].get<std::string>());
+
+                  // Migration: map legacy type names
+                  if (machineType == QStringLiteral("Fiber Laser"))
+                        machineType = QStringLiteral("Q-switched Laser");
+
+                  Machine* m = Machine::create(zcam, machineType, boardType);
+                  m->setParent(this);
                   m->fromJson(jm);
                   machines.push_back(m);
+                  }
             }
-      }
       emit machinesModelChanged();
-}
-//---------------------------------------------------------
-//   loadFromDirectory
-//    Load all .json machine files from the given directory.
-//    Each file contains a single machine JSON object.
-//---------------------------------------------------------
+      }
 
 void Machines::loadFromDirectory(const QString& dir) {
+      _loadedDirectory = dir;
+
       qDeleteAll(machines);
       machines.clear();
 
@@ -113,7 +135,7 @@ void Machines::loadFromDirectory(const QString& dir) {
       if (!d.exists()) {
             emit machinesModelChanged();
             return;
-      }
+            }
 
       const auto files = d.entryList({"*.json"}, QDir::Files, QDir::Name);
       for (const QString& fileName : files) {
@@ -122,27 +144,36 @@ void Machines::loadFromDirectory(const QString& dir) {
             if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
                   Warning("Machines::loadFromDirectory: cannot open {}", filePath.toStdString());
                   continue;
-            }
+                  }
             QByteArray data = file.readAll();
             file.close();
             try {
-                  json jm    = json::parse(data.toStdString());
-                  Machine* m = new Machine(zcam, this);
+                  json jm = json::parse(data.toStdString());
+                  Assert(zcam != nullptr);
+
+                  QString machineType;
+                  QString boardType;
+                  if (jm.contains("type") && jm["type"].is_string())
+                        machineType = QString::fromStdString(jm["type"].get<std::string>());
+                  if (jm.contains("boardType") && jm["boardType"].is_string())
+                        boardType = QString::fromStdString(jm["boardType"].get<std::string>());
+
+                  // Migration: map legacy type names
+                  if (machineType == QStringLiteral("Fiber Laser"))
+                        machineType = QStringLiteral("Q-switched Laser");
+
+                  Machine* m = Machine::create(zcam, machineType, boardType);
+                  m->setParent(this);
                   m->fromJson(jm);
                   machines.push_back(m);
-            }
+                  }
             catch (const json::parse_error& e) {
                   Warning("Machines::loadFromDirectory: parse error in {}: {}", filePath.toStdString(),
                           e.what());
+                  }
             }
-      }
       emit machinesModelChanged();
-}
-//---------------------------------------------------------
-//   saveToDirectory
-//    Save each machine as an individual .json file in dir.
-//    The file name is derived from the machine name (sanitised).
-//---------------------------------------------------------
+      }
 
 void Machines::saveToDirectory(const QString& dir) const {
       QDir d(dir);
@@ -153,17 +184,16 @@ void Machines::saveToDirectory(const QString& dir) const {
             QString name = m->name();
             if (name.isEmpty())
                   name = QStringLiteral("unnamed");
-            // Sanitise: replace characters that are problematic in file names
             name.replace(QRegularExpression("[^a-zA-Z0-9_\\-]"), "_");
             QString filePath = d.filePath(name + ".json");
             QFile file(filePath);
             if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
                   Warning("Machines::saveToDirectory: cannot open {} for writing", filePath.toStdString());
                   continue;
-            }
+                  }
             json jm = m->toJson();
             QTextStream out(&file);
             out << QString::fromStdString(jm.dump(4));
             file.close();
+            }
       }
-}

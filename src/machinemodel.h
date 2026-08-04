@@ -26,8 +26,9 @@
 
 struct MachineColumnItem {
       QString name;
-      bool isRow  = false;
-      bool isLine = false;
+      bool isRow   = false;
+      bool isLine  = false;
+      bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
       int colSpan = 1;
@@ -76,6 +77,10 @@ class MachineModel : public QAbstractListModel
 
       // Called from QML to set a property inside a "columns" block.
       Q_INVOKABLE bool setColumnProperty(int modelRow, const QString& propName, const QVariant& value);
+
+      // Read any property value from the current machine by name.
+      // Used by the QML PropertyEditor to evaluate the "enabled" keyword.
+      Q_INVOKABLE QVariant elementProperty(const QString& name) const;
 
       // Returns the list of available machine type strings for "machineType"
       // property delegates in QML.

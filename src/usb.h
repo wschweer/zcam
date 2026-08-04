@@ -23,13 +23,13 @@ struct libusb_device_handle;
 
 class Usb
       {
-      int timeout {1000}; // was 100 (ms)
+      int timeout {10000}; // was 100 (ms)
       libusb_context* ctx {nullptr};
       libusb_device** list {nullptr};
       libusb_device* device {nullptr};
       libusb_device_handle* handle {nullptr};
 
-      bool mock;
+      bool mock { false };
 
       bool readWrite(u_char* data, size_t count, int endpoint);
 

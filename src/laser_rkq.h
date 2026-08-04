@@ -17,10 +17,9 @@
 #include <QElapsedTimer>
 #include <QSocketNotifier>
 #include <QtQml/qqmlregistration.h>
-// #include "recipe.h"
 
 #include "logger.h"
-#include "laserengine.h"
+#include "laser.h"
 
 #include <pcap/pcap.h>
 
@@ -34,32 +33,26 @@ class ZCam;
 
 //-------------------------------------------------------------------------------------------------
 //   LaserRKQ
-//    Laser engine for the RKQ-LM-441 controller board.
+//    Concrete Laser implementation for the RKQ-LM-441 controller board.
 //    Communication is via raw Ethernet frames using libpcap.
 //    Both sending and receiving are fully asynchronous and
 //    integrated into the Qt event loop via QSocketNotifier.
 //-------------------------------------------------------------------------------------------------
 
-class LaserRKQ : public LaserEngine
+class LaserRKQ : public Laser
       {
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no no no")
 
-      pcap_t* _pcapHandle {nullptr}; // libpcap handle for the Ethernet device
+      pcap_t* _pcapHandle {nullptr};
 
-      // QSocketNotifier wraps the pcap selectable fd so incoming
-      // packets are dispatched inside the Qt event loop.
       QSocketNotifier* _readNotifier {nullptr};
       QSocketNotifier* _writeNotifier {nullptr};
 
-      // Outgoing packet queue – populated by sendPacket(), drained
-      // by the writeNotifier callback.  Guarded by a mutex because
-      // sendPacket() can be called from framing/marking threads.
       std::mutex _txMutex;
       std::queue<std::vector<std::uint8_t>> _txQueue;
 
-      // BPF filter program for the capture (optional).
       struct bpf_program _bpfFilter {};
       bool _bpfFilterSet {false};
 
@@ -67,53 +60,38 @@ class LaserRKQ : public LaserEngine
       void teardownSocketNotifiers();
 
       /// Send the initial broadcast discovery packet to the laser
-      /// controller.  The frame is 1510 bytes long: a 16-byte
-      /// Ethernet header followed by 1494 bytes of zero payload.
+      /// controller.
       void laserInit();
 
     private slots:
       void onReadable(int fd);
       void onWritable(int fd);
 
-    protected:
-      ZCam* zcam;
-
     signals:
-      /// Emitted inside the Qt event loop for every raw frame that is
-      /// received.  The vector contains the full Ethernet frame as
-      /// captured by libpcap.
       void packetReceived(const std::vector<std::uint8_t>& payload);
-
-      /// Emitted when a previously enqueued frame has been written.
       void packetSent();
 
     public:
       LaserRKQ(ZCam* w, QObject* parent = nullptr);
       virtual ~LaserRKQ();
-      virtual bool init(bool dryRun) override;
-      virtual void exit() override;
-      virtual void stop() override;
 
-      virtual bool startFraming() override;
-      virtual void stopFraming() override;
+      // ── LaserEngine interface overrides ───────────────────────
+      virtual bool initEngine(bool dryRun) override;
+      virtual void exitEngine() override;
 
-      virtual void startMarking() override;
-      virtual void stopMarking() override;
-      virtual void endMarking() override;
+      virtual bool startFramingEngine() override;
+      virtual void stopFramingEngine() override;
+
+      virtual void startMarkingEngine() override;
+      virtual void stopMarkingEngine() const override;
+      virtual void endMarkingEngine() override;
 
       virtual void mark(const Clipper2Lib::PathD&) override;
       virtual void move(double x, double y) override;
       virtual void markLayer(const LaserPath& path, const LaserParameterSet& sl) override;
 
       // ---- raw Ethernet I/O (async, integrated into Qt event loop) ----
-
-      /// Asynchronously enqueue a raw Ethernet frame for transmission.
-      /// The frame data must include the full Ethernet header (dst MAC,
-      /// src MAC, EtherType, payload).  Returns false if the pcap handle
-      /// is not open or the packet is empty.
       bool sendPacket(const std::vector<std::uint8_t>& frame);
-
-      /// Install a BPF capture filter so only matching frames are
-      /// delivered to packetReceived().  Call after init() succeeds.
       bool setFilter(const std::string& bpfExpression);
+      virtual const std::string_view properties() const override { return ""; }
       };

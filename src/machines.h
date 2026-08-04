@@ -20,6 +20,7 @@ using json = nlohmann::json;
 #include "machine.h"
 
 class MachineModel;
+
 //---------------------------------------------------------
 //   Machines
 //    Loads machine definitions from individual JSON files in a
@@ -29,7 +30,7 @@ class MachineModel;
 //---------------------------------------------------------
 
 class Machines : public QObject
-{
+      {
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no no")
@@ -40,6 +41,12 @@ class Machines : public QObject
       std::vector<Machine*> machines;
       MachineModel* _machineModel;
       ZCam* zcam;
+
+      /// The directory from which machines were last loaded.
+      /// Used by removeMachine() to rename the corresponding
+      /// .json file with a ".del" suffix so it is not reloaded
+      /// on the next program start.
+      QString _loadedDirectory;
 
     signals:
       void machinesModelChanged();
@@ -62,4 +69,4 @@ class Machines : public QObject
       void loadFromDirectory(const QString& dir);
       /// Save all machines as individual .json files into dir.
       void saveToDirectory(const QString& dir) const;
-};
+      };

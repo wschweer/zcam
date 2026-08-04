@@ -15,10 +15,11 @@
 
 //---------------------------------------------------------
 //   Grid
-//    Draws a grid covering the machine work area (maxX × maxY).
-//    Major lines every "raster" mm (default 10).  Each raster cell
-//    is subdivided into "subraster" minor intervals (default 5).
-//    Major and minor lines are rendered in different colours.
+//    Draws a grid covering the machine work area (maxTravel.x ×
+//    maxTravel.y).  Major lines every "raster" mm (default 10).
+//    Each raster cell is subdivided into "subraster" minor
+//    intervals (default 5).  Major and minor lines are rendered
+//    in different colours.
 //---------------------------------------------------------
 
 class Grid : public Element3d
@@ -34,52 +35,65 @@ class Grid : public Element3d
       inline static constexpr std::string_view _properties {
          R"json({
                   "class": "Grid",
-                  "items": [
+                  "rows": [
                     {
-                      "row": {
-                        "show": {
-                          "label": "Show",
+                      "label": "Visibility",
+                      "cells": [
+                        {
                           "type": "bool",
-                          "default": true
+                          "default": true,
+                          "name": "show",
+                          "sublabel": "Show"
                         },
-                        "snap": {
-                          "label": "Snap",
+                        {
                           "type": "bool",
-                          "default": false
+                          "default": false,
+                          "name": "snap",
+                          "sublabel": "Snap"
                         }
-                      },
-                      "label": "Visibility"
+                      ]
                     },
                     {
-                      "row": {
-                        "raster": {
-                          "label": " ",
+                      "label": "Raster",
+                      "cells": [
+                        {
                           "type": "float",
                           "unit": "mm",
                           "min": 0.1,
                           "max": 1000.0,
-                          "default": 20.0
+                          "default": 20.0,
+                          "name": "raster",
+                          "sublabel": " "
                         },
-                        "subraster": {
-                          "label": " ",
+                        {
                           "type": "int",
                           "min": 1,
                           "max": 100,
-                          "default": 5
+                          "default": 5,
+                          "name": "subraster",
+                          "sublabel": " "
                         }
-                      },
-                      "label": "Raster"
+                      ]
                     }
                   ]
                       })json"};
 
       TessGeometry* _minorGeometry {nullptr};
+      QPointer<class Machine> _connectedMachine; ///< machine we listen to for maxTravel changes
 
     signals:
       void minorGeometryChanged();
 
+    private slots:
+      void onMachineChanged();
+      void onMaxTravelChanged();
+
     public slots:
       void update(int flags = -1) override;
+      /// Called from QML.  Kept as a no-op for backwards
+      /// compatibility — the grid size is now determined solely
+      /// by the machine work area (maxTravel).
+      void setViewport(double left, double top, double right, double bottom);
 
     public:
       explicit Grid(ZCam*, Element* parent = nullptr);
@@ -90,5 +104,9 @@ class Grid : public Element3d
       virtual QString typeName() override { return QStringLiteral("grid"); }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool visible() const override { return true; }
+      Q_INVOKABLE bool deletable() const override { return true; }
       TessGeometry* minorGeometry() const { return _minorGeometry; }
+
+    private:
+      void connectToMachine(Machine* m);
       };

@@ -12,7 +12,7 @@
 #pragma once
 
 #include "element3d.h"
-#include "laserengine.h"
+#include "laser.h"
 
 //---------------------------------------------------------
 //   MaterialTest
@@ -44,178 +44,228 @@ class MaterialTest : public Element3d
       inline static constexpr std::string_view _properties {
          R"json({
                   "class": "MaterialTest",
-                  "items": [
+                  "rows": [
                     {
-                      "row": {
-                        "show": {
-                          "label": "Show",
+                      "label": "State",
+                      "cells": [
+                        {
                           "type": "bool",
-                          "default": true
+                          "default": true,
+                          "name": "show",
+                          "sublabel": "Show"
                         },
-                        "burn": {
-                          "label": "Burn",
+                        {
                           "type": "bool",
-                          "default": true
+                          "default": true,
+                          "name": "burn",
+                          "sublabel": "Burn"
                         }
-                      },
-                      "label": "State"
+                      ]
                     },
                     {
-                      "name": "laserLayer",
-                      "label": "LaserLayer",
-                      "type": "laserLayer",
-                      "default": ""
+                      "label": "Recipe",
+                      "cells": [
+                        {
+                          "name": "laserLayer",
+                          "type": "laserLayer",
+                          "default": ""
+                        }
+                      ]
                     },
                     {
-                      "name": "description",
                       "label": "Desc.",
-                      "type": "singleline",
-                      "default": "Test"
-                    },
-                    {
-                      "name": "line",
-                      "type": "line"
-                    },
-                    {
-                      "row": {
-                        "rows": {
-                          "label": "Rows",
-                          "type": "int",
-                          "min": 1,
-                          "max": 100,
-                          "default": 5
-                        },
-                        "columns": {
-                          "label": "Cols",
-                          "type": "int",
-                          "min": 1,
-                          "max": 100,
-                          "default": 5
+                      "cells": [
+                        {
+                          "name": "description",
+                          "type": "singleline",
+                          "default": "Test"
                         }
-                      },
-                      "label": "Grid"
+                      ]
                     },
                     {
-                      "row": {
-                        "boxHeight": {
-                          "label": "Height",
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Grid",
+                      "cells": [
+                        {
+                          "type": "int",
+                          "min": 1,
+                          "max": 100,
+                          "default": 5,
+                          "name": "rows",
+                          "sublabel": "Rows"
+                        },
+                        {
+                          "type": "int",
+                          "min": 1,
+                          "max": 100,
+                          "default": 5,
+                          "name": "columns",
+                          "sublabel": "Cols"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Box",
+                      "cells": [
+                        {
                           "type": "float",
                           "unit": "mm",
                           "min": 1.0,
                           "max": 100.0,
                           "precision": 1,
-                          "default": 5.0
+                          "default": 5.0,
+                          "name": "boxHeight",
+                          "sublabel": "Height"
                         },
-                        "boxWidth": {
-                          "label": "Width",
+                        {
                           "type": "float",
                           "unit": "mm",
                           "min": 1.0,
                           "max": 100.0,
                           "precision": 1,
-                          "default": 5.0
+                          "default": 5.0,
+                          "name": "boxWidth",
+                          "sublabel": "Width"
                         }
-                      },
-                      "label": "Box"
+                      ]
                     },
                     {
-                      "name": "line",
-                      "type": "line"
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
                     },
                     {
-                      "row": {
-                        "rowParameter": {
-                          "label": "Row",
+                      "label": "Param",
+                      "cells": [
+                        {
                           "type": "override",
-                          "default": 1
+                          "default": 1,
+                          "name": "rowParameter",
+                          "sublabel": "Row"
                         },
-                        "columnParameter": {
-                          "label": "Col",
+                        {
                           "type": "override",
-                          "default": 2
+                          "default": 2,
+                          "name": "columnParameter",
+                          "sublabel": "Col"
                         }
-                      },
-                      "label": "Param"
+                      ]
                     },
                     {
-                      "row": {
-                        "rowMin": {
-                          "label": "Min",
+                      "label": "Row",
+                      "cells": [
+                        {
                           "type": "float",
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
-                          "default": 100.0
+                          "default": 100.0,
+                          "name": "rowMin",
+                          "sublabel": "Min"
                         },
-                        "rowMax": {
-                          "label": "Max",
+                        {
                           "type": "float",
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
-                          "default": 1000.0
+                          "default": 1000.0,
+                          "name": "rowMax",
+                          "sublabel": "Max"
                         }
-                      },
-                      "label": "Row"
+                      ]
                     },
                     {
-                      "row": {
-                        "columnMin": {
-                          "label": "Min",
+                      "label": "Col",
+                      "cells": [
+                        {
                           "type": "float",
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
-                          "default": 10.0
+                          "default": 10.0,
+                          "name": "columnMin",
+                          "sublabel": "Min"
                         },
-                        "columnMax": {
-                          "label": "Max",
+                        {
                           "type": "float",
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
-                          "default": 80.0
+                          "default": 80.0,
+                          "name": "columnMax",
+                          "sublabel": "Max"
                         }
-                      },
-                      "label": "Col"
+                      ]
                     },
                     {
-                      "name": "line",
-                      "type": "line"
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
                     },
                     {
-                      "name": "materialLayer",
                       "label": "Material",
-                      "type": "recipe"
-                    },
-                    {
-                      "name": "textLayer",
-                      "label": "Text",
-                      "type": "recipe"
-                    },
-                    {
-                      "name": "borderLayer",
-                      "label": "Border",
-                      "type": "recipe"
-                    },
-                    {
-                      "name": "line",
-                      "type": "line"
-                    },
-                    {
-                      "row": {
-                        "showBorder": {
-                          "label": "Border",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "showText": {
-                          "label": "Text",
-                          "type": "bool",
-                          "default": true
+                      "cells": [
+                        {
+                          "name": "materialLayer",
+                          "type": "recipe"
                         }
-                      },
-                      "label": "Create"
+                      ]
+                    },
+                    {
+                      "label": "Text",
+                      "cells": [
+                        {
+                          "name": "textLayer",
+                          "type": "recipe"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Border",
+                      "cells": [
+                        {
+                          "name": "borderLayer",
+                          "type": "recipe"
+                        }
+                      ]
+                    },
+                    {
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Create",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "showBorder",
+                          "sublabel": "Border"
+                        },
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "showText",
+                          "sublabel": "Text"
+                        }
+                      ]
                     }
                   ]
                       })json"};

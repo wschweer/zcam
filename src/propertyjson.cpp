@@ -14,85 +14,49 @@
 namespace propjson {
 
 //---------------------------------------------------------
-//   collectPropertyNames
-//    Parse the "items" array and extract (name, type) pairs.
-//    Handles "row" entries (with sub-properties) and individual
-//    named properties.  Entries with type "line" are skipped.
+//   collectCellPropertyNames
+//    Extract (name, type) pairs from a single cell.
+//    Handles nested cells (row within columns).
 //---------------------------------------------------------
 
-static void collectPropertyNames(const nlohmann::json& items, PropNameList& out) {
-      if (!items.is_array())
-            return;
-      for (const auto& item : items) {
-            if (item.contains("columns") && item["columns"].is_object()) {
-                  // Recursively parse the items inside the columns block
-                  if (item["columns"].contains("items") && item["columns"]["items"].is_array())
-                        collectPropertyNames(item["columns"]["items"], out);
-                  }
-            else if (item.contains("row") && item["row"].is_object()) {
-                  for (auto it = item["row"].begin(); it != item["row"].end(); ++it) {
-                        std::string type =
-                            it.value().contains("type") ? it.value().at("type").get<std::string>() : "";
+static void collectCellPropertyNames(const nlohmann::json& cell, PropNameList& out) {
+      // Check for nested cells (row within columns)
+      if (cell.contains("cells") && cell["cells"].is_array()) {
+            for (const auto& subCell : cell["cells"]) {
+                  if (subCell.contains("name") && subCell.contains("type")) {
+                        std::string name = subCell["name"].get<std::string>();
+                        std::string type = subCell["type"].get<std::string>();
                         if (type == "line" || type == "empty")
                               continue;
-                        out.emplace_back(it.key(), type);
+                        out.emplace_back(name, type);
                         }
                   }
-            else if (item.contains("name") && item.contains("type")) {
-                  std::string name = item["name"].get<std::string>();
-                  std::string type = item["type"].get<std::string>();
-                  if (type == "line" || type == "empty")
-                        continue;
+            }
+      else if (cell.contains("name") && cell.contains("type")) {
+            std::string name = cell["name"].get<std::string>();
+            std::string type = cell["type"].get<std::string>();
+            if (type != "line" && type != "empty")
                   out.emplace_back(name, type);
-                  }
             }
       }
 
 //---------------------------------------------------------
-//   jsonGetString
-//---------------------------------------------------------
-
-static std::string jsonGetString(const nlohmann::json& obj, const std::string& key) {
-      if (!obj.contains(key) || !obj.at(key).is_string())
-            return "";
-      return obj.at(key).get<std::string>();
-      }
-
-//---------------------------------------------------------
 //   parseAllPropertyNames
+//    Parse the properties() JSON definition and return a list of
+//    (propertyName, type) pairs.
+//    Uses the "rows"/"cells" format.
 //---------------------------------------------------------
 
 PropNameList parseAllPropertyNames(std::string_view propStr) {
       PropNameList propNames;
       nlohmann::json j = nlohmann::json::parse(propStr);
 
-      if (j.contains("items"))
-            collectPropertyNames(j["items"], propNames);
-
-      // Also handle old-style top-level keys (non-"items" entries)
-      for (auto it = j.begin(); it != j.end(); ++it) {
-            if (it.key() == "class" || it.key() == "items")
-                  continue;
-            const auto& val = it.value();
-            if (!val.is_object())
-                  continue;
-            bool isRow = true;
-            for (auto sub = val.begin(); sub != val.end(); ++sub) {
-                  if (!sub.value().contains("label")) {
-                        isRow = false;
-                        break;
+      if (j.contains("rows") && j["rows"].is_array()) {
+            for (const auto& row : j["rows"]) {
+                  if (row.contains("cells") && row["cells"].is_array()) {
+                        for (const auto& cell : row["cells"])
+                              collectCellPropertyNames(cell, propNames);
                         }
-                  }
-            if (isRow) {
-                  for (auto sub = val.begin(); sub != val.end(); ++sub) {
-                        std::string type = jsonGetString(sub.value(), "type");
-                        if (type == "line" || type == "empty")
-                              continue;
-                        propNames.emplace_back(sub.key(), type);
-                        }
-                  }
-            else if (val.contains("type")) {
-                  propNames.emplace_back(it.key(), jsonGetString(val, "type"));
                   }
             }
 
@@ -250,4 +214,4 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
             }
       }
 
-      } // namespace propjson
+} // namespace propjson

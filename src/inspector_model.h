@@ -29,8 +29,9 @@
 
 struct ColumnItem {
       QString name;
-      bool isRow  = false;
-      bool isLine = false;
+      bool isRow   = false;
+      bool isLine  = false;
+      bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
       int colSpan = 1;
@@ -73,6 +74,10 @@ class InspectorModel : public QAbstractListModel
       // Called from QML to set a sub-property within a row entry.
       Q_INVOKABLE bool setSubProperty(int row, const QString& subName, const QVariant& value);
 
+      // Called from QML to read any property value from the current element.
+      // Used e.g. by the multiline sub-delegate to get the "align" property.
+      Q_INVOKABLE QVariant elementProperty(const QString& name) const;
+
       // Called from QML to set a property inside a "columns" block.
       Q_INVOKABLE bool setColumnProperty(int modelRow, const QString& propName, const QVariant& value);
 
@@ -107,11 +112,11 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE LaserRecipe* nameToRecipe(const QString& name) const;
 
       // Called from QML delegates for "override" type properties: returns
-      // the list of available ParameterType names from laserengine.h.
+      // the list of available ParameterType names from laser.h.
       Q_INVOKABLE QStringList overrideTypeNames() const;
 
       // Called from QML delegates for "pulsewidth" type properties: returns
-      // the list of pulse width values from LaserEngine::pulseTable().
+      // the list of pulse width values from Laser::pulseTable().
       Q_INVOKABLE QStringList pulsewidthNames() const;
 
       // Called from QML delegates for "lineJoin" type properties: returns
@@ -141,6 +146,10 @@ class InspectorModel : public QAbstractListModel
       // Called from QML delegates for "machine" type properties: returns
       // the list of available Machine names from ZCam::machines.
       Q_INVOKABLE QStringList machineNames() const;
+
+      // Called from QML delegates for "cameraName" type properties: returns
+      // the list of available video input device descriptions.
+      Q_INVOKABLE QStringList cameraNames() const;
 
       // Resolve a Machine* pointer to its name (for display in ComboBox).
       Q_INVOKABLE QString machineToName(QVariant machine) const;

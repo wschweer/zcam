@@ -12,6 +12,7 @@
 #include "zcam.h"
 #include "project.h"
 #include "cad.h"
+#include "cameraelement.h"
 #include "text.h"
 #include "group.h"
 #include "recipe.h"
@@ -45,6 +46,7 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <tuple>
 #include <QQuaternion>
 #include <QMatrix4x4>
 #include <nlohmann/json.hpp>
@@ -85,6 +87,23 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
                   _project->resolveMachine();
             });
 
+      // When the active machine changes, update the recipe machine-type filter
+      // so only recipes for the current machine type are shown.
+      connect(this, &ZCam::projectChanged, this, [this]() {
+            if (_project) {
+                  // Disconnect any previous machineChanged handler from the
+                  // old project, then connect to the new one.
+                  disconnect(_project, &Project::machineChanged, this, nullptr);
+                  connect(_project, &Project::machineChanged, this, [this]() {
+                        if (_recipes && _project && _project->machine())
+                              _recipes->set_machineType(_project->machine()->type());
+                        });
+                  }
+            // Also apply immediately for the current project
+            if (_recipes && _project && _project->machine())
+                  _recipes->set_machineType(_project->machine()->type());
+            });
+
       // Reload machines and recipes when their configured directory changes
       // at runtime (e.g. via the Config Panel).
       if (_config) {
@@ -94,9 +113,44 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
                   });
             connect(_config, &Config::recipesDirectoryChanged, this, [this]() {
                   if (_recipes)
-                        _recipes->loadFromDirectory(recipesDirectory());
+                        _recipes->loadFromDirectory(recipesDirectory(), _recipes->machineType());
                   });
             }
+
+      // When a recipe's content changes (e.g. laser parameters edited,
+      // layer added/removed), check whether any Recipe (LaserLayer) element
+      // in the current project references that recipe.  If so, mark the
+      // CAM data as dirty so the user knows a refresh is needed.
+      connect(_recipes, &LaserReceipes::recipeChanged, this, [this](int idx) {
+            if (!_project || !_recipes || !_rootElement)
+                  return;
+            LaserRecipe* changedRecipe = _recipes->recipePtr(idx);
+            if (!changedRecipe)
+                  return;
+            // Traverse the project tree looking for Recipe (LaserLayer)
+            // elements whose recipe pointer matches the changed recipe.
+            bool found                         = false;
+            std::function<void(Element*)> walk = [&](Element* e) {
+                  if (found)
+                        return;
+                  auto* ll = qobject_cast<Recipe*>(e);
+                  if (ll && ll->recipe() == changedRecipe) {
+                        found = true;
+                        return;
+                        }
+                  for (auto* c : e->children())
+                        walk(c);
+                  };
+            walk(_rootElement);
+            if (found)
+                  setCamDirty(true);
+            });
+
+      // When the recipe model structure changes (recipes added, removed,
+      // or reloaded from disk), recipe pointers held by Recipe elements
+      // may become invalid or point to different recipes.  Mark CAM dirty
+      // so the user knows a refresh is needed.
+      connect(_recipes, &LaserReceipes::recipeModelChanged, this, [this]() { setCamDirty(true); });
 
       // Automatically save assets (machines, recipes) and stop the laser
       // when the application is about to quit so changes are not lost and
@@ -244,7 +298,8 @@ void ZCam::centerOnWorkspace(Element3d* element) {
 
       if (_project) {
             _project->undo()->beginMacro();
-            auto cmd = new PropertyChangeCommand(this, element, "pos", QVariant::fromValue(oldPos), QVariant::fromValue(newPos));
+            auto cmd = new PropertyChangeCommand(this, element, "pos", QVariant::fromValue(oldPos),
+                                                 QVariant::fromValue(newPos));
             _project->undo()->push(cmd);
             _project->undo()->endMacro();
             }
@@ -405,6 +460,8 @@ void ZCam::loadAssets() {
       // directory so the migration is permanent.
       if (_recipes && _recipes->recipeCount() == 0 && legacyAssets.contains("recipes")) {
             _recipes->fromJson(legacyAssets.at("recipes"));
+            // Save migrated recipes under the root (no machineType filter)
+            // so they are available before a machine is selected.
             _recipes->saveToDirectory(recipesDirectory());
             }
       }
@@ -637,7 +694,6 @@ void ZCam::startElementDrag(Element3d* element) {
 //---------------------------------------------------------
 
 void ZCam::endElementDrag() {
-      Debug("=====");
       // Helper lambda: apply the pending segment selection if any.
       // Called when no actual drag movement occurred (pure click).
       auto applyPendingSegment = [this]() {
@@ -754,7 +810,9 @@ void ZCam::saveAssets() {
 
       // Save recipes to individual files
       if (_recipes)
-            _recipes->saveToDirectory(recipesDirectory());
+            _recipes->saveToDirectory(recipesDirectory(), _recipes->machineType());
+
+      emit assetsSaved();
       }
 
 //---------------------------------------------------------
@@ -775,60 +833,68 @@ void ZCam::hover(Element3d* element) {
       }
 
 //---------------------------------------------------------
-//   pickElement
-//    Custom picking: traverse the element tree depth-first and
-//    collect all visible Element3d whose world bounding box
-//    contains the given world-space point (x, y).  Return the
-//    one with the smallest area (innermost).  Only elements
-//    that are visible (show == true, ancestorsShow == true),
-//    selectable, and have a non-empty world bounding box are
-//    considered.  This includes Group elements whose bounding
-//    box is derived from their children.
+//   collectPickCandidates
+//    Depth-first traversal collecting all Element3d whose world
+//    bounding box contains the point (x, y).  A candidate must be
+//    visible on the 3D canvas: show, ancestorsShow, selectable and
+//    visible() (has an on-canvas representation).  Non-rendered
+//    containers (Project, Fixture, ...) are excluded.  Each
+//    candidate stores its tree depth so that, when several
+//    elements have the same bounding-box area (a container whose
+//    bounding box is derived from its single child), the deepest
+//    element — the actual shape — wins over its ancestors.
 //---------------------------------------------------------
 
-static void collectPickCandidates(Element* root, double x, double y,
-                                  std::vector<std::pair<double, Element3d*>>& candidates) {
+static void collectPickCandidates(Element* root, double x, double y, int depth,
+                                  std::vector<std::tuple<double, int, Element3d*>>& candidates) {
       if (!root)
             return;
       auto* e3d = qobject_cast<Element3d*>(root);
-      if (e3d && e3d->show() && e3d->ancestorsShow() && e3d->selectable()) {
+      if (e3d && e3d->show() && e3d->ancestorsShow() && e3d->selectable() && e3d->visible()) {
             QRectF wb = e3d->worldBoundingBox();
             if (!wb.isNull() && !wb.isEmpty()) {
                   if (x >= wb.left() && x <= wb.right() && y >= wb.top() && y <= wb.bottom()) {
                         double area = wb.width() * wb.height();
-                        candidates.emplace_back(area, e3d);
+                        candidates.emplace_back(area, depth, e3d);
                         }
                   }
             }
       for (auto* child : root->children())
-            collectPickCandidates(child, x, y, candidates);
+            collectPickCandidates(child, x, y, depth + 1, candidates);
       }
 
+//---------------------------------------------------------
+//   pickElement
+//    Return the innermost candidate (smallest bounding-box area).
+//    On equal areas the deepest tree node wins, then selection
+//    cycling: clicking again on the already-selected element
+//    cycles to the next-larger candidate (usually its parent
+//    group), wrapping around at the outermost one.
+//---------------------------------------------------------
+
 Element3d* ZCam::pickElement(double x, double y) {
-      std::vector<std::pair<double, Element3d*>> candidates;
-      collectPickCandidates(_rootElement, x, y, candidates);
+      std::vector<std::tuple<double, int, Element3d*>> candidates;
+      collectPickCandidates(_rootElement, x, y, 0, candidates);
       if (candidates.empty())
             return nullptr;
-      // Sort by area ascending (smallest = innermost first).
-      std::sort(candidates.begin(), candidates.end(),
-                [](const auto& a, const auto& b) { return a.first < b.first; });
-      // Cycling: if the currently selected element is among the
-      // candidates, return the next candidate (larger area = parent).
-      // This allows the user to select a parent element (e.g. a
-      // Rectangle) by clicking again after selecting a child (e.g. a
-      // Text sub-element).  When the outermost candidate is reached,
-      // cycling wraps back to the innermost.
+      // Sort by area ascending (innermost first).  On equal areas
+      // the deeper tree node (larger depth) comes first so the
+      // innermost shape wins over its ancestor containers.
+      std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+            if (std::get<0>(a) != std::get<0>(b))
+                  return std::get<0>(a) < std::get<0>(b);
+            return std::get<1>(a) > std::get<1>(b);
+            });
       if (_currentElement) {
             for (size_t i = 0; i < candidates.size(); ++i) {
-                  if (candidates[i].second == _currentElement) {
+                  if (std::get<2>(candidates[i]) == _currentElement) {
                         if (i + 1 < candidates.size())
-                              return candidates[i + 1].second;
-                        return candidates[0].second;
+                              return std::get<2>(candidates[i + 1]);
+                        return std::get<2>(candidates[0]);
                         }
                   }
             }
-      // Return the innermost candidate (smallest area).
-      return candidates[0].second;
+      return std::get<2>(candidates[0]);
       }
 
 //---------------------------------------------------------
@@ -856,8 +922,8 @@ Element3d* ZCam::pickDragTarget(double x, double y) {
       // Groups and any other draggable element that has children (e.g.
       // a Rectangle with Text sub-elements).  In all other cases the
       // behaviour is identical to pickElement().
-      if (_currentElement && _currentElement->draggable()
-          && _currentElement->show() && _currentElement->ancestorsShow()) {
+      if (_currentElement && _currentElement->draggable() && _currentElement->show() &&
+          _currentElement->ancestorsShow()) {
             bool hasChildren = false;
             for (auto* c : _currentElement->children()) {
                   if (qobject_cast<Element3d*>(c)) {
@@ -1500,22 +1566,22 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
       // These must be pushed BEFORE the MoveElementCommand so that
       // undo undoes the move first (restoring the old parent), then
       // the transforms (restoring the old pos/rot/scale).
-            _project->undo()->beginMacro();
-                  {
-                  auto cmd = new PropertyChangeCommand(this, element, "pos", QVariant::fromValue(origPos),
-                                                       QVariant::fromValue(newPos));
-                  _project->undo()->push(cmd);
-                  }
-                  {
-                  auto cmd = new PropertyChangeCommand(this, element, "rot", QVariant::fromValue(origRot),
-                                                       QVariant::fromValue(newRot));
-                  _project->undo()->push(cmd);
-                  }
-                  {
-                  auto cmd = new PropertyChangeCommand(this, element, "scale", QVariant::fromValue(origScale),
-                                                       QVariant::fromValue(newScale));
-                  _project->undo()->push(cmd);
-                  }
+      _project->undo()->beginMacro();
+            {
+            auto cmd = new PropertyChangeCommand(this, element, "pos", QVariant::fromValue(origPos),
+                                                 QVariant::fromValue(newPos));
+            _project->undo()->push(cmd);
+            }
+            {
+            auto cmd = new PropertyChangeCommand(this, element, "rot", QVariant::fromValue(origRot),
+                                                 QVariant::fromValue(newRot));
+            _project->undo()->push(cmd);
+            }
+            {
+            auto cmd = new PropertyChangeCommand(this, element, "scale", QVariant::fromValue(origScale),
+                                                 QVariant::fromValue(newScale));
+            _project->undo()->push(cmd);
+            }
 
       // Reset the drag state since we bypassed endElementDrag().
       _elementDragElement = nullptr;
@@ -1723,6 +1789,10 @@ void ZCam::startNewProject(bool clearPersistedPath) {
 //---------------------------------------------------------
 
 void ZCam::endNewProject() {
+      // Create a CameraElement for new projects before the scene is built.
+      if (project())
+            project()->ensureCameraElement();
+
       rootElement()->addChild(project());
       update();
 
@@ -1943,6 +2013,13 @@ bool ZCam::readProjectFile(const std::string& path, bool skipCamUpdate) {
             root->addChild(top);
             set_project(top);
             top->fromJson(jdata.at("toplevel"));
+
+            // Migration: create a CameraElement if the loaded project
+            // doesn't have one (projects saved before the camera element
+            // was introduced).
+            if (project())
+                  project()->ensureCameraElement();
+
             _treeModel->setRoot(root);
             set_rootElement(project()); // build and show the scene
 

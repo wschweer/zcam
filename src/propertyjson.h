@@ -36,8 +36,8 @@ using PropNameList = std::vector<std::pair<std::string, std::string>>;
 //---------------------------------------------------------
 //   parseAllPropertyNames
 //    Parse the properties() JSON definition and return a list of
-//    (propertyName, type) pairs.  Handles both the "items" array
-//    format and the old-style top-level key format.
+//    (propertyName, type) pairs.
+//    Uses the "rows"/"cells" format.
 //---------------------------------------------------------
 PropNameList parseAllPropertyNames(std::string_view propStr);
 

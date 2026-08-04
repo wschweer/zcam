@@ -1,0 +1,25 @@
+{
+    "description": "wobble test:\nGroße Kreise mit großem Abstand um Wobble Feature visuell zu testen.\nZum Lasern auf schwarze Pappe.\n",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 40.0,
+            "interleave": 1,
+            "interval": 0.02,
+            "name": "sl-1",
+            "numPasses": 1,
+            "power": 10.0,
+            "pulseWidth": 200,
+            "speed": 1000.0,
+            "startAngle": 0.0,
+            "travelSpeed": 1000.0,
+            "wobble": true,
+            "wobbleSize": 1.0,
+            "wobbleStep": 1.0,
+            "zigzag": true
+        }
+    ],
+    "name": "wobbletest",
+    "numPasses": 1
+}

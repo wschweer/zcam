@@ -1,0 +1,25 @@
+{
+    "description": "schwarz lackierte Alu Visitenkarte",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 2000.0,
+            "interleave": 1,
+            "interval": 0.05,
+            "name": "sublayer1",
+            "numPasses": 1,
+            "power": 20.0,
+            "pulseWidth": 6,
+            "speed": 2000.0,
+            "startAngle": 0.0,
+            "travelSpeed": 4000.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        }
+    ],
+    "name": "bc-Alu Test",
+    "numPasses": 1
+}

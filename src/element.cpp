@@ -16,6 +16,7 @@
 #include "project.h"
 #include "cad.h"
 #include "cam.h"
+#include "cameraelement.h"
 #include "framing.h"
 #include "grid.h"
 #include "group.h"
@@ -116,6 +117,10 @@ void Element::fromJson(const json& data) {
                               }
                         else if (key == "grid") {
                               element = new Grid(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "cameraElement") {
+                              element = new CameraElement(zcam, this);
                               element->fromJson(value);
                               }
                         else if (key == "laserLayer") {

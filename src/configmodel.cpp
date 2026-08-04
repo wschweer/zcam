@@ -146,52 +146,6 @@ void ConfigModel::propertyChangedSlot() {
       }
 
 //---------------------------------------------------------
-//   parseConfigColumnsBlock
-//    Parse the items inside a "columns" block, analog to
-//    parseMachineColumnsBlock in machinemodel.cpp.
-//---------------------------------------------------------
-
-static void parseConfigColumnsBlock(const nlohmann::ordered_json& block, QList<ConfigColumnItem>& items) {
-      if (!block.contains("items") || !block["items"].is_array())
-            return;
-      for (const auto& item : block["items"]) {
-            if (item.contains("row") && item["row"].is_object()) {
-                  const auto& rowObj = item["row"];
-                  ConfigColumnItem ci;
-                  ci.isRow          = true;
-                  ci.name           = "row";
-                  ci.colSpan        = item.contains("colSpan") && item["colSpan"].is_number_integer()
-                                          ? item["colSpan"].get<int>()
-                                          : 1;
-                  bool allHaveLabel = true;
-                  for (auto subIt = rowObj.begin(); subIt != rowObj.end(); ++subIt) {
-                        if (!subIt.value().contains("label")) {
-                              allHaveLabel = false;
-                              break;
-                              }
-                        ci.subProps.append(QString::fromStdString(subIt.key()));
-                        }
-                  if (!allHaveLabel || ci.subProps.isEmpty())
-                        continue;
-                  if (item.contains("label") && item["label"].is_string())
-                        ci.rowLabel = QString::fromStdString(item["label"].get<std::string>());
-                  items.append(ci);
-                  }
-            else if (item.contains("name")) {
-                  ConfigColumnItem ci;
-                  ci.name    = QString::fromStdString(item["name"].get<std::string>());
-                  ci.colSpan = item.contains("colSpan") && item["colSpan"].is_number_integer()
-                                   ? item["colSpan"].get<int>()
-                                   : 1;
-                  if (item.contains("type") && item["type"].is_string() &&
-                      item["type"].get<std::string>() == "line")
-                        ci.isLine = true;
-                  items.append(ci);
-                  }
-            }
-      }
-
-//---------------------------------------------------------
 //   parseProperties
 //---------------------------------------------------------
 
@@ -231,77 +185,131 @@ void ConfigModel::parseProperties() {
             else
                   _title = QStringLiteral("Config");
 
-            if (j.contains("items") && j["items"].is_array()) {
-                  for (const auto& item : j["items"]) {
-                        if (item.contains("columns") && item["columns"].is_object()) {
-                              const auto& colsBlock = item["columns"];
-                              PropertyEntry entry;
-                              entry.name      = "columns";
-                              entry.isColumns = true;
-                              entry.columnCount =
-                                  colsBlock.contains("count") && colsBlock["count"].is_number_integer()
-                                      ? colsBlock["count"].get<int>()
-                                      : 2;
-                              if (item.contains("cat") && item["cat"].is_string())
-                                    entry.cat = QString::fromStdString(item["cat"].get<std::string>());
-                              else if (colsBlock.contains("cat") && colsBlock["cat"].is_string())
-                                    entry.cat = QString::fromStdString(colsBlock["cat"].get<std::string>());
-                              else if (colsBlock.contains("items") && colsBlock["items"].is_array() &&
-                                       !colsBlock["items"].empty()) {
-                                    const auto& firstColItem = colsBlock["items"][0];
-                                    if (firstColItem.contains("cat") && firstColItem["cat"].is_string())
-                                          entry.cat =
-                                              QString::fromStdString(firstColItem["cat"].get<std::string>());
-                                    }
-                              // Parse column sub-items into columnItems
-                              parseConfigColumnsBlock(colsBlock, entry.columnItems);
-                              // Also collect sub-property names for signal connections
-                              for (const auto& ci : entry.columnItems) {
-                                    if (ci.isRow)
-                                          for (const QString& s : ci.subProps)
-                                                entry.subProps.append(s);
-                                    else if (!ci.isLine)
-                                          entry.subProps.append(ci.name);
-                                    }
-                              _allEntries.append(entry);
-                              }
-                        else if (item.contains("row") && item["row"].is_object()) {
-                              const auto& rowObj = item["row"];
-                              PropertyEntry entry;
-                              entry.name        = "row";
-                              entry.isRow       = true;
-                              bool allHaveLabel = true;
-                              for (auto subIt = rowObj.begin(); subIt != rowObj.end(); ++subIt) {
-                                    if (!subIt.value().contains("label")) {
-                                          allHaveLabel = false;
-                                          break;
+            // New format: top-level "rows" array
+            if (j.contains("rows") && j["rows"].is_array()) {
+                  for (const auto& row : j["rows"]) {
+                        int rowColumns = row.contains("columns") && row["columns"].is_number_integer()
+                                             ? row["columns"].get<int>()
+                                             : 1;
+                        QString rowCat;
+                        if (row.contains("cat") && row["cat"].is_string())
+                              rowCat = QString::fromStdString(row["cat"].get<std::string>());
+
+                        if (rowColumns > 1) {
+                              QList<ConfigColumnItem> cols;
+                              if (row.contains("cells") && row["cells"].is_array()) {
+                                    for (const auto& cell : row["cells"]) {
+                                          ConfigColumnItem ci;
+                                          ci.colSpan =
+                                              cell.contains("colSpan") && cell["colSpan"].is_number_integer()
+                                                  ? cell["colSpan"].get<int>()
+                                                  : 1;
+                                          std::string type = cell.contains("type") && cell["type"].is_string()
+                                                                 ? cell["type"].get<std::string>()
+                                                                 : "";
+                                          if (type == "line") {
+                                                ci.isLine = true;
+                                                ci.name   = "line";
+                                                }
+                                          else if (cell.contains("cells") && cell["cells"].is_array()) {
+                                                // Row cell: has sub-cells instead of a name
+                                                ci.isRow = true;
+                                                ci.name  = "row";
+                                                for (const auto& subCell : cell["cells"]) {
+                                                      std::string subType =
+                                                          subCell.contains("type") &&
+                                                                  subCell["type"].is_string()
+                                                              ? subCell["type"].get<std::string>()
+                                                              : "";
+                                                      if (subType == "line" || !subCell.contains("name"))
+                                                            continue;
+                                                      if (subType == "empty") {
+                                                            ci.subProps.append("empty");
+                                                            continue;
+                                                            }
+                                                      ci.subProps.append(QString::fromStdString(
+                                                          subCell["name"].get<std::string>()));
+                                                      }
+                                                if (cell.contains("label") && cell["label"].is_string())
+                                                      ci.rowLabel = QString::fromStdString(
+                                                          cell["label"].get<std::string>());
+                                                }
+                                          else if (type == "empty" || !cell.contains("name")) {
+                                                ci.isEmpty = true;
+                                                ci.name    = "empty";
+                                                }
+                                          else {
+                                                ci.name =
+                                                    QString::fromStdString(cell["name"].get<std::string>());
+                                                }
+                                          cols.append(ci);
                                           }
-                                    entry.subProps.append(QString::fromStdString(subIt.key()));
                                     }
-                              if (!allHaveLabel || entry.subProps.isEmpty())
-                                    continue;
-                              if (item.contains("label") && item["label"].is_string())
-                                    entry.rowLabel = QString::fromStdString(item["label"].get<std::string>());
-                              // outer cat takes precedence; fall back to first sub-property cat
-                              if (item.contains("cat") && item["cat"].is_string())
-                                    entry.cat = QString::fromStdString(item["cat"].get<std::string>());
-                              else if (!entry.subProps.isEmpty()) {
-                                    const auto& firstSub = rowObj[entry.subProps[0].toStdString()];
-                                    if (firstSub.contains("cat") && firstSub["cat"].is_string())
-                                          entry.cat =
-                                              QString::fromStdString(firstSub["cat"].get<std::string>());
+                              if (!cols.isEmpty()) {
+                                    PropertyEntry entry;
+                                    entry.name        = "columns";
+                                    entry.isColumns   = true;
+                                    entry.columnCount = rowColumns;
+                                    entry.columnItems = cols;
+                                    entry.cat         = rowCat;
+                                    for (const auto& ci : cols)
+                                          if (!ci.isLine && ci.name != "empty")
+                                                entry.subProps.append(ci.name);
+                                    _allEntries.append(entry);
                                     }
-                              _allEntries.append(entry);
                               }
-                        else if (item.contains("name")) {
+                        else if (row.contains("cells") && row["cells"].is_array()) {
+                              QStringList subs;
+                              bool hasLine = false;
+                              for (const auto& cell : row["cells"]) {
+                                    std::string type = cell.contains("type") && cell["type"].is_string()
+                                                           ? cell["type"].get<std::string>()
+                                                           : "";
+                                    if (type == "line") {
+                                          hasLine = true;
+                                          continue;
+                                          }
+                                    if (type == "empty") {
+                                          subs.append("empty");
+                                          continue;
+                                          }
+                                    if (!cell.contains("name"))
+                                          continue;
+                                    subs.append(QString::fromStdString(cell["name"].get<std::string>()));
+                                    }
+                              if (!subs.isEmpty()) {
+                                    PropertyEntry entry;
+                                    entry.name     = "row";
+                                    entry.isRow    = true;
+                                    entry.subProps = subs;
+                                    entry.cat      = rowCat;
+                                    if (row.contains("label") && row["label"].is_string())
+                                          entry.rowLabel =
+                                              QString::fromStdString(row["label"].get<std::string>());
+                                    _allEntries.append(entry);
+                                    }
+                              else if (hasLine) {
+                                    // Row with only "line" cells → separator
+                                    PropertyEntry entry;
+                                    entry.name = "line";
+                                    entry.cat  = rowCat;
+                                    _allEntries.append(entry);
+                                    }
+                              else {
+                                    PropertyEntry entry;
+                                    entry.name = "empty";
+                                    entry.cat  = rowCat;
+                                    _allEntries.append(entry);
+                                    }
+                              }
+                        else {
                               PropertyEntry entry;
-                              entry.name = QString::fromStdString(item["name"].get<std::string>());
-                              if (item.contains("cat") && item["cat"].is_string())
-                                    entry.cat = QString::fromStdString(item["cat"].get<std::string>());
+                              entry.name = "empty";
+                              entry.cat  = rowCat;
                               _allEntries.append(entry);
                               }
-                        } // end for (const auto& item : j["items"])
-                  } // end if (j.contains("items"))
+                        }
+                  }
 
             // Build categories list preserving first-occurrence order
             // Skip entries with empty cat to avoid a blank category
@@ -383,6 +391,7 @@ QVariant ConfigModel::data(const QModelIndex& index, int role) const {
                               m["name"]     = ci.name;
                               m["isRow"]    = ci.isRow;
                               m["isLine"]   = ci.isLine;
+                              m["isEmpty"]  = ci.isEmpty;
                               m["colSpan"]  = ci.colSpan;
                               m["rowLabel"] = ci.rowLabel;
                               QVariantList subProps;

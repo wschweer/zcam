@@ -44,150 +44,194 @@ class Ellipse : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-                  "class": "Ellipse",
-                  "items": [
-                    {
-                      "row": {
-                        "show": {
-                          "label": "Show",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "burn": {
-                          "label": "Burn",
-                          "type": "bool",
-                          "default": true
-                        }
-                      },
-                      "label": "State"
-                    },
-                    {
-                      "name": "laserLayer",
-                      "label": "LaserLayer",
-                      "type": "laserLayer",
-                      "default": ""
-                    },
-                    {
-                      "name": "color",
-                      "label": "Color",
-                      "type": "color",
-                      "default": "green"
-                    },
-                    {
-                      "name": "pos",
-                      "label": "Pos.",
-                      "type": "vector3d",
-                      "unit": "mm",
-                      "default": [
+    "class": "Ellipse",
+    "rows": [
+        {
+            "label": "State",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "show",
+                    "sublabel": "Show"
+                },
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "burn",
+                    "sublabel": "Burn"
+                }
+            ]
+        },
+        {
+            "label": "Recipe",
+            "cells": [
+                {
+                    "name": "laserLayer",
+                    "type": "laserLayer",
+                    "default": ""
+                }
+            ]
+        },
+        {
+            "label": "Color",
+            "cells": [
+                {
+                    "name": "color",
+                    "type": "color",
+                    "default": "green"
+                }
+            ]
+        },
+        {
+            "label": "Pos.",
+            "cells": [
+                {
+                    "name": "pos",
+                    "type": "vector3d",
+                    "unit": "mm",
+                    "default": [
                         0.0,
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "rot",
-                      "label": "Rot.",
-                      "type": "vector3d",
-                      "unit": "°",
-                      "min": 0.0,
-                      "max": 360,
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Rot.",
+            "cells": [
+                {
+                    "name": "rot",
+                    "type": "vector3d",
+                    "unit": "°",
+                    "min": 0.0,
+                    "max": 360,
+                    "default": [
                         0.0,
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "scale",
-                      "label": "Scale",
-                      "type": "scale",
-                      "min": 0.001,
-                      "max": 1000,
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Scale",
+            "cells": [
+                {
+                    "name": "scale",
+                    "type": "scale",
+                    "min": 0.001,
+                    "max": 1000,
+                    "default": [
                         1.0,
                         1.0,
                         1.0
-                      ]
-                    },
-                    {
-                      "name": "lockScale",
-                      "label": "Lock",
-                      "type": "lockScale",
-                      "default": 2
-                    },
-                    {
-                      "name": "line",
-                      "type": "line"
-                    },
-                    {
-                      "name": "size",
-                      "label": "Size",
-                      "type": "vector2d",
-                      "unit": "mm",
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Lock",
+            "cells": [
+                {
+                    "name": "lockScale",
+                    "type": "lockScale",
+                    "default": 2
+                }
+            ]
+        },
+        {
+            "cells": [
+                {
+                    "name": "line",
+                    "type": "line"
+                }
+            ]
+        },
+        {
+            "label": "Size",
+            "cells": [
+                {
+                    "name": "size",
+                    "type": "vector2d",
+                    "unit": "mm",
+                    "default": [
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "lockSize",
-                      "label": "Lock",
-                      "type": "lockSize",
-                      "default": 2
-                    },
-                    {
-                      "row": {
-                        "startAngle": {
-                          "label": "Start",
-                          "type": "float",
-                          "unit": "°",
-                          "min": 0.0,
-                          "max": 360.0,
-                          "default": 0.0
-                        },
-                        "endAngle": {
-                          "label": "End",
-                          "type": "float",
-                          "unit": "°",
-                          "min": 0.0,
-                          "max": 360.0,
-                          "default": 360.0
-                        }
-                      },
-                      "label": "Arc"
-                    },
-                    {
-                      "row": {
-                        "joinType": {
-                          "label": "Join",
-                          "type": "lineJoin",
-                          "default": 0
-                        },
-                        "endType": {
-                          "label": "End",
-                          "type": "lineEnd",
-                          "default": 0
-                        }
-                      },
-                      "label": " "
-                    },
-                    {
-                      "row": {
-                        "fill": {
-                          "label": "fill",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "lineWidth": {
-                          "label": "width",
-                          "type": "float",
-                          "default": 0.5
-                        }
-                      },
-                      "label": "Line"
-                    }
-                  ]
-                      })json"};
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Lock",
+            "cells": [
+                {
+                    "name": "lockSize",
+                    "type": "lockSize",
+                    "default": 2
+                }
+            ]
+        },
+        {
+            "label": "Arc",
+            "cells": [
+                {
+                    "type": "float",
+                    "unit": "°",
+                    "min": 0.0,
+                    "max": 360.0,
+                    "default": 0.0,
+                    "name": "startAngle",
+                    "sublabel": "Start"
+                },
+                {
+                    "type": "float",
+                    "unit": "°",
+                    "min": 0.0,
+                    "max": 360.0,
+                    "default": 360.0,
+                    "name": "endAngle",
+                    "sublabel": "End"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "lineJoin",
+                    "default": 0,
+                    "name": "joinType",
+                    "sublabel": "Join"
+                },
+                {
+                    "type": "lineEnd",
+                    "default": 0,
+                    "name": "endType",
+                    "sublabel": "End"
+                }
+            ]
+        },
+        {
+            "label": "Line",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "fill",
+                    "sublabel": "fill"
+                },
+                {
+                    "type": "float",
+                    "default": 0.5,
+                    "name": "lineWidth",
+                    "sublabel": "width"
+                }
+            ]
+        }
+    ]
+})json"};
 
     public:
       Ellipse(ZCam*, Element* parent = nullptr);

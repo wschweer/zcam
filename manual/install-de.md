@@ -36,7 +36,14 @@ Um auf die USB Ports zugreifen zu können, musst du bestimmte Rechte konfigurier
 - schalte den Laser ein und finde die Vendor-Id und die Produkt-Id deines Geräts:
 
       lsusb
+      ws@zephyr:~/$ lsusb
+      ...
+      Bus 003 Device 005: ID 256f:c635 3Dconnexion SpaceMouse Compact
+      Bus 003 Device 006: ID 9588:9899 BJJCZ USBLMCV2
+      Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+      ...
 
+- schau nach einem Eintrag für BJJCZ USBLMCV2
 - konfiguriere udev, erstellen eine Datei `/etc/udev/rules.d/70-fiber-laser.rules`,
 trage die ermittelte Vendor- und Produkt-Id ein:
 

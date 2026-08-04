@@ -26,8 +26,9 @@
 
 struct ConfigColumnItem {
       QString name;
-      bool isRow  = false;
-      bool isLine = false;
+      bool isRow   = false;
+      bool isLine  = false;
+      bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
       int colSpan = 1;

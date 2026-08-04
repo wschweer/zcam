@@ -12,6 +12,7 @@
 #include "project.h"
 #include "cad.h"
 #include "cam.h"
+#include "cameraelement.h"
 #include "group.h"
 #include "recipe.h"
 #include "element3d.h"
@@ -74,9 +75,10 @@ Project::Project(ZCam* z, Element* parent) : Element3d(z, parent) {
 
       // Forward UndoStack signal changes to Project::dirtyChanged
       // so QML bindings on project.dirty update automatically.
-      connect(_undo, &UndoStack::dirtyChanged, this, [this] {
-            emit dirtyChanged();
-            });
+      connect(_undo, &UndoStack::dirtyChanged, this, [this] { emit dirtyChanged(); });
+
+      // The camera element is created in ensureCameraElement() after
+      // loading, or in endNewProject() for new projects, to avoid duplicates.
 
       // Switching the active fixture changes the machine-space
       // transformation chain (fixtureMatrix * camMatrix * ...),
@@ -130,7 +132,7 @@ void Project::changeProperty(Element* element, const QString& propName, const QV
       if (!element)
             return;
 
-      std::string pn     = propName.toStdString();
+      std::string pn    = propName.toStdString();
       QVariant oldValue = element->property(pn.c_str());
 
       // If newValue represents a null pointer (invalid QVariant or a valid
@@ -185,7 +187,7 @@ void Project::changeProperty(Element* element, const QString& propName, const QV
             // el->setName(newValue.toString());
             QString actualName = el->name();
             _undo->beginMacro();
-            auto cmd           = new RenameElementCommand(zcam, el, oldName, actualName);
+            auto cmd = new RenameElementCommand(zcam, el, oldName, actualName);
             _undo->push(cmd);
             _undo->endMacro();
             // mark cam data as stale so the Cam refresh button enables
@@ -300,6 +302,40 @@ Element3d* Project::gridElement() const {
       }
 
 //---------------------------------------------------------
+//   cameraElement
+//    Returns the CameraElement child, or nullptr if none exists.
+//---------------------------------------------------------
+
+CameraElement* Project::cameraElement() const {
+      for (Element* c : children()) {
+            auto* ce = qobject_cast<CameraElement*>(c);
+            if (ce)
+                  return ce;
+            }
+      return nullptr;
+      }
+
+//---------------------------------------------------------
+//   ensureCameraElement
+//    Create a CameraElement if none exists.  Called after loading
+//    a project (for migration of old projects that predate the
+//    camera element) and after creating a new project.
+//---------------------------------------------------------
+
+void Project::ensureCameraElement() {
+      if (cameraElement()) {
+            // CameraElement already exists (loaded from JSON).  Emit the
+            // signal so QML bindings re-evaluate after a project reload.
+            emit cameraElementChanged();
+            return;
+            }
+      auto* ce = new CameraElement(zcamInstance(), this);
+      ce->set_show(false);
+      addChild(ce);
+      emit cameraElementChanged();
+      }
+
+//---------------------------------------------------------
 //   set_machine
 //    Set the active machine pointer.  Also updates the cached
 //    _machineName so resolveMachine() can re-resolve after the
@@ -374,7 +410,7 @@ void Project::removeFixture(Fixture* f) {
 //   AddLayerCommand implementation
 //---------------------------------------------------------
 
-AddLayerCommand::AddLayerCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
+AddGroupCommand::AddGroupCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
     : UndoCommand(zcam), _cad(cad), _fixture(fixture) {
       _layer = new Group(zcam, nullptr);
       // No longer create a LaserLayer automatically.
@@ -382,54 +418,24 @@ AddLayerCommand::AddLayerCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
       // elements to them via the laserLayer property.
       }
 
-void AddLayerCommand::redo() {
+void AddGroupCommand::redo() {
       if (!_cad || !_layer)
             return;
       // Insert Layer into Cad
       int row = _cad->children().size();
-      if (zcam->treeModel())
-            zcam->treeModel()->beginInsertChild(_cad, row);
+      zcam->treeModel()->beginInsertChild(_cad, row);
       _cad->addChild(_layer);
       _row = row;
-      if (zcam->treeModel())
-            zcam->treeModel()->endInsertChild();
+      zcam->treeModel()->endInsertChild();
       emit zcam->add3dElement(_layer);
 
-      // Insert LaserLayer into Fixture
-      if (_fixture && _laserLayer) {
-            int llRow = _fixture->children().size();
-            if (zcam->treeModel())
-                  zcam->treeModel()->beginInsertChild(_fixture, llRow);
-            _fixture->addChild(_laserLayer);
-            _llRow = llRow;
-            if (zcam->treeModel())
-                  zcam->treeModel()->endInsertChild();
-            emit zcam->add3dElement(_laserLayer);
-            }
-      if (zcam->project())
-            zcam->project()->updateCadLayerVisibility();
+      zcam->project()->updateCadLayerVisibility();
       zcam->setCamDirty(true);
       }
 
-void AddLayerCommand::undo() {
+void AddGroupCommand::undo() {
       if (!_cad || !_layer)
             return;
-      // Remove LaserLayer from Fixture first
-      if (_fixture && _laserLayer) {
-            int llRow = 0;
-            for (const auto c : _fixture->children()) {
-                  if (c == _laserLayer)
-                        break;
-                  ++llRow;
-                  }
-            emit zcam->remove3dElement(_laserLayer);
-            if (zcam->treeModel())
-                  zcam->treeModel()->beginRemoveChild(_fixture, llRow);
-            _fixture->removeChild(_laserLayer);
-            _llRow = llRow;
-            if (zcam->treeModel())
-                  zcam->treeModel()->endRemoveChild();
-            }
 
       // Remove Layer from Cad
       int row = 0;
@@ -439,14 +445,11 @@ void AddLayerCommand::undo() {
             ++row;
             }
       emit zcam->remove3dElement(_layer);
-      if (zcam->treeModel())
-            zcam->treeModel()->beginRemoveChild(_cad, row);
+      zcam->treeModel()->beginRemoveChild(_cad, row);
       _cad->removeChild(_layer);
       _row = row;
-      if (zcam->treeModel())
-            zcam->treeModel()->endRemoveChild();
-      if (zcam->project())
-            zcam->project()->updateCadLayerVisibility();
+      zcam->treeModel()->endRemoveChild();
+      zcam->project()->updateCadLayerVisibility();
       zcam->setCamDirty(true);
       }
 
@@ -516,11 +519,100 @@ void AddFixtureCommand::undo() {
       }
 
 //---------------------------------------------------------
+//   AddCameraCommand implementation
+//---------------------------------------------------------
+
+AddCameraCommand::AddCameraCommand(ZCam* zcam, Element* project)
+    : UndoCommand(zcam), _project(project) {
+      _camera = new CameraElement(zcam, nullptr);
+      _camera->set_show(false);
+      }
+
+void AddCameraCommand::redo() {
+      if (!_project || !_camera)
+            return;
+      int row = _project->children().size();
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_project, row);
+      _project->addChild(_camera);
+      _row = row;
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_camera);
+      if (zcam->project())
+            emit zcam->project()->cameraElementChanged();
+      }
+
+void AddCameraCommand::undo() {
+      if (!_project || !_camera)
+            return;
+      int row = 0;
+      for (const auto c : _project->children()) {
+            if (c == _camera)
+                  break;
+            ++row;
+            }
+      emit zcam->remove3dElement(_camera);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_project, row);
+      _project->removeChild(_camera);
+      _row = row;
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      if (zcam->project())
+            emit zcam->project()->cameraElementChanged();
+      }
+
+//---------------------------------------------------------
+//   AddGridCommand implementation
+//---------------------------------------------------------
+
+AddGridCommand::AddGridCommand(ZCam* zcam, Element* project)
+    : UndoCommand(zcam), _project(project) {
+      _grid = new Grid(zcam, nullptr);
+      }
+
+void AddGridCommand::redo() {
+      if (!_project || !_grid)
+            return;
+      int row = _project->children().size();
+      if (zcam->treeModel())
+            zcam->treeModel()->beginInsertChild(_project, row);
+      _project->addChild(_grid);
+      _row = row;
+      if (zcam->treeModel())
+            zcam->treeModel()->endInsertChild();
+      emit zcam->add3dElement(_grid);
+      if (zcam->project())
+            emit zcam->project()->gridElementChanged();
+      }
+
+void AddGridCommand::undo() {
+      if (!_project || !_grid)
+            return;
+      int row = 0;
+      for (const auto c : _project->children()) {
+            if (c == _grid)
+                  break;
+            ++row;
+            }
+      emit zcam->remove3dElement(_grid);
+      if (zcam->treeModel())
+            zcam->treeModel()->beginRemoveChild(_project, row);
+      _project->removeChild(_grid);
+      _row = row;
+      if (zcam->treeModel())
+            zcam->treeModel()->endRemoveChild();
+      if (zcam->project())
+            emit zcam->project()->gridElementChanged();
+      }
+
+//---------------------------------------------------------
 //   AddLaserLayerCommand implementation
 //---------------------------------------------------------
 
 AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
-   : UndoCommand(zcam), _fixture(fixture) {
+    : UndoCommand(zcam), _fixture(fixture) {
       _laserLayer = new Recipe(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
       // The user assigns elements to this LaserLayer via the laserLayer property.
@@ -723,7 +815,8 @@ Ellipse* AddEllipseCommand::ellipse() const {
 //   AddTextCommand implementation
 //---------------------------------------------------------
 
-AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y) : UndoCommand(zcam), _layer(layer) {
+AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y)
+    : UndoCommand(zcam), _layer(layer) {
       _text = new Text(zcam, nullptr);
       _text->set_text("");
       _text->set_pos(QVector3D(x, y, 0.0));
@@ -794,6 +887,50 @@ void Project::addFixtureCmd() {
       }
 
 //---------------------------------------------------------
+//   Project::addCameraCmd
+//    Create a new CameraElement as child of the Project element.
+//    If a CameraElement already exists, the call is a no-op.
+//    The operation is routed through the undo stack so it can
+//    be undone/redone.
+//---------------------------------------------------------
+
+void Project::addCameraCmd() {
+      ZCam* zc = zcamInstance();
+      if (!zc) {
+            Critical("Project::addCameraCmd: no ZCam instance");
+            return;
+            }
+      if (cameraElement())
+            return; // Camera already exists
+      auto cmd = new AddCameraCommand(zc, this);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
+      }
+
+//---------------------------------------------------------
+//   Project::addGridCmd
+//    Create a new Grid as child of the Project element.
+//    If a Grid already exists, the call is a no-op.
+//    The operation is routed through the undo stack so it can
+//    be undone/redone.
+//---------------------------------------------------------
+
+void Project::addGridCmd() {
+      ZCam* zc = zcamInstance();
+      if (!zc) {
+            Critical("Project::addGridCmd: no ZCam instance");
+            return;
+            }
+      if (gridElement())
+            return; // Grid already exists
+      auto cmd = new AddGridCommand(zc, this);
+      _undo->beginMacro();
+      _undo->push(cmd);
+      _undo->endMacro();
+      }
+
+//---------------------------------------------------------
 //   Project::addLayer
 //    Create a new Layer as child of the Cad element and a
 //    corresponding LaserLayer as child of the Fixture element.
@@ -813,7 +950,7 @@ void Project::addLayer() {
             return;
             }
       Fixture* fixture = _fixture;
-      auto cmd         = new AddLayerCommand(zc, cad, fixture);
+      auto cmd         = new AddGroupCommand(zc, cad, fixture);
       _undo->beginMacro();
       _undo->push(cmd);
       _undo->endMacro();
@@ -874,6 +1011,14 @@ void RemoveElementCommand::redo() {
             _removedFixture = qobject_cast<Fixture*>(_child);
       if (_removedFixture && zcam->project())
             zcam->project()->removeFixture(_removedFixture);
+      // Emit change signals when a CameraElement or Grid is removed
+      // so QML bindings re-evaluate.
+      if (zcam->project()) {
+            if (qobject_cast<CameraElement*>(_child))
+                  emit zcam->project()->cameraElementChanged();
+            if (qobject_cast<Grid*>(_child))
+                  emit zcam->project()->gridElementChanged();
+            }
       if (zcam->project())
             zcam->project()->updateCadLayerVisibility();
       zcam->setCamDirty(true);
@@ -899,6 +1044,14 @@ void RemoveElementCommand::undo() {
       // addFixture() will also set it as active if no fixture is currently set.
       if (_removedFixture && zcam->project())
             zcam->project()->addFixture(_removedFixture);
+      // Emit change signals when a CameraElement or Grid is re-added (undo)
+      // so QML bindings re-evaluate.
+      if (zcam->project()) {
+            if (qobject_cast<CameraElement*>(_child))
+                  emit zcam->project()->cameraElementChanged();
+            if (qobject_cast<Grid*>(_child))
+                  emit zcam->project()->gridElementChanged();
+            }
       if (zcam->project())
             zcam->project()->updateCadLayerVisibility();
       zcam->setCamDirty(true);

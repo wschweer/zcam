@@ -45,208 +45,258 @@ class Text : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-                  "class": "Text",
-                  "items": [
-                    {
-                      "row": {
-                        "show": {
-                          "label": "Show",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "burn": {
-                          "label": "Burn",
-                          "type": "bool",
-                          "default": true
-                        }
-                      },
-                      "label": "State"
-                    },
-                    {
-                      "name": "laserLayer",
-                      "label": "LaserLayer",
-                      "type": "laserLayer",
-                      "default": ""
-                    },
-                    {
-                      "name": "color",
-                      "label": "Color",
-                      "type": "color",
-                      "default": "green"
-                    },
-                    {
-                      "name": "pos",
-                      "label": "Pos.",
-                      "type": "vector3d",
-                      "unit": "mm",
-                      "default": [
+    "class": "Text",
+    "rows": [
+        {
+            "label": "State",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "show",
+                    "sublabel": "Show"
+                },
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "burn",
+                    "sublabel": "Burn"
+                }
+            ]
+        },
+        {
+            "label": "Recipe",
+            "cells": [
+                {
+                    "name": "laserLayer",
+                    "type": "laserLayer",
+                    "default": ""
+                }
+            ]
+        },
+        {
+            "label": "Color",
+            "cells": [
+                {
+                    "name": "color",
+                    "type": "color",
+                    "default": "green"
+                }
+            ]
+        },
+        {
+            "label": "Pos.",
+            "cells": [
+                {
+                    "name": "pos",
+                    "type": "vector3d",
+                    "unit": "mm",
+                    "default": [
                         0.0,
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "rot",
-                      "label": "Rot.",
-                      "type": "vector3d",
-                      "unit": "°",
-                      "min": 0.0,
-                      "max": 360,
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Rot.",
+            "cells": [
+                {
+                    "name": "rot",
+                    "type": "vector3d",
+                    "unit": "°",
+                    "min": 0.0,
+                    "max": 360,
+                    "default": [
                         0.0,
                         0.0,
                         0.0
-                      ]
-                    },
-                    {
-                      "name": "scale",
-                      "label": "Scale",
-                      "type": "scale",
-                      "min": 0.001,
-                      "max": 1000,
-                      "default": [
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Scale",
+            "cells": [
+                {
+                    "name": "scale",
+                    "type": "scale",
+                    "min": 0.001,
+                    "max": 1000,
+                    "default": [
                         1.0,
                         1.0,
                         1.0
-                      ]
-                    },
-                    {
-                      "name": "lockScale",
-                      "label": "Lock",
-                      "type": "lockScale",
-                      "default": 2
-                    },
-                    {
-                      "row": {
-                        "mirrorX": {
-                          "label": "X",
-                          "type": "bool",
-                          "default": false
-                        },
-                        "mirrorY": {
-                          "label": "Y",
-                          "type": "bool",
-                          "default": false
-                        }
-                      },
-                      "label": "Mirror"
-                    },
-                    {
-                      "name": "line",
-                      "type": "line"
-                    },
-                    {
-                      "name": "text",
-                      "label": "Text",
-                      "type": "multiline",
-                      "default": "ZCam"
-                    },
-                    {
-                      "name": "fontFamily",
-                      "label": "Font",
-                      "type": "font",
-                      "default": "NotoSans"
-                    },
-                    {
-                      "row": {
-                        "bold": {
-                          "label": "B",
-                          "type": "fontStyle",
-                          "default": false
-                        },
-                        "italic": {
-                          "label": "I",
-                          "type": "fontStyle",
-                          "default": false
-                        },
-                        "underline": {
-                          "label": "U",
-                          "type": "fontStyle",
-                          "default": false
-                        }
-                      },
-                      "label": " "
-                    },
-                    {
-                      "row": {
-                        "pointSize": {
-                          "label": "Size",
-                          "type": "float",
-                          "unit": "pt",
-                          "min": 1.0,
-                          "max": 1000.0,
-                          "default": 24.0
-                        },
-                        "weight": {
-                          "label": "Weight",
-                          "type": "int",
-                          "min": 100,
-                          "max": 900,
-                          "default": 600
-                        }
-                      },
-                      "label": " "
-                    },
-                    {
-                      "row": {
-                        "stretch": {
-                          "label": "Stretch",
-                          "type": "int",
-                          "unit": "%",
-                          "min": 25,
-                          "max": 400,
-                          "default": 100
-                        },
-                        "letterSpacing": {
-                          "label": "Letter",
-                          "type": "float",
-                          "unit": "%",
-                          "min": 1.0,
-                          "max": 500.0,
-                          "default": 100.0
-                        }
-                      },
-                      "label": "Spacing"
-                    },
-                    {
-                      "row": {
-                        "wordSpacing": {
-                          "label": "Word",
-                          "type": "float",
-                          "unit": "pxl",
-                          "min": -100.0,
-                          "max": 100.0,
-                          "default": 0.0
-                        },
-                        "lineSpacing": {
-                          "label": "Line",
-                          "type": "float",
-                          "unit": "%",
-                          "min": 0.0,
-                          "max": 500.0,
-                          "default": 100.0
-                        }
-                      },
-                      "label": " "
-                    },
-
-                    {
-                      "row": {
-                        "fill": {
-                          "label": "Fill",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "align": {
-                          "label": "Align",
-                          "type": "halign",
-                          "default": 4
-                        }
-                      },
-                      "label": " "
-                    }
-                  ]
-                      })json"};
+                    ]
+                }
+            ]
+        },
+        {
+            "label": "Lock",
+            "cells": [
+                {
+                    "name": "lockScale",
+                    "type": "lockScale",
+                    "default": 2
+                }
+            ]
+        },
+        {
+            "label": "Mirror",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": false,
+                    "name": "mirrorX",
+                    "sublabel": "X"
+                },
+                {
+                    "type": "bool",
+                    "default": false,
+                    "name": "mirrorY",
+                    "sublabel": "Y"
+                }
+            ]
+        },
+        {
+            "cells": [
+                {
+                    "name": "line",
+                    "type": "line"
+                }
+            ]
+        },
+        {
+            "label": "Text",
+            "cells": [
+                {
+                    "name": "text",
+                    "type": "multiline",
+                    "default": "ZCam"
+                }
+            ]
+        },
+        {
+            "label": "Font",
+            "cells": [
+                {
+                    "name": "fontFamily",
+                    "type": "font",
+                    "default": "NotoSans"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "fontStyle",
+                    "default": false,
+                    "name": "bold",
+                    "sublabel": "B"
+                },
+                {
+                    "type": "fontStyle",
+                    "default": false,
+                    "name": "italic",
+                    "sublabel": "I"
+                },
+                {
+                    "type": "fontStyle",
+                    "default": false,
+                    "name": "underline",
+                    "sublabel": "U"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "float",
+                    "unit": "pt",
+                    "min": 1.0,
+                    "max": 1000.0,
+                    "default": 24.0,
+                    "name": "pointSize",
+                    "sublabel": "Size"
+                },
+                {
+                    "type": "int",
+                    "min": 100,
+                    "max": 900,
+                    "default": 600,
+                    "name": "weight",
+                    "sublabel": "Weight"
+                }
+            ]
+        },
+        {
+            "label": "Spacing",
+            "cells": [
+                {
+                    "type": "int",
+                    "unit": "%",
+                    "min": 25,
+                    "max": 400,
+                    "default": 100,
+                    "name": "stretch",
+                    "sublabel": "Stretch"
+                },
+                {
+                    "type": "float",
+                    "unit": "%",
+                    "min": 1.0,
+                    "max": 500.0,
+                    "default": 100.0,
+                    "name": "letterSpacing",
+                    "sublabel": "Letter"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "float",
+                    "unit": "pxl",
+                    "min": -100.0,
+                    "max": 100.0,
+                    "default": 0.0,
+                    "name": "wordSpacing",
+                    "sublabel": "Word"
+                },
+                {
+                    "type": "float",
+                    "unit": "%",
+                    "min": 0.0,
+                    "max": 500.0,
+                    "default": 100.0,
+                    "name": "lineSpacing",
+                    "sublabel": "Line"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "fill",
+                    "sublabel": "Fill"
+                },
+                {
+                    "type": "halign",
+                    "default": 4,
+                    "name": "align",
+                    "sublabel": "Align"
+                }
+            ]
+        }
+    ]
+})json"};
 
       QFont font;
       std::vector<double> lineOffsets;

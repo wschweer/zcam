@@ -15,8 +15,61 @@
 #include <QPalette>
 #include <QElapsedTimer>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <cstdlib>
+#include <functional>
 #include "zcam.h"
+
+//---------------------------------------------------------
+//   firstInstall
+//    Check whether ~/ZCam exists.  If not, create the directory
+//    tree and copy all bundled resources from the ":/ZCam/" prefix
+//    (embedded from data/ZCam/) to ~/ZCam.
+//---------------------------------------------------------
+
+static void firstInstall() {
+      QString home    = QDir::homePath();
+      QString zcamDir = home + "/ZCam";
+
+      if (QDir(zcamDir).exists())
+            return;
+
+      qDebug() << "First install: creating" << zcamDir;
+      QDir().mkpath(zcamDir);
+
+      // Recursively copy all files from the embedded resource tree
+      // ":/ZCam/" → ~/ZCam/
+      std::function<void(const QString&)> copyResourceDir = [&](const QString& resourcePath) {
+            QDir dir(resourcePath);
+            for (const auto& entry : dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
+                  // Build the relative path from the resource root ":/ZCam/"
+                  QString resourceRel  = entry.absoluteFilePath().mid(2); // strip ":/"
+                  QString destRelative = resourceRel.mid(QStringLiteral("ZCam/").length());
+                  QString dest         = zcamDir + "/" + destRelative;
+
+                  // Ensure parent directory exists
+                  QFileInfo di(dest);
+                  QDir().mkpath(di.absolutePath());
+
+                  QFile src(entry.absoluteFilePath());
+                  if (src.open(QIODevice::ReadOnly)) {
+                        QFile dst(dest);
+                        if (dst.open(QIODevice::WriteOnly)) {
+                              dst.write(src.readAll());
+                              dst.close();
+                              }
+                        src.close();
+                        }
+                  qDebug() << "  copied" << destRelative;
+                  }
+            for (const auto& entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+                  copyResourceDir(entry.absoluteFilePath());
+            };
+
+      copyResourceDir(":/ZCam");
+      }
 
 //---------------------------------------------------------
 //   main
@@ -47,6 +100,8 @@ int main(int argc, char* argv[]) {
       app.setPalette(darkPalette);
 
       QQuickStyle::setStyle("Material");
+
+      firstInstall();
 
       QQmlApplicationEngine engine;
       //      engine.addImportPath(QCoreApplication::applicationDirPath());

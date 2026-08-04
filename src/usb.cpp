@@ -11,7 +11,7 @@
 
 #include "logger.h"
 #include "usb.h"
-#include "laser_bjjcz.h"
+
 #include <libusb-1.0/libusb.h>
 
 static const int WRITE_ENDPOINT = 0x02;
@@ -24,8 +24,8 @@ static bool debugIO = false;
 //---------------------------------------------------------
 
 static void libusbError(int error) {
-      Debug("{}", libusb_strerror(error));
-      throw libusb_strerror(error);
+      Critical("{}", libusb_strerror(error));
+//      throw libusb_strerror(error);
       }
 
 //---------------------------------------------------------
@@ -34,7 +34,6 @@ static void libusbError(int error) {
 
 Usb::Usb() {
       std::srand(std::time(nullptr));
-      //      Info("libusb api version: {}", LIBUSB_API_VERSION);
       auto rc = libusb_init(&ctx);
       if (rc)
             libusbError(rc);
@@ -75,8 +74,10 @@ bool Usb::open(bool _mock) {
       if (mock)
             return true;
       int error;
-      if ((error = libusb_open(device, &handle)))
+      if ((error = libusb_open(device, &handle))) {
             libusbError(error);
+            return false;
+            }
       libusb_free_device_list(list, 1);
       list = nullptr;
 
@@ -111,12 +112,19 @@ bool Usb::write(const u_char* data, size_t count) {
       if (count != 0xc && count != 0xc00)
             Fatal("bad count 0x{:x} expected 0xc or 0xc00", count);
       if (debugIO) {
-            Packet6* p = (Packet6*)(data);
-            dump(p, count == 0xc);
+            // Simple hex dump for debugging
+            const uint16_t* p = reinterpret_cast<const uint16_t*>(data);
+            int words         = static_cast<int>(count) / 2;
+            std::string line;
+            for (int i = 0; i < words; ++i)
+                  line += std::format("{:04x} ", p[i]);
+            Debug("USB WRITE: {}", line);
             }
       if (!mock) {
-            if (!handle)
+            if (!handle) {
+                  Fatal("no handle");
                   return false;
+                  }
             return readWrite(const_cast<u_char*>(data), count, WRITE_ENDPOINT);
             }
       return true;
@@ -129,15 +137,17 @@ bool Usb::write(const u_char* data, size_t count) {
 bool Usb::read(u_char* data, size_t count) {
       bool rv = true;
       if (!mock) {
-            if (!handle)
+            if (!handle) {
+                  Fatal("no handle");
                   return false;
+                  }
             rv = readWrite(data, count, READ_ENDPOINT);
             }
       else
             for (int i = 0; i < count; ++i)
                   data[i] = std::rand();
       if (debugIO) {
-            const Packet4& p = *(Packet4*)(data);
+            const uint16_t* p = reinterpret_cast<const uint16_t*>(data);
             Debug("  {:04x}:{:04x}:{:04x}:{:04x}", p[0], p[1], p[2], p[3]);
             }
       return rv;
@@ -150,16 +160,17 @@ bool Usb::read(u_char* data, size_t count) {
 
 bool Usb::readWrite(u_char* data, size_t count, int endpoint) {
       if (!handle) {
-            Debug("usb readWrite: handle is null, device not opened");
+            Fatal("usb readWrite: handle is null, device not opened");
             return false;
             }
       int transferred;
       int error = libusb_bulk_transfer(handle, endpoint, data, count, &transferred, timeout);
       if (error) {
-            Debug("libusb_bulk_transfer failed");
+            Fatal("libusb_bulk_transfer (count={}, timeout={}) failed", count, timeout);
             libusbError(error);
+            return false;
             }
       if (count != transferred)
-            Critical("requested {}, actual transferred {}", count, transferred);
+            Fatal("requested {}, actual transferred {}", count, transferred);
       return true;
       }

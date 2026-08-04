@@ -87,6 +87,7 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //---------------------------------------------------------
 
 Recipe::Recipe(ZCam* w, Element* parent) : Element3d(w, parent) {
+      setName("");
       // LaserLayer no longer creates its own _geometry.
       // Display geometry is collected and rendered by Cam.
       set_model("LaserLayer1.qml");
@@ -95,11 +96,6 @@ Recipe::Recipe(ZCam* w, Element* parent) : Element3d(w, parent) {
       // ProjectTree's curColor binding shows the correct color for hover/selection.
       connect(w->config(), &Config::markColorChanged, this,
               [this, w]() { setColor(w->config()->markColor()); });
-      }
-
-Recipe::~Recipe() {
-      // _geometry is no longer created in the constructor.
-      // Element3d base class manages _geometry = nullptr safely.
       }
 
 //---------------------------------------------------------
@@ -272,7 +268,7 @@ LaserPath Recipe::collectLaserPath() const {
             return LaserPath();
             }
 
-      Cam* cam     = zcam->project()->cam();
+      Cam* cam = zcam->project()->cam();
 
       double panelHD = cam->panelHDistance();
       double panelVD = cam->panelVDistance();

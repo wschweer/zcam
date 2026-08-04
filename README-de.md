@@ -1,19 +1,22 @@
 # ZCam
 
-ZCam ist ein CAM (Computer Aided Manufacturing) program. Du kannst
-damit CAD Daten importieren und bearbeiten. ZCam generiert daraus Daten zur Steuerung
-von Galvo-Faserlasern oder G-Code für CNC Maschinen.
+ZCam ist ein CAM-Programm (Computer Aided Manufacturing). Du kannst damit
+CAD-Daten importieren und bearbeiten. ZCam generiert daraus Steuerdaten für
+Galvo-Faserlaser oder G-Code für CNC-Maschinen.
 
-ZCam basiert auf einem älteren (unveröffentlichten) Programm von mir. Dies ist der
-Versuch, dieses Programm auf eine modernere Platform zu portieren.
+[<img src="manual/foto-1.png" style="width:300px;"/>](manual/foto-1.png)
+[<img src="manual/foto-2.png" style="width:300px;"/>](manual/foto-2.png)
 
-Im aktuellen Zustand ist ZCam noch in Entwicklung und nicht benutzbar.
+ZCam ist in aktiver Entwicklung und macht schnelle Fortschritte. Ich teste die
+aktuelle Version mit einem 60W MOPA Faserlaser.
 
 - [Build](manual/build.md)
-- [Manual](manual/manual-de.md)
+- [Handbuch](manual/manual-de.md)
+- [Installation](manual/install-de.md)
+- [Entwicklung](manual/development-de.md)
 
-### Thirdparty Code
-For convenience ZCam includes some thirdparty sources:
+### Third-Party-Code
+Zur Bequemlichkeit enthält ZCam einige Third-Party-Quellen:
 
-- clipper2 from Angus Johnson; License: https://www.boost.org/LICENSE_1_0.txt
-- tess2 from Mikko Mononen; License: SGI FREE SOFTWARE LICENSE B (Version 2.0, Sept. 18, 2008)
+- clipper2 von Angus Johnson; Lizenz: https://www.boost.org/LICENSE_1_0.txt
+- tess2 von Mikko Mononen; Lizenz: SGI FREE SOFTWARE LICENSE B (Version 2.0, Sept. 18, 2008)

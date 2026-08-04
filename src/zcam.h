@@ -64,192 +64,199 @@ class Config : public QObject
       inline static constexpr std::string_view _properties {
          R"json({
                   "class": "Config",
-                  "items": [
+                  "rows": [
                     {
-                      "columns": {
-                        "count": 2,
-                        "cat": "GUI",
-                        "items": [
-                          {
-                            "name": "iconSize",
-                            "label": "Icon Size",
-                            "type": "int",
-                            "cat": "GUI",
-                            "min": 16,
-                            "max": 128,
-                            "default": 32
-                          },
-                          {
-                            "name": "navCubeSize",
-                            "label": "Nav Cube Size",
-                            "type": "int",
-                            "cat": "GUI",
-                            "min": 80,
-                            "max": 400,
-                            "default": 200
-                          },
-                          {
-                            "name": "handleSize",
-                            "label": "Handle Size",
-                            "type": "float",
-                            "cat": "GUI",
-                            "min": 0.01,
-                            "max": 1.0,
-                            "default": 0.2,
-                            "precision": 2,
-                            "step": 0.05,
-                            "bigStep": 0.5
-                          },
-                          {
-                            "row": {
-                              "font": {
-                                "label": "Font",
-                                "type": "font",
-                                "cat": "GUI",
-                                "default": "NotoSans"
-                              },
-                              "fontSize": {
-                                "label": "Font Size",
-                                "type": "int",
-                                "cat": "GUI",
-                                "min": 6,
-                                "max": 72,
-                                "default": 12
-                              }
+                      "columns": 2,
+                      "cat": "GUI",
+                      "cells": [
+                        {
+                          "name": "iconSize",
+                          "label": "Icon Size",
+                          "type": "int",
+                          "cat": "GUI",
+                          "min": 16,
+                          "max": 128,
+                          "default": 32
+                        },
+                        {
+                          "name": "navCubeSize",
+                          "label": "Nav Cube Size",
+                          "type": "int",
+                          "cat": "GUI",
+                          "min": 80,
+                          "max": 400,
+                          "default": 200
+                        },
+                        {
+                          "name": "handleSize",
+                          "label": "Handle Size",
+                          "type": "float",
+                          "cat": "GUI",
+                          "min": 0.01,
+                          "max": 1.0,
+                          "default": 0.2,
+                          "precision": 2,
+                          "step": 0.05,
+                          "bigStep": 0.5
+                        },
+                        {
+                          "label": "Font",
+                          "colSpan": 2,
+                          "cells": [
+                            {
+                              "type": "font",
+                              "cat": "GUI",
+                              "default": "NotoSans",
+                              "name": "font",
+                              "sublabel": "Font"
                             },
-                            "label": "Font",
-                            "colSpan": 2
-                          }
-                        ]
-                      }
+                            {
+                              "type": "int",
+                              "cat": "GUI",
+                              "min": 6,
+                              "max": 72,
+                              "default": 12,
+                              "name": "fontSize",
+                              "sublabel": "Font Size"
+                            }
+                          ]
+                        }
+                      ]
                     },
                     {
-                      "columns": {
-                        "count": 2,
-                        "cat": "View",
-                        "items": [
-                          {
-                            "name": "showGrid",
-                            "label": "Show Grid",
-                            "type": "bool",
-                            "cat": "View",
-                            "default": true
-                          },
-                          {
-                            "name": "gridSpacing",
-                            "label": "Grid Spacing",
-                            "type": "float",
-                            "cat": "View",
-                            "unit": "mm",
-                            "min": 1.0,
-                            "max": 100.0,
-                            "default": 10.0,
-                            "precision": 1,
-                            "step": 0.5,
-                            "bigStep": 5.0
-                          }
-                        ]
-                      }
+                      "columns": 2,
+                      "cat": "View",
+                      "cells": [
+                        {
+                          "name": "showGrid",
+                          "label": "Show Grid",
+                          "type": "bool",
+                          "cat": "View",
+                          "default": true
+                        },
+                        {
+                          "name": "gridSpacing",
+                          "label": "Grid Spacing",
+                          "type": "float",
+                          "cat": "View",
+                          "unit": "mm",
+                          "min": 1.0,
+                          "max": 100.0,
+                          "default": 10.0,
+                          "precision": 1,
+                          "step": 0.5,
+                          "bigStep": 5.0
+                        }
+                      ]
                     },
                     {
-                      "columns": {
-                        "count": 2,
-                        "cat": "Colors",
-                        "items": [
-                          {
-                            "name": "panelBG",
-                            "label": "Panel BG",
-                            "type": "color",
-                            "cat": "Colors"
-                          },
-                          {
-                            "name": "accentColor",
-                            "label": "Accent Color",
-                            "type": "color",
-                            "cat": "Colors"
-                          },
-                          {
-                            "name": "gridColor",
-                            "label": "Grid Color",
-                            "type": "color",
-                            "cat": "Colors"
-                          },
-                          {
-                            "name": "framingColor",
-                            "label": "Framing Color",
-                            "type": "color",
-                            "cat": "Colors"
-                          },
-                          {
-                            "name": "markColor",
-                            "label": "Mark Color",
-                            "type": "color",
-                            "cat": "Colors"
-                          },
-                          {
-                            "name": "moveColor",
-                            "label": "Move Color",
-                            "type": "color",
-                            "cat": "Colors"
-                          }
-                        ]
-                      }
+                      "columns": 2,
+                      "cat": "Colors",
+                      "cells": [
+                        {
+                          "name": "panelBG",
+                          "label": "Panel BG",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "accentColor",
+                          "label": "Accent Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "gridColor",
+                          "label": "Grid Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "framingColor",
+                          "label": "Framing Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "markColor",
+                          "label": "Mark Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "moveColor",
+                          "label": "Move Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        }
+                      ]
                     },
                     {
-                      "columns": {
-                        "count": 2,
-                        "cat": "Project",
-                        "items": [
-                          {
-                            "name": "defaultMachine",
-                            "label": "Default Machine",
-                            "type": "machineName",
-                            "cat": "Project",
-                            "default": ""
-                          },
-                          {
-                            "name": "artworkDirectory",
-                            "label": "Artwork Path",
-                            "type": "path",
-                            "cat": "Project",
-                            "default": ""
-                          },
-                          {
-                            "name": "iconDirectory",
-                            "label": "Icon Path",
-                            "type": "path",
-                            "cat": "Project",
-                            "default": "~/ZCam/icons"
-                          },
-                          {
-                            "name": "machinesDirectory",
-                            "label": "Machines Path",
-                            "type": "path",
-                            "cat": "Project",
-                            "default": ""
-                          },
-                          {
-                            "name": "recipesDirectory",
-                            "label": "Recipes Path",
-                            "type": "path",
-                            "cat": "Project",
-                            "default": ""
-                          },
-                          {
-                            "name": "dxfScale",
-                            "label": "DXF Scale",
-                            "type": "float",
-                            "cat": "Project",
-                            "unit": "dpmm",
-                            "min": 0.001,
-                            "max": 1000.0,
-                            "default": 72.0,
-                            "precision": 3,
-                            "step": 0.1,
-                            "bigStep": 1.0
-                          }
-                        ]
-                      }
+                      "columns": 2,
+                      "cat": "Project",
+                      "cells": [
+                        {
+                          "name": "defaultMachine",
+                          "label": "Default Machine",
+                          "type": "machineName",
+                          "cat": "Project",
+                          "default": ""
+                        },
+                        {
+                          "type": "empty"
+                        },
+                        {
+                        "type": "line",
+                        "name": "line",
+                        "colSpan": 2
+                        },
+                        {
+                          "name": "artworkDirectory",
+                          "label": "Artwork Path",
+                          "type": "path",
+                          "cat": "Project",
+                          "default": ""
+                        },
+                        {
+                          "name": "iconDirectory",
+                          "label": "Icon Path",
+                          "type": "path",
+                          "cat": "Project",
+                          "default": "~/ZCam/icons"
+                        },
+                        {
+                          "name": "machinesDirectory",
+                          "label": "Machines Path",
+                          "type": "path",
+                          "cat": "Project",
+                          "default": ""
+                        },
+                        {
+                          "name": "recipesDirectory",
+                          "label": "Recipes Path",
+                          "type": "path",
+                          "cat": "Project",
+                          "default": ""
+                        },
+                        {
+                        "type": "line",
+                        "name": "line",
+                        "colSpan": 2
+                        },
+                        {
+                          "name": "dxfScale",
+                          "label": "DXF Scale",
+                          "type": "float",
+                          "cat": "Project",
+                          "unit": "dpmm",
+                          "min": 0.001,
+                          "max": 1000.0,
+                          "default": 72.0,
+                          "precision": 3,
+                          "step": 0.1,
+                          "bigStep": 1.0
+                        }
+                      ]
                     }
                   ]
                       })json"};
@@ -370,6 +377,12 @@ class ZCam : public QObject
       void projectLoaded(const QString& path);
       /// Emitted after the project was saved.
       void projectSaved(const QString& path);
+      /// Emitted after assets (config, machines, recipes) were saved.
+      void assetsSaved();
+
+      /// Emitted when the user wants to open the Recipe editor for a
+      /// specific recipe (e.g. via the Edit button in the inspector).
+      void recipeEditorRequested(const QString& name);
 
     public:
       explicit ZCam(QObject* parent = nullptr);
@@ -519,7 +532,10 @@ class ZCam : public QObject
       Q_INVOKABLE QStringList recipeNames() const;
       /// Returns the Recipe* pointer for a given recipe name, or nullptr.
       Q_INVOKABLE LaserRecipe* recipePtr(const QString& name) const;
-
+      /// Opens the Recipe editor tab and selects the recipe with the given name.
+      /// Emits recipeEditorRequested(name) so the QML layer can switch tabs
+      /// and select the recipe in the tree.
+      Q_INVOKABLE void openRecipeEditor(const QString& name) { emit recipeEditorRequested(name); }
       /// Create a new Rectangle element at the given world position
       /// and add it to the current Layer (the Layer of the selected
       /// element) or the first visible Layer as fallback.  Returns

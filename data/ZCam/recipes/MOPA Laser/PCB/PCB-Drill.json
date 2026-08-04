@@ -1,0 +1,25 @@
+{
+    "description": "",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": false,
+            "frequency": 40.0,
+            "interleave": 1,
+            "interval": 0.02,
+            "name": "sublayer1",
+            "numPasses": 1,
+            "power": 20.0,
+            "pulseWidth": 200,
+            "speed": 1000.0,
+            "startAngle": 0.0,
+            "travelSpeed": 4000.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        }
+    ],
+    "name": "PCB-Drill",
+    "numPasses": 1
+}

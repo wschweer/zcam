@@ -1,0 +1,30 @@
+{
+    "boardType": "",
+    "circlePrecision": 0.001,
+    "description": "GCode Machine",
+    "framingSpeed": 42.0,
+    "maxAcceleration": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "maxFeed": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "maxSpindle": 150.0,
+    "maxTravel": [
+        100.0,
+        100.0,
+        100.0
+    ],
+    "minSpindle": 60.0,
+    "name": "G-Code",
+    "ncPrecision": 0.001,
+    "precision": 0.001,
+    "safeDist1": 0.0,
+    "safeDist2": 1.19e-321,
+    "travelSpeed": 397.0,
+    "type": "GCode CNC"
+}

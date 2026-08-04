@@ -14,6 +14,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Controls.Material
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import QtMultimedia
 import ZCam
 
 pragma ComponentBehavior: Bound
@@ -55,50 +56,33 @@ Item {
         if (!propMeta)
             return ({})
         const map = ({})
-        if (propMeta.items && Array.isArray(propMeta.items)) {
-            for (let i = 0; i < propMeta.items.length; ++i) {
-                const item = propMeta.items[i]
-                if (item.columns) {
-                    // Parse items inside the columns block
-                    if (item.columns.items && Array.isArray(item.columns.items)) {
-                        for (let j = 0; j < item.columns.items.length; ++j) {
-                            const colItem = item.columns.items[j]
-                            if (colItem.row) {
-                                const rowObj = colItem.row
-                                for (const subName in rowObj)
-                                    map[subName] = rowObj[subName]
+        if (propMeta.rows && Array.isArray(propMeta.rows)) {
+            // New format: top-level "rows" array
+            for (let i = 0; i < propMeta.rows.length; ++i) {
+                const row = propMeta.rows[i]
+                if (row.cells && Array.isArray(row.cells)) {
+                    for (let j = 0; j < row.cells.length; ++j) {
+                        const cell = row.cells[j]
+                        if (cell.name)
+                            map[cell.name] = cell
+                        // Handle nested cells (row within columns)
+                        if (cell.cells && Array.isArray(cell.cells)) {
+                            for (let k = 0; k < cell.cells.length; ++k) {
+                                const subCell = cell.cells[k]
+                                if (subCell.name)
+                                    map[subCell.name] = subCell
                                 }
-                            else if (colItem.name)
-                                map[colItem.name] = colItem
                             }
                         }
                     }
-                else if (item.row) {
-                    const rowObj = item.row
-                    for (const subName in rowObj)
-                        map[subName] = rowObj[subName]
-                    }
-                else if (item.name)
-                    map[item.name] = item
                 }
             }
         for (const key in propMeta) {
-            if (key === "class" || key === "items")
+            if (key === "class" || key === "rows" || key === "columns")
                 continue
             const val = propMeta[key]
             if (val && typeof val === "object" && !Array.isArray(val)) {
-                let isRow = true
-                for (const subKey in val) {
-                    if (!val[subKey] || !val[subKey].label) {
-                        isRow = false
-                        break
-                        }
-                    }
-                if (isRow) {
-                    for (const subKey in val)
-                        map[subKey] = val[subKey]
-                    }
-                else if (val.label)
+                if (val.label)
                     map[key] = val
                 }
             }
@@ -139,6 +123,16 @@ Item {
         return Number(m.default)
         }
 
+    // Like defaultScalar but takes the metadata object directly.
+    // Used by sub-delegates that already hold subMeta.
+    function defaultScalarFromMeta(m, component) {
+        if (!m || m.default === undefined)
+            return 0
+        if (Array.isArray(m.default))
+            return m.default[component] ?? 0
+        return Number(m.default)
+        }
+
     // Derive step sizes from precision.
     // precision N means N decimal places.
     //   stepSize  = 10^(1-N)  → precision 2 gives 0.1
@@ -166,6 +160,39 @@ Item {
         return Math.pow(10, -p)
         }
 
+    // ── "enabled" keyword support ──────────────────────────────────────
+    // A cell JSON object may contain an "enabled" key whose value is the
+    // name of a bool property on the same element/machine/pass.  The GUI
+    // control for that cell is disabled when the named property is false.
+    //
+    // We need to re-evaluate the enabled state whenever any property value
+    // changes.  The model emits dataChanged for the row whose property
+    // changed, but the delegate for the *enabled* cell may be on a different
+    // row.  To propagate, we use a shared counter property _dataChangeCounter
+    // that is incremented on every dataChanged emission from the model.  The
+    // enabled bindings depend on this counter, so they re-evaluate.
+    property int _dataChangeCounter: 0
+
+    Connections {
+        target: root.model
+        ignoreUnknownSignals: true
+        function onDataChanged() { root._dataChangeCounter++ }
+    }
+
+    // Returns true if the control for the given metadata should be enabled.
+    // meta is the cell's JSON metadata object (from propMetaMap).
+    function isPropEnabled(meta) {
+        // Touch the counter so the binding re-evaluates on dataChanged.
+        const _ = root._dataChangeCounter
+        if (!meta || meta.enabled === undefined)
+            return true
+        const depName = meta.enabled
+        if (!root.model || !root.model.elementProperty)
+            return true
+        const v = root.model.elementProperty(depName)
+        return v === true
+        }
+
     // ── Reusable borderless SpinBox ──────────────────────────────────────────
     component BareSpinBox : SpinBox {
         id: _sb
@@ -183,7 +210,7 @@ Item {
 
         contentItem: TextInput {
             text: _sb.displayText
-            color: "#ffffff"
+            color: _sb.enabled ? "#ffffff" : "#888888"
             font.bold: true
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -240,7 +267,7 @@ Item {
 
         contentItem: TextInput {
             text: _dsb.displayText
-            color: "#ffffff"
+            color: _dsb.enabled ? "#ffffff" : "#888888"
             font.bold: true
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -291,12 +318,14 @@ Item {
     // ── ValueBox ─────────────────────────────────────────────────────────────
     component ValueBox : Rectangle {
         id: vbox
-        color: "#a9a9a9"
+        color: vbox.enabled ? "#a9a9a9" : "#5a5a5a"
         radius: 4
         implicitHeight: 28
+        opacity: vbox.enabled ? 1.0 : 0.5
 
         property string unitText: ""
         property string subLabelText: ""
+        property bool subLabelAlignRight: false
 
         default property alias contentChildren: contentColumn.data
 
@@ -311,13 +340,24 @@ Item {
             }
 
         Text {
-            visible: vbox.subLabelText.length > 0
+            visible: vbox.subLabelText.length > 0 && !vbox.subLabelAlignRight
             text: vbox.subLabelText
             font.pixelSize: 13
-            color: "#333333"
-            anchors.left: parent.left
+            color: vbox.enabled ? "#333333" : "#666666"
             anchors.bottom: parent.bottom
+            anchors.bottomMargin: 1
+            anchors.left: parent.left
             anchors.leftMargin: 4
+            }
+
+        Text {
+            visible: vbox.subLabelText.length > 0 && vbox.subLabelAlignRight
+            text: vbox.subLabelText
+            font.pixelSize: 13
+            color: vbox.enabled ? "#333333" : "#666666"
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: 4
             anchors.bottomMargin: 1
             }
 
@@ -333,7 +373,7 @@ Item {
                 id: unitLabel
                 text: vbox.unitText
                 font.pixelSize: 9
-                color: "#333333"
+                color: vbox.enabled ? "#333333" : "#666666"
                 rotation: 90
                 transformOrigin: Item.Center
                 anchors.centerIn: parent
@@ -370,6 +410,10 @@ Item {
                         return rowDelegate
                     if (delegateRoot.model.isColumns)
                         return columnsDelegate
+                    if (delegateRoot.model.propName === "empty")
+                        return emptyDelegate
+                    if (delegateRoot.model.propName === "line")
+                        return lineDelegate
                     const m = root.metaFor(delegateRoot.model.propName)
                     if (!m) return null
                     const t = m.type || "string"
@@ -402,6 +446,10 @@ Item {
                         case "lockSize":   return lockSizeDelegate
                         case "framingType": return framingTypeDelegate
                         case "ethDevice":  return ethDeviceDelegate
+                        case "cameraName": return cameraNameDelegate
+                        case "cameraResolution": return cameraResolutionDelegate
+                        case "cameraFrameRate": return cameraFrameRateDelegate
+                        case "cameraView": return cameraViewDelegate
                         case "empty":      return emptyDelegate
                         default:          return stringDelegate
                         }
@@ -436,6 +484,8 @@ Item {
                         item.propValue = Qt.binding(() => delegateRoot.model.propValue)
                         item.meta      = root.metaFor(delegateRoot.model.propName)
                         item.propIndex = delegateRoot.index
+                        item.enabled  = Qt.binding(() => root.isPropEnabled(item.meta))
+                        item.opacity  = Qt.binding(() => item.enabled ? 1.0 : 0.4)
                         item.setModelValue = function(v) {
                             delegateRoot.model.propValue = v
                             }
@@ -543,6 +593,8 @@ Item {
                         property var subValue: rowContainer.subValues ? rowContainer.subValues[index] : undefined
 
                         sourceComponent: {
+                            if (subLoader.subName === "empty")
+                                return subEmptyDelegate
                             const m = subLoader.subMeta
                             if (!m) return null
                             const t = m.type || "string"
@@ -551,7 +603,15 @@ Item {
                                 case "fontStyle": return subFontStyleDelegate
                                 case "int":       return subIntDelegate
                                 case "float":     return subFloatDelegate
+                                case "vector3d":  return subVector3dDelegate
+                                case "scale":     return subVector3dDelegate
+                                case "vector2d":  return subVector2dDelegate
                                 case "halign":    return subHalignDelegate
+                                case "laserLayer": return subLaserLayerDelegate
+                                case "recipe":    return subRecipeDelegate
+                                case "color":     return subColorDelegate
+                                case "machine": return subMachineDelegate
+                                case "machineName": return subMachineNameDelegate
                                 case "machineType": return subMachineTypeDelegate
                                 case "boardType":  return subBoardTypeDelegate
                                 case "override":  return subOverrideDelegate
@@ -561,7 +621,11 @@ Item {
                                 case "lockScale":  return subLockScaleDelegate
                                 case "lockSize":   return subLockSizeDelegate
                                 case "framingType": return subFramingTypeDelegate
+                                case "cameraName": return subCameraNameDelegate
+                                case "cameraResolution": return subCameraResolutionDelegate
+                                case "cameraFrameRate": return subCameraFrameRateDelegate
                                 case "ethDevice":  return subEthDeviceDelegate
+                                case "multiline":return subMultilineDelegate
                                 case "singleline":return subSinglelineDelegate
                                 case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
@@ -575,6 +639,8 @@ Item {
                             item.subName  = subLoader.subName
                             item.subValue = Qt.binding(() => subLoader.subValue)
                             item.subMeta   = subLoader.subMeta
+                            item.enabled  = Qt.binding(() => root.isPropEnabled(subLoader.subMeta))
+                            item.opacity  = Qt.binding(() => item.enabled ? 1.0 : 0.4)
                             item.setSub    = function(v) {
                                 if (rowContainer.setSubValue)
                                     rowContainer.setSubValue(subLoader.subName, v)
@@ -604,10 +670,35 @@ Item {
                 property var setModelValue: function(propName, v) {}
                 property var setSubValue: function(rowItem, subName, v) {}
 
+                // Structural key: changes only when items are added/removed/
+                // reordered or change type, NOT when property values change.
+                // This prevents the Repeater from rebuilding on value-only updates.
+                property string _rowsKey: {
+                    const items = colsContainer.columnItems
+                    if (!items || !items.length)
+                        return ""
+                    let key = ""
+                    for (let i = 0; i < items.length; ++i) {
+                        const item = items[i]
+                        key += (item.name || "") + "|" + (item.colSpan || 1) + "|"
+                              + (item.isRow ? "1" : "0") + "|" + (item.isLine ? "1" : "0") + "|"
+                              + (item.isEmpty ? "1" : "0") + ";"
+                    }
+                    return key
+                    }
+
+                // Cache of structural item data, rebuilt only when _rowsKey changes.
+                property var _structItems: []
+
                 // Group flat columnItems into visual rows respecting
                 // columnCount and per-item colSpan.
+                // Only depends on _rowsKey + _structItems so that value-only
+                // changes don't cause the Repeater to rebuild (which would
+                // flicker other widgets like the FPK checkbox).
                 property var rows: {
-                    const items = colsContainer.columnItems
+                    // Touch _rowsKey to set up the dependency
+                    const _k = colsContainer._rowsKey
+                    const items = colsContainer._structItems
                     if (!items || !items.length)
                         return []
                     const numCols = colsContainer.columnCount
@@ -622,7 +713,16 @@ Item {
                             currentRow = []
                             currentCol = 0
                             }
-                        currentRow.push(item)
+                        currentRow.push({
+                            name: item.name,
+                            isRow: item.isRow,
+                            isLine: item.isLine,
+                            isEmpty: item.isEmpty,
+                            colSpan: span,
+                            rowLabel: item.rowLabel || "",
+                            subProps: item.subProps || [],
+                            _idx: i
+                            })
                         currentCol += span
                         if (currentCol >= numCols) {
                             result.push(currentRow)
@@ -633,6 +733,27 @@ Item {
                     if (currentRow.length > 0)
                         result.push(currentRow)
                     return result
+                    }
+
+                // Rebuild _structItems whenever _rowsKey changes
+                on_RowsKeyChanged: {
+                    const items = colsContainer.columnItems
+                    const struct = []
+                    if (items && items.length) {
+                        for (let i = 0; i < items.length; ++i) {
+                            const item = items[i]
+                            struct.push({
+                                name: item.name,
+                                isRow: item.isRow,
+                                isLine: item.isLine,
+                                isEmpty: item.isEmpty,
+                                colSpan: item.colSpan || 1,
+                                rowLabel: item.rowLabel || "",
+                                subProps: item.subProps || []
+                            })
+                        }
+                    }
+                    colsContainer._structItems = struct
                     }
 
                 Repeater {
@@ -675,6 +796,8 @@ Item {
                                         return null
                                     if (d.isLine)
                                         return colLineDelegate
+                                    if (d.isEmpty)
+                                        return emptyDelegate
                                     if (d.isRow)
                                         return colRowDelegate
                                     const m = root.metaFor(d.name)
@@ -709,6 +832,10 @@ Item {
                                         case "lockSize":   return lockSizeDelegate
                                         case "framingType": return framingTypeDelegate
                                         case "ethDevice":  return ethDeviceDelegate
+                                        case "cameraName": return cameraNameDelegate
+                                        case "cameraResolution": return cameraResolutionDelegate
+                                        case "cameraFrameRate": return cameraFrameRateDelegate
+                                        case "cameraView": return cameraViewDelegate
                                         case "empty":      return emptyDelegate
                                         default:          return stringDelegate
                                         }
@@ -720,10 +847,18 @@ Item {
                                         return
                                     if (d.isLine)
                                         return
+                                    if (d.isEmpty)
+                                        return
                                     if (d.isRow) {
                                         item.propName   = "row"
                                         item.subProps   = d.subProps
-                                        item.subValues  = Qt.binding(() => d.subValues)
+                                        item.subValues  = Qt.binding(() => {
+                                            // Read directly from the model's columnItems
+                                            // so value-only changes don't rebuild the Repeater.
+                                            const ci = colsContainer.columnItems
+                                            if (!ci || d._idx >= ci.length) return undefined
+                                            return ci[d._idx].subValues
+                                        })
                                         item.rowLabel   = d.rowLabel || ""
                                         item.propIndex  = colsContainer.propIndex
                                         item.setSubValue = function(subName, v) {
@@ -733,17 +868,16 @@ Item {
                                     else {
                                         item.propName  = d.name
                                         item.propValue = Qt.binding(() => {
-                                            // Read directly from the model's columnItems for live updates
+                                            // Read directly from the model's columnItems
+                                            // so value-only changes don't rebuild the Repeater.
                                             const ci = colsContainer.columnItems
-                                            if (!ci) return undefined
-                                            for (let i = 0; i < ci.length; ++i) {
-                                                if (ci[i].name === d.name)
-                                                    return ci[i].propValue
-                                                }
-                                            return undefined
+                                            if (!ci || d._idx >= ci.length) return undefined
+                                            return ci[d._idx].propValue
                                             })
                                         item.meta = Qt.binding(() => root.metaFor(item.propName))
                                         item.propIndex = colsContainer.propIndex
+                                        item.enabled = Qt.binding(() => root.isPropEnabled(item.meta))
+                                        item.opacity = Qt.binding(() => item.enabled ? 1.0 : 0.4)
                                         item.setModelValue = function(v) {
                                             colsContainer.setModelValue(d.name, v)
                                             }
@@ -824,6 +958,8 @@ Item {
                         property var subValue: rowContainerCol.subValues ? rowContainerCol.subValues[index] : undefined
 
                         sourceComponent: {
+                            if (subLoaderCol.subName === "empty")
+                                return subEmptyDelegate
                             const m = subLoaderCol.subMeta
                             if (!m) return null
                             const t = m.type || "string"
@@ -832,7 +968,15 @@ Item {
                                 case "fontStyle": return subFontStyleDelegate
                                 case "int":       return subIntDelegate
                                 case "float":     return subFloatDelegate
+                                case "vector3d":  return subVector3dDelegate
+                                case "scale":     return subVector3dDelegate
+                                case "vector2d":  return subVector2dDelegate
                                 case "halign":    return subHalignDelegate
+                                case "laserLayer": return subLaserLayerDelegate
+                                case "recipe":    return subRecipeDelegate
+                                case "color":     return subColorDelegate
+                                case "machine": return subMachineDelegate
+                                case "machineName": return subMachineNameDelegate
                                 case "machineType": return subMachineTypeDelegate
                                 case "boardType":  return subBoardTypeDelegate
                                 case "override":  return subOverrideDelegate
@@ -842,7 +986,11 @@ Item {
                                 case "lockScale":  return subLockScaleDelegate
                                 case "lockSize":   return subLockSizeDelegate
                                 case "framingType": return subFramingTypeDelegate
+                                case "cameraName": return subCameraNameDelegate
+                                case "cameraResolution": return subCameraResolutionDelegate
+                                case "cameraFrameRate": return subCameraFrameRateDelegate
                                 case "ethDevice":  return subEthDeviceDelegate
+                                case "multiline":return subMultilineDelegate
                                 case "singleline":return subSinglelineDelegate
                                 case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
@@ -856,6 +1004,8 @@ Item {
                             item.subName  = subLoaderCol.subName
                             item.subValue = Qt.binding(() => subLoaderCol.subValue)
                             item.subMeta   = subLoaderCol.subMeta
+                            item.enabled  = Qt.binding(() => root.isPropEnabled(subLoaderCol.subMeta))
+                            item.opacity  = Qt.binding(() => item.enabled ? 1.0 : 0.4)
                             item.setSub    = function(v) {
                                 if (rowContainerCol.setSubValue)
                                     rowContainerCol.setSubValue(subLoaderCol.subName, v)
@@ -876,7 +1026,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 60
                 width: parent ? parent.width : 0
-                subLabelText: subBool.subMeta ? subBool.subMeta.label ?? "" : ""
+                subLabelText: subBool.subMeta ? subBool.subMeta.sublabel ?? subBool.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -915,7 +1065,7 @@ Item {
                     anchors.bottom: parent.bottom
                     anchors.leftMargin: 4
                     anchors.bottomMargin: 1
-                    text: subFontStyle.subMeta ? subFontStyle.subMeta.label ?? "" : ""
+                    text: subFontStyle.subMeta ? subFontStyle.subMeta.sublabel ?? subFontStyle.subMeta.label ?? "" : ""
                     font.pixelSize: 13
                     font.bold: subFontStyle.subName === "bold"
                     font.italic: subFontStyle.subName === "italic"
@@ -939,7 +1089,7 @@ Item {
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
                 unitText: subInt.subMeta ? subInt.subMeta.unit ?? "" : ""
-                subLabelText: subInt.subMeta ? subInt.subMeta.label ?? "" : ""
+                subLabelText: subInt.subMeta ? subInt.subMeta.sublabel ?? subInt.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -951,6 +1101,7 @@ Item {
                     anchors.fill: parent
                     from: subInt.subMeta && subInt.subMeta.min !== undefined ? Math.round(subInt.subMeta.min) : -1000000
                     to: subInt.subMeta && subInt.subMeta.max !== undefined ? Math.round(subInt.subMeta.max) : 1000000
+                    resetValue: root.defaultScalarFromMeta(subInt.subMeta, 0)
 
                     property int modelValue: subInt.subValue !== undefined ? Number(subInt.subValue) : 0
                     value: modelValue
@@ -973,7 +1124,7 @@ Item {
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
                 unitText: subFloat.subMeta ? subFloat.subMeta.unit ?? "" : ""
-                subLabelText: subFloat.subMeta ? subFloat.subMeta.label ?? "" : ""
+                subLabelText: subFloat.subMeta ? subFloat.subMeta.sublabel ?? subFloat.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -988,6 +1139,7 @@ Item {
                     stepSize: root.defaultStepSize(subFloat.subMeta)
                     bigStep: root.defaultBigStep(subFloat.subMeta)
                     minStep: root.defaultMinStep(subFloat.subMeta)
+                    resetValue: root.defaultScalarFromMeta(subFloat.subMeta, 0)
 
                     decimals: subFloat.subMeta && subFloat.subMeta.precision !== undefined ? subFloat.subMeta.precision : 2
 
@@ -1011,7 +1163,7 @@ Item {
                 id: subSingle
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subSingle.subMeta ? subSingle.subMeta.label ?? "" : ""
+                subLabelText: subSingle.subMeta ? subSingle.subMeta.sublabel ?? subSingle.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1030,6 +1182,473 @@ Item {
                 }
             }
 
+        // ── subVector3d: three ValueBox+BareDoubleSpinBox for vector3d in row entries ─
+        Component {
+            id: subVector3dDelegate
+
+            RowLayout {
+                id: subVec3
+                Layout.fillWidth: true
+                spacing: 2
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ValueBox {
+                    id: subVec3xBox
+                    Layout.fillWidth: true
+                    unitText: subVec3.subMeta ? subVec3.subMeta.unit ?? "" : ""
+                    subLabelText: "X"
+
+                    BareDoubleSpinBox {
+                        id: subVec3xSpin
+                        anchors.fill: parent
+                        from: subVec3.subMeta && subVec3.subMeta.min !== undefined ? subVec3.subMeta.min : -1000000.0
+                        to: subVec3.subMeta && subVec3.subMeta.max !== undefined ? subVec3.subMeta.max : 1000000.0
+                        stepSize: root.defaultStepSize(subVec3.subMeta)
+                        bigStep: root.defaultBigStep(subVec3.subMeta)
+                        minStep: root.defaultMinStep(subVec3.subMeta)
+                        resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 0)
+                        decimals: subVec3.subMeta && subVec3.subMeta.precision !== undefined ? subVec3.subMeta.precision : 2
+
+                        property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.x !== undefined ? Number(subVec3.subValue.x) : 0.0
+                        value: modelValue
+                        onModelValueChanged: if (value !== modelValue) value = modelValue
+                        onValueChanged: {
+                            if (subVec3.subValue !== undefined && subVec3.subValue.x !== value) {
+                                let v = subVec3.subValue
+                                subVec3.setSub(Qt.vector3d(value, v.y, v.z))
+                            }
+                        }
+                    }
+                }
+                ValueBox {
+                    id: subVec3yBox
+                    Layout.fillWidth: true
+                    unitText: subVec3.subMeta ? subVec3.subMeta.unit ?? "" : ""
+                    subLabelText: "Y"
+
+                    BareDoubleSpinBox {
+                        id: subVec3ySpin
+                        anchors.fill: parent
+                        from: subVec3.subMeta && subVec3.subMeta.min !== undefined ? subVec3.subMeta.min : -1000000.0
+                        to: subVec3.subMeta && subVec3.subMeta.max !== undefined ? subVec3.subMeta.max : 1000000.0
+                        stepSize: root.defaultStepSize(subVec3.subMeta)
+                        bigStep: root.defaultBigStep(subVec3.subMeta)
+                        minStep: root.defaultMinStep(subVec3.subMeta)
+                        resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 1)
+                        decimals: subVec3.subMeta && subVec3.subMeta.precision !== undefined ? subVec3.subMeta.precision : 2
+
+                        property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.y !== undefined ? Number(subVec3.subValue.y) : 0.0
+                        value: modelValue
+                        onModelValueChanged: if (value !== modelValue) value = modelValue
+                        onValueChanged: {
+                            if (subVec3.subValue !== undefined && subVec3.subValue.y !== value) {
+                                let v = subVec3.subValue
+                                subVec3.setSub(Qt.vector3d(v.x, value, v.z))
+                            }
+                        }
+                    }
+                }
+                ValueBox {
+                    id: subVec3zBox
+                    Layout.fillWidth: true
+                    unitText: subVec3.subMeta ? subVec3.subMeta.unit ?? "" : ""
+                    subLabelText: "Z"
+
+                    BareDoubleSpinBox {
+                        id: subVec3zSpin
+                        anchors.fill: parent
+                        from: subVec3.subMeta && subVec3.subMeta.min !== undefined ? subVec3.subMeta.min : -1000000.0
+                        to: subVec3.subMeta && subVec3.subMeta.max !== undefined ? subVec3.subMeta.max : 1000000.0
+                        stepSize: root.defaultStepSize(subVec3.subMeta)
+                        bigStep: root.defaultBigStep(subVec3.subMeta)
+                        minStep: root.defaultMinStep(subVec3.subMeta)
+                        resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 2)
+                        decimals: subVec3.subMeta && subVec3.subMeta.precision !== undefined ? subVec3.subMeta.precision : 2
+
+                        property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.z !== undefined ? Number(subVec3.subValue.z) : 0.0
+                        value: modelValue
+                        onModelValueChanged: if (value !== modelValue) value = modelValue
+                        onValueChanged: {
+                            if (subVec3.subValue !== undefined && subVec3.subValue.z !== value) {
+                                let v = subVec3.subValue
+                                subVec3.setSub(Qt.vector3d(v.x, v.y, value))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── subVector2d: two ValueBox+BareDoubleSpinBox for vector2d in row entries ─
+        Component {
+            id: subVector2dDelegate
+
+            RowLayout {
+                id: subVec2
+                Layout.fillWidth: true
+                spacing: 2
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ValueBox {
+                    id: subVec2xBox
+                    Layout.fillWidth: true
+                    unitText: subVec2.subMeta ? subVec2.subMeta.unit ?? "" : ""
+                    subLabelText: "X"
+
+                    BareDoubleSpinBox {
+                        id: subVec2xSpin
+                        anchors.fill: parent
+                        from: subVec2.subMeta && subVec2.subMeta.min !== undefined ? subVec2.subMeta.min : -1000000.0
+                        to: subVec2.subMeta && subVec2.subMeta.max !== undefined ? subVec2.subMeta.max : 1000000.0
+                        stepSize: root.defaultStepSize(subVec2.subMeta)
+                        bigStep: root.defaultBigStep(subVec2.subMeta)
+                        minStep: root.defaultMinStep(subVec2.subMeta)
+                        resetValue: root.defaultScalarFromMeta(subVec2.subMeta, 0)
+                        decimals: subVec2.subMeta && subVec2.subMeta.precision !== undefined ? subVec2.subMeta.precision : 2
+
+                        property real modelValue: subVec2.subValue !== undefined && subVec2.subValue.x !== undefined ? Number(subVec2.subValue.x) : 0.0
+                        value: modelValue
+                        onModelValueChanged: if (value !== modelValue) value = modelValue
+                        onValueChanged: {
+                            if (subVec2.subValue !== undefined && subVec2.subValue.x !== value) {
+                                let v = subVec2.subValue
+                                subVec2.setSub(Qt.vector2d(value, v.y))
+                            }
+                        }
+                    }
+                }
+                ValueBox {
+                    id: subVec2yBox
+                    Layout.fillWidth: true
+                    unitText: subVec2.subMeta ? subVec2.subMeta.unit ?? "" : ""
+                    subLabelText: "Y"
+
+                    BareDoubleSpinBox {
+                        id: subVec2ySpin
+                        anchors.fill: parent
+                        from: subVec2.subMeta && subVec2.subMeta.min !== undefined ? subVec2.subMeta.min : -1000000.0
+                        to: subVec2.subMeta && subVec2.subMeta.max !== undefined ? subVec2.subMeta.max : 1000000.0
+                        stepSize: root.defaultStepSize(subVec2.subMeta)
+                        bigStep: root.defaultBigStep(subVec2.subMeta)
+                        minStep: root.defaultMinStep(subVec2.subMeta)
+                        resetValue: root.defaultScalarFromMeta(subVec2.subMeta, 1)
+                        decimals: subVec2.subMeta && subVec2.subMeta.precision !== undefined ? subVec2.subMeta.precision : 2
+
+                        property real modelValue: subVec2.subValue !== undefined && subVec2.subValue.y !== undefined ? Number(subVec2.subValue.y) : 0.0
+                        value: modelValue
+                        onModelValueChanged: if (value !== modelValue) value = modelValue
+                        onValueChanged: {
+                            if (subVec2.subValue !== undefined && subVec2.subValue.y !== value) {
+                                let v = subVec2.subValue
+                                subVec2.setSub(Qt.vector2d(v.x, value))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── subMultiline: multi-line TextArea for row entries ────────────
+        Component {
+            id: subMultilineDelegate
+
+            ValueBox {
+                id: subMulti
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                implicitHeight: 80
+                subLabelText: subMulti.subMeta ? subMulti.subMeta.sublabel ?? subMulti.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ScrollView {
+                    anchors.fill: parent
+                    clip: true
+
+                    TextArea {
+                        id: subMultiText
+                        text: subMulti.subValue !== undefined ? subMulti.subValue : ""
+                        wrapMode: TextArea.Wrap
+                        horizontalAlignment: {
+                            if (!root.model || !root.model.elementProperty)
+                                return TextInput.AlignLeft
+                            let a = root.model.elementProperty("align")
+                            if (a === undefined || a === null)
+                                return TextInput.AlignLeft
+                            a = Number(a)
+                            if (a === 2)  return TextInput.AlignRight
+                            if (a === 4)  return TextInput.AlignHCenter
+                            if (a === 8)  return TextInput.AlignJustify
+                            return TextInput.AlignLeft
+                        }
+                        onActiveFocusChanged: {
+                            if (!activeFocus && subMultiText._userEdited) {
+                                subMulti.setSub(text)
+                                subMultiText._userEdited = false
+                            }
+                        }
+                        onTextChanged: {
+                            if (activeFocus)
+                                subMultiText._userEdited = true
+                        }
+                        property bool _userEdited: false
+                        color: "#ffffff"
+                        background: Item {}
+                        padding: 2
+                    }
+                }
+            }
+        }
+
+        // ── subLaserLayer: ComboBox for LaserLayer selection in row entries ─
+        Component {
+            id: subLaserLayerDelegate
+
+            ValueBox {
+                id: subLaserLayer
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subLaserLayer.subMeta ? subLaserLayer.subMeta.sublabel ?? subLaserLayer.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subLaserLayerCombo
+                    anchors.fill: parent
+
+                    property var baseNames: root.model.laserLayerNames ? root.model.laserLayerNames() : []
+                    model: {
+                        var list = ["(inherited)"]
+                        for (var i = 0; i < subLaserLayerCombo.baseNames.length; ++i)
+                            list.push(subLaserLayerCombo.baseNames[i])
+                        return list
+                        }
+
+                    property string resolvedName: {
+                        if (subLaserLayer.subValue === undefined)
+                            return ""
+                        if (root.model.laserLayerToName)
+                            return root.model.laserLayerToName(subLaserLayer.subValue)
+                        return ""
+                        }
+                    property string currentName: resolvedName.length > 0 ? resolvedName : "(inherited)"
+
+                    currentIndex: {
+                        let idx = subLaserLayerCombo.find(subLaserLayerCombo.currentName)
+                        return idx >= 0 ? idx : 0
+                        }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            subLaserLayer.setSub(null)
+                        else {
+                            let name = subLaserLayerCombo.model[index]
+                            let ptr = root.model.nameToLaserLayer ? root.model.nameToLaserLayer(name) : null
+                            subLaserLayer.setSub(ptr)
+                            }
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subLaserLayerCombo.currentName
+                        font.bold: true
+                        color: subLaserLayerCombo.currentName === "(inherited)" ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+
+        // ── subRecipe: ComboBox for Recipe selection in row entries ──
+        Component {
+            id: subRecipeDelegate
+
+            ValueBox {
+                id: subRecipe
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelAlignRight: true
+                subLabelText: subRecipe.subMeta ? subRecipe.subMeta.sublabel ?? subRecipe.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subRecipeCombo
+                    parent: subRecipe
+                    anchors.left: parent.left
+                    anchors.right: subRecipeEditBtn.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.rightMargin: 2
+                    model: root.model.recipeNames ? root.model.recipeNames() : []
+
+                    property string currentName: {
+                        if (subRecipe.subValue === undefined || subRecipe.subValue === null)
+                            return ""
+                        return root.model.recipeToName ? root.model.recipeToName(subRecipe.subValue) : ""
+                        }
+
+                    currentIndex: {
+                        let idx = subRecipeCombo.find(subRecipeCombo.currentName)
+                        return idx >= 0 ? idx : -1
+                        }
+
+                    onActivated: index => {
+                        let name = subRecipeCombo.model[index]
+                        let ptr = root.model.nameToRecipe ? root.model.nameToRecipe(name) : null
+                        subRecipe.setSub(ptr)
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subRecipeCombo.currentName
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+
+                // Edit button — opens the Recipe editor for the selected recipe
+                ToolButton {
+                    id: subRecipeEditBtn
+                    parent: subRecipe
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 28
+                    enabled: subRecipeCombo.currentName !== ""
+                    text: "✎"
+                    font.pixelSize: 14
+                    onClicked: ZCam.openRecipeEditor(subRecipeCombo.currentName)
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Edit recipe")
+                    background: Rectangle {
+                        color: subRecipeEditBtn.hovered ? Material.color(Material.Teal, Material.Shade700)
+                               : (subRecipeEditBtn.enabled ? "#3a3a3a" : "transparent")
+                        radius: 3
+                        }
+                    }
+                }
+            }
+
+        // ── subColor: color swatch + hex input for row entries ──────────
+        Component {
+            id: subColorDelegate
+
+            ValueBox {
+                id: subColor
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelText: subColor.subMeta ? subColor.subMeta.sublabel ?? subColor.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                function toColor(v) {
+                    if (v === undefined || v === null)
+                        return Qt.rgba(0, 0, 0, 1)
+                    if (typeof v === "string")
+                        return Qt.color(v)
+                    return v
+                    }
+
+                function toHex(c) {
+                    if (!c)
+                        return "#000000"
+                    let r = Math.round(c.r * 255).toString(16).padStart(2, '0')
+                    let g = Math.round(c.g * 255).toString(16).padStart(2, '0')
+                    let b = Math.round(c.b * 255).toString(16).padStart(2, '0')
+                    return "#" + r + g + b
+                    }
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 2
+
+                    Rectangle {
+                        id: subColorSwatch
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        radius: 3
+                        color: subColor.toColor(subColor.subValue)
+                        border.width: 1
+                        border.color: Material.accentColor
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                subColorDialog.selectedColor = subColor.toColor(subColor.subValue)
+                                subColorDialog.open()
+                            }
+                        }
+
+                        ColorDialog {
+                            id: subColorDialog
+                            options: ColorDialog.DontUseNativeDialog
+                            onAccepted: {
+                                subColor.setSub(selectedColor)
+                            }
+                        }
+                    }
+
+                    TextInput {
+                        id: subHexInput
+                        Layout.fillWidth: true
+                        text: subColor.toHex(subColor.toColor(subColor.subValue))
+                        font.family: "monospace"
+                        font.bold: true
+                        onEditingFinished: {
+                            let c = subColor.toColor(text)
+                            if (c)
+                                subColor.setSub(c)
+                        }
+                        horizontalAlignment: TextInput.AlignRight
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: "#ffffff"
+                        clip: true
+
+                        Connections {
+                            target: subColor
+                            function onSubValueChanged() {
+                                let c = subColor.toColor(subColor.subValue)
+                                let h = subColor.toHex(c)
+                                if (subHexInput.text.toLowerCase() !== h.toLowerCase())
+                                    subHexInput.text = h
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Component {
             id: subStringDelegate
 
@@ -1037,7 +1656,7 @@ Item {
                 id: subString
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subString.subMeta ? subString.subMeta.label ?? "" : ""
+                subLabelText: subString.subMeta ? subString.subMeta.sublabel ?? subString.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1063,7 +1682,8 @@ Item {
                 id: subHalign
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subHalign.subMeta ? subHalign.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subHalign.subMeta ? subHalign.subMeta.sublabel ?? subHalign.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1102,7 +1722,7 @@ Item {
                         text: subAlignCombo.displayText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -1110,6 +1730,105 @@ Item {
                     }
                 }
             }
+
+        // ── Sub-delegate for machine (Machine* pointer) in row entries ──
+        Component {
+            id: subMachineDelegate
+
+            ValueBox {
+                id: subMachine
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelAlignRight: true
+                subLabelText: subMachine.subMeta ? subMachine.subMeta.sublabel ?? subMachine.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subMachineCombo
+                    anchors.fill: parent
+                    model: root.model.machineNames ? root.model.machineNames() : []
+
+                    property string currentName: {
+                        if (subMachine.subValue === undefined || subMachine.subValue === null)
+                            return ""
+                        return root.model.machineToName ? root.model.machineToName(subMachine.subValue) : ""
+                        }
+
+                    currentIndex: {
+                        let idx = subMachineCombo.find(subMachineCombo.currentName)
+                        return idx >= 0 ? idx : -1
+                    }
+
+                    onActivated: index => {
+                        let name = subMachineCombo.model[index]
+                        let ptr = root.model.nameToMachine ? root.model.nameToMachine(name) : null
+                        subMachine.setSub(ptr)
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subMachineCombo.currentName
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+
+        // ── Sub-delegate for machineName (string) in row entries ─────────
+        Component {
+            id: subMachineNameDelegate
+
+            ValueBox {
+                id: subMachineName
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelAlignRight: true
+                subLabelText: subMachineName.subMeta ? subMachineName.subMeta.sublabel ?? subMachineName.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subMachineNameCombo
+                    anchors.fill: parent
+                    model: root.model.machineNames ? root.model.machineNames() : []
+
+                    property string currentName: subMachineName.subValue !== undefined ? subMachineName.subValue : ""
+                    currentIndex: {
+                        let idx = subMachineNameCombo.find(subMachineNameCombo.currentName)
+                        return idx >= 0 ? idx : -1
+                    }
+
+                    onActivated: index => {
+                        subMachineName.setSub(subMachineNameCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subMachineNameCombo.currentName
+                        font.bold: true
+                        color: "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
 
         // ── Sub-delegate for machineType in row entries ─────────────────
         Component {
@@ -1119,7 +1838,8 @@ Item {
                 id: subMachineType
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subMachineType.subMeta ? subMachineType.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subMachineType.subMeta ? subMachineType.subMeta.sublabel ?? subMachineType.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1147,7 +1867,7 @@ Item {
                         text: subTypeCombo.currentName
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
@@ -1164,7 +1884,8 @@ Item {
                 id: subBoardType
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subBoardType.subMeta ? subBoardType.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subBoardType.subMeta ? subBoardType.subMeta.sublabel ?? subBoardType.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1192,7 +1913,7 @@ Item {
                         text: subBoardTypeCombo.currentName
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
@@ -1209,7 +1930,8 @@ Item {
                 id: subOverride
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subOverride.subMeta ? subOverride.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subOverride.subMeta ? subOverride.subMeta.sublabel ?? subOverride.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1238,7 +1960,7 @@ Item {
                         text: subOverrideCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
@@ -1256,7 +1978,8 @@ Item {
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
                 unitText: subPulsewidth.subMeta ? subPulsewidth.subMeta.unit ?? "" : ""
-                subLabelText: subPulsewidth.subMeta ? subPulsewidth.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subPulsewidth.subMeta ? subPulsewidth.subMeta.sublabel ?? subPulsewidth.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1266,8 +1989,8 @@ Item {
                 function freqModel() {
                     if (root.model.pulsewidthNames)
                         return root.model.pulsewidthNames()
-                    if (ZCam.project.laser && ZCam.project.laser.engine)
-                        return ZCam.project.laser.engine.laserPulseList
+                    if (ZCam.project?.machine?.laserPulseList)
+                        return ZCam.project.machine.laserPulseList()
                     return []
                     }
 
@@ -1292,7 +2015,7 @@ Item {
                         text: subFreqCombo.freqValue.length > 0 ? subFreqCombo.freqValue : ""
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -1309,7 +2032,8 @@ Item {
                 id: subLineJoin
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subLineJoin.subMeta ? subLineJoin.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subLineJoin.subMeta ? subLineJoin.subMeta.sublabel ?? subLineJoin.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1338,7 +2062,7 @@ Item {
                         text: subLineJoinCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
@@ -1355,7 +2079,8 @@ Item {
                 id: subLineEnd
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subLineEnd.subMeta ? subLineEnd.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subLineEnd.subMeta ? subLineEnd.subMeta.sublabel ?? subLineEnd.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -1384,7 +2109,7 @@ Item {
                         text: subLineEndCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
@@ -1844,7 +2569,7 @@ Item {
                             text: alignCombo.displayText
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                             }
@@ -2245,7 +2970,7 @@ Item {
                             text: layerCombo.currentName
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                             }
@@ -2336,7 +3061,7 @@ Item {
                             text: laserLayerCombo.currentName
                             font.bold: true
                             color: laserLayerCombo.currentName === "(inherited)" ? "#888888" : "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                             }
@@ -2370,11 +3095,17 @@ Item {
                     }
 
                 ValueBox {
+                    id: recipeVBox
                     Layout.fillWidth: true
 
                     ComboBox {
                         id: recipeCombo
-                        anchors.fill: parent
+                        parent: recipeVBox
+                        anchors.left: parent.left
+                        anchors.right: recipeEditBtn.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: 2
                         model: root.model.recipeNames ? root.model.recipeNames() : []
 
                         property string currentName: {
@@ -2400,13 +3131,34 @@ Item {
                             text: recipeCombo.currentName
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                             }
                         indicator: Item {}
                         }
                     }
+
+                    // Edit button — opens the Recipe editor for the selected recipe
+                    ToolButton {
+                        id: recipeEditBtn
+                        parent: recipeVBox
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 28
+                        enabled: recipeCombo.currentName !== ""
+                        text: "✎"
+                        font.pixelSize: 14
+                        onClicked: ZCam.openRecipeEditor(recipeCombo.currentName)
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Edit recipe")
+                        background: Rectangle {
+                            color: recipeEditBtn.hovered ? Material.color(Material.Teal, Material.Shade700)
+                                   : (recipeEditBtn.enabled ? "#3a3a3a" : "transparent")
+                            radius: 3
+                            }
+                        }
                 }
             }
 
@@ -2458,7 +3210,7 @@ Item {
                             text: typeCombo.currentName
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                         }
@@ -2516,7 +3268,7 @@ Item {
                             text: boardTypeCombo.currentName
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                         }
@@ -2574,12 +3326,192 @@ Item {
                             text: ethDeviceCombo.currentName
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                         }
                         indicator: Item {}
                     }
+                }
+            }
+        }
+
+        // ── Sub-delegate for cameraName in row entries ─────────────────
+        Component {
+            id: subCameraNameDelegate
+
+            ValueBox {
+                id: subCameraName
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelAlignRight: true
+                subLabelText: subCameraName.subMeta ? subCameraName.subMeta.sublabel ?? subCameraName.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subCameraNameCombo
+                    anchors.fill: parent
+
+                    // Model = available cameras with an optional "(none)"
+                    // entry so the camera can be disabled.
+                    property var camNames: root.model.cameraNames ? root.model.cameraNames() : []
+                    model: {
+                        var list = ["(none)"]
+                        for (var i = 0; i < subCameraNameCombo.camNames.length; ++i)
+                            list.push(subCameraNameCombo.camNames[i])
+                        return list
+                        }
+
+                    property string currentName: {
+                        if (subCameraName.subValue === undefined || subCameraName.subValue === null)
+                            return "(none)"
+                        const s = String(subCameraName.subValue)
+                        return s.length > 0 ? s : "(none)"
+                        }
+
+                    currentIndex: {
+                        let idx = subCameraNameCombo.find(subCameraNameCombo.currentName)
+                        return idx >= 0 ? idx : 0
+                        }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            subCameraName.setSub("")
+                        else
+                            subCameraName.setSub(subCameraNameCombo.model[index])
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subCameraNameCombo.currentName
+                        font.bold: true
+                        color: subCameraNameCombo.currentName === "(none)" ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+
+        // ── Sub-delegate for cameraResolution in row entries ─────────
+        Component {
+            id: subCameraResolutionDelegate
+
+            ValueBox {
+                id: subCameraResolution
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelAlignRight: true
+                subLabelText: subCameraResolution.subMeta ? subCameraResolution.subMeta.sublabel ?? subCameraResolution.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subCameraResolutionCombo
+                    anchors.fill: parent
+
+                    property var camElement: root.model.element
+                    model: {
+                        var list = ["(default)"]
+                        if (camElement && camElement.resolutionNames)
+                            list = list.concat(camElement.resolutionNames())
+                        return list
+                    }
+
+                    property string currentVal: subCameraResolution.subValue !== undefined ? String(subCameraResolution.subValue) : ""
+                    currentIndex: {
+                        if (currentVal.length === 0)
+                            return 0
+                        let idx = subCameraResolutionCombo.find(currentVal)
+                        return idx >= 0 ? idx : 0
+                    }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            subCameraResolution.setSub("")
+                        else
+                            subCameraResolution.setSub(subCameraResolutionCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subCameraResolutionCombo.currentVal.length > 0 ? subCameraResolutionCombo.currentVal : "(default)"
+                        font.bold: true
+                        color: subCameraResolutionCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+
+        // ── Sub-delegate for cameraFrameRate in row entries ───────────
+        Component {
+            id: subCameraFrameRateDelegate
+
+            ValueBox {
+                id: subCameraFrameRate
+                Layout.fillWidth: true
+                width: parent ? parent.width : 0
+                subLabelAlignRight: true
+                subLabelText: subCameraFrameRate.subMeta ? subCameraFrameRate.subMeta.sublabel ?? subCameraFrameRate.subMeta.label ?? "" : ""
+
+                property string subName
+                property var subValue
+                property var subMeta
+                property var setSub: function(v) {}
+
+                ComboBox {
+                    id: subCameraFrameRateCombo
+                    anchors.fill: parent
+
+                    property var camElement: root.model.element
+                    model: {
+                        var list = ["(default)"]
+                        if (camElement && camElement.frameRateNames)
+                            list = list.concat(camElement.frameRateNames())
+                        return list
+                    }
+
+                    property string currentVal: subCameraFrameRate.subValue !== undefined ? String(subCameraFrameRate.subValue) : ""
+                    currentIndex: {
+                        if (currentVal.length === 0)
+                            return 0
+                        let idx = subCameraFrameRateCombo.find(currentVal)
+                        return idx >= 0 ? idx : 0
+                    }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            subCameraFrameRate.setSub("")
+                        else
+                            subCameraFrameRate.setSub(subCameraFrameRateCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: subCameraFrameRateCombo.currentVal.length > 0 ? subCameraFrameRateCombo.currentVal : "(default)"
+                        font.bold: true
+                        color: subCameraFrameRateCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
                 }
             }
         }
@@ -2592,7 +3524,8 @@ Item {
                 id: subEthDevice
                 Layout.fillWidth: true
                 width: parent ? parent.width : 0
-                subLabelText: subEthDevice.subMeta ? subEthDevice.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+                subLabelText: subEthDevice.subMeta ? subEthDevice.subMeta.sublabel ?? subEthDevice.subMeta.label ?? "" : ""
 
                 property string subName
                 property var subValue
@@ -2620,7 +3553,7 @@ Item {
                         text: subEthDeviceCombo.currentName
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
@@ -2685,7 +3618,7 @@ Item {
                             text: machineCombo.currentName
                             font.bold: true
                             color: "#ffffff"
-                            horizontalAlignment: Text.AlignRight
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                             }
@@ -2744,7 +3677,7 @@ Item {
                         text: machineNameCombo.currentName
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -2803,7 +3736,7 @@ Item {
                         text: overrideCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -2831,8 +3764,8 @@ Item {
             function freqModel() {
                 if (root.model.pulsewidthNames)
                     return root.model.pulsewidthNames()
-                if (ZCam.project.laser && ZCam.project.laser.engine)
-                    return ZCam.project.laser.engine.laserPulseList
+                if (ZCam.project?.machine?.laserPulseList)
+                    return ZCam.project.machine.laserPulseList()
                 return []
                 }
 
@@ -2870,7 +3803,7 @@ Item {
                         text: freqCombo.freqValue.length > 0 ? freqCombo.freqValue : ""
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -2929,7 +3862,7 @@ Item {
                         text: lineJoinCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -2988,7 +3921,7 @@ Item {
                         text: lineEndCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -3047,7 +3980,7 @@ Item {
                         text: framingTypeCombo.currentText
                         font.bold: true
                         color: "#ffffff"
-                        horizontalAlignment: Text.AlignRight
+                        horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         }
@@ -3065,7 +3998,8 @@ Item {
             id: subFramingType
             Layout.fillWidth: true
             width: parent ? parent.width : 0
-            subLabelText: subFramingType.subMeta ? subFramingType.subMeta.label ?? "" : ""
+                subLabelAlignRight: true
+            subLabelText: subFramingType.subMeta ? subFramingType.subMeta.sublabel ?? subFramingType.subMeta.label ?? "" : ""
 
             property string subName
             property var subValue
@@ -3094,7 +4028,7 @@ Item {
                     text: subFramingTypeCombo.currentText
                     font.bold: true
                     color: "#ffffff"
-                    horizontalAlignment: Text.AlignRight
+                    horizontalAlignment: Text.AlignLeft
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                     }
@@ -3153,9 +4087,9 @@ Item {
     Component {
         id: subLockScaleDelegate
 
-        Row {
+        RowLayout {
             id: subLockScaleRow
-            width: parent ? parent.width : 0
+            Layout.fillWidth: true
             spacing: 4
 
             property string subName
@@ -3237,9 +4171,9 @@ Item {
     Component {
         id: subLockSizeDelegate
 
-        Row {
+        RowLayout {
             id: subLockSizeRow
-            width: parent ? parent.width : 0
+            Layout.fillWidth: true
             spacing: 4
 
             property string subName
@@ -3264,6 +4198,340 @@ Item {
                         modeValue: subLockSizeRow.subValue
                         onActivated: idx => subLockSizeRow.setSub(idx)
                     }
+                    }
+                }
+            }
+        }
+
+    // ── cameraName: ComboBox listing the available video input devices ─────
+    Component {
+        id: cameraNameDelegate
+
+        RowLayout {
+            id: rowCameraName
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowCameraName.meta ? rowCameraName.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: cameraNameCombo
+                    anchors.fill: parent
+
+                    // Model = available cameras with an optional "(none)"
+                    // entry so the camera can be disabled.
+                    property var camNames: root.model.cameraNames ? root.model.cameraNames() : []
+                    model: {
+                        var list = ["(none)"]
+                        for (var i = 0; i < cameraNameCombo.camNames.length; ++i)
+                            list.push(cameraNameCombo.camNames[i])
+                        return list
+                        }
+
+                    property string currentName: {
+                        if (rowCameraName.propValue === undefined || rowCameraName.propValue === null)
+                            return "(none)"
+                        const s = String(rowCameraName.propValue)
+                        return s.length > 0 ? s : "(none)"
+                        }
+
+                    currentIndex: {
+                        let idx = cameraNameCombo.find(cameraNameCombo.currentName)
+                        return idx >= 0 ? idx : 0
+                        }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            rowCameraName.setModelValue("")
+                        else
+                            rowCameraName.setModelValue(cameraNameCombo.model[index])
+                        }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: cameraNameCombo.currentName
+                        font.bold: true
+                        color: cameraNameCombo.currentName === "(none)" ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        }
+                    indicator: Item {}
+                    }
+                }
+            }
+        }
+
+    // ── cameraResolution: ComboBox listing available camera resolutions ──
+    Component {
+        id: cameraResolutionDelegate
+
+        RowLayout {
+            id: rowCameraResolution
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowCameraResolution.meta ? rowCameraResolution.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: cameraResolutionCombo
+                    anchors.fill: parent
+
+                    property var camElement: root.model.element
+                    model: {
+                        var list = ["(default)"]
+                        if (camElement && camElement.resolutionNames)
+                            list = list.concat(camElement.resolutionNames())
+                        return list
+                    }
+
+                    property string currentVal: rowCameraResolution.propValue !== undefined ? String(rowCameraResolution.propValue) : ""
+                    currentIndex: {
+                        if (currentVal.length === 0)
+                            return 0
+                        let idx = cameraResolutionCombo.find(currentVal)
+                        return idx >= 0 ? idx : 0
+                    }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            rowCameraResolution.setModelValue("")
+                        else
+                            rowCameraResolution.setModelValue(cameraResolutionCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: cameraResolutionCombo.currentVal.length > 0 ? cameraResolutionCombo.currentVal : "(default)"
+                        font.bold: true
+                        color: cameraResolutionCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+    }
+
+    // ── cameraFrameRate: ComboBox listing available frame rates ────────
+    Component {
+        id: cameraFrameRateDelegate
+
+        RowLayout {
+            id: rowCameraFrameRate
+            width: parent ? parent.width : 0
+            spacing: 6
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            Label {
+                text: rowCameraFrameRate.meta ? rowCameraFrameRate.meta.label ?? "" : ""
+                Layout.preferredWidth: root.labelWidth
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                ComboBox {
+                    id: cameraFrameRateCombo
+                    anchors.fill: parent
+
+                    property var camElement: root.model.element
+                    model: {
+                        var list = ["(default)"]
+                        if (camElement && camElement.frameRateNames)
+                            list = list.concat(camElement.frameRateNames())
+                        return list
+                    }
+
+                    property string currentVal: rowCameraFrameRate.propValue !== undefined ? String(rowCameraFrameRate.propValue) : ""
+                    currentIndex: {
+                        if (currentVal.length === 0)
+                            return 0
+                        let idx = cameraFrameRateCombo.find(currentVal)
+                        return idx >= 0 ? idx : 0
+                    }
+
+                    onActivated: index => {
+                        if (index === 0)
+                            rowCameraFrameRate.setModelValue("")
+                        else
+                            rowCameraFrameRate.setModelValue(cameraFrameRateCombo.model[index])
+                    }
+
+                    background: Item {}
+                    padding: 2
+                    contentItem: Text {
+                        text: cameraFrameRateCombo.currentVal.length > 0 ? cameraFrameRateCombo.currentVal : "(default)"
+                        font.bold: true
+                        color: cameraFrameRateCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Item {}
+                }
+            }
+        }
+    }
+
+    // ── cameraView: live camera image, zoomable (wheel) and pannable (drag) ──
+    Component {
+        id: cameraViewDelegate
+
+        Column {
+            id: colCameraView
+            width: parent ? parent.width : 0
+            spacing: 4
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            property var camElement: (ZCam.project && ZCam.project.cameraElement) ? ZCam.project.cameraElement : null
+            // zoom factor and pan offset for the preview image
+            property real _zoom: 1.0
+            property point _pan: Qt.point(0, 0)
+
+            Label {
+                text: {
+                    let s = colCameraView.meta ? colCameraView.meta.label ?? qsTr("Camera") : qsTr("Camera")
+                    if (colCameraView.camElement && colCameraView.camElement.frameSize && colCameraView.camElement.frameSize.width > 0)
+                        s += "  (" + colCameraView.camElement.frameSize.width + "\u00D7" + colCameraView.camElement.frameSize.height + ")"
+                    s += "  [" + Math.round(colCameraView._zoom * 100) + "%]"
+                    return s
+                    }
+                color: Material.foreground
+                opacity: 0.75
+                }
+
+            Rectangle {
+                width: colCameraView.width
+                height: 220
+                color: "#202020"
+                radius: 4
+                border.width: 1
+                border.color: Material.accentColor
+                clip: true
+
+                CaptureSession {
+                    id: previewSession
+                    videoOutput: previewVideo
+                    Component.onCompleted: {
+                        if (colCameraView.camElement)
+                            previewSession.videoSink = colCameraView.camElement.videoSink;
+                        }
+                    }
+
+                Connections {
+                    target: colCameraView
+                    function onCamElementChanged() {
+                        if (colCameraView.camElement)
+                            previewSession.videoSink = colCameraView.camElement.videoSink;
+                        }
+                    }
+
+                VideoOutput {
+                    id: previewVideo
+                    anchors.fill: parent
+                    fillMode: VideoOutput.Stretch
+                    scale: colCameraView._zoom
+                    // Pan: shift the item in device pixels.
+                    transform: Translate {
+                        x: colCameraView._pan.x
+                        y: colCameraView._pan.y
+                        }
+                    }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: !colCameraView.camElement
+                    text: qsTr("no camera")
+                    color: "#888888"
+                    }
+
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    property point _lastPos: Qt.point(0, 0)
+
+                    onPressed: mouse => {
+                        _lastPos = Qt.point(mouse.x, mouse.y)
+                        }
+                    onPositionChanged: mouse => {
+                        if (!(mouse.buttons & Qt.LeftButton))
+                            return
+                        const dx = mouse.x - _lastPos.x
+                        const dy = mouse.y - _lastPos.y
+                        _lastPos = Qt.point(mouse.x, mouse.y)
+                        colCameraView._pan = Qt.point(colCameraView._pan.x + dx, colCameraView._pan.y + dy)
+                        }
+                    onDoubleClicked: {
+                        // reset view
+                        colCameraView._zoom = 1.0
+                        colCameraView._pan = Qt.point(0, 0)
+                        }
+                    onWheel: wheel => {
+                        const oldZoom = colCameraView._zoom
+                        const f = wheel.angleDelta.y > 0 ? 1.25 : 0.8
+                        const newZoom = Math.min(20.0, Math.max(0.1, oldZoom * f))
+                        if (newZoom === oldZoom)
+                            return
+                        // Keep the point under the cursor fixed.
+                        const cx = width / 2
+                        const cy = height / 2
+                        const mx = wheel.x - cx
+                        const my = wheel.y - cy
+                        const k = newZoom / oldZoom
+                        colCameraView._pan = Qt.point(colCameraView._pan.x + mx * (1.0 - k), colCameraView._pan.y + my * (1.0 - k))
+                        colCameraView._zoom = newZoom
+                        }
                     }
                 }
             }

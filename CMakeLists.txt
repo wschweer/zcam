@@ -18,7 +18,8 @@ set(CMAKE_SKIP_INSTALL_RPATH ON)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 
 find_package(PkgConfig REQUIRED)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration Multimedia)
+find_package(Qt6Multimedia QUIET)
 get_target_property(QT_CORE_LIB Qt6::Core LOCATION)
 get_filename_component(QT_LIB_DIR "${QT_CORE_LIB}" DIRECTORY)
 set(CMAKE_BUILD_RPATH "${QT_LIB_DIR}")
@@ -119,9 +120,9 @@ qt_add_qml_module(zcam
         src/grid.cpp src/grid.h
 
         src/laser.cpp src/laser.h
-        src/laser.h src/laserengine.h
         src/laser_bjjcz.cpp src/laser_bjjcz.h
         src/laser_rkq.cpp src/laser_rkq.h
+        src/machinegcode.cpp src/machinegcode.h
 
         src/usb.cpp src/usb.h
         src/clipper.cpp src/clipper.h
@@ -134,6 +135,9 @@ qt_add_qml_module(zcam
 
         src/geometryworker.cpp src/geometryworker.h
         src/mediabrowser.cpp src/mediabrowser.h
+        src/cameraelement.cpp src/cameraelement.h
+        src/cameraoverlaygeometry.cpp src/cameraoverlaygeometry.h
+        src/cameratexturedata.cpp src/cameratexturedata.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp
@@ -182,6 +186,7 @@ qt_add_resources(zcam icons FILES
       icons/view-isometric.svg
       icons/view-perspective.svg
       icons/view-fullscreen.svg
+      icons/camera.svg
       icons/file-new.svg
       icons/file-open.svg
       icons/file-save.svg
@@ -221,6 +226,25 @@ qt_add_resources(zcam conf
     FILES qtquickcontrols2.conf
     )
 
+# ---------------------------------------------------------------------------
+# Embed all files under data/ZCam/ as a Qt resource so they can be copied
+# to ~/ZCam on first install.
+# ---------------------------------------------------------------------------
+file(GLOB_RECURSE DATA_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS "data/ZCam/*")
+# Remove hidden files (filenames starting with a dot)
+foreach(f ${DATA_FILES})
+      get_filename_component(fname ${f} NAME)
+      if(fname MATCHES "^\\.")
+            list(REMOVE_ITEM DATA_FILES ${f})
+      endif()
+endforeach()
+
+qt_add_resources(zcam data
+    PREFIX "/"
+    BASE "data"
+    FILES ${DATA_FILES}
+    )
+
 target_link_libraries(zcam PRIVATE
       Qt6::Core
       Qt6::Gui
@@ -229,6 +253,7 @@ target_link_libraries(zcam PRIVATE
       Qt6::QuickControls2
       Qt6::Qml
       Qt6::QmlIntegration
+      Qt6::Multimedia
       PkgConfig::UDEV
       PkgConfig::LIBUSB
       spnav

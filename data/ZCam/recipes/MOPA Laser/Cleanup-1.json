@@ -1,0 +1,43 @@
+{
+    "description": "",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 200.0,
+            "interleave": 1,
+            "interval": 0.02,
+            "name": "sl-1",
+            "numPasses": 2,
+            "power": 80.0,
+            "pulseWidth": 60,
+            "speed": 1000.0,
+            "startAngle": 0.0,
+            "travelSpeed": 1000.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        },
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 200.0,
+            "interleave": 1,
+            "interval": 0.02,
+            "name": "sl-2",
+            "numPasses": 2,
+            "power": 80.0,
+            "pulseWidth": 60,
+            "speed": 1000.0,
+            "startAngle": 0.0,
+            "travelSpeed": 1000.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        }
+    ],
+    "name": "Cleanup-1",
+    "numPasses": 1
+}

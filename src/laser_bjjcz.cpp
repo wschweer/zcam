@@ -10,34 +10,46 @@
 //=============================================================================
 
 #include <algorithm>
-#include "laserengine.h"
 #include "usb.h"
 #include "group.h"
 #include "zcam.h"
 #include "project.h"
 #include "laser_bjjcz.h"
 
-// #include "types.h"
-//#include "clipper.h"
-// #include "cal.h"
-
 using namespace Clipper2Lib;
 
 static const int VENDOR  = 0x9588;
 static const int PRODUCT = 0x9899;
-// const static double XSCALE = 316.17;
-// const static double YSCALE = 293.15;
 
 //---------------------------------------------------------
 //   LaserParameterSet
 //---------------------------------------------------------
 
-LaserParameterSet::LaserParameterSet(const LaserPass* s) {
-      power       = s->power();
-      speed       = s->speed();
-      travelSpeed = s->travelSpeed();
-      frequency   = s->frequency();
-      pulseWidth  = s->pulseWidth();
+LaserParameterSet::LaserParameterSet(const LaserPass* s, const Laser* laser) {
+      power      = s->power();
+      speed      = s->speed();
+      frequency  = s->frequency();
+      pulseWidth = s->pulseWidth();
+      if (s->overrideTimings()) {
+            onDelay           = s->onDelay();
+            offDelay          = s->offDelay();
+            endDelay          = s->endDelay();
+            polygonDelay      = s->polygonDelay();
+            jumpSpeed         = s->jumpSpeed();
+            minJumpDelay      = s->minJumpDelay();
+            maxJumpDelay      = s->maxJumpDelay();
+            jumpDistanceLimit = s->jumpDistanceLimit();
+            }
+      else {
+            onDelay           = laser->onDelay();
+            offDelay          = laser->offDelay();
+            endDelay          = laser->endDelay();
+            polygonDelay      = laser->polygonDelay();
+            jumpSpeed         = laser->jumpSpeed();
+            minJumpDelay      = laser->minJumpDelay();
+            maxJumpDelay      = laser->maxJumpDelay();
+            jumpDistanceLimit = laser->jumpDistanceLimit();
+            }
       }
 
 //---------------------------------------------------------
@@ -67,24 +79,17 @@ struct LaserCmd {
 
 using LaserCmdList = std::vector<LaserCmd>;
 
-//---------------------------------------------------------
-//   LaserCmdList
-//---------------------------------------------------------
-
 static const LaserCmdList commandLookup {
    LaserCmd {             listJumpTo,              "listJumpTo"},
    LaserCmd {          listEndOfList,           "listEndOfList"},
-
    LaserCmd {       listLaserOnPoint,        "listLaserOnPoint"},
    LaserCmd {          listDelayTime,           "listDelayTime"},
-
    LaserCmd {             listMarkTo,              "listMarkTo"},
    LaserCmd {          listJumpSpeed,           "listJumpSpeed"},
    LaserCmd {       listLaserOnDelay,        "listLaserOnDelay"},
    LaserCmd {      listLaserOffDelay,       "listLaserOffDelay"},
    LaserCmd {           listMarkFreq,            "listMarkFreq"},
    LaserCmd {     listMarkPowerRatio,      "listMarkPowerRatio"},
-
    LaserCmd {          listMarkSpeed,           "listMarkSpeed"},
    LaserCmd {          listJumpDelay,           "listJumpDelay"},
    LaserCmd {       listPolygonDelay,        "listPolygonDelay"},
@@ -95,7 +100,6 @@ static const LaserCmdList commandLookup {
    LaserCmd {      listQSwitchPeriod,       "listQSwitchPeriod"},
    LaserCmd {  listDirectLaserSwitch,   "listDirectLaserSwitch"},
    LaserCmd {           listFlyDelay,            "listFlyDelay"},
-
    LaserCmd {          listSetCo2FPK,           "listSetCo2FPK"},
    LaserCmd {       listFlyWaitInput,        "listFlyWaitInput"},
    LaserCmd {        listFiberOpenMO,         "listFiberOpenMO"},
@@ -106,10 +110,10 @@ static const LaserCmdList commandLookup {
    LaserCmd {listFiberYLPMPulseWidth, "listFiberYLPMPulseWidth"},
    LaserCmd {    listFlyEncoderCount,     "listFlyEncoderCount"},
    LaserCmd {         listSetDaZWord,          "listSetDaZWord"},
-
    LaserCmd {        listJptSetParam,         "listJptSetParam"},
    LaserCmd {          listReadyMark,           "listReadyMark"},
 
+   LaserCmd {          UnknownCmdx03,              "Unknown-03"},
    LaserCmd {           DisableLaser,            "DisableLaser"},
    LaserCmd {            EnableLaser,             "EnableLaser"},
    LaserCmd {            ExecuteList,             "ExecuteList"},
@@ -187,7 +191,7 @@ static string cmdName(uint16_t cmd) {
 
 void dump(const Packet6& data) {
       string line = format("{:20s} ", cmdName(data[0]));
-      int n       = data[5] ? 6 : 5; // data[5] is always zero
+      int n       = data[5] ? 6 : 5;
       for (int i = 1; i < n; ++i)
             line += format("{:04x} ", data[i]);
       line += ": ";
@@ -220,22 +224,27 @@ void dump(Packet6* p, bool single) {
 //   LaserBJJCZ
 //---------------------------------------------------------
 
-LaserBJJCZ::LaserBJJCZ(ZCam* w, QObject* parent)
-   : LaserEngine(w, parent), laserState(this), list(this) {
-      usb = new Usb();
-      laserState.clear();
+LaserBJJCZ::LaserBJJCZ(ZCam* w, QObject* parent) : Laser(w, parent), list(this) {
+      usb               = new Usb();
+      _laserValuesValid = false;
+      gpio.init(this);
       }
 
 LaserBJJCZ::~LaserBJJCZ() {
+      set_control_mode(1);
+      set_standby(2000, 20);
+      set_fiber_mo(0);
+      write_analog_port_1(409);
       delete usb;
       }
 
 //---------------------------------------------------------
-//   init
+//   initEngine
 //---------------------------------------------------------
 
-bool LaserBJJCZ::init(bool _dryRun) {
-      setDryRun(_dryRun);
+bool LaserBJJCZ::initEngine(bool _dryRun) {
+      set_dryRun(_dryRun);
+      Assert(zcam);
 
       try {
             if (!dryRun())
@@ -247,84 +256,76 @@ bool LaserBJJCZ::init(bool _dryRun) {
             return false;
             }
 
-      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
-      if (!machine) {
-            Critical("no laser machine configured");
-            usb->close();
-            return false;
-            }
-
       // galvo range -32768  --  32767
-      double xScale = machine->galvoScale().x() / 100.0; // m->scale() is in %
-      double yScale = machine->galvoScale().y() / 100.0;
-      //      double rotate = machine->galvoRotate();
-      xScale = xScale * 0x10000 / machine->maxTravel().x();
-      yScale = yScale * 0x10000 / machine->maxTravel().y();
+      double xScale = galvoScale().x() / 100.0;
+      double yScale = galvoScale().y() / 100.0;
+      xScale        = xScale * 0x10000 / maxTravel().x();
+      yScale        = yScale * 0x10000 / maxTravel().y();
 
-      /*      transform = QTransform();
-      if (machine->swapxy()) {
-            rotate    += -90.0;
-            xScale    *= -1;
-            transform.rotate(rotate);
-            transform.scale(yScale, xScale);
-                              }
-      else {
-            transform.scale(xScale, yScale);
-                              }
-      transform.translate(0x8000, 0x8000);
-  */
-      // for correct speed calculation:
       galvos = (abs(xScale) + abs(yScale)) * .5;
-      Debug("native scale {:.2f} {:.2f} galvos(scale): {}", xScale, yScale,
-            galvos); // was wrong: 595.78, should be 411.25?
+      Debug("native scale {:.2f} {:.2f} galvos(scale): {} {:04x}", xScale, yScale, galvos, int(galvos));
 
-      getSerialNumber();
-      port_bits = 0;
-      statusFlags();
-      reset();
-      usleep(1000 * 100); // 50ms
-      if (!statusFlags().isReady()) {
+      command({GetSerialNo});
+      statusFlags(); // initialize status flags
+      if (isMOPALaser())
+            get_fiber_st_mo_ap();
+      command({UnknownCmdx03, 0, 0, 0, 0});
+
+      if (!_dryRun && !is_ready()) {
             Critical("laser not ready");
             usb->close();
             return false;
             }
       writeCorrectionTable();
       enable_laser();
-      set_control_mode(0);                 // 0
-      set_laser_mode(laser_mode);          // 1
-      set_delay_mode(delay_mode);          // 1
-      set_timing(timing_mode);             // 1
-      set_standby(standby_p1, standby_p2); // 2000 20
-      setFirstPulseKiller(0xc8);
+      set_control_mode(0);
+      set_laser_mode(1);
+      set_delay_mode(1);
+      set_timing(1);
 
-      set_pwm_half_period(pwm_half_period); // 2
-      set_pwm_pulse_width(pwm_pulse_width); // 2
+      set_standby(2000, 20);
+      setFirstPulseKiller(200);
 
-      set_fiber_mo(0); // Close
-      set_pfk_param_2(fpk_max_voltage, fpk_min_voltage, fpk_t1, fpk_t2);
-      // set_fly_res(0, 0x5e, 0x3e8, 0x18);
-      // set_fly_res(0, 0x63, 0x3e8, 0x19);
-      set_fly_res(0, 99, 1000, 25);
-      enable_z();
-      //      write_analog_port_1(0xccb); // 0x7FF
-      write_analog_port_1(0x7ff); // 0x7FF
-      enable_z();
+      double fres = (32767.0 / 2.0) / maxTravel().x();
 
+      if (isMOPALaser()) {
+            set_pwm_half_period(2);
+            set_pwm_pulse_width(2);
+            fiber_pulse_width(1);
+            get_fiber_config_extend(); // ??
+            set_fiber_mo(moRunningOnly() ? 0 : 1);
+
+            // für bewegt achsen:
+            //    0 - axis X
+            //    fres - resolution ticks/mm
+            //    1000 - period/max_speed (1000mm/s)
+            //    24    - bit_depth / config    hardware counter
+            set_fly_res(0, fres, 1000, 24); // 175 lens
+
+            enable_z();
+            write_port(0);
+            enable_z();
+            write_analog_port_1(3275);
+            }
+      else if (isUVLaser()) {
+            set_pwm_half_period(66);
+            set_pwm_pulse_width(66);
+            write_analog_port_2(0);
+            //            set_pfk_param_2(fpk_max_voltage, fpk_min_voltage, fpk_t1, fpk_t2);
+            set_pfk_param_2(4091, 1, 409, 100);
+            set_fly_res(0, fres, 1000, 24); // 70mm lens
+            enable_z();
+            write_analog_port_1(2047);
+            }
+      write_port(0);
       gotoXY(0x8000, 0x8000);
-
-      //      port_on(light_pin);
-      //      write_port();
-      list_executing         = false;
-      number_of_list_packets = 0;
-      reset_list();
-      initPosition();
-
-      //      set_pfk_param_2(fpk_max_voltage, fpk_min_voltage, fpk_t1, fpk_t2);
-      //      enable_z();
-
-      usleep(1000 * 50); // 50ms
       return true;
       }
+
+// travel        175     70    75   300
+//    fly_res     94    234   218    55
+//    galvos     x889               x111
+//                175
 
 //---------------------------------------------------------
 //   initPosition
@@ -335,32 +336,23 @@ void LaserBJJCZ::initPosition() {
       gotoXY(d[1] + 1, d[2] + 1);
       };
 
-//---------------------------------------------------------
-//   getSerialNumber
-//---------------------------------------------------------
-
-Packet4 LaserBJJCZ::getSerialNumber() {
-      return command({GetSerialNo});
-      }
-
-//---------------------------------------------------------
+//-----------------------------------------------------------------------------
 //   command
-//---------------------------------------------------------
+//    send command  in command mode. Every command is a Packet6 and gets
+//    a Packet4 answer. Every answer contains the LaserStatusFlags
+//-----------------------------------------------------------------------------
 
-Packet4 LaserBJJCZ::command(Packet6 data, bool read) const {
-      if (aborting)
-            return {0xffff, 0xffff, 0xffff, 0xffff};
-      if (!send(data))
-            return {0xffff, 0xffff, 0xffff, 0xffff};
-      if (read) {
-            Packet4 rv;
-            if (!usb->read((uchar*)rv.data(), sizeof(rv)))
-                  Critical("usb receive failed");
-            //            if (rv[0] != 0xffff || rv[1] != 0xffff || rv[2] != 0xffff || rv[3] != 0xffff)
-            //                  Debug("************<{}> return {:04x} {:04x} {:04x} {:04x}", cmdName(data[0]), rv[0], rv[1], rv[2], rv[3]);
+Packet4 LaserBJJCZ::command(Packet6 data) const {
+      Packet4 rv {0xffff, 0xffff, 0xffff, 0xffff};
+      if (!send(data)) {
+            Critical("failed");
             return rv;
             }
-      return {0xffff, 0xffff, 0xffff, 0xffff};
+      if (!usb->read((uchar*)rv.data(), sizeof(rv)))
+            Critical("usb receive failed");
+      else
+            _status = LaserStatusFlags(rv[3]);
+      return rv;
       }
 
 //---------------------------------------------------------
@@ -368,8 +360,7 @@ Packet4 LaserBJJCZ::command(Packet6 data, bool read) const {
 //---------------------------------------------------------
 
 bool LaserBJJCZ::send(const CmdList& data) const {
-      if (aborting)
-            return false;
+      waitReady();
       if (!usb->write((uchar*)data[0].data(), LIST_SIZE * 12)) {
             Critical("usb send failed");
             return false;
@@ -377,13 +368,7 @@ bool LaserBJJCZ::send(const CmdList& data) const {
       return true;
       }
 
-//---------------------------------------------------------
-//   send
-//---------------------------------------------------------
-
 bool LaserBJJCZ::send(const Packet6& data) const {
-      if (aborting)
-            return false;
       if (!usb->write((uchar*)data.data(), sizeof(Packet6))) {
             Critical("usb send failed");
             return false;
@@ -392,178 +377,17 @@ bool LaserBJJCZ::send(const Packet6& data) const {
       }
 
 //---------------------------------------------------------
-//   set_travel_speed
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_travel_speed(double speed) {
-      if (laserState.currentTravelSpeed == speed)
-            return;
-      list_jump_speed(uint16_t(speed * galvos * 0.001));
-      laserState.currentTravelSpeed = speed;
-      }
-
-//---------------------------------------------------------
-//   set_mark_speed
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_mark_speed(double speed) {
-      Debug("{}", speed);
-      if (laserState.markSpeed == speed)
-            return;
-      laserState.markSpeed = speed;
-      list_mark_speed(int(speed * abs(galvos) * 0.001));
-      }
-
-//---------------------------------------------------------
-//   set_delay_on
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_delay_on(double delay) {
-      if (laserState.delay_on == delay)
-            return;
-      list_laser_on_delay(delay);
-      laserState.delay_on = delay;
-      }
-
-//---------------------------------------------------------
-//   set_delay_off
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_delay_off(double delay) {
-      if (laserState.delay_off == delay)
-            return;
-      list_laser_off_delay(delay);
-      laserState.delay_off = delay;
-      }
-
-//---------------------------------------------------------
-//   set_delay_polygon
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_delay_polygon(double delay) {
-      if (laserState.delay_poly == delay)
-            return;
-      list_polygon_delay(delay);
-      laserState.delay_poly = delay;
-      }
-
-//---------------------------------------------------------
-//   set_power
-//    Accepts power in percent, automatically converts to power command.
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_power(double power) {
-      if (_testMode)
-            power = 15.0;
-
-      if (laserState.setPower(power))
-            list_mark_current(uint16_t(round(power * 0xFFF / 100.0)));
-      }
-
-//---------------------------------------------------------
-//   set_pulse_width
-//---------------------------------------------------------
-
-void LaserBJJCZ::set_pulse_width(double pw) {
-      if (laserState.pulseWidth == pw)
-            return;
-      list_fiber_open_mo(0);
-      list_fiber_ylpm_pulse_width(pw);
-      laserState.pulseWidth = pw;
-      list_delay_time(10000);
-      list_fiber_open_mo(1);
-      //      list_delay_time(800);
-      list_delay_time(10000);
-      }
-
-//---------------------------------------------------------
-//   list_jump_speed
-//---------------------------------------------------------
-
-void LaserBJJCZ::list_jump_speed(uint16_t speed) {
-      if (speed > 0xffff) {
-            Critical("jump speed too hight: {}", speed);
-            speed = 0xffff;
-            }
-      list_write({listJumpSpeed, speed});
-      }
-
-//---------------------------------------------------------
-//   list_write
-//---------------------------------------------------------
-
-void LaserBJJCZ::list_write(const Packet6& p) {
-      list.write(p);
-      }
-
-//---------------------------------------------------------
-//   list_end
-//---------------------------------------------------------
-
-void LaserBJJCZ::list_end() {
-      //      Debug("--{} packets {}", list.size(), number_of_list_packets);
-      if (list.empty()) // if list is empty
-            return;
-      for (int i = 0; !is_ready(); ++i) {
-            if (aborting)
-                  return;
-            usleep(1000 * 10); // 10ms
-            if (!(i % 200) && i > 0)
-                  Critical("busy...{}", i / 200);
-            }
-      send(list);
-      set_end_of_list(0);
-      ++number_of_list_packets;
-      list.clear();
-      if ((number_of_list_packets > 2) && !list_executing) {
-            execute_list();
-            list_executing = true;
-            }
-      }
-
-//---------------------------------------------------------
-//   light_off
-//---------------------------------------------------------
-
-void LaserBJJCZ::light_off(bool use_list) {
-      if (!is_port(light_pin)) // Was already off.
-            return;
-      port_off(light_pin);
-      if (use_list)
-            list_write_port();
-      else
-            write_port();
-      }
-
-//---------------------------------------------------------
-//   light_on
-//---------------------------------------------------------
-
-void LaserBJJCZ::light_on(bool use_list) {
-      if (is_port(light_pin)) // Was already on.
-            return;
-      port_on(light_pin);
-      if (use_list)
-            list_write_port();
-      else
-            write_port();
-      }
-
-//---------------------------------------------------------
 //   wait_finished
 //---------------------------------------------------------
 
 void LaserBJJCZ::wait_finished() const {
-      for (int i = 0;; ++i) {
-            if (aborting)
-                  return;
-            auto data   = command({GetStatus});
-            auto status = LaserStatusFlags(data[3]);
+      for (int i = 1;; ++i) {
+            if (stopMarking)
+                  stopMarkingEngine();
+            auto status = statusFlags();
             if (status.isReady() && !status.isBusy())
                   break;
-            usleep(1000 * 10); // 10ms
-            if (!(i % 200))
-                  Debug("...{}", i / 200);
+            usleep(1000 * 10);
             }
       }
 
@@ -572,28 +396,29 @@ void LaserBJJCZ::wait_finished() const {
 //---------------------------------------------------------
 
 void LaserBJJCZ::wait_axis() const {
-      for (int i = 0; is_axis(); ++i) {
-            usleep(1000 * 10); // 10ms
+      for (int i = 1; is_axis(); ++i) {
+            usleep(1000 * 10);
             if (aborting)
                   return;
             if (!(i % 200))
                   Debug("...{}", i / 200);
+            if (i > 100 * 30)
+                  throw(std::string("waitAxis timeout"));
             }
       }
 
 //---------------------------------------------------------
-//   wait_ready
+//   waitReady
 //---------------------------------------------------------
 
-void LaserBJJCZ::wait_ready() {
+void LaserBJJCZ::waitReady() const {
+      if (_status.isReady()) // status from last command
+            return;
+      // wait for ready
       for (int i = 0; !is_ready(); ++i) {
-            usleep(1000 * 10); // 10ms
-            if (aborting) {
-                  Debug("===========================aborting");
-                  return;
-                  }
-            if (!(i % 200))
-                  Critical("...{}", i / 200);
+            usleep(100);            // 100µs
+            if (i > 10 * 1000 * 10) // 10sec
+                  throw(std::string("waitReady timeout"));
             }
       }
 
@@ -602,69 +427,31 @@ void LaserBJJCZ::wait_ready() {
 //---------------------------------------------------------
 
 void LaserBJJCZ::wait_idle() const {
-      for (int i = 0; is_busy(); ++i) {
-            usleep(1000 * 10);
+      for (int i = 1; is_busy(); ++i) {
+            usleep(1000 * 10); // 10 ms
             if (aborting) {
                   Debug("===========================aborting");
                   return;
                   }
             if (!(i % 200))
                   Critical("...{} {}", i / 200, bool(aborting));
+            if (i > 100 * 30)
+                  throw(std::string("waitIdle timeout"));
             }
       }
 
 //---------------------------------------------------------
-//   exit
+//   exitEngine
 //---------------------------------------------------------
 
-void LaserBJJCZ::exit() {
-      stop_list();
+void LaserBJJCZ::exitEngine() {
       stop_execute();
+      stop_list();
       aborting = true;
-      LaserBJJCZ::abort(false);
-      stop();
-      usb->close();
-      }
-
-//---------------------------------------------------------
-//   abort
-//---------------------------------------------------------
-
-void LaserBJJCZ::abort(bool dummyPacket) {
-      Debug("abort {}", dummyPacket);
-      command({StopExecute});
-      command({StopList});
-      set_fiber_mo(0);
-      reset_list();
-      if (dummyPacket) {
-            list.clear();
-            list_end_of_list(); // Ensure packet is sent on end.
-            list_end();
-            if (!list_executing)
-                  execute_list();
-            list_executing         = false;
-            number_of_list_packets = 0;
+      wait_idle();
+      if (isMOPALaser())
             set_fiber_mo(0);
-            port_off(laser_pin);
-            write_port();
-            }
-      }
-
-//---------------------------------------------------------
-//   distance
-//    compute distance between x/y and last_x/last_y
-//---------------------------------------------------------
-
-int FiberLaserState::distance(int x, int y) {
-      double dx = x - lastPosX;
-      double dy = y - lastPosY;
-      double d  = sqrt(dx * dx + dy * dy);
-
-      if (d < 0)
-            Fatal("return negative ??");
-      if (d > 0xffff)
-            d = 0xffff;
-      return int(d);
+      usb->close();
       }
 
 //---------------------------------------------------------
@@ -673,43 +460,21 @@ int FiberLaserState::distance(int x, int y) {
 
 void LaserBJJCZ::mark(double x, double y) {
       LaserPosition pos = mapToGalvo(x, y);
-      Debug("mark {} {}", pos.x, pos.y);
-      laserState.mark(pos.x, pos.y);
+      mark(pos.x, pos.y);
       }
 
 //---------------------------------------------------------
-//   mark
+//   move
 //---------------------------------------------------------
 
-void FiberLaserState::mark(int x, int y) {
-      double dx  = x - lastPosX;
-      double dy  = y - lastPosY;
-      double dir = atan2(dx, dy);
-      double dr  = abs(dir - lastDir);
-      while (dr > (M_PI * .5))
-            dr -= (M_PI * .5);
-      uint16_t dv = dirValid ? dr * 0x10000 / M_PI : 0;
-
-      laser->list_write({listMarkTo, (uint16_t)x, (uint16_t)y, dv, (uint16_t)distance(x, y)});
-      lastPosX = x;
-      lastPosY = y;
-      lastDir  = dir;
-      dirValid = true;
+void LaserBJJCZ::move(double x, double y) {
+      LaserPosition pos = mapToGalvo(x, y);
+      move(pos.x, pos.y);
       }
 
 //---------------------------------------------------------
-//   lineLength
-//---------------------------------------------------------
-
-//static double lineLength(const PointD& p1, const PointD& p2) {
-//      auto d3 = p2 - p1;
-//      return sqrt(d3.x * d3.x + d3.y * d3.y);
-//      }
-
-//-------------------------------------------------------------------
 //   markLines
-//    mark one scanline which may contain several line segments
-//-------------------------------------------------------------------
+//---------------------------------------------------------
 
 void LaserBJJCZ::markLines(PathsD& pl, bool reverse) {
       if (pl.empty())
@@ -721,31 +486,11 @@ void LaserBJJCZ::markLines(PathsD& pl, bool reverse) {
             auto p1 = p[0];
             auto p2 = p[1];
 
-            //            double l1 = lineLength(current, p1);
-            //            double l2 = lineLength(current, p2);
-            //            double l3 = lineLength(p1, p2);
-
-            //            int row = int(p1.z);
-            //            if (l2 < l1)
-            //                 Debug("bad line orientation {} {}", row, row & 0x1);
-
             move(p1.x, p1.y);
             mark(p2.x, p2.y);
 
             current = p2;
             list_delay_time(10);
-            }
-      }
-
-//---------------------------------------------------------
-//   setFrequency
-//    f in kHz
-//---------------------------------------------------------
-
-void FiberLaserState::setFrequency(double f) {
-      if (f != _frequency) {
-            laser->list_qswitch_period(uint16_t(round(20000.0 / f)) & 0xffff);
-            _frequency = f;
             }
       }
 
@@ -761,7 +506,6 @@ PathsD dotCorrection(const PathsD& paths, double offset) {
 
 //---------------------------------------------------------
 //   mark
-//    PathD represents a line strip
 //---------------------------------------------------------
 
 void LaserBJJCZ::mark(const PathD& p) {
@@ -772,19 +516,17 @@ void LaserBJJCZ::mark(const PathD& p) {
                   move(pt.x, pt.y);
                   first = false;
                   }
-            else {
-                  if (firstMove) {
-                        // give laser more time to startup
-                        //laserState.mark(laserState.lastPosX+1, laserState.lastPosY+1);
+            else if (firstMove) {
+                  if (isMOPALaser()) {
                         set_fiber_mo(1);
                         list_delay_time(1000);
-                        list_laser_on_point(10); // dwell 100us
-                        mark(pt.x, pt.y);
+                        list_laser_on_point(10);
                         }
-                  else
-                        mark(pt.x, pt.y);
+                  mark(pt.x, pt.y);
                   firstMove = false;
                   }
+            else
+                  mark(pt.x, pt.y);
             }
       }
 
@@ -793,175 +535,172 @@ void LaserBJJCZ::mark(const PathD& p) {
 //---------------------------------------------------------
 
 void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
-      set_pulse_width(l.pulseWidth);
-
-      Debug("{}% markSpeed {} travelSpeed {} {}kHz {}ns delay {} {} {}", l.power, l.speed, l.travelSpeed,
-            l.frequency, l.pulseWidth, delay_laser_on, delay_laser_off, delay_polygon);
-
-      if (l.speed == 0)
-            Fatal("zero speed");
-      laserState.setFrequency(l.frequency);
-      set_power(l.power);
-
-      set_travel_speed(l.travelSpeed);
-      set_mark_speed(l.speed);
-      set_delay_on(delay_laser_on);
-      set_delay_off(delay_laser_off);
-      set_delay_polygon(delay_polygon);
+      if (!_laserValuesValid || l.speed != laserValues.speed)
+            list.write({listMarkSpeed, uint16_t(l.speed * abs(galvos) * 0.001)});
+      if (!_laserValuesValid || l.jumpSpeed != laserValues.jumpSpeed)
+            list.write({listJumpSpeed, uint16_t(l.jumpSpeed * galvos * 0.001)});
+      if (!_laserValuesValid || l.onDelay != laserValues.onDelay)
+            list_laser_on_delay(l.onDelay);
+      if (!_laserValuesValid || l.offDelay != laserValues.offDelay)
+            list_laser_off_delay(l.offDelay);
+      if (!_laserValuesValid || l.polygonDelay != laserValues.polygonDelay)
+            list_polygon_delay(l.polygonDelay);
+      if (isUVLaser()) {
+            //            list_qswitch_period(uint16_t(round(20000.0 / l.frequency)) & 0xffff);
+            //            list_mark_frequency(100);
+            list_set_co2_fpk(20, 20);
+            list_mark_power_ratio(20);
+            }
+      else if (isMOPALaser()) {
+            if (!_laserValuesValid || l.pulseWidth != laserValues.pulseWidth) {
+                  list_fiber_open_mo(0);
+                  list_fiber_ylpm_pulse_width(l.pulseWidth);
+                  list_delay_time(1000);
+                  list_fiber_open_mo(1);
+                  list_delay_time(800);
+                  }
+            if (!_laserValuesValid || l.frequency != laserValues.frequency)
+                  list_qswitch_period(uint16_t(round(20000.0 / l.frequency)) & 0xffff);
+            if (!_laserValuesValid || l.power != laserValues.power)
+                  list_mark_current(uint16_t(round(testMode() ? 15.0 : l.power * 0xFFF / 100.0)));
+            // double pulseWidth;
+            }
+      laserValues       = l;
+      _laserValuesValid = true;
 
       list_jump_delay(40);
-      list_delay_time(100);
+      //      list_delay_time(800); // 100 - 800
       }
 
 //---------------------------------------------------------
-//   startFraming
-//    start framing from idle state
+//   startFramingEngine
 //---------------------------------------------------------
 
-bool LaserBJJCZ::startFraming() {
-      aborting = false;
-      laserState.clear();
-      reset_list();
-      list_ready(); // at the start of every new command list
+bool LaserBJJCZ::startFramingEngine() {
+      try {
+            aborting = false;
+            waitReady();
+            //            set_control_mode(0); //??
+            write_port(0x100);
+            initPosition();
+            _laserValuesValid = false;
 
-      port_bits = 0;
-      port_off(laser_pin);
-      port_on(light_pin);
-      list_write_port();
+            waitReady();
 
-      list_jump_delay(0);
-      set_delay_polygon(0);
-      Machine* m = zcam->project() ? zcam->project()->machine() : nullptr;
-      if (!m)
-            return true;
-      int speed = m->framingSpeed();
-      set_travel_speed(speed);
+            list.start();
+            list.write({listJumpSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
+            list.write({listMarkSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
+            list.write({listLaserOnDelay, 0});
+            list.write({listLaserOffDelay, 0});
+            list.write({listPolygonDelay, 0});
+            list.write({listJumpDelay, 0});
+            }
+      catch (const std::string s) {
+            Debug("failed: {}", s);
+            return false;
+            }
       return true;
       }
 
 //---------------------------------------------------------
-//   stopFraming
-//    stop framing and go to idle
+//   stopFramingEngine
 //---------------------------------------------------------
 
-void LaserBJJCZ::stopFraming() {
-      stop_list();
+void LaserBJJCZ::stopFramingEngine() {
       stop_execute();
-      aborting = true;
-      Debug("=========== set aborting to true");
-      LaserBJJCZ::abort(false);
-      //      stop();
-      }
 
-//---------------------------------------------------------
-//   startMarking
-//---------------------------------------------------------
+      if (isMOPALaser())
+            set_fiber_mo(0);
 
-void LaserBJJCZ::startMarking() {
-      aborting = false;
-      laserState.clear();
-      reset_list();
-      list_ready(); // start a new command list
-
-      port_bits = 0;
-      port_on(laser_pin);
-      write_port();
-      port_bits = 0;
-      write_port();
-
+      write_port(0x100);
+      waitReady();
       initPosition();
-      port_off(laser_pin);
-      write_port();
 
-      set_fiber_mo(1);          // 0 close, 1 open
-      list_delay_time(8 * 100); // 8ms
+      list.start();
+      list.write({listJumpSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
+      list.write({listJumpDelay, 32});
+      list.end(1);
+      set_control_mode(1);
+
+      write_port(0x100);
+      set_standby(2000, 20);
+      if (isMOPALaser())
+            write_port(0x100);
+      else
+            write_port(0x300);
+      gotoXY(0x8000, 0x8000, 0, 0);
+      readPort();
       }
 
 //---------------------------------------------------------
-//   stopMarking
+//   stopMarkingEngine
 //---------------------------------------------------------
 
-void LaserBJJCZ::stopMarking() {
-      Debug("stop marking");
-      stop_list();
+void LaserBJJCZ::stopMarkingEngine() const {
       stop_execute();
-      LaserBJJCZ::abort(false);
-      stop();
       }
 
 //---------------------------------------------------------
-//   endMarking
-//    all markings are send to the list
-//    flush list
-//    wait for finish
+//   startMarkingEngine
 //---------------------------------------------------------
 
-void LaserBJJCZ::endMarking() {
-      list_end();
-      if (!list_executing && number_of_list_packets)
-            execute_list();
+void LaserBJJCZ::startMarkingEngine() {
+      aborting          = false;
+      _laserValuesValid = false;
+
+      write_port(0x0);
+      list.start();
+      initPosition();
+      waitReady();
+
+      if (isMOPALaser()) {
+            //list_fiber_open_mo(1);
+            // set_fiber_mo(1);  ??
+            //list_delay_time(800);
+            }
+      if (isUVLaser()) {
+            write_port(0x100);
+            set_standby(2000, 20);
+            write_port(0x300);
+            write_port(0x300);
+            write_port(0x300);
+            gotoXY(0x8000, 0x8000, 0, 0);
+            write_port(0x300);
+            write_port(0x200);
+            initPosition();
+            waitReady();
+            }
+      }
+
+//---------------------------------------------------------
+//   endMarkingEngine
+//    called at the end of the marking thread
+//---------------------------------------------------------
+
+void LaserBJJCZ::endMarkingEngine() {
+      list.end();
       wait_finished();
-      list_executing         = false;
-      number_of_list_packets = 0;
-      set_fiber_mo(0);
-      port_off(laser_pin);
-      port_off(light_pin);
-      write_port();
-      }
-
-//---------------------------------------------------------
-//   stop
-//---------------------------------------------------------
-
-void LaserBJJCZ::stop() {
-      list_end_of_list();
-      list_end();
-      if (!list_executing && number_of_list_packets)
-            execute_list();
-      wait_idle();
-      list.clear();
-      list_executing         = false;
-      number_of_list_packets = 0;
-      set_fiber_mo(0);
-      port_off(laser_pin);
-      port_off(light_pin);
-      write_port();
-      }
-
-//---------------------------------------------------------
-//   move (goto)
-//---------------------------------------------------------
-
-void LaserBJJCZ::move(double x, double y) {
-      LaserPosition pos = mapToGalvo(x, y);
-      laserState.move(pos.x, pos.y);
+      if (isMOPALaser())
+            set_fiber_mo(0);
       }
 
 //---------------------------------------------------------
 //   mapToGalvo
-//    mm to galvo coordinates
-//    return false if result is out of range
 //---------------------------------------------------------
 
 LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
-      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
-      if (!machine)
-            return LaserPosition(0, 0);
-      double xScale = machine->galvoScale().x() / 100.0; // m->scale() is in %
-      double yScale = machine->galvoScale().y() / 100.0;
-      double maxX   = machine->maxTravel().x();
-      double maxY   = machine->maxTravel().y();
+      double xScale = galvoScale().x() / 100.0;
+      double yScale = galvoScale().y() / 100.0;
+      double maxX   = maxTravel().x();
+      double maxY   = maxTravel().y();
       xScale        = xScale * 0x10000 / maxX;
       yScale        = yScale * 0x10000 / maxY;
 
-      // Input coordinates are in [0, maxTravel] range (corner origin).
-      // Shift to centered range [-maxTravel/2, +maxTravel/2] then scale
-      // and add galvo center offset (0x8000) to map to [0, 0xffff].
       double xc = x - maxX / 2.0;
       double yc = y - maxY / 2.0;
 
       double rawX, rawY;
-      if (machine->galvoSwapxy()) {
+      if (galvoSwapxy()) {
             rawX = trunc(yc * yScale + 0x8000);
             rawY = trunc(xc * xScale + 0x8000);
             }
@@ -980,34 +719,19 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
       }
 
 //---------------------------------------------------------
-//   move
-//---------------------------------------------------------
-
-void FiberLaserState::move(int x, int y) {
-      //      Debug("{} {}", x, y);
-      int d = distance(x, y);
-      laser->list_write({listJumpTo, (uint16_t)x, (uint16_t)y, 0, (uint16_t)d});
-      lastPosX = x;
-      lastPosY = y;
-      dirValid = false;
-      }
-
-//---------------------------------------------------------
 //   list_delay_time
-//    delay time in 10 microseconds units
 //---------------------------------------------------------
 
 void LaserBJJCZ::list_delay_time(double time) {
-      list_write({listDelayTime, uint16_t(time)});
+      list.write({listDelayTime, uint16_t(time)});
       }
 
 //---------------------------------------------------------
 //   markLayer
-//    Marks one sublayer with fixed laser settings
 //---------------------------------------------------------
 
 void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
-      setLaser(sl); // configure the laser engine
+      setLaser(sl);
 
       bool first  = true;
       bool moving = true;
@@ -1018,21 +742,19 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
                   moving = true;
                   }
             else if (first) {
-                  // first element in the list must be a move
                   Critical("First segment in layer is not a move");
                   move(p.x(), p.y());
                   }
             else {
                   if (moving) {
-                        // give laser more time to startup
-                        list_delay_time(100);
-                        list_laser_on_point(10); // dwell 100us
+                        list_delay_time(10);
+                        // list_laser_on_point(10);
                         }
                   mark(p.x(), p.y());
                   moving = false;
                   }
             first = false;
-            list_delay_time(10);
+            // list_delay_time(10);
             }
       }
 
@@ -1041,57 +763,1092 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
 //---------------------------------------------------------
 
 void LaserBJJCZ::writeCorrectionTable() {
-      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
-#if 0
-      QString corFile = machine->corfile();
-      CalData corData(zcam);
-      double xScale = 0x10000 / machine->travelX();
-      double yScale = 0x10000 / machine->travelY();
+      write_cor_table(false);
+      }
 
-      bool errorReadingCorFile = false;
-      if (!corFile.isEmpty() && corData.read(corFile.toStdString()))
-            Debug("cor file <{}> loaded", corFile);
-      else {
-            Critical("error reading cor file <{}>", corFile);
-            errorReadingCorFile = true;
-                              }
-      if (corFile.isEmpty() || errorReadingCorFile) {
-            Debug("no cor file for laser <{}> available", machine->name());
+static constexpr std::string_view _propertiesQ = // Q-switched Laser
+    R"json({
+             "class": "Machine",
+             "rows": [
+               {
+                 "label": " ",
+                 "cells": [
+                   {
+                     "type": "string",
+                     "name": "name",
+                     "sublabel": "Name"
+                   },
+                   {
+                     "type": "machineType",
+                     "name": "type",
+                     "sublabel": "Type"
+                   },
+                   {
+                     "type": "boardType",
+                     "name": "boardType",
+                     "sublabel": "Board"
+                   }
+                 ]
+               },
+               {
+                 "label": "Description",
+                 "cells": [
+                   {
+                     "name": "description",
+                     "type": "multiline"
+                   }
+                 ]
+               },
+               {
+                 "cells": [
+                   {
+                     "name": "line",
+                     "type": "line"
+                   }
+                 ]
+               },
+               {
+                 "columns": 2,
+                 "cells": [
+                   {
+                     "name": "maxTravel",
+                     "label": "Travel",
+                     "type": "vector3d",
+                     "unit": "mm",
+                     "default": [
+                       100.0,
+                       100.0,
+                       100.0
+                     ]
+                   },
+                   {
+                     "name": "travelSpeed",
+                     "label": "Travel Speed",
+                     "type": "float",
+                     "unit": "mm/s",
+                     "min": 0.0,
+                     "max": 100000.0,
+                     "default": 0.0
+                   },
+                   {
+                     "name": "framingSpeed",
+                     "label": "Framing Speed",
+                     "type": "float",
+                     "unit": "mm/s",
+                     "min": 0.0,
+                     "max": 100000.0,
+                     "default": 0.0
+                   },
+                   {
+                     "name": "maxFeed",
+                     "label": "Max Feed",
+                     "type": "vector3d",
+                     "unit": "mm/s",
+                     "default": [
+                       0.0,
+                       0.0,
+                       0.0
+                     ]
+                   },
+                   {
+                     "name": "maxAcceleration",
+                     "label": "Max Accel",
+                     "type": "vector3d",
+                     "unit": "mm/s²",
+                     "default": [
+                       0.0,
+                       0.0,
+                       0.0
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Precision",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "precision",
+                         "sublabel": "Prec"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "ncPrecision",
+                         "sublabel": "NC Prec"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "circlePrecision",
+                     "label": "Circle Prec",
+                     "type": "float",
+                     "unit": "mm",
+                     "min": 0.001,
+                     "max": 10.0,
+                     "precision": 3,
+                     "default": 0.001
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Galvo",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "default": 0.0,
+                         "precision": 4,
+                         "name": "galvoP1",
+                         "sublabel": "P1"
+                       },
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "precision": 4,
+                         "default": 0.0,
+                         "name": "galvoP2",
+                         "sublabel": "P2"
+                       },
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "precision": 4,
+                         "default": 0.0,
+                         "name": "galvoP3",
+                         "sublabel": "P3"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "galvoScale",
+                     "label": "Galvo Scale",
+                     "type": "vector2d",
+                     "default": [
+                       100.0,
+                       100.0
+                     ]
+                   },
+                   {
+                     "label": "Galvo Shear",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "min": -100.0,
+                         "max": 100.0,
+                         "precision": 3,
+                         "default": 0.0,
+                         "name": "galvoShearX",
+                         "sublabel": "Shear X"
+                       },
+                       {
+                         "type": "float",
+                         "min": -100.0,
+                         "max": 100.0,
+                         "precision": 3,
+                         "default": 0.0,
+                         "name": "galvoShearY",
+                         "sublabel": "Shear Y"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "galvoRotate",
+                     "label": "Galvo Rotate",
+                     "type": "float",
+                     "unit": "°",
+                     "min": 0.0,
+                     "max": 360.0,
+                     "default": 0.0,
+                     "precision": 3
+                   },
+                   {
+                     "name": "galvoSwapxy",
+                     "label": "Galvo Swap XY",
+                     "type": "bool",
+                     "default": false
+                   },
+                   {
+                     "name": "ethDevice",
+                     "label": "Ethernet Device",
+                     "type": "ethDevice",
+                     "default": ""
+                   }
+                 ]
+               }
+             ]
+                 })json";
 
-            //*******************************************************
-            //    create correction table from lens properties
-            //*******************************************************
+// MOPA Laser
+static constexpr std::string_view _propertiesMOPA =
+    R"json({
+             "class": "Machine",
+             "rows": [
+               {
+                 "label": " ",
+                 "cells": [
+                   {
+                     "type": "string",
+                     "name": "name",
+                     "sublabel": "Name"
+                   },
+                   {
+                     "type": "machineType",
+                     "name": "type",
+                     "sublabel": "Type"
+                   },
+                   {
+                     "type": "boardType",
+                     "name": "boardType",
+                     "sublabel": "Board"
+                   }
+                 ]
+               },
+               {
+                 "label": "Description",
+                 "cells": [
+                   {
+                     "name": "description",
+                     "type": "multiline"
+                   }
+                 ]
+               },
+               {
+                 "cells": [
+                   {
+                     "name": "line",
+                     "type": "line"
+                   }
+                 ]
+               },
+               {
+                 "columns": 2,
+                 "cells": [
+                   {
+                     "name": "maxTravel",
+                     "label": "Travel",
+                     "type": "vector3d",
+                     "unit": "mm",
+                     "default": [
+                       100.0,
+                       100.0,
+                       100.0
+                     ]
+                   },
+                   {
+                     "label": "Speed",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "unit": "mm/s",
+                         "min": 0.0,
+                         "max": 100000.0,
+                         "default": 0.0,
+                         "name": "travelSpeed",
+                         "sublabel": "Travel"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm/s",
+                         "min": 0.0,
+                         "max": 100000.0,
+                         "default": 0.0,
+                         "name": "framingSpeed",
+                         "sublabel": "Framing"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Precision",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "precision",
+                         "sublabel": "Prec"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "ncPrecision",
+                         "sublabel": "NC Prec"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "circlePrecision",
+                         "sublabel": "Circle Prec"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Galvo",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "default": 0.0,
+                         "precision": 4,
+                         "name": "galvoP1",
+                         "sublabel": "P1"
+                       },
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "precision": 4,
+                         "default": 0.0,
+                         "name": "galvoP2",
+                         "sublabel": "P2"
+                       },
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "precision": 4,
+                         "default": 0.0,
+                         "name": "galvoP3",
+                         "sublabel": "P3"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "galvoScale",
+                     "label": "Galvo Scale",
+                     "type": "vector2d",
+                     "default": [
+                       100.0,
+                       100.0
+                     ]
+                   },
+                   {
+                     "label": " ",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "min": -100.0,
+                         "max": 100.0,
+                         "precision": 3,
+                         "default": 0.0,
+                         "name": "galvoShearX",
+                         "sublabel": "Shear X"
+                       },
+                       {
+                         "type": "float",
+                         "min": -100.0,
+                         "max": 100.0,
+                         "precision": 3,
+                         "default": 0.0,
+                         "name": "galvoShearY",
+                         "sublabel": "Shear Y"
+                       }
+                     ]
+                   },
+                   {
+                     "label": "Rotate",
+                     "cells": [
+                       {
+                         "name": "galvoRotate",
+                         "type": "float",
+                         "unit": "°",
+                         "min": 0.0,
+                         "max": 360.0,
+                         "default": 0.0,
+                         "precision": 3
+                       },
+                       {
+                         "name": "galvoSwapxy",
+                         "label": "Swap XY",
+                         "type": "bool",
+                         "default": false
+                       }
+                     ]
+                   },
+                   {
+                     "label": "Jump",
+                     "cells": [
+                       {
+                         "name": "jumpSpeed",
+                         "sublabel": "speed",
+                         "type": "float",
+                         "unit": "mm/s"
+                       },
+                       {
+                         "name": "jumpDistanceLimi",
+                         "sublabel": "limit",
+                         "type": "float",
+                         "unit": "mm"
+                       }
+                     ]
+                   },
+                   {
+                     "label": "JumpDelay",
+                     "cells": [
+                       {
+                         "name": "minJumpDelay",
+                         "sublabel": "min",
+                         "type": "float",
+                         "unit": "mm/s"
+                       },
+                       {
+                         "name": "maxJumpDelay",
+                         "sublabel": "max",
+                         "type": "float",
+                         "unit": "mm/s"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Frequency",
+                     "cells": [
+                       {
+                         "name": "minFreq",
+                         "sublabel": "min",
+                         "type": "float",
+                         "unit": "kHz",
+                         "default": "1.000"
+                       },
+                       {
+                         "name": "maxFreq",
+                         "sublabel": "max",
+                         "type": "float",
+                         "unit": "kHz",
+                         "default": "4000.000"
+                       }
+                     ]
+                   },
+                   {
+                     "label": "LaserDelay",
+                     "cells": [
+                       {
+                         "name": "onDelay",
+                         "sublabel": "on",
+                         "type": "float",
+                         "unit": "µs"
+                       },
+                       {
+                         "name": "offDelay",
+                         "sublabel": "off",
+                         "type": "float",
+                         "unit": "µs"
+                       },
+                       {
+                         "name": "endDelay",
+                         "sublabel": "end",
+                         "type": "float",
+                         "unit": "µs"
+                       },
+                       {
+                         "name": "polygon",
+                         "sublabel": "polygon",
+                         "type": "float",
+                         "unit": "µs"
+                       }
+                     ]
+                   },
+                   {
+                     "label": "MO",
+                     "cells": [
+                       {
+                         "name": "moRunningOnly",
+                         "sublabel": "only if running",
+                         "type": "bool",
+                         "default": true
+                       },
+                       {
+                         "type": "empty"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Gpio",
+                     "cells": [
+                       {
+                         "type": "int",
+                         "sublabel": "RedLight",
+                         "name": "lightPin",
+                         "min": 0,
+                         "max": 15,
+                         "default": 8
+                       },
+                       {
+                         "type": "bool",
+                         "sublabel": "invert",
+                         "name": "lightPinInvert",
+                         "default": false
+                       },
+                       {
+                         "type": "int",
+                         "sublabel": "FootPedal",
+                         "name": "footPin",
+                         "min": 0,
+                         "max": 15,
+                         "default": 15
+                       },
+                       {
+                         "type": "bool",
+                         "sublabel": "invert",
+                         "name": "footPinInvert",
+                         "default": false
+                       }
+                     ]
+                   }
+                 ]
+               }
+             ]
+                 })json";
 
-            QVector2D barrel = (zcam->project() && zcam->project()->machine()) ? zcam->project()->machine()->barrel() : QVector2D();
-            double kx = barrel.x();
-            double ky = barrel.y();
+// UVLaser
+static constexpr std::string_view _propertiesUV =
+    R"json({
+             "class": "Machine",
+             "rows": [
+               {
+                 "label": " ",
+                 "cells": [
+                   {
+                     "type": "string",
+                     "name": "name",
+                     "sublabel": "Name"
+                   },
+                   {
+                     "type": "machineType",
+                     "name": "type",
+                     "sublabel": "Type"
+                   },
+                   {
+                     "type": "boardType",
+                     "name": "boardType",
+                     "sublabel": "Board"
+                   }
+                 ]
+               },
+               {
+                 "label": "Description",
+                 "cells": [
+                   {
+                     "name": "description",
+                     "type": "multiline"
+                   }
+                 ]
+               },
+               {
+                 "cells": [
+                   {
+                     "name": "line",
+                     "type": "line"
+                   }
+                 ]
+               },
+               {
+                 "columns": 2,
+                 "cells": [
+                   {
+                     "name": "maxTravel",
+                     "label": "Travel",
+                     "type": "vector3d",
+                     "unit": "mm",
+                     "default": [
+                       100.0,
+                       100.0,
+                       100.0
+                     ]
+                   },
+                   {
+                     "label": "Speed",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "unit": "mm/s",
+                         "min": 0.0,
+                         "max": 100000.0,
+                         "default": 0.0,
+                         "name": "travelSpeed",
+                         "sublabel": "Travel"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm/s",
+                         "min": 0.0,
+                         "max": 100000.0,
+                         "default": 0.0,
+                         "name": "framingSpeed",
+                         "sublabel": "Framing"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Precision",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "precision",
+                         "sublabel": "Prec"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "ncPrecision",
+                         "sublabel": "NC Prec"
+                       },
+                       {
+                         "type": "float",
+                         "unit": "mm",
+                         "min": 0.001,
+                         "max": 10.0,
+                         "precision": 3,
+                         "default": 0.001,
+                         "name": "circlePrecision",
+                         "sublabel": "Circle Prec"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Galvo",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "default": 0.0,
+                         "precision": 4,
+                         "name": "galvoP1",
+                         "sublabel": "P1"
+                       },
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "precision": 4,
+                         "default": 0.0,
+                         "name": "galvoP2",
+                         "sublabel": "P2"
+                       },
+                       {
+                         "type": "float",
+                         "min": 0.0,
+                         "max": 10.0,
+                         "precision": 4,
+                         "default": 0.0,
+                         "name": "galvoP3",
+                         "sublabel": "P3"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "galvoScale",
+                     "label": "Galvo Scale",
+                     "type": "vector2d",
+                     "default": [
+                       100.0,
+                       100.0
+                     ]
+                   },
+                   {
+                     "label": " ",
+                     "cells": [
+                       {
+                         "type": "float",
+                         "min": -100.0,
+                         "max": 100.0,
+                         "precision": 3,
+                         "default": 0.0,
+                         "name": "galvoShearX",
+                         "sublabel": "Shear X"
+                       },
+                       {
+                         "type": "float",
+                         "min": -100.0,
+                         "max": 100.0,
+                         "precision": 3,
+                         "default": 0.0,
+                         "name": "galvoShearY",
+                         "sublabel": "Shear Y"
+                       }
+                     ]
+                   },
+                   {
+                     "name": "galvoRotate",
+                     "label": "Rotate",
+                     "type": "float",
+                     "unit": "°",
+                     "min": 0.0,
+                     "max": 360.0,
+                     "default": 0.0,
+                     "precision": 3
+                   },
+                   {
+                     "name": "galvoSwapxy",
+                     "label": "Swap XY",
+                     "type": "bool",
+                     "default": false
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Frequency",
+                     "cells": [
+                       {
+                         "name": "minFreq",
+                         "sublabel": "min",
+                         "type": "float",
+                         "unit": "kHz",
+                         "default": "1.000"
+                       },
+                       {
+                         "name": "maxFreq",
+                         "sublabel": "max",
+                         "type": "float",
+                         "unit": "kHz",
+                         "default": "4000.000"
+                       }
+                     ]
+                   },
+                   {
+                     "label": "Tickle",
+                     "cells": [
+                       {
+                         "name": "ticklePulse",
+                         "sublabel": "pulse",
+                         "type": "float",
+                         "default": "1.0",
+                         "unit": "µsec"
+                       },
+                       {
+                         "name": "tickleFreq",
+                         "sublabel": "freq.",
+                         "type": "float",
+                         "default": "5.0",
+                         "unit": "kHz"
+                       }
+                     ]
+                   },
+                   {
+                     "label": "FPK",
+                     "cells": [
+                       {
+                         "type": "bool",
+                         "default": false,
+                         "name": "enableFPK",
+                         "sublabel": "enable"
+                       },
+                       {
+                         "type": "float",
+                         "precision": 2,
+                         "default": 10.0,
+                         "name": "fpkStartPower",
+                         "sublabel": "start"
+                       },
+                       {
+                         "type": "float",
+                         "precision": 2,
+                         "default": 10.0,
+                         "name": "fpkIncrement",
+                         "sublabel": "inc."
+                       }
+                     ]
+                   },
+                   {
+                     "name": "line",
+                     "type": "line",
+                     "colSpan": 2
+                   },
+                   {
+                     "label": "Gpio",
+                     "cells": [
+                       {
+                         "type": "int",
+                         "sublabel": "RedLight",
+                         "name": "lightPin",
+                         "min": 0,
+                         "max": 15,
+                         "default": 8
+                       },
+                       {
+                         "type": "int",
+                         "sublabel": "FootPedal",
+                         "name": "footPin",
+                         "min": 0,
+                         "max": 15,
+                         "default": 15
+                       }
+                     ]
+                   }
+                 ]
+               }
+             ]
+                 })json";
 
-            for (double y = -32; y <= 32; ++y) {
-                  for (double x = -32; x <= 32; ++x) {
-                        double r2 = x * x + y * y;
-                        int corrX = ((x / (1.0 + kx * 0.00001 * r2)) - x) * xScale;
-                        int corrY = ((y / (1.0 + ky * 0.00001 * r2)) - y) * yScale;
-                        if (abs(corrX) >= 0x8000 || abs(corrY) >= 0x8000) {
-                              Critical("{}:{} overflow {:x} {:x}   {}*{} {}*{}", x, y, corrX, corrY, y, r2 * kx, x, r2 * ky);
-                              return;
-                                                }
-                        corData.setValue(x, y, { corrX, corrY });
-                                          }
-                                    }
-                              }
-      write_cor_table(true);
-      bool first = true;
-      for (auto pt : corData) {
-            int x = pt.x;
-            int y = pt.y;
-            x = x < 0 ? 0x8000 - x : x;
-            y = y < 0 ? 0x8000 - y : y;
-            if (x == 0x8000)
-                  x = 0;
-            if (y == 0x8000)
-                  y = 0;
-            write_cor_line(x, y, !first);
-            first = false;
-                              }
-#endif
+//---------------------------------------------------------
+//   properties
+//---------------------------------------------------------
+
+const std::string_view LaserBJJCZ::properties() const {
+      if (type() == machineTypes[0]) // Q
+            return _propertiesQ;
+      if (type() == machineTypes[1]) // MOPA
+            return _propertiesMOPA;
+      if (type() == machineTypes[2]) // UV
+            return _propertiesUV;
+      return _propertiesQ;
+      }
+
+//---------------------------------------------------------
+//   init
+//---------------------------------------------------------
+
+void Gpio::init(LaserBJJCZ* l) {
+      laser    = l;
+      portBits = 0;
+      }
+
+//---------------------------------------------------------
+//   listWrite
+//---------------------------------------------------------
+
+void Gpio::listWrite() {
+      laser->list_write_port(portBits);
+      }
+
+//---------------------------------------------------------
+//   on
+//    sets gpio pin "bit" to on
+//---------------------------------------------------------
+
+void Gpio::on(int bit) {
+      portBits |= (1 << bit);
+      write();
+      }
+
+//---------------------------------------------------------
+//   off
+//    sets gpio pin "bit" to off
+//---------------------------------------------------------
+
+void Gpio::off(int bit) {
+      portBits &= ~(1 << bit);
+      write();
+      }
+
+//---------------------------------------------------------
+//   set
+//---------------------------------------------------------
+
+void Gpio::set(int bit, bool on) {
+      bit      = 1 << bit;
+      portBits = on ? portBits | bit : portBits & (~bit);
+      write();
+      }
+
+//---------------------------------------------------------
+//   write
+//---------------------------------------------------------
+
+void Gpio::write() const {
+      laser->write_port(portBits);
+      }
+
+//---------------------------------------------------------
+//   setLight
+//---------------------------------------------------------
+
+void LaserBJJCZ::setLight(bool on) {
+      if (lightPin() < 0) // is the pin configured?
+            return;
+      if (lightPinInvert())
+            on = !on;
+      gpio.set(lightPin(), on);
+      }
+
+//---------------------------------------------------------
+//   statusFlags
+//---------------------------------------------------------
+
+LaserStatusFlags LaserBJJCZ::statusFlags() const {
+      if (!send(GetStatus)) {
+            Critical("failed");
+            return LaserStatusFlags(0xffff);
+            }
+      Packet4 rv {0xffff, 0xffff, 0xffff, 0xffff};
+      if (!usb->read((uchar*)rv.data(), sizeof(rv)))
+            Critical("usb receive failed");
+      auto status = LaserStatusFlags(rv[3]);
+      return status;
+      }
+
+//---------------------------------------------------------
+//   start
+//    starts pipeline command processing
+//---------------------------------------------------------
+
+void CmdList::start() {
+      laser->reset_list();
+      index       = 0;
+      packetsSend = 0;
+      executing   = false;
+      write(listReadyMark);
+      }
+
+//---------------------------------------------------------
+//   end
+//    - dont know what param means
+//      0 (default)
+//      1 at end of program
+//---------------------------------------------------------
+
+void CmdList::end(int param) {
+      write(listEndOfList);
+      if (!empty()) {
+            laser->send(*this);
+            if (!executing)
+                  laser->execute_list();
+            }
+      //      laser->stop_list();   <-- this is wrong here
+      laser->set_end_of_list(param);
+      packetsSend = 0;
+      executing   = false;
+      index       = 0;
+      fill(Packet6());
+      }
+
+//---------------------------------------------------------
+//   CmdList::write
+//---------------------------------------------------------
+
+void CmdList::write(const Packet6& p) {
+      if (index >= LIST_SIZE) {
+            laser->send(*this);
+            laser->set_end_of_list(0);
+            ++packetsSend;
+            // if two packets are send to the laser we start
+            // executing the list
+            if ((packetsSend >= 2) && !executing) {
+                  laser->execute_list();
+                  executing = true;
+                  }
+            fill(Packet6());
+            index = 0;
+            }
+      at(index++) = p; // copy packet
+      }
+
+//---------------------------------------------------------
+//   distance
+//---------------------------------------------------------
+
+int LaserBJJCZ::distance(int x, int y) {
+      double dx = x - currentX;
+      double dy = y - currentY;
+      double d  = sqrt(dx * dx + dy * dy);
+
+      if (d < 0)
+            Fatal("return negative ??");
+      if (d > 0xffff)
+            d = 0xffff;
+      return int(d);
+      }
+
+//---------------------------------------------------------
+//   move
+//---------------------------------------------------------
+
+void LaserBJJCZ::move(uint16_t x, uint16_t y) {
+      uint16_t d = distance(x, y);
+      list.write({listJumpTo, x, y, 0, d});
+      currentX = x;
+      currentY = y;
+      dirValid = false;
+      }
+
+//---------------------------------------------------------
+//   mark
+//---------------------------------------------------------
+
+void LaserBJJCZ::mark(uint16_t x, uint16_t y) {
+      double dx  = x - currentX;
+      double dy  = y - currentY;
+      double dir = atan2(dx, dy);
+      double dr  = abs(dir - lastDir);
+      while (dr > (M_PI * .5))
+            dr -= (M_PI * .5);
+      uint16_t dv = dirValid ? dr * 0x10000 / M_PI : 0;
+
+      list.write({listMarkTo, x, y, dv, (uint16_t)distance(x, y)});
+      currentX = x;
+      currentY = y;
+      lastDir  = dir;
+      dirValid = true;
       }

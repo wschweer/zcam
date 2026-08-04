@@ -40,31 +40,37 @@ class Framing : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-                  "class": "Framing",
-                  "items": [
-                    {
-                      "row": {
-                        "show": {
-                          "label": "Show",
-                          "type": "bool",
-                          "default": true
-                        },
-                        "burn": {
-                          "label": "Show",
-                          "type": "empty",
-                          "default": true
-                        }
-                      },
-                      "label": " "
-                    },
-                    {
-                      "name": "framingType",
-                      "label": "Type",
-                      "type": "framingType",
-                      "default": 1
-                    }
-                  ]
-                      })json"};
+    "class": "Framing",
+    "rows": [
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": true,
+                    "name": "show",
+                    "sublabel": "Show"
+                },
+                {
+                    "type": "empty",
+                    "default": true,
+                    "name": "burn",
+                    "sublabel": "Show"
+                }
+            ]
+        },
+        {
+            "label": "Type",
+            "cells": [
+                {
+                    "name": "framingType",
+                    "type": "framingType",
+                    "default": 1
+                }
+            ]
+        }
+    ]
+})json"};
 
     public:
       virtual QString typeName() override { return QStringLiteral("framing"); }

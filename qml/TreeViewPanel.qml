@@ -583,7 +583,10 @@ Item {
                 ZCam.currentElement = model.element;
                 }
             onDoubleClicked: {
-                if (model.element && model.element.nameEditable()) {
+                if (delegateItem.isTreeNode && delegateItem.hasChildren) {
+                    root.toggleRow(delegateItem.row, model.element);
+                    }
+                else if (model.element && model.element.nameEditable()) {
                     // Enter inline-editing mode
                     delegateItem.editing = true;
                     // Set the TextField text imperatively to the current
@@ -591,9 +594,6 @@ Item {
                     nameEdit.text = model.element.name;
                     nameEdit.forceActiveFocus();
                     nameEdit.selectAll();
-                    }
-                else if (delegateItem.isTreeNode && delegateItem.hasChildren) {
-                    root.toggleRow(delegateItem.row, model.element);
                     }
                 }
 
@@ -725,17 +725,23 @@ Item {
         else if (tn === "text" || tn === "polygon" || tn === "ellipse" || tn === "rectangle") {
             shapeMenu.popup(x, y);
             }
+        else if (tn === "cameraElement") {
+            cameraMenu.popup(x, y);
+            }
+        else if (tn === "grid") {
+            gridMenu.popup(x, y);
+            }
         else if (element.deletable()) {
             deleteMenu.popup(x, y);
             }
         }
 
-    // Menu for Cad elements: "Add Layer"
+    // Menu for Cad elements: "Add Group"
     Menu {
         id: cadMenu
         Material.theme: Material.Dark
         MenuItem {
-            text: "Add Layer"
+            text: "Add Group"
             onTriggered: {
                 if (ZCam.project)
                     ZCam.project.addLayer();
@@ -743,7 +749,7 @@ Item {
             }
         }
 
-    // Menu for Cam elements: "Add Fixture"
+    // Menu for Cam elements: "Add Fixture", "Add Camera", "Add Grid"
     Menu {
         id: camMenu
         Material.theme: Material.Dark
@@ -752,6 +758,20 @@ Item {
             onTriggered: {
                 if (ZCam.project)
                     ZCam.project.addFixtureCmd();
+                }
+            }
+        MenuItem {
+            text: "Add Camera"
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.addCameraCmd();
+                }
+            }
+        MenuItem {
+            text: "Add Grid"
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.addGridCmd();
                 }
             }
         }
@@ -802,6 +822,32 @@ Item {
             }
         MenuItem {
             text: qsTr("Delete")
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
+                }
+            }
+        }
+
+    // Menu for CameraElement: "Delete"
+    Menu {
+        id: cameraMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: "Delete"
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
+                }
+            }
+        }
+
+    // Menu for Grid elements: "Delete"
+    Menu {
+        id: gridMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: "Delete"
             onTriggered: {
                 if (ZCam.project)
                     ZCam.project.removeElement(ZCam.currentElement);

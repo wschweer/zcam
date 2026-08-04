@@ -19,6 +19,7 @@ Item {
 
     property int currentRecipeIdx: -1
     property int currentLayerIdx: -1
+    property bool _updating: false
     property var currentFolderRelDir: ""   // relative path of currently selected folder, "" = root
 
     Rectangle {
@@ -44,6 +45,7 @@ Item {
     }
 
     function updateDetails() {
+        _updating = true;
         if (currentRecipeIdx >= 0 && currentRecipeIdx < ZCam.recipes.recipeModel.length) {
             let r = ZCam.recipes.recipe(currentRecipeIdx);
             recipeNameField.text = r.name;
@@ -61,15 +63,56 @@ Item {
             if (currentLayerIdx >= 0 && currentLayerIdx < layerList.model.length) {
                 layerSettingModel.pass = ZCam.recipes.layerPtr(currentRecipeIdx, currentLayerIdx);
             } else {
-                layerSettingModel.pass = null;
+                layerSettingModel.clearPass();
             }
         } else {
             recipeNameField.text = "";
             recipeDescField.text = "";
             layerList.model = [];
             currentLayerIdx = -1;
-            layerSettingModel.pass = null;
+            layerSettingModel.clearPass();
         }
+        _updating = false;
+    }
+
+    /// Selects the recipe with the given name in the tree and detail view.
+    /// Expands all parent folders so the recipe is visible in the TreeView.
+    function selectRecipeByName(name) {
+        let idx = ZCam.recipes.recipeIndexByName(name);
+        if (idx < 0)
+            return;
+        currentRecipeIdx = idx;
+        updateDetails();
+
+        // Find the model index for this recipe in the tree model
+        let tm = ZCam.recipes.recipeTreeModel;
+        let targetIdx = tm.indexForRecipe(idx);
+        if (!targetIdx || !targetIdx.valid)
+            return;
+
+        // Build the chain of parent indices from root to the target.
+        let chain = [];
+        let p = targetIdx.parent;
+        while (p && p.valid) {
+            chain.unshift(p);
+            p = p.parent;
+        }
+
+        // Expand each ancestor from top to bottom so the target row
+        // becomes visible. After each expand, forceLayout() makes
+        // newly revealed child rows immediately available.
+        for (let i = 0; i < chain.length; ++i) {
+            let visRow = recipeTree.rowAtIndex(chain[i]);
+            if (visRow >= 0 && !recipeTree.isExpanded(visRow)) {
+                recipeTree.expand(visRow);
+                recipeTree.forceLayout();
+            }
+        }
+
+        // Now select the target row (it should be visible after expanding)
+        let visRow = recipeTree.rowAtIndex(targetIdx);
+        if (visRow >= 0)
+            recipeTree.selectionModel.setCurrentIndex(targetIdx, ItemSelectionModel.ClearAndSelect);
     }
 
     LayerSettingModel {
@@ -143,6 +186,13 @@ Item {
                 Layout.fillHeight: true
                 model: ZCam.recipes.recipeTreeModel
                 clip: true
+
+                // Auto-expand the top-level machine-type node (row 0)
+                // so the user immediately sees the recipes underneath.
+                Component.onCompleted: {
+                    if (recipeTree.rows > 0)
+                        recipeTree.expand(0)
+                }
 
                 selectionModel: ItemSelectionModel {
                     model: ZCam.recipes.recipeTreeModel
@@ -238,6 +288,14 @@ Item {
                         recipeTree.selectionModel.setCurrentIndex(
                             recipeTree.index(row, column), ItemSelectionModel.ClearAndSelect)
                     }
+                    onDoubleClicked: {
+                        if (recipeDelegate.isTreeNode && recipeDelegate.hasChildren) {
+                            if (recipeTree.isExpanded(recipeDelegate.row))
+                                recipeTree.collapse(recipeDelegate.row)
+                            else
+                                recipeTree.expand(recipeDelegate.row)
+                        }
+                    }
                 }
             }
 
@@ -288,14 +346,25 @@ Item {
 
                         Label {
                             text: "Description:"
+                            Layout.alignment: Qt.AlignTop | Qt.AlignLeft
                         }
-                        TextField {
-                            id: recipeDescField
+                        ScrollView {
                             Layout.fillWidth: true
-                            onEditingFinished: {
-                                let r = ZCam.recipes.recipe(currentRecipeIdx);
-                                r.description = text;
-                                ZCam.recipes.updateRecipe(currentRecipeIdx, r);
+                            Layout.preferredHeight: recipeDescField.font.lineHeight * 5 + 12
+                            Layout.maximumHeight: recipeDescField.font.lineHeight * 5 + 12
+                            clip: true
+                            TextArea {
+                                id: recipeDescField
+                                width: parent.width
+                                wrapMode: TextArea.Wrap
+                                placeholderText: qsTr("Enter description...")
+                                text: ""
+                                onTextChanged: {
+                                    if (_updating) return;
+                                    let r = ZCam.recipes.recipe(currentRecipeIdx);
+                                    r.description = text;
+                                    ZCam.recipes.updateRecipe(currentRecipeIdx, r);
+                                }
                             }
                         }
 

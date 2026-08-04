@@ -1,0 +1,32 @@
+{
+    "boardType": "BJJCZ",
+    "circlePrecision": 0.005,
+    "description": "Fiber Galvo MOPA Laser\nLens 175x175",
+    "framingSpeed": 8000.0,
+    "galvoP1": 0.0,
+    "galvoP2": 0.0,
+    "galvoP3": 0.0,
+    "galvoRotate": 0.0,
+    "galvoScale": [
+        97.9000015258789,
+        101.33000183105469
+    ],
+    "galvoShearX": 0.0,
+    "galvoShearY": 0.0,
+    "galvoSwapxy": true,
+    "maxFeed": [
+        6000.0,
+        0.0,
+        0.0
+    ],
+    "maxTravel": [
+        175.0,
+        175.0,
+        0.0
+    ],
+    "name": "MOPA-Laser-60W-175x175",
+    "ncPrecision": 5.5041370121056e-143,
+    "precision": 0.0,
+    "travelSpeed": 8000.0,
+    "type": "MOPA Laser"
+}

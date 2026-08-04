@@ -14,6 +14,7 @@
 #include "element.h"
 #include "cad.h"
 #include "cam.h"
+#include "cameraelement.h"
 #include "fixture.h"
 #include "machine.h"
 #include "undo.h"
@@ -47,6 +48,7 @@ class Project : public Element3d
       Q_PROPERTY(QString machineName READ machineName NOTIFY machineChanged)
       Q_PROPERTY(QList<Fixture*> fixtures READ fixtures NOTIFY fixturesChanged)
       Q_PROPERTY(Element3d* gridElement READ gridElement NOTIFY gridElementChanged)
+      Q_PROPERTY(CameraElement* cameraElement READ cameraElement NOTIFY cameraElementChanged)
 
       // ── Undo / dirty / path state ──────────────────────────────────────────
       // dirty is now derived from the UndoStack (cleanIdx != curIdx).
@@ -61,11 +63,19 @@ class Project : public Element3d
       QString _projectPath; ///< empty = no file yet
 
       inline static constexpr std::string_view _properties {R"({
-            "class": "Project",
-            "items": [
-                  { "name": "machine", "label": "Machine", "type": "machine" }
-                  ]
-                                                            })"};
+    "class": "Project",
+    "rows": [
+        {
+            "label": "Machine",
+            "cells": [
+                {
+                    "name": "machine",
+                    "type": "machine"
+                }
+            ]
+        }
+    ]
+            })"};
 
       void setProjectPath(const QString& v);
       void clearUndoStack();
@@ -75,6 +85,7 @@ class Project : public Element3d
       void fixturesChanged();
       void updateFraming(int);
       void gridElementChanged();
+      void cameraElementChanged();
 
       void dirtyChanged();
       void projectPathChanged();
@@ -89,6 +100,10 @@ class Project : public Element3d
       QString machineName() const { return _machine ? _machine->name() : QString(); }
       /// Returns the Grid child element, or nullptr if none exists.
       Element3d* gridElement() const;
+      /// Returns the CameraElement child, or nullptr if none exists.
+      CameraElement* cameraElement() const;
+      /// Create a CameraElement if none exists.
+      void ensureCameraElement();
       void set_machine(Machine* m);
       /// Re-resolve the Machine* from _machineName after the Machines asset changes.
       void resolveMachine();
@@ -120,6 +135,16 @@ class Project : public Element3d
       /// Create a new Fixture as child of the Cam element.
       /// The operation is undoable via the undo stack.
       Q_INVOKABLE void addFixtureCmd();
+
+      /// Create a new CameraElement as child of the Project element.
+      /// If a CameraElement already exists, the call is a no-op.
+      /// The operation is undoable via the undo stack.
+      Q_INVOKABLE void addCameraCmd();
+
+      /// Create a new Grid as child of the Project element.
+      /// If a Grid already exists, the call is a no-op.
+      /// The operation is undoable via the undo stack.
+      Q_INVOKABLE void addGridCmd();
 
       /// Add a new Layer as child of the Cad element.
       /// The operation is undoable via the undo stack.

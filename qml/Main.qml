@@ -26,7 +26,7 @@ Window {
     x: settings.windowX >= 0 ? settings.windowX : Screen.width / 2 - width / 2
     y: settings.windowY >= 0 ? settings.windowY : Screen.height / 2 - height / 2
     visible: true
-    title: ZCam.project ? ZCam.project.projectName + (ZCam.project.undo.dirty ? " *" : "") + " – ZCam" : "--"
+    title: ZCam.project ? ZCam.project.projectName + (ZCam.project.undo ? (ZCam.project.undo.dirty ? " *" : "") : "") + " – ZCam" : "--"
 
     Material.theme: Material.Dark
     Material.accent: Material.Teal
@@ -58,7 +58,7 @@ Window {
     //   still dirty (e.g. after the user chose "Discard").
     property bool closeConfirmed: false
     onClosing: function (close) {
-        if (ZCam.project.dirty && !closeConfirmed) {
+        if (ZCam.project && ZCam.project.dirty && !closeConfirmed) {
             close.accepted = false;
             exitDialog.open();
             }
@@ -121,7 +121,7 @@ Window {
         icon.source: "qrc:/icons/dark/file-new.svg"
         shortcut: StandardKey.New
         onTriggered: {
-            if (ZCam.project.dirty) {
+            if (ZCam.project && ZCam.project.dirty) {
                 newGuard.open();
                 } else {
                 ZCam.newProject();
@@ -135,7 +135,7 @@ Window {
         icon.source: "qrc:/icons/dark/file-open.svg"
         shortcut: StandardKey.Open
         onTriggered: {
-            if (ZCam.project.dirty) {
+            if (ZCam.project && ZCam.project.dirty) {
                 openGuard.open();
                 } else {
                 openFileDialog.open();
@@ -183,8 +183,8 @@ Window {
         text: qsTr("&Undo")
         icon.source: "qrc:/icons/dark/edit-undo.svg"
         shortcut: StandardKey.Undo
-        enabled: ZCam.project.undo.canUndo
-        onTriggered: ZCam.project.undo.undo()
+        enabled: ZCam.project ? ZCam.project.undo.canUndo : false
+        onTriggered: if (ZCam.project) ZCam.project.undo.undo()
         }
 
     Action {
@@ -192,8 +192,8 @@ Window {
         text: qsTr("&Redo")
         icon.source: "qrc:/icons/dark/edit-redo.svg"
         shortcut: StandardKey.Redo
-        enabled: ZCam.project.undo.canRedo
-        onTriggered: ZCam.project.undo.redo()
+        enabled: ZCam.project ? ZCam.project.undo.canRedo : false
+        onTriggered: if (ZCam.project) ZCam.project.undo.redo()
         }
 
     Action {
@@ -206,7 +206,7 @@ Window {
         id: actionMaterialTest
         text: qsTr("Material Test")
         onTriggered: {
-            if (ZCam.project.dirty) {
+            if (ZCam.project && ZCam.project.dirty) {
                 materialTestGuard.open();
                 } else {
                 ZCam.createMaterialTest();
@@ -218,7 +218,7 @@ Window {
         id: actionGalvoTest
         text: qsTr("Galvo Test")
         onTriggered: {
-            if (ZCam.project.dirty) {
+            if (ZCam.project && ZCam.project.dirty) {
                 galvoTestGuard.open();
                 } else {
                 ZCam.createGalvoTest();
@@ -239,6 +239,12 @@ Window {
         checkable: true
         checked: settings.mediaBrowserVisible
         onCheckedChanged: settings.mediaBrowserVisible = checked
+        }
+
+    Action {
+        id: actionAbout
+        text: qsTr("&About")
+        onTriggered: aboutDialog.open()
         }
 
     // =========================================================================
@@ -461,6 +467,45 @@ Window {
         }
 
     // =========================================================================
+    //  About dialog
+    // =========================================================================
+
+    Dialog {
+        id: aboutDialog
+        title: qsTr("About ZCam")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Ok
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            Label {
+                text: "ZCam"
+                font.bold: true
+                font.pixelSize: 20
+                Layout.alignment: Qt.AlignHCenter
+                }
+            Label {
+                text: qsTr("Manufacturing tool for G-code machines and fiber laser engraving")
+                Layout.alignment: Qt.AlignHCenter
+                wrapMode: Text.WordWrap
+                Layout.maximumWidth: 320
+                }
+            Label {
+                text: qsTr("Version: %1").arg(Qt.application.version)
+                Layout.alignment: Qt.AlignHCenter
+                }
+            Label {
+                text: qsTr("Copyright (C) 2026 Werner Schweer")
+                Layout.alignment: Qt.AlignHCenter
+                font.pixelSize: 10
+                }
+            }
+        }
+
+    // =========================================================================
     //  Layout: MenuBar / ToolBar / TabBar / StackLayout
     // =========================================================================
 
@@ -521,6 +566,14 @@ Window {
                     }
                 MenuItem {
                     action: actionGalvoTest
+                    }
+                }
+
+            // Help menu
+            Menu {
+                title: qsTr("&Help")
+                MenuItem {
+                    action: actionAbout
                     }
                 }
             }
@@ -782,6 +835,39 @@ Window {
                 SplitView.maximumWidth: 300
                 }
             }
+
+        // ── Status bar ────────────────────────────────────────────────────────
+        Rectangle {
+            id: statusBar
+            Layout.fillWidth: true
+            Layout.preferredHeight: 24
+            color: Material.color(Material.BlueGrey, Material.Shade800)
+
+            property string message: ""
+            property color messageColor: Material.foreground
+
+            function show(text, color) {
+                statusBar.message = text
+                statusBar.messageColor = color !== undefined ? color : Material.foreground
+                statusTimer.restart()
+                }
+
+            Timer {
+                id: statusTimer
+                interval: 4000
+                onTriggered: statusBar.message = ""
+                }
+
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 8
+                text: statusBar.message
+                color: statusBar.messageColor
+                font.pixelSize: 12
+                elide: Text.ElideRight
+                }
+            }
         }
 
     // ── Media Browser visibility binding ──────────────────────────────────────
@@ -799,6 +885,23 @@ Window {
         target: ZCam
         function onShowFontMediaBrowserRequested() {
             actionShowMediaBrowser.checked = true
+            }
+
+        // Switch to the Recipes tab and select the requested recipe.
+        function onRecipeEditorRequested(name) {
+            tabBar.currentIndex = 1   // Recipes tab
+            configRecipes.selectRecipeByName(name)
+            }
+
+        // Status bar: project saved
+        function onProjectSaved(path) {
+            var name = path !== "" ? path.replace(/.*\//, "") : "project"
+            statusBar.show(qsTr("%1 saved").arg(name), Material.color(Material.Green, Material.Shade400))
+            }
+
+        // Status bar: assets saved
+        function onAssetsSaved() {
+            statusBar.show(qsTr("Assets saved"), Material.color(Material.Green, Material.Shade400))
             }
         }
     }

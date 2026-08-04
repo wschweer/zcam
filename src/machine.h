@@ -24,6 +24,8 @@ using json = nlohmann::json;
 class ZCam;
 class Machines;
 class Laser;
+class LaserBJJCZ;
+class LaserRKQ;
 enum MachineType { Q_LASER, MOPA_LASER, UV_LASER, GCODE_CNC };
 inline const std::vector<std::string> machineTypes {"Q-switched Laser", "MOPA Laser", "UV Laser",
                                                     "GCode CNC"};
@@ -32,6 +34,7 @@ inline const std::vector<std::string> boardTypes {"BJJCZ", "RKQ-LM-441"};
 
 //---------------------------------------------------------
 //   Machine
+//    Virtual base class for all machine types.
 //---------------------------------------------------------
 
 class Machine : public QObject
@@ -45,7 +48,7 @@ class Machine : public QObject
       PROP(QString, boardType)
       PROP(QString, description)
       PROPV(QVector3D, maxTravel, QVector3D(100.0, 100.0, 100.0))
-      PROP(double, travelSpeed)
+      PROPV(double, travelSpeed, 2000.0)
       PROP(double, framingSpeed)
       PROP(double, safeDist1)
       PROP(double, safeDist2)
@@ -56,25 +59,18 @@ class Machine : public QObject
       PROP(double, precision)
       PROP(double, ncPrecision)
       PROP(double, circlePrecision)
-
-      // galvolaser
-      PROP(double, galvoP1)
-      PROP(double, galvoP2)
-      PROP(double, galvoP3)
-      PROP(QVector2D, galvoScale)
-      PROP(double, galvoShearX)
-      PROP(double, galvoShearY)
-      PROP(double, galvoRotate)
-      PROP(bool, galvoSwapxy)
-
-      PROPV(Laser*, laser, nullptr)
-      PROP(QString, ethDevice)
-
       ZCam* zcam;
 
     public:
       Machine(ZCam* zc, QObject* parent = nullptr) : QObject(parent), zcam(zc) {}
+      virtual ~Machine() = default;
       json toJson() const;
       bool fromJson(const json&);
-      const std::string_view properties() const;
+      virtual const std::string_view properties() const = 0;
+
+      /// Factory: create a concrete Machine subclass based on the
+      /// machine type and board type strings.
+      static Machine* create(ZCam* zc, const QString& machineType, const QString& boardType);
+      bool isUVLaser() const { return type() == "UV Laser"; }
+      bool isMOPALaser() const { return type() == "MOPA Laser"; }
       };

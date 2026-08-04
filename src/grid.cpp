@@ -15,6 +15,7 @@
 #include "machine.h"
 #include "clipper2/clipper.h"
 #include <QColor>
+#include <cmath>
 
 //---------------------------------------------------------
 //   Grid
@@ -36,14 +37,50 @@ Grid::Grid(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
 
       // Rebuild grid geometry when the machine changes (e.g. when
       // a project is loaded with a different machine, or when the
-      // machine is reassigned).  Previously this happened implicitly
-      // because ProjectTree::addElement() called element.update()
-      // on every scene rebuild; now that the grid is rendered in a
-      // separate background View3D, we must update explicitly.
-      if (zcam->project())
-            connect(zcam->project(), &Project::machineChanged, [this]() { update(); });
+      // machine is reassigned) or when the machine's maxTravel
+      // property changes (e.g. user edits it in the inspector).
+      //
+      // Qt::UniqueConnection requires pointer-to-member-function
+      // slots, so we use dedicated slot methods instead of lambdas.
+      if (zcam->project()) {
+            connect(zcam->project(), &Project::machineChanged, this, &Grid::onMachineChanged);
+            connectToMachine(zcam->project()->machine());
+            }
 
       // Build initial geometry.
+      update();
+      }
+
+//---------------------------------------------------------
+//   connectToMachine
+//    Connect to the machine's maxTravelChanged signal.  Tracks the
+//    currently-connected machine so we don't connect twice to the
+//    same machine.
+//---------------------------------------------------------
+
+void Grid::connectToMachine(Machine* m) {
+      if (_connectedMachine == m)
+            return;
+      _connectedMachine = m;
+      if (m)
+            connect(m, &Machine::maxTravelChanged, this, &Grid::onMaxTravelChanged);
+      }
+
+//---------------------------------------------------------
+//   onMachineChanged
+//---------------------------------------------------------
+
+void Grid::onMachineChanged() {
+      Machine* m = (zcam->project() && zcam->project()->machine()) ? zcam->project()->machine() : nullptr;
+      connectToMachine(m);
+      update();
+      }
+
+//---------------------------------------------------------
+//   onMaxTravelChanged
+//---------------------------------------------------------
+
+void Grid::onMaxTravelChanged() {
       update();
       }
 
@@ -53,19 +90,30 @@ Grid::Grid(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
 //    mm.  Each raster cell is subdivided into "subraster" minor
 //    intervals.  Major and minor lines are stored in separate
 //    geometries so they can be rendered with different colours.
+//
+//    The grid covers exactly the machine work area: (0,0) to
+//    (maxTravel.x, maxTravel.y) of the current machine.
 //---------------------------------------------------------
 
 void Grid::update(int) {
       if (!_geometry || !_minorGeometry)
             return;
 
-      Machine* m  = (zcam->project() && zcam->project()->machine()) ? zcam->project()->machine() : nullptr;
-      double maxX = 100.0;
-      double maxY = 100.0;
+      Machine* m   = (zcam->project() && zcam->project()->machine()) ? zcam->project()->machine() : nullptr;
+      double mMaxX = 100.0;
+      double mMaxY = 100.0;
       if (m) {
-            maxX = m->maxTravel().x();
-            maxY = m->maxTravel().y();
+            mMaxX = m->maxTravel().x();
+            mMaxY = m->maxTravel().y();
             }
+
+      // The grid covers exactly the machine work area: (0,0) to
+      // (maxTravel.x, maxTravel.y).  It no longer extends to fill
+      // the visible viewport.
+      double left   = 0.0;
+      double top    = 0.0;
+      double right  = mMaxX;
+      double bottom = mMaxY;
 
       double major = _raster;
       int sub      = _subraster;
@@ -78,44 +126,46 @@ void Grid::update(int) {
       Clipper2Lib::PathsD majorLines;
       Clipper2Lib::PathsD minorLines;
 
-      // Small epsilon for floating-point comparison so that a line
-      // exactly at maxX/maxY is still included, but no line beyond
-      // the machine work area is drawn.
       constexpr double eps = 1e-6;
 
-      // Major (raster) lines — clamped to the machine work area
-      for (double x = 0.0; x <= maxX + eps; x += major) {
+      // Align the start positions to the grid so that grid lines stay
+      // at fixed world positions regardless of the viewport.
+      double startX = std::floor(left / major) * major;
+      double startY = std::floor(top / major) * major;
+
+      // Major (raster) lines
+      for (double x = startX; x <= right + eps; x += major) {
             Clipper2Lib::PathD line;
-            line.push_back({x, 0.0});
-            line.push_back({x, maxY});
+            line.push_back({x, top});
+            line.push_back({x, bottom});
             majorLines.push_back(line);
             }
-      for (double y = 0.0; y <= maxY + eps; y += major) {
+      for (double y = startY; y <= bottom + eps; y += major) {
             Clipper2Lib::PathD line;
-            line.push_back({0.0, y});
-            line.push_back({maxX, y});
+            line.push_back({left, y});
+            line.push_back({right, y});
             majorLines.push_back(line);
             }
 
-      // Minor (subraster) lines — only inside major cells, skip the
-      // lines that coincide with a major line (i.e. multiples of major).
-      // Clamped to the machine work area so no minor line is drawn
-      // outside maxTravel.
+      // Minor (subraster) lines — skip the lines that coincide with
+      // a major line.
       if (sub > 1) {
-            for (double x = minor; x <= maxX + eps; x += minor) {
+            double startXm = std::floor(left / minor) * minor;
+            double startYm = std::floor(top / minor) * minor;
+            for (double x = startXm; x <= right + eps; x += minor) {
                   if (std::abs(std::fmod(x, major)) < minor / 2.0)
-                        continue; // skip, coincides with major line
+                        continue;
                   Clipper2Lib::PathD line;
-                  line.push_back({x, 0.0});
-                  line.push_back({x, maxY});
+                  line.push_back({x, top});
+                  line.push_back({x, bottom});
                   minorLines.push_back(line);
                   }
-            for (double y = minor; y <= maxY + eps; y += minor) {
+            for (double y = startYm; y <= bottom + eps; y += minor) {
                   if (std::abs(std::fmod(y, major)) < minor / 2.0)
-                        continue; // skip, coincides with major line
+                        continue;
                   Clipper2Lib::PathD line;
-                  line.push_back({0.0, y});
-                  line.push_back({maxX, y});
+                  line.push_back({left, y});
+                  line.push_back({right, y});
                   minorLines.push_back(line);
                   }
             }
@@ -138,4 +188,16 @@ double Grid::minorSpacing() const {
       double major = majorSpacing();
       int sub      = _subraster >= 1 ? _subraster : 1;
       return major / sub;
+      }
+
+//---------------------------------------------------------
+//   setViewport
+//    No-op kept for QML compatibility.  The grid size is now
+//    determined solely by the machine work area (maxTravel).
+//---------------------------------------------------------
+
+void Grid::setViewport(double, double, double, double) {
+      // No longer needed — the grid size is determined solely by
+      // the machine work area (maxTravel).  Kept as a no-op for
+      // QML compatibility.
       }

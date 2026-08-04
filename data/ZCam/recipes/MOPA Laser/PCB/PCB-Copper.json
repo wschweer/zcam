@@ -1,0 +1,25 @@
+{
+    "description": "- Copper\n",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 45.0,
+            "interleave": 1,
+            "interval": 0.01,
+            "name": "Copper",
+            "numPasses": 2,
+            "power": 80.0,
+            "pulseWidth": 200,
+            "speed": 2300.0,
+            "startAngle": 0.0,
+            "travelSpeed": 2300.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        }
+    ],
+    "name": "PCB-Copper",
+    "numPasses": 1
+}

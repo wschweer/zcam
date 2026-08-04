@@ -1,0 +1,25 @@
+{
+    "description": "",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 400.0,
+            "interleave": 1,
+            "interval": 0.1,
+            "name": "SubLayer-1",
+            "numPasses": 2,
+            "power": 80.12,
+            "pulseWidth": 60,
+            "speed": 2000.0,
+            "startAngle": 0.0,
+            "travelSpeed": 2000.0,
+            "wobble": false,
+            "wobbleSize": 0.1,
+            "wobbleStep": 0.05,
+            "zigzag": true
+        }
+    ],
+    "name": "Cleanup",
+    "numPasses": 1
+}

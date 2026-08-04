@@ -60,6 +60,19 @@ class Element3d : public Element
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
       PROPV(QVector3D, rot, QVector3D(0.0, 0.0, 0.0))
+
+    public:
+      // Pending forward references that could not be resolved during
+      // fromJson() because the referenced element had not yet been
+      // created (e.g. laserLayer references from Cad elements loaded
+      // before the Fixture/LaserLayer elements).  These are resolved in
+      // fixup() after the full project tree has been loaded.
+      struct PendingRef {
+            std::string propName;
+            std::string refType; // "laserLayer", "layer"
+            QString name;
+            };
+      std::vector<PendingRef> _pendingRefs;
       // Custom scale property: WRITE routes through set_scaleAR() which
       // corrects the value according to the lockScale aspect-ratio mode.
       Q_PROPERTY(QVector3D scale READ scale WRITE set_scaleAR NOTIFY scaleChanged)
@@ -132,6 +145,7 @@ class Element3d : public Element
       Element3d(ZCam*, Element* parent = nullptr);
       virtual json toJson() const override;
       virtual void fromJson(const json& json) override;
+      virtual void fixup() override;
       virtual const std::string_view properties() const { return ""; }
       // if visible, the show flag can be toggled by user
       Q_INVOKABLE virtual bool visible() const { return false; }

@@ -18,8 +18,7 @@
 //   LaserRKQ
 //---------------------------------------------------------
 
-LaserRKQ::LaserRKQ(ZCam* w, QObject* parent) : LaserEngine(w, parent) {
-      zcam = w;
+LaserRKQ::LaserRKQ(ZCam* w, QObject* parent) : Laser(w, parent) {
       }
 
 //---------------------------------------------------------
@@ -27,14 +26,11 @@ LaserRKQ::LaserRKQ(ZCam* w, QObject* parent) : LaserEngine(w, parent) {
 //---------------------------------------------------------
 
 LaserRKQ::~LaserRKQ() {
-      LaserRKQ::exit();
+      LaserRKQ::exitEngine();
       }
 
 //---------------------------------------------------------
 //   setupSocketNotifiers
-//    Create QSocketNotifier objects for the pcap file descriptor
-//    and wire them into the Qt event loop.  libpcap's selectable
-//    fd is only available in non-blocking mode.
 //---------------------------------------------------------
 
 void LaserRKQ::setupSocketNotifiers() {
@@ -48,16 +44,10 @@ void LaserRKQ::setupSocketNotifiers() {
       connect(_readNotifier, &QSocketNotifier::activated, this, &LaserRKQ::onReadable);
       _readNotifier->setEnabled(true);
 
-      // The write notifier is initially disabled – it is enabled
-      // on demand when there are queued packets to send.
       _writeNotifier = new QSocketNotifier(fd, QSocketNotifier::Write, this);
       connect(_writeNotifier, &QSocketNotifier::activated, this, &LaserRKQ::onWritable);
       _writeNotifier->setEnabled(false);
       }
-
-//---------------------------------------------------------
-//   teardownSocketNotifiers
-//---------------------------------------------------------
 
 void LaserRKQ::teardownSocketNotifiers() {
       delete _readNotifier;
@@ -68,56 +58,31 @@ void LaserRKQ::teardownSocketNotifiers() {
 
 //---------------------------------------------------------
 //   laserInit
-//    Send the initial broadcast discovery packet to the RKQ
-//    laser controller board.  The Ethernet frame is 1510 bytes
-//    long in total: a 16-byte header followed by a 1494-byte
-//    payload consisting entirely of zero bytes.
-//
-//    Frame layout:
-//      Bytes  0–5    destination MAC  = ff:ff:ff:ff:ff:ff (broadcast)
-//      Bytes  6–11   source MAC       = 00:00:00:00:00:00
-//      Bytes 12–13   EtherType        = 0x0000
-//      Bytes 14–15   (part of header padding / length)
-//      Bytes 16–1509 payload           = 1494 × 0x00
 //---------------------------------------------------------
 
 void LaserRKQ::laserInit() {
-      constexpr std::size_t FrameSize    = 1510;
-      constexpr std::size_t PayloadSize  = 1494;
-      constexpr std::size_t HeaderSize   = FrameSize - PayloadSize;  // 16
+      constexpr std::size_t FrameSize   = 1510;
+      constexpr std::size_t PayloadSize = 1494;
+      constexpr std::size_t HeaderSize  = FrameSize - PayloadSize;
 
       std::vector<std::uint8_t> frame(FrameSize, 0);
-
-      // Destination MAC: broadcast (ff:ff:ff:ff:ff:ff)
       std::fill(frame.begin(), frame.begin() + 6, 0xFF);
 
-      // Source MAC and EtherType are left as zero (already zero-initialised).
+      Debug("laserInit: sending {}-byte broadcast frame ({} byte header + {} byte zero payload)", FrameSize,
+            HeaderSize, PayloadSize);
 
-      Debug("laserInit: sending {}-byte broadcast frame ({} byte header + {} byte zero payload)",
-            FrameSize, HeaderSize, PayloadSize);
-
-      if (!sendPacket(frame)) {
+      if (!sendPacket(frame))
             Warning("laserInit: failed to enqueue broadcast discovery frame");
-            }
       }
 
 //---------------------------------------------------------
-//   init
-//    Open the configured Ethernet device with libpcap for
-//    capturing and injecting raw frames.  The device name is
-//    read from Machine::ethDevice().
+//   initEngine
 //---------------------------------------------------------
 
-bool LaserRKQ::init(bool _dryRun) {
-      setDryRun(_dryRun);
+bool LaserRKQ::initEngine(bool _dryRun) {
+      set_dryRun(_dryRun);
 
-      Machine* machine = zcam->project() ? zcam->project()->machine() : nullptr;
-      if (!machine) {
-            Critical("no laser machine configured");
-            return false;
-            }
-
-      QString devName = machine->ethDevice();
+      QString devName = ethDevice();
       if (devName.isEmpty()) {
             Critical("no Ethernet device configured for RKQ board");
             return false;
@@ -130,14 +95,12 @@ bool LaserRKQ::init(bool _dryRun) {
 
       char errbuf[PCAP_ERRBUF_SIZE];
 
-      // Use pcap_create / pcap_activate for fine-grained control.
       _pcapHandle = pcap_create(devName.toUtf8().constData(), errbuf);
       if (!_pcapHandle) {
             Critical("pcap_create failed for <{}>: {}", devName, errbuf);
             return false;
             }
 
-      // Snaplen: large enough for full Ethernet frame (jumbo-safe).
       if (pcap_set_snaplen(_pcapHandle, 65536) != 0) {
             Critical("pcap_set_snaplen failed: {}", pcap_geterr(_pcapHandle));
             pcap_close(_pcapHandle);
@@ -145,7 +108,6 @@ bool LaserRKQ::init(bool _dryRun) {
             return false;
             }
 
-      // Promiscuous mode to see all traffic on the wire.
       if (pcap_set_promisc(_pcapHandle, 1) != 0) {
             Critical("pcap_set_promisc failed: {}", pcap_geterr(_pcapHandle));
             pcap_close(_pcapHandle);
@@ -153,7 +115,6 @@ bool LaserRKQ::init(bool _dryRun) {
             return false;
             }
 
-      // Read timeout 10 ms – short enough for responsive async I/O.
       if (pcap_set_timeout(_pcapHandle, 10) != 0) {
             Critical("pcap_set_timeout failed: {}", pcap_geterr(_pcapHandle));
             pcap_close(_pcapHandle);
@@ -161,12 +122,8 @@ bool LaserRKQ::init(bool _dryRun) {
             return false;
             }
 
-      // Immediate mode delivers packets as soon as they arrive
-      // rather than buffering until the timeout expires.
-      if (pcap_set_immediate_mode(_pcapHandle, 1) != 0) {
-            // Non-fatal: older libpcap versions may not support this.
+      if (pcap_set_immediate_mode(_pcapHandle, 1) != 0)
             Warning("pcap_set_immediate_mode not supported on <{}>", devName);
-            }
 
       int rv = pcap_activate(_pcapHandle);
       if (rv < 0) {
@@ -175,12 +132,9 @@ bool LaserRKQ::init(bool _dryRun) {
             _pcapHandle = nullptr;
             return false;
             }
-      if (rv > 0) {
-            // Warning (e.g. promiscuous mode not granted).
+      if (rv > 0)
             Warning("pcap_activate warning for <{}>: {}", devName, pcap_geterr(_pcapHandle));
-            }
 
-      // Switch to non-blocking so QSocketNotifier works correctly.
       if (pcap_setnonblock(_pcapHandle, 1, errbuf) < 0) {
             Critical("pcap_setnonblock failed: {}", errbuf);
             pcap_close(_pcapHandle);
@@ -188,7 +142,6 @@ bool LaserRKQ::init(bool _dryRun) {
             return false;
             }
 
-      // Verify that the data link is Ethernet.
       int dlt = pcap_datalink(_pcapHandle);
       if (dlt != DLT_EN10MB) {
             Critical("unsupported datalink type {} on <{}> (expected Ethernet)", dlt, devName);
@@ -198,18 +151,13 @@ bool LaserRKQ::init(bool _dryRun) {
             }
 
       setupSocketNotifiers();
-
       laserInit();
 
       Debug("RKQ initialised on Ethernet device <{}>", devName);
       return true;
       }
 
-//---------------------------------------------------------
-//   exit
-//---------------------------------------------------------
-
-void LaserRKQ::exit() {
+void LaserRKQ::exitEngine() {
       teardownSocketNotifiers();
 
       if (_bpfFilterSet) {
@@ -227,75 +175,33 @@ void LaserRKQ::exit() {
       std::swap(_txQueue, empty);
       }
 
-//---------------------------------------------------------
-//   stop
-//---------------------------------------------------------
-
-void LaserRKQ::stop() {
-      }
-
-//---------------------------------------------------------
-//   startFraming
-//---------------------------------------------------------
-
-bool LaserRKQ::startFraming() {
+bool LaserRKQ::startFramingEngine() {
       return true;
       }
 
-//---------------------------------------------------------
-//   stopFraming
-//---------------------------------------------------------
-
-void LaserRKQ::stopFraming() {
+void LaserRKQ::stopFramingEngine() {
       }
 
-//---------------------------------------------------------
-//   startMarking
-//---------------------------------------------------------
-
-void LaserRKQ::startMarking() {
+void LaserRKQ::startMarkingEngine() {
       }
 
-//---------------------------------------------------------
-//   stopMarking
-//---------------------------------------------------------
-
-void LaserRKQ::stopMarking() {
+void LaserRKQ::stopMarkingEngine() const {
       }
 
-//---------------------------------------------------------
-//   endMarking
-//---------------------------------------------------------
-
-void LaserRKQ::endMarking() {
+void LaserRKQ::endMarkingEngine() {
       }
-
-//---------------------------------------------------------
-//   mark
-//---------------------------------------------------------
 
 void LaserRKQ::mark(const Clipper2Lib::PathD&) {
       }
 
-//---------------------------------------------------------
-//   move
-//---------------------------------------------------------
-
 void LaserRKQ::move(double, double) {
       }
-
-//---------------------------------------------------------
-//   markLayer
-//---------------------------------------------------------
 
 void LaserRKQ::markLayer(const LaserPath&, const LaserParameterSet&) {
       }
 
 //---------------------------------------------------------
 //   setFilter
-//    Compile and install a BPF filter on the pcap handle so
-//    only frames matching the expression are delivered to the
-//    read notifier callback.
 //---------------------------------------------------------
 
 bool LaserRKQ::setFilter(const std::string& bpfExpression) {
@@ -304,7 +210,6 @@ bool LaserRKQ::setFilter(const std::string& bpfExpression) {
             return false;
             }
 
-      // Free a previously installed filter.
       if (_bpfFilterSet) {
             pcap_freecode(&_bpfFilter);
             _bpfFilterSet = false;
@@ -327,11 +232,6 @@ bool LaserRKQ::setFilter(const std::string& bpfExpression) {
 
 //---------------------------------------------------------
 //   sendPacket
-//    Asynchronously enqueue a raw Ethernet frame for transmission.
-//    The actual pcap_sendpacket() call happens in onWritable()
-//    inside the Qt event loop.  If the queue was empty before this
-//    call, the write notifier is enabled so the event loop will
-//    drain the queue promptly.
 //---------------------------------------------------------
 
 bool LaserRKQ::sendPacket(const std::vector<std::uint8_t>& frame) {
@@ -360,11 +260,6 @@ bool LaserRKQ::sendPacket(const std::vector<std::uint8_t>& frame) {
 
 //---------------------------------------------------------
 //   onReadable
-//    Called by the Qt event loop when the pcap fd becomes
-//    readable.  Dispatches all currently available frames
-//    via pcap_next_ex() and emits packetReceived() for each.
-//    In non-blocking mode pcap_next_ex() returns 0 when no
-//    more packets are buffered.
 //---------------------------------------------------------
 
 void LaserRKQ::onReadable(int) {
@@ -376,21 +271,17 @@ void LaserRKQ::onReadable(int) {
             const u_char* data      = nullptr;
             int rv                  = pcap_next_ex(_pcapHandle, &hdr, &data);
             if (rv == 1) {
-                  // A packet was successfully read.
                   std::vector<std::uint8_t> payload(data, data + hdr->caplen);
                   Debug("packet received ({} bytes):\n{}", hdr->caplen, payload);
                   emit packetReceived(payload);
                   }
             else if (rv == 0) {
-                  // No packets available right now (non-blocking).
                   break;
                   }
             else if (rv == PCAP_ERROR_BREAK) {
-                  // Loop terminated by pcap_breakloop().
                   break;
                   }
             else {
-                  // Error reading.
                   Critical("pcap_next_ex error: {}", pcap_geterr(_pcapHandle));
                   break;
                   }
@@ -399,11 +290,6 @@ void LaserRKQ::onReadable(int) {
 
 //---------------------------------------------------------
 //   onWritable
-//    Called by the Qt event loop when the pcap fd is writable
-//    and we have queued frames to send.  Drains the transmit
-//    queue by calling pcap_sendpacket() for each frame.
-//    When the queue is empty the write notifier is disabled
-//    to avoid busy-looping.
 //---------------------------------------------------------
 
 void LaserRKQ::onWritable(int) {
@@ -426,7 +312,6 @@ void LaserRKQ::onWritable(int) {
             int rv = pcap_sendpacket(_pcapHandle, frame.data(), static_cast<int>(frame.size()));
             if (rv < 0) {
                   Critical("pcap_sendpacket failed: {}", pcap_geterr(_pcapHandle));
-                  // Re-enable notifier for a retry on next event loop iteration.
                   return;
                   }
 

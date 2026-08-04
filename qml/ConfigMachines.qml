@@ -29,6 +29,16 @@ Item {
         machine: (currentMachineIdx >= 0 && currentMachineIdx < ZCam.machines.machinesModel.length) ? ZCam.machines.machine(currentMachineIdx) : null
         }
 
+    // When the project's machine changes and this panel is visible,
+    // update the selection to match.
+    Connections {
+        target: ZCam.project
+        function onMachineChanged() {
+            if (root.visible)
+                selectProjectMachine();
+            }
+        }
+
     // When the machine list changes, keep the current index valid.
     Connections {
         target: ZCam.machines
@@ -39,6 +49,9 @@ Item {
                 currentMachineIdx = 0;
                 }
             machineList.model = ZCam.machines.machinesModel;
+            // Re-select the project machine after the list changes.
+            if (root.visible)
+                selectProjectMachine();
             }
         }
 
@@ -164,10 +177,30 @@ Item {
             }
         }
 
+    // ── Select the current project's machine when the panel becomes visible ──
+    //   Each time the user switches to the Machines tab, find the machine
+    //   that belongs to the active project by name and select it in the list.
+    onVisibleChanged: {
+        if (visible)
+            selectProjectMachine();
+        }
+
+    function selectProjectMachine() {
+        var name = ZCam.project ? ZCam.project.machineName : "";
+        if (name.length === 0)
+            return;
+        var model = ZCam.machines.machinesModel;
+        var idx = model.indexOf(name);
+        if (idx >= 0)
+            currentMachineIdx = idx;
+        }
+
     Component.onCompleted: {
         machineList.model = ZCam.machines.machinesModel;
         if (ZCam.machines.machinesModel.length > 0) {
             currentMachineIdx = 0;
             }
+        // If a project is already loaded, select its machine.
+        selectProjectMachine();
         }
     }

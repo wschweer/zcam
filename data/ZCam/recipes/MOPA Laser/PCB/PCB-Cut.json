@@ -1,0 +1,25 @@
+{
+    "description": "",
+    "layer": [
+        {
+            "angleIncrement": 90.0,
+            "enabled": true,
+            "frequency": 40.0,
+            "interleave": 1,
+            "interval": 0.02,
+            "name": "sl-1",
+            "numPasses": 4,
+            "power": 85.0,
+            "pulseWidth": 200,
+            "speed": 200.0,
+            "startAngle": 0.0,
+            "travelSpeed": 200.0,
+            "wobble": true,
+            "wobbleSize": 0.14,
+            "wobbleStep": 0.02,
+            "zigzag": true
+        }
+    ],
+    "name": "PCB-Cut",
+    "numPasses": 1
+}
