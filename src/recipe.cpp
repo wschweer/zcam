@@ -159,7 +159,7 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
                         }
                   ll.push_back(cp);
                   }
-            auto* ls = recipe()->layer(0);
+            auto* ls = &recipe()->pass(0);
             if (pl.fill())
                   lineList.append_range(createFill(ll));
             else if (ls->wobble()) {
@@ -301,7 +301,7 @@ LaserPath Recipe::collectLaserPath() const {
                                     }
                               ll.push_back(cp);
                               }
-                        auto* ls        = recipe()->layer(0);
+                        auto* ls        = &recipe()->pass(0);
                         bool mustWobble = ls->wobble();
                         if (pl.fill()) {
                               lineList.append_range(createFill(ll));
@@ -516,7 +516,7 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 Clipper2Lib::PathsD Recipe::createFill(Clipper2Lib::PathsD& spdi) const {
       Clipper2Lib::PathsD lineList;
 
-      const LaserPasses* fll = recipe()->layers();
+      const LaserPasses* fll = &recipe()->passes();
 
       if (kerfOffset())
             spdi = InflatePaths(spdi, kerfOffset(), Clipper2Lib::JoinType::Miter,

@@ -41,12 +41,12 @@ class Bezier
       inline QPointF derivedAt(qreal t) const;
       inline QPointF secondDerivedAt(qreal t) const;
 
-      QPolygonF toPolygon(qreal bezier_flattening_threshold = 0.01) const;
-      void addToPolygon(QPolygonF* p, qreal bezier_flattening_threshold = 0.05) const;
-      void addToPolygon(Path2d&, qreal bezier_flattening_threshold = 0.01) const;
+      QPolygonF toPolygon(qreal bezier_flattening_threshold = 0.001) const;
+      void addToPolygon(QPolygonF* p, qreal bezier_flattening_threshold = 0.005) const;
+      void addToPolygon(Path2d&, qreal bezier_flattening_threshold = 0.001) const;
 
       QRectF bounds() const;
-      qreal length(qreal error = 0.01) const;
+      qreal length(qreal error = 0.001) const;
       void addIfClose(qreal* length, qreal error) const;
 
       qreal tAtLength(qreal len) const;

@@ -43,9 +43,11 @@ class Config : public QObject
       PROPV(int, iconSize, 32)
       PROPV(int, navCubeSize, 200)
       PROPV(double, handleSize, 0.02)
+      PROPV(double, dragThreshold, 0.5)
       PROPV(QString, font, QStringLiteral("NotoSans"))
       PROPV(int, fontSize, 12)
       PROPV(QColor, panelBG, QColor("darkGray"))
+      PROPV(QColor, canvasBG, QColor("#37474F"))
       PROPV(QColor, accentColor, QColor("teal"))
       PROPV(QColor, gridColor, QColor("#808080"))
       PROPV(QColor, markColor, QColor("#000000"))
@@ -60,6 +62,8 @@ class Config : public QObject
       PROPV(QString, recipesDirectory, QString())
 
       PROPV(double, dxfScale, 72.0)
+      PROPV(int, dxfCircleResolution, 360)
+      PROPV(int, dxfCurveResolution, 100)
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -98,6 +102,19 @@ class Config : public QObject
                           "precision": 2,
                           "step": 0.05,
                           "bigStep": 0.5
+                        },
+                        {
+                          "name": "dragThreshold",
+                          "label": "Drag Threshold",
+                          "type": "float",
+                          "cat": "GUI",
+                          "unit": "mm",
+                          "min": 0.0,
+                          "max": 10.0,
+                          "default": 0.5,
+                          "precision": 2,
+                          "step": 0.1,
+                          "bigStep": 1.0
                         },
                         {
                           "label": "Font",
@@ -160,6 +177,12 @@ class Config : public QObject
                           "cat": "Colors"
                         },
                         {
+                          "name": "canvasBG",
+                          "label": "Canvas BG",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
                           "name": "accentColor",
                           "label": "Accent Color",
                           "type": "color",
@@ -206,9 +229,9 @@ class Config : public QObject
                           "type": "empty"
                         },
                         {
-                        "type": "line",
-                        "name": "line",
-                        "colSpan": 2
+                          "type": "line",
+                          "name": "line",
+                          "colSpan": 2
                         },
                         {
                           "name": "artworkDirectory",
@@ -239,9 +262,9 @@ class Config : public QObject
                           "default": ""
                         },
                         {
-                        "type": "line",
-                        "name": "line",
-                        "colSpan": 2
+                          "type": "line",
+                          "name": "line",
+                          "colSpan": 2
                         },
                         {
                           "name": "dxfScale",
@@ -255,6 +278,30 @@ class Config : public QObject
                           "precision": 3,
                           "step": 0.1,
                           "bigStep": 1.0
+                        },
+                        {
+                          "name": "dxfCircleResolution",
+                          "label": "DXF Circle Resolution",
+                          "type": "int",
+                          "cat": "Project",
+                          "unit": "segments",
+                          "min": 8,
+                          "max": 2048,
+                          "default": 360,
+                          "step": 8,
+                          "bigStep": 90
+                        },
+                        {
+                          "name": "dxfCurveResolution",
+                          "label": "DXF Curve Resolution",
+                          "type": "int",
+                          "cat": "Project",
+                          "unit": "segments",
+                          "min": 4,
+                          "max": 1024,
+                          "default": 100,
+                          "step": 4,
+                          "bigStep": 25
                         }
                       ]
                     }
@@ -292,6 +339,13 @@ class ZCam : public QObject
           Element3d* currentElement READ currentElement WRITE setCurrentElement NOTIFY currentElementChanged)
 
       PROPV(Element3d*, hoverElement, nullptr)
+
+      // Multi-selection list (lasso selection).  When non-empty,
+      // all elements in this list are highlighted on the 3D canvas.
+      // currentElement is the primary selection (first in the list).
+      Q_PROPERTY(QList<Element3d*> selectedElements READ selectedElements NOTIFY selectedElementsChanged)
+      QList<Element3d*> _selectedElements;
+
       PROPV(TreeModel*, treeModel, nullptr)
       PROPV(Machines*, machines, nullptr)
       PROPV(LaserReceipes*, recipes, nullptr)
@@ -333,12 +387,31 @@ class ZCam : public QObject
             bool activeY {false}; ///< currently snapped on Y axis
             double excessX {0.0}; ///< accumulated drag beyond the snap point (X)
             double excessY {0.0}; ///< accumulated drag beyond the snap point (Y)
-            void reset() {
+            QVector3D refPos;     ///< world position of the element reference point (0,0 local)
+            void reset(bool keepRef = false) {
                   activeX = activeY = false;
                   excessX = excessY = 0.0;
+                  if (!keepRef)
+                        refPos = QVector3D();
                   }
             };
       SnapState _snapState;
+
+      /// True while an element drag with grid snap (and therefore the
+      /// reference-point cross) is active.  Unlike the per-axis
+      /// activeX/activeY flags this is set once at startElementDrag()
+      /// and cleared once at endElementDrag() — it never toggles in the
+      /// middle of a drag, so the QML marker cannot flicker.
+      Q_PROPERTY(bool snapDragActive READ snapDragActive NOTIFY snapDragActiveChanged)
+      bool _snapDragActive {false};
+      bool snapDragActive() const { return _snapDragActive; }
+
+      /// World position of the reference point (element origin) as used
+      /// for the current drag / snap state.  Returns the position recorded
+      /// while a drag with grid snap is in progress, otherwise the live
+      /// position from the element's current globalMatrix().
+      Q_PROPERTY(QVector3D snapRefPos READ snapRefPos NOTIFY snapRefPosChanged)
+      QVector3D snapRefPos() const;
 
       // SVG drag-preview state
       TessGeometry* _dragPreviewGeometry {nullptr};
@@ -356,6 +429,13 @@ class ZCam : public QObject
     signals:
       void camDirtyChanged();
       void currentElementChanged();
+      void selectedElementsChanged();
+      /// Emitted when snapRefPos changes (snap engages / disengages /
+      /// reference point moves during a drag with active grid snap).
+      void snapRefPosChanged();
+      /// Emitted once when a drag with grid snap starts (true) and ends
+      /// (false).  Unlike snapRefPosChanged this never toggles mid-drag.
+      void snapDragActiveChanged();
       void showFontMediaBrowserRequested();
       void dragPreviewGeometryChanged();
       void remove3dElement(Element3d*); // signal 3d gui to remove an element from the scene graph
@@ -379,6 +459,8 @@ class ZCam : public QObject
       void projectSaved(const QString& path);
       /// Emitted after assets (config, machines, recipes) were saved.
       void assetsSaved();
+      /// Emitted after the project CAD data was exported to an SVG file.
+      void svgExported(const QString& path);
 
       /// Emitted when the user wants to open the Recipe editor for a
       /// specific recipe (e.g. via the Edit button in the inspector).
@@ -493,6 +575,40 @@ class ZCam : public QObject
       /// In all other cases this delegates to pickElement().
       Q_INVOKABLE Element3d* pickDragTarget(double x, double y);
 
+      /// Lasso selection: given a polygon in world (root) coordinates
+      /// (a list of points), select all visible, selectable elements
+      /// whose world bounding-box center lies inside the polygon.
+      /// Sets _selectedElements and emits selectedElementsChanged().
+      /// The first element in the list becomes the currentElement.
+      /// If the polygon has fewer than 3 points or no elements are
+      /// hit, the selection is cleared.
+      Q_INVOKABLE void lassoSelect(const QList<QVector3D>& polygon);
+
+      /// Clear the multi-selection list.
+      Q_INVOKABLE void clearSelection();
+      /// Clear only the multi-selection list without changing currentElement.
+      /// Used when switching to a new single selection to avoid an
+      /// intermediate null state that would clear the InspectorModel.
+      Q_INVOKABLE void clearSelectionList();
+      /// Returns the list of currently selected elements (lasso).
+      QList<Element3d*> selectedElements() const { return _selectedElements; }
+      /// Returns true if the given element is in the lasso selection.
+      Q_INVOKABLE bool isSelected(const Element3d* el) const;
+
+      /// Add an element to the multi-selection list.  The element
+      /// becomes the current (primary) element shown in the inspector.
+      /// If the element is already selected, it just becomes current.
+      Q_INVOKABLE void addToSelection(Element3d* el);
+      /// Remove an element from the multi-selection list.  If it was
+      /// the current element, the next remaining element (or nullptr)
+      /// becomes current.
+      Q_INVOKABLE void removeFromSelection(Element3d* el);
+      /// Toggle the selection state of an element.  If the element is
+      /// not yet selected, it is added and becomes current.  If it is
+      /// already selected, it is removed; if it was current, the next
+      /// remaining element (or nullptr) becomes current.
+      Q_INVOKABLE void toggleSelection(Element3d* el);
+
       /// Called from QML when the user starts dragging a handle.
       /// Records the original handle position for the undo command.
       Q_INVOKABLE void startVertexDrag(Element3d* element, int vertexIndex);
@@ -577,6 +693,26 @@ class ZCam : public QObject
       /// transformation matrix, any element can act as a group.
       Q_INVOKABLE void reparentElement(Element3d* element, Element3d* newParent);
 
+      /// Group the currently selected elements (lasso multi-selection
+      /// or single current element) into a new Group element.  The
+      /// new Group is created as a sibling of the first selected element
+      /// (i.e. a child of that element's parent Layer).  All selected
+      /// elements are re-parented into the new Group, preserving their
+      /// world-space transforms.  The new Group becomes the current
+      /// element.  The operation is undoable as a single macro.
+      Q_INVOKABLE void groupSelectedElements();
+
+      /// Combine all selected Polygon elements that share the same
+      /// parent (tree level) into a single new Polygon.  The paths
+      /// of all selected polygons are transformed to the common
+      /// parent's local coordinate space, unioned via Clipper2,
+      /// and the result becomes the painterPath of the new Polygon.
+      /// The original polygons are deleted.  The new Polygon takes
+      /// the place of the first selected polygon.  Only Polygon
+      /// elements are considered; other element types are ignored.
+      /// The operation is undoable as a single macro.
+      Q_INVOKABLE void combineSelectedPolygons();
+
       /// Delete the current element if it is deletable.
       /// The operation is undoable.
       Q_INVOKABLE void deleteCurrentElement();
@@ -593,6 +729,10 @@ class ZCam : public QObject
 
       Q_INVOKABLE void createMaterialTest();
       Q_INVOKABLE void createGalvoTest();
+      Q_INVOKABLE void calibrationScan();
+      Q_INVOKABLE void createGalvoTest64();
+      Q_INVOKABLE void galvotest65img(const QString&);
+
       void importSvg(const QString& path);
 
       /// Returns the bounding box (in mm) of the SVG at the given path.
@@ -604,6 +744,15 @@ class ZCam : public QObject
       /// the bounding box's bottom-left corner is at (x, y) in the
       /// parent layer's local coordinate space.
       Q_INVOKABLE void importSvgAt(const QString& path, double x, double y);
+
+      /// Export the project's CAD tree to an SVG file.
+      /// The CAD hierarchy (Cad root, Group layers and nested groups)
+      /// is mapped to nested SVG <g> elements.  Polygon (incl. cubic
+      /// bezier segments), Rectangle, Ellipse and Text elements are
+      /// exported; all other element types are skipped.  Coordinates
+      /// are written in millimetres with the Y axis flipped to match
+      /// the SVG top-left origin.  Returns true on success.
+      Q_INVOKABLE bool exportSvg(const QString& path);
 
       /// Prepare a drag-preview geometry for the SVG at the given path.
       /// The geometry is a rectangle outline matching the SVG bounding box.

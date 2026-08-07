@@ -86,7 +86,7 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
       connect(
           this, &Laser::framingStopped, this,
           [this] {
-                Debug("framing stopped in state {}", int(state));
+                //              Debug("framing stopped in state {}", int(state));
                 if (framingThread && framingThread->joinable())
                       framingThread->join();
                 delete framingThread;
@@ -99,6 +99,10 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                       }
                 else if (state == LaserState::Framing)
                       changeState(LaserState::Idle);
+                else if (state == LaserState::AboutToExit) {
+                      state = LaserState::Idle;
+                      Laser::exit();
+                      }
                 else
                       Debug("unhandled event: framingStopped");
                 },
@@ -119,14 +123,18 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                       }
                 else if (state == LaserState::MarkingAboutToFraming) {
                       refreshCamAndFraming();
-                      doStartFraming();
+                      runFraming();
                       changeState(LaserState::Framing);
                       }
                 else if (state == LaserState::Marking) {
                       // switch back to framing
                       refreshCamAndFraming();
                       changeState(LaserState::Framing);
-                      doStartFraming();
+                      runFraming();
+                      }
+                else if (state == LaserState::AboutToExit) {
+                      state = LaserState::Idle;
+                      Laser::exit();
                       }
                 else
                       Debug("unhandled event: markingStopped");
@@ -187,6 +195,7 @@ void Laser::changeState(LaserState newState) {
                   break;
             case LaserState::MarkingAboutToIdle: set_stateText("Marking stopped"); break;
             case LaserState::MarkingAboutToFraming: set_stateText("Marking stopped, Framing started"); break;
+            case LaserState::AboutToExit: set_stateText("waiting for Exit"); break;
             }
       state = newState;
       }
@@ -208,8 +217,21 @@ void Laser::init() {
 //---------------------------------------------------------
 
 void Laser::exit() {
+      switch (state) {
+            case LaserState::Marking:
+                  changeState(LaserState::AboutToExit);
+                  stopMarking = true;
+                  return;
+            case LaserState::Framing:
+                  changeState(LaserState::AboutToExit);
+                  stopFraming = true;
+                  return;
+            default:
+                  break;
+            }
       exitEngine();
       changeState(LaserState::Off);
+      inputPortTimer.stop();
       }
 
 //---------------------------------------------------------
@@ -217,7 +239,7 @@ void Laser::exit() {
 //---------------------------------------------------------
 
 void Laser::stop() {
-      Debug("state {}", int(state));
+      //      Debug("state {}", int(state));
       switch (state) {
             case LaserState::Framing:
                   changeState(LaserState::FramingAboutToIdle);
@@ -228,6 +250,7 @@ void Laser::stop() {
                   changeState(LaserState::MarkingAboutToFraming);
                   stopMarking = true;
                   return;
+            case LaserState::FramingAboutToIdle: return;
             default: break;
             }
       changeState(LaserState::Idle);
@@ -277,7 +300,7 @@ void Laser::startFraming() {
                   // last cam update, and camDirty only flags that a refresh
                   // is pending — it does not trigger one automatically.
                   refreshCamAndFraming();
-                  if (doStartFraming())
+                  if (runFraming())
                         changeState(LaserState::Framing);
                   break;
             case LaserState::Marking:
@@ -307,11 +330,12 @@ void Laser::doStartMarking() {
             Fixture* fixture  = topLevel->fixture();
             Laser* laser      = toType<Laser>(topLevel->machine());
             startMarkingEngine();
-            markingRunning = true;
-            stopMarking    = false;
+            stopMarking = false;
+            Debug("start");
 
             try {
                   for (auto e : fixture->children()) {
+                        Debug("==mark <{}>", e->name());
                         if (!isType<Recipe>(e))
                               continue;
                         auto ll = toType<Recipe>(e);
@@ -322,42 +346,46 @@ void Laser::doStartMarking() {
                         if (!recipe)
                               Fatal("no recipe for <{}>", ll->name());
 
+                        Debug("==mark2 passes {}", recipe->numPasses());
                         for (int i = 0; i < recipe->numPasses(); ++i) { // global passes
                               // mark every sublayer
-                              for (int i = 0; i < recipe->layers()->size(); ++i) {
-                                    auto s            = recipe->layer(i);
+                              Debug("layers <{}>", recipe->passes().size());
+                              for (int i = 0; i < recipe->passes().size(); ++i) {
+                                    auto s            = &recipe->pass(i);
                                     auto parameterSet = LaserParameterSet(s, laser);
                                     parameterSet.setOverride(ParameterType(ll->overrideType1()),
                                                              ll->overrideValue1());
                                     parameterSet.setOverride(ParameterType(ll->overrideType2()),
                                                              ll->overrideValue2());
-                                    if (stopMarking) {
-                                          stopMarkingEngine();
-                                          break;
-                                          }
+                                    if (stopMarking)
+                                          throw "stopped";
                                     if (s->enabled()) {
                                           spl.check();
+                                          Debug("mark+");
                                           markLayer(spl, parameterSet);
+                                          Debug("mark-");
                                           }
                                     }
                               }
                         }
+                  Debug("end of mark data");
                   }
             catch (const std::string s) {
+                  stopMarkingEngine();
+                  stopMarking = false;
                   Debug("marking stopped: {}", s);
                   }
 
             endMarkingEngine();
-            markingRunning = false;
             emit markingStopped();
             });
       }
 
 //---------------------------------------------------------
-//   doStartFraming
+//   runFraming
 //---------------------------------------------------------
 
-bool Laser::doStartFraming() {
+bool Laser::runFraming() {
       if (!zcam->project() || !zcam->project()->fixture()) {
             Critical("incomplete project");
             return false;
@@ -366,11 +394,12 @@ bool Laser::doStartFraming() {
       framingThread = new std::thread([this] {
             Project* project           = zcam->project();
             Clipper2Lib::PathD polygon = project->cam()->convexHull();
-            framingRunning             = true;
             stopFraming                = false;
             try {
                   if (startFramingEngine()) {
-                        while (!stopFraming) {
+                        for (;;) {
+                              if (stopFraming)
+                                    break;
                               for (const auto& p : polygon) {
                                     if (stopFraming)
                                           break;
@@ -380,10 +409,9 @@ bool Laser::doStartFraming() {
                         }
                   }
             catch (std::string s) {
-                  Debug("framing stopped: {}", s);
+                  Debug("framing stop request: {}", s);
                   }
-            Debug("framing end");
-            framingRunning = false;
+            stopFraming = false;
             stopFramingEngine();
             emit framingStopped();
             });

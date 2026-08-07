@@ -41,7 +41,13 @@ Model {
         parent: model.parent
         property alias element: model.element
         geometry: element ? element.selectionGeometry : null
+        // Depend on ZCam.selectedElements (Q_PROPERTY with NOTIFY) so the
+        // binding re-evaluates when the lasso selection changes.  Using
+        // ZCam.isSelected() (a Q_INVOKABLE method) would NOT trigger
+        // re-evaluation because QML cannot track its dependency on
+        // _selectedElements.
         visible: element && (ZCam.currentElement === element
+               || (ZCam.selectedElements && ZCam.selectedElements.indexOf(element) >= 0)
                || (element.editing !== undefined && element.editing))
         position: model.position
         eulerRotation: model.eulerRotation

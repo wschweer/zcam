@@ -105,6 +105,7 @@ class Element3d : public Element
       PROP(QList<Element3d*>, subElements)
 
       Q_PROPERTY(TessGeometry* selectionGeometry READ selectionGeometry NOTIFY selectionGeometryChanged)
+      Q_PROPERTY(bool snapActive READ snapActive NOTIFY snapActiveChanged)
       Q_PROPERTY(bool ancestorsShow READ ancestorsShow NOTIFY ancestorsShowChanged)
       Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
       Q_PROPERTY(QColor curColor READ curColor NOTIFY curColorChanged)
@@ -116,6 +117,8 @@ class Element3d : public Element
       mutable QMatrix4x4 _matrix;
       int _vertexRevision {0};
       bool _batching {false}; ///< suppresses vertexRevisionChanged during batch updates
+      bool _snapActiveX {false}; ///< grid snap active on X (for reference-point marker)
+      bool _snapActiveY {false}; ///< grid snap active on Y (for reference-point marker)
 
     protected:
       // Static, class-bound flag: only elements whose class sets this to true
@@ -133,6 +136,7 @@ class Element3d : public Element
       bool thinLine() const { return qFuzzyCompare(lineWidth(), 0.0); }
     signals:
       void selectionGeometryChanged();
+      void snapActiveChanged();
       void ancestorsShowChanged();
       void colorChanged();
       void curColorChanged();
@@ -200,6 +204,16 @@ class Element3d : public Element
             ++_vertexRevision;
             emit vertexRevisionChanged();
             }
+      /// Returns true when grid snap is active on either axis.
+      bool snapActive() const { return _snapActiveX || _snapActiveY; }
+      /// Set the grid-snap marker flags for this element.  While either
+      /// flag is true, a small reference-point cross is shown at the
+      /// element's origin, indicating where the element snaps to grid
+      /// lines during a drag.  (Cross geometry lives in the QML marker
+      /// in View3DPanel.qml; position comes from ZCam::snapRefPos.)
+      void setSnapMarkers(bool snapX, bool snapY);
+      /// Clear the grid-snap marker flags.
+      void clearSnapMarkers();
       // Returns true when every ancestor Element3d has show == true.
       // Used to grey-out child visibility icons when a parent is hidden.
       bool ancestorsShow() const;

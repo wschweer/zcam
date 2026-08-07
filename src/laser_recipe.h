@@ -388,7 +388,7 @@ class LaserPasses : public std::vector<LaserPass>
       };
 
 //---------------------------------------------------------
-//   Recipe
+//   LaserRecipe
 //---------------------------------------------------------
 
 class LaserRecipe
@@ -399,6 +399,7 @@ class LaserRecipe
       PROP_GADGET(QString, name)
       PROP_GADGET(QString, description)
       PROPV_GADGET(int, numPasses, 1)
+
       LaserPasses _passes;
 
       // Internal metadata: relative file path within the recipes directory.
@@ -410,10 +411,13 @@ class LaserRecipe
       LaserRecipe() {}
       json toJson() const;
       void fromJson(const json&);
-      const LaserPasses* layers() const { return &_passes; }
-      const LaserPass* layer(int idx) const { return &_passes[idx]; }
-      LaserPasses* passes() { return &_passes; }
-      LaserPass* pass(int idx) { return &_passes[idx]; }
+
+      const LaserPasses& passes() const { return _passes; }
+      LaserPasses& passes() { return _passes; }
+
+      const LaserPass& pass(int idx) const { return _passes.at(idx); }
+      LaserPass& pass(int idx) { return _passes.at(idx); }
+
       QString relativeFilePath() const { return _relativeFilePath; }
       void setRelativeFilePath(const QString& p) { _relativeFilePath = p; }
       };

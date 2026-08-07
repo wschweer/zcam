@@ -115,8 +115,8 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
             return true;
             }
       else if (type == "laserLayer") {
-            Recipe* ll = value.value<Recipe*>();
-            data[name] = ll ? ll->name().toStdString() : "";
+            Recipe* recipe = value.value<Recipe*>();
+            data[name] = recipe ? recipe->name().toStdString() : "";
             return true;
             }
       else if (type == "machine") {
@@ -252,6 +252,10 @@ void Element3d::fromJson(const json& json) {
       // a single try-catch wrapped both steps; if a child threw,
       // the parent's show property was never restored from JSON,
       // leaving it at the constructor default (e.g. false for Cam).
+      // _matrixDirty is set explicitly: property writes during restore
+      // may be suppressed, so the dirty flag would otherwise stay
+      // false even though pos/rot/scale change.
+      _matrixDirty = true;
       try {
             Element::fromJson(json);
             }
@@ -524,6 +528,34 @@ void Element3d::updateSelectionGeometry() {
       }
 
 //---------------------------------------------------------
+//   setSnapMarkers
+//    Set the grid-snap marker flags and refresh the selection
+//    geometry so the reference-point cross appears/disappears.
+//---------------------------------------------------------
+
+void Element3d::setSnapMarkers(bool snapX, bool snapY) {
+      bool wasActive = _snapActiveX || _snapActiveY;
+      _snapActiveX   = snapX;
+      _snapActiveY   = snapY;
+      if (wasActive != (snapX || snapY))
+            emit snapActiveChanged();
+      }
+
+//---------------------------------------------------------
+//   clearSnapMarkers
+//    Clear the grid-snap marker flags and refresh the selection
+//    geometry so the reference-point cross disappears.
+//---------------------------------------------------------
+
+void Element3d::clearSnapMarkers() {
+      if (_snapActiveX || _snapActiveY) {
+            _snapActiveX = false;
+            _snapActiveY = false;
+            emit snapActiveChanged();
+            }
+      }
+
+//---------------------------------------------------------
 //   adjustColorTone
 //    Shift a colour towards white (tone > 0, lighten) or
 //    towards black (tone < 0, darken) by blending a fixed
@@ -575,6 +607,11 @@ QColor Element3d::curColor() const {
       if (zcam->currentElement() == this) {
             double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
             return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
+            }
+      if (zcam->isSelected(this)) {
+            // Lasso-selected elements get a subtle highlight
+            double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
+            return adjustColorTone(_color, lum >= 0.5 ? -0.5 : 0.5);
             }
       return _color;
       }

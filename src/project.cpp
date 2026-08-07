@@ -998,6 +998,10 @@ void RemoveElementCommand::redo() {
             }
       _row = row;
       emit zcam->remove3dElement(qobject_cast<Element3d*>(_child));
+      // Remove the element from the selection list if it is selected.
+      // This prevents dangling pointers in _selectedElements and
+      // _currentElement after the element is deleted.
+      zcam->removeFromSelection(qobject_cast<Element3d*>(_child));
       if (zcam->treeModel())
             zcam->treeModel()->beginRemoveChild(_parent, _row);
       _parent->removeChild(_child);

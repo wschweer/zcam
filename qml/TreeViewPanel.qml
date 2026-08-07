@@ -31,6 +31,11 @@ Item {
         property string currentElement: ""
         }
 
+    // ── Selection anchor for shift-click range selection ───────────────
+    //   The row index of the last plain-clicked element.  Shift-click
+    //   selects all visible rows from this anchor to the clicked row.
+    property int selectionAnchor: -1
+
     // ── Helper: get model index for a row at root level or under parent ───
     function childIndex(tm, row, parentIdx) {
         if (parentIdx === null)
@@ -195,6 +200,66 @@ Item {
         treeView.selectionModel.setCurrentIndex(idx, ItemSelectionModel.ClearAndSelect);
         }
 
+    // ── Sync TreeView selection with the lasso multi-selection ─────────
+    //   Called when selectedElements changes.  When a multi-selection
+    //   is active, all selected elements are highlighted in the tree
+    //   via the selectionModel.  The currentElement is also selected.
+    //   When the multi-selection is empty, the selection falls back
+    //   to just the currentElement (handled by onCurrentElementChanged).
+    function syncMultiSelection() {
+        var tm = ZCam.treeModel;
+        if (!tm || !tm.root)
+            return;
+        var selected = ZCam.selectedElements;
+        if (!selected || selected.length === 0) {
+            // No multi-selection — just sync the current element.
+            if (ZCam.currentElement)
+                root.syncSelection();
+            else
+                treeView.selectionModel.clear();
+            return;
+            }
+        // Clear the selection model and re-select all selected elements.
+        treeView.selectionModel.clear();
+        for (var i = 0; i < selected.length; ++i) {
+            var el = selected[i];
+            if (!el)
+                continue;
+            var idx = tm.indexForElement(el);
+            if (idx && idx.valid) {
+                // Expand all parent nodes so the row is visible.
+                var chain = [];
+                var p = idx.parent;
+                while (p && p.valid) {
+                    chain.unshift(p);
+                    p = p.parent;
+                    }
+                for (var j = 0; j < chain.length; ++j) {
+                    var ancestorIdx = chain[j];
+                    var ancestorEl = tm.elementForIndex(ancestorIdx);
+                    if (ancestorEl && !ancestorEl.expanded) {
+                        ancestorEl.expanded = true;
+                        var row = treeView.rowAtIndex(ancestorIdx);
+                        if (row >= 0) {
+                            treeView.expand(row);
+                            treeView.forceLayout();
+                            }
+                        }
+                    }
+                // Re-query the index after potential layout changes.
+                idx = tm.indexForElement(el);
+                if (idx && idx.valid)
+                    treeView.selectionModel.select(idx, ItemSelectionModel.Select);
+                }
+            }
+        // Ensure the currentElement is also selected and is the current index.
+        if (ZCam.currentElement) {
+            var curIdx = tm.indexForElement(ZCam.currentElement);
+            if (curIdx && curIdx.valid)
+                treeView.selectionModel.setCurrentIndex(curIdx, ItemSelectionModel.NoUpdate);
+            }
+        }
+
     TreeView {
         id: treeView
         anchors.fill: parent
@@ -310,11 +375,15 @@ Item {
                 }
             }
 
-        // Handle Delete key directly on the TreeView so the
-        // shortcut works even when the tree has keyboard focus.
+        // Handle Delete and Escape keys directly on the TreeView so the
+        // shortcuts work even when the tree has keyboard focus.
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Delete) {
                 ZCam.deleteCurrentElement()
+                event.accepted = true
+                }
+            if (event.key === Qt.Key_Escape) {
+                ZCam.clearSelection()
                 event.accepted = true
                 }
             }
@@ -352,6 +421,12 @@ Item {
                     treeView.selectionModel.clear();
                     }
                 }
+            // Sync the TreeView selection to the lasso multi-selection.
+            // When a multi-selection is active (selectedElements.length > 0),
+            // all selected elements are highlighted in the tree.
+            function onSelectedElementsChanged() {
+                root.syncMultiSelection();
+                }
             }
 
         Timer {
@@ -379,12 +454,31 @@ Item {
 
             readonly property real levelIndent: 20
 
+            // Check if this delegate's element is in the lasso
+            // multi-selection.  Accesses ZCam.selectedElements
+            // (which has a NOTIFY signal) so the binding
+            // re-evaluates when the selection changes.
+            function _isSelected(el) {
+                var sel = ZCam.selectedElements;
+                if (!sel || sel.length === 0)
+                    return false;
+                for (var i = 0; i < sel.length; ++i) {
+                    if (sel[i] === el)
+                        return true;
+                    }
+                return false;
+                }
+
             // Full width of the view, Material ripple needs it
             implicitWidth: treeView.width
             implicitHeight: 28
 
-            // Material highlight when this row is selected
-            highlighted: current
+            // Material highlight when this row is selected.
+            // Highlighted when it's the current row OR when it's part
+            // of the lasso multi-selection (ZCam.selectedElements).
+            // The selectedElements property has NOTIFY selectedElementsChanged
+            // so QML re-evaluates this binding whenever the selection changes.
+            highlighted: current || (model.element && _isSelected(model.element))
 
             // Horizontal padding so text never touches the edge
             leftPadding: 8 + depth * levelIndent
@@ -438,7 +532,7 @@ Item {
                     text: "▸"
                     // One point smaller than the body font
                     font.pointSize: Math.max(6, Qt.application.font.pointSize - 1)
-                    color: delegateItem.current ? Material.primaryHighlightedTextColor : Material.foreground
+                    color: delegateItem.highlighted ? Material.primaryHighlightedTextColor : Material.foreground
                     rotation: delegateItem.expanded ? 90 : 0
                     Layout.alignment: Qt.AlignVCenter
 
@@ -472,7 +566,7 @@ Item {
                     text: model.element ? model.element.name : (model.name ?? "")
                     Layout.fillWidth: true
                     elide: Text.ElideRight
-                    color: delegateItem.current ? Material.primaryHighlightedTextColor : Material.foreground
+                    color: delegateItem.highlighted ? Material.primaryHighlightedTextColor : Material.foreground
                     Layout.alignment: Qt.AlignVCenter
                     }
 
@@ -578,9 +672,25 @@ Item {
                 }
 
             // Select element on tap (row tap, not the chevron tap)
+            // ── Selection handling ───────────────────────────────────
+            //   Ctrl-click: toggle the element in/out of the multi-selection.
+            //   Shift-click: range select from the last clicked row to this row.
+            //   Plain click: clear selection and select only this element.
+            //   The current (primary) element is always set to the clicked
+            //   element so the inspector shows it.
+            //
+            //   Modifier-clicks (Ctrl/Shift) are handled by the MouseArea
+            //   below, which intercepts the press so this handler is only
+            //   reached for plain clicks.
             onClicked: {
+                // Clear any existing multi-selection without clearing
+                // currentElement (which would cause an intermediate null
+                // state in the InspectorModel and trigger runtime errors).
+                if (ZCam.selectedElements.length > 0)
+                    ZCam.clearSelectionList();
                 treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect);
                 ZCam.currentElement = model.element;
+                root.selectionAnchor = delegateItem.row;
                 }
             onDoubleClicked: {
                 if (delegateItem.isTreeNode && delegateItem.hasChildren) {
@@ -597,16 +707,64 @@ Item {
                     }
                 }
 
-            // ── Right-click context menu ────────────────────────────────────
+            // ── Mouse handler for left-click (with modifiers) and right-click ─
+            //   Left-click with Ctrl: toggle element in multi-selection.
+            //   Left-click with Shift: range select from anchor to here.
+            //   Plain left-click: handled by ItemDelegate.onClicked above.
+            //   Right-click: context menu (see below).
+            //
+            //   This MouseArea handles only modifier-clicks to avoid
+            //   conflicting with the ItemDelegate's built-in click/
+            //   doubleClick handling.  When modifiers are present, the
+            //   press is accepted so ItemDelegate doesn't also fire.
             MouseArea {
                 anchors.fill: parent
-                acceptedButtons: Qt.RightButton
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 propagateComposedEvents: true
+
+                onPressed: function(mouse) {
+                    if (mouse.button === Qt.LeftButton
+                        && (mouse.modifiers & Qt.ControlModifier
+                            || mouse.modifiers & Qt.ShiftModifier)) {
+                        // Accept the press so ItemDelegate.onClicked doesn't fire.
+                        mouse.accepted = true;
+                        }
+                    else {
+                        // Let ItemDelegate handle plain clicks.
+                        mouse.accepted = false;
+                        }
+                    }
+
                 onClicked: function(mouse) {
-                    treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect);
-                    ZCam.currentElement = model.element;
-                    var global = delegateItem.mapToItem(root, mouse.x, mouse.y);
-                    root.showContextMenu(model.element, global.x, global.y);
+                    if (mouse.button === Qt.LeftButton) {
+                        if (mouse.modifiers & Qt.ControlModifier) {
+                            // Ctrl-click: toggle this element in the multi-selection.
+                            ZCam.toggleSelection(model.element);
+                            root.syncMultiSelection();
+                            }
+                        else if (mouse.modifiers & Qt.ShiftModifier) {
+                            // Shift-click: range select from anchor to here.
+                            root.rangeSelect(delegateItem.row);
+                            }
+                        // Plain left-click falls through to ItemDelegate.
+                        }
+                    else if (mouse.button === Qt.RightButton) {
+                        // If the element is not already in the multi-selection,
+                        // clear and select only this element (like a plain click).
+                        // Otherwise keep the current multi-selection and just
+                        // make this element the current one for the context menu.
+                        if (!ZCam.isSelected(model.element)) {
+                            root.selectionAnchor = delegateItem.row;
+                            treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect);
+                            ZCam.currentElement = model.element;
+                            }
+                        else {
+                            // Make this the current element without clearing selection.
+                            ZCam.currentElement = model.element;
+                            }
+                        var global = delegateItem.mapToItem(root, mouse.x, mouse.y);
+                        root.showContextMenu(model.element, global.x, global.y);
+                        }
                     }
                 }
 
@@ -691,6 +849,47 @@ Item {
                     }
                 }
             }
+        }
+
+    // ── Range select: select all visible rows from anchor to clicked row ─
+    //   Used by Shift-click in the tree delegate.  Clears the current
+    //   multi-selection and selects all visible elements between
+    //   the anchor row and the clicked row (inclusive).  The clicked
+    //   element becomes the current element.
+    function rangeSelect(clickedRow) {
+        var tm = ZCam.treeModel;
+        if (!tm || !tm.root)
+            return;
+        // Determine the range of rows to select.
+        var startRow, endRow;
+        if (root.selectionAnchor < 0) {
+            startRow = 0;
+            endRow = clickedRow;
+            }
+        else {
+            startRow = Math.min(root.selectionAnchor, clickedRow);
+            endRow = Math.max(root.selectionAnchor, clickedRow);
+            }
+        // Collect all elements in the visible row range.
+        var elements = [];
+        for (var r = startRow; r <= endRow; ++r) {
+            var idx = treeView.index(r, 0);
+            if (idx && idx.valid) {
+                var el = tm.elementForIndex(idx);
+                if (el)
+                    elements.push(el);
+                }
+            }
+        // Update the C++ multi-selection directly: clear and add all.
+        // We temporarily bypass the normal toggle/add API and set
+        // the selection in bulk by calling clearSelection then
+        // addToSelection for each element.
+        ZCam.clearSelectionList();
+        for (var i = 0; i < elements.length; ++i)
+            ZCam.addToSelection(elements[i]);
+        // The last element added becomes current via addToSelection.
+        // Sync the tree view selection model.
+        root.syncMultiSelection();
         }
 
     // ── Toggle helper: expand/collapse and persist ────────────────────────

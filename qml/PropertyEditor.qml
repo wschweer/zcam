@@ -485,7 +485,7 @@ Item {
                         item.meta      = root.metaFor(delegateRoot.model.propName)
                         item.propIndex = delegateRoot.index
                         item.enabled  = Qt.binding(() => root.isPropEnabled(item.meta))
-                        item.opacity  = Qt.binding(() => item.enabled ? 1.0 : 0.4)
+                        item.opacity  = Qt.binding(() => loader.item ? (loader.item.enabled ? 1.0 : 0.4) : 0.4)
                         item.setModelValue = function(v) {
                             delegateRoot.model.propValue = v
                             }
@@ -640,7 +640,7 @@ Item {
                             item.subValue = Qt.binding(() => subLoader.subValue)
                             item.subMeta   = subLoader.subMeta
                             item.enabled  = Qt.binding(() => root.isPropEnabled(subLoader.subMeta))
-                            item.opacity  = Qt.binding(() => item.enabled ? 1.0 : 0.4)
+                            item.opacity  = Qt.binding(() => subLoader.item ? (subLoader.item.enabled ? 1.0 : 0.4) : 0.4)
                             item.setSub    = function(v) {
                                 if (rowContainer.setSubValue)
                                     rowContainer.setSubValue(subLoader.subName, v)
@@ -877,7 +877,7 @@ Item {
                                         item.meta = Qt.binding(() => root.metaFor(item.propName))
                                         item.propIndex = colsContainer.propIndex
                                         item.enabled = Qt.binding(() => root.isPropEnabled(item.meta))
-                                        item.opacity = Qt.binding(() => item.enabled ? 1.0 : 0.4)
+                                        item.opacity = Qt.binding(() => colLoader.item ? (colLoader.item.enabled ? 1.0 : 0.4) : 0.4)
                                         item.setModelValue = function(v) {
                                             colsContainer.setModelValue(d.name, v)
                                             }
@@ -1005,7 +1005,7 @@ Item {
                             item.subValue = Qt.binding(() => subLoaderCol.subValue)
                             item.subMeta   = subLoaderCol.subMeta
                             item.enabled  = Qt.binding(() => root.isPropEnabled(subLoaderCol.subMeta))
-                            item.opacity  = Qt.binding(() => item.enabled ? 1.0 : 0.4)
+                            item.opacity  = Qt.binding(() => subLoaderCol.item ? (subLoaderCol.item.enabled ? 1.0 : 0.4) : 0.4)
                             item.setSub    = function(v) {
                                 if (rowContainerCol.setSubValue)
                                     rowContainerCol.setSubValue(subLoaderCol.subName, v)

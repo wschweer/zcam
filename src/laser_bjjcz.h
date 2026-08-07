@@ -38,7 +38,7 @@ using PathD  = Clipper2Lib::PathD;
 enum class BjjczStatus : int {
       LIST  = 1, // cmd list underflow
       BUSY  = 3,
-      ERROR = 5,  // out of range?
+      ERROR = 5, // out of range?
       READY = 6,
       AXIS  = 7
       };
@@ -103,19 +103,19 @@ class FiberLaserState
     public:
       FiberLaserState(LaserBJJCZ* l) : laser(l) { clear(); }
       void clear() {
-            power              = 0.0;
-            markSpeed          = 0.0;
-            jumpSpeed          = 0.0;
-            _frequency         = 0.0;
-            delay_jump         = 0.0;
-            delayOn           = 0.0;
-            delayOff          = 0.0;
-            delayPolygon         = 0.0;
-            pulseWidth         = 0.0;
-            x                  = 0x8000;
-            y                  = 0x8000;
-            lastDir            = 0.0;
-            dirValid           = false;
+            power        = 0.0;
+            markSpeed    = 0.0;
+            jumpSpeed    = 0.0;
+            _frequency   = 0.0;
+            delay_jump   = 0.0;
+            delayOn      = 0.0;
+            delayOff     = 0.0;
+            delayPolygon = 0.0;
+            pulseWidth   = 0.0;
+            x            = 0x8000;
+            y            = 0x8000;
+            lastDir      = 0.0;
+            dirValid     = false;
             }
       bool setPower(double v) {
             auto rv = v != power;
@@ -286,35 +286,6 @@ class CmdList : public std::array<Packet6, LIST_SIZE>
       void end(int param = 0);
       };
 
-//---------------------------------------------------------
-//   Gpio
-//---------------------------------------------------------
-
-class Gpio
-      {
-      LaserBJJCZ* laser;
-
-      int portBits {0};
-
-    protected:
-      bool value(int bit) { return portBits & (1 << bit); }
-
-    public:
-      Gpio() {}
-      void init(LaserBJJCZ* l);
-      void listWrite();
-      void init() {
-            portBits = 0;
-            write();
-            }
-      void registerOn(int bit) { portBits |= (1 << bit); }
-      void registerOff(int bit) { portBits &= ~(1 << bit); }
-      void write() const;
-
-      void on(int bit); // switch immediate
-      void off(int bit);
-      void set(int bit, bool on);
-      };
 
 //---------------------------------------------------------
 //   LaserBJJCZ
@@ -328,27 +299,26 @@ class LaserBJJCZ : public Laser
       QML_ELEMENT
       QML_UNCREATABLE("no no no")
 
-      PROPV(int, lightPin, -1)            // -1 means "there is no red light available"
+      PROPV(int, lightPin, -1) // -1 means "there is no red light available"
       PROPV(bool, lightPinInvert, true)
-      PROPV(int, footPin, -1)             // 15
+      PROPV(int, footPin, -1) // 15
       PROPV(bool, footPinInvert, false)
       PROPV(bool, moRunningOnly, true)   // MO enabled only when running
+      PROPV(QString, corFile, QString()) // MO enabled only when running
 
       // machine status:
       uint16_t currentX;
       uint16_t currentY;
-      double lastDir;
-      bool dirValid { false };
-      LaserParameterSet laserValues;      // current laser values
-      bool _laserValuesValid { false };
+      double lastDir {0};
+      bool dirValid {false};
+      LaserParameterSet laserValues; // current laser values
+      bool _laserValuesValid {false};
       mutable LaserStatusFlags _status {0};
 
-      Gpio gpio;
       double galvos;
 
       Usb* usb {nullptr};
       CmdList list;
-
       Packet4 getSerialNumber() const { return command({GetSerialNo}); }
       Packet4 getStatus() const;
       bool send(const Packet6&) const;
@@ -409,7 +379,7 @@ class LaserBJJCZ : public Laser
             }
       void wait_finished() const;
       void wait_axis() const;
-      void waitReady() const;
+      bool waitReady() const;
       void wait_idle() const;
       Packet4 gotoXY(uint16_t x, uint16_t y, uint16_t angle = 0, uint16_t dist = 0) {
             currentX = x;
@@ -440,6 +410,9 @@ class LaserBJJCZ : public Laser
       Packet4 laser_signal_off() { return command({LaserSignalOff}); }
       Packet4 laser_signal_on() { return command({LaserSignalOn}); }
       Packet4 write_cor_table(bool table = true) { return command({WriteCorTable, uint16_t(table)}); }
+      void write_cor_line(uint16_t dx, uint16_t dy, uint16_t non_first) {
+            send({WriteCorLine, dx, dy, non_first, 0, 0});
+            }
       Packet4 set_control_mode(uint16_t mode) { return command({SetControlMode, mode}); }
       Packet4 set_delay_mode(uint16_t mode) { return command({SetDelayMode, mode}); }
       Packet4 set_max_poly_delay(uint16_t delay) {
@@ -451,7 +424,7 @@ class LaserBJJCZ : public Laser
       Packet4 set_pwm_half_period(uint16_t pwm_half_period) {
             return command({SetPwmHalfPeriod, pwm_half_period});
             }
-      Packet4 write_port(int bits) { return command({WritePort, (uint16_t)bits}); }
+      Packet4 write_port(int bits) const { return command({WritePort, (uint16_t)bits}); }
       Packet4 write_analog_port_1(uint16_t port) { return command({WriteAnalogPort1, port}); }
       Packet4 write_analog_port_2(uint16_t port) { return command({WriteAnalogPort2, port}); }
       Packet4 write_analog_port_x(uint16_t port) { return command({WriteAnalogPortX, port}); }
@@ -477,7 +450,7 @@ class LaserBJJCZ : public Laser
       Packet4 clear_lock_input_port() { return command({InputPort, 0x04}); }
       Packet4 enable_lock_input_port() { return command({InputPort, 0x02}); }
       Packet4 disable_lock_input_port() { return command({InputPort, 0x01}); }
-      Packet4 get_input_port() { return command({InputPort}); }
+      Packet4 get_input_port() const { return command({InputPort}); }
       Packet4 get_mark_time() { return command({GetMarkTime, 3}); }
       Packet4 get_user_data() { return command({GetUserData}); }
       Packet4 move_axis_to(uint16_t p0, uint16_t p1 = 0, uint16_t p2 = 0, uint16_t p3 = 0) {
@@ -504,25 +477,37 @@ class LaserBJJCZ : public Laser
 
       void setLight(bool on);
 
+      bool gpioValue(int bit) { return _outputPort & (1 << bit); }
+      void gpioListWrite();
+      void gpioInit() {
+            _outputPort = 0;
+            gpioWrite();
+            }
+      void gpioRegisterOn(int bit) { _outputPort |= (1 << bit); }
+      void gpioRegisterOff(int bit) { _outputPort &= ~(1 << bit); }
+      void gpioWrite();
+      void gpioWrite(int data);
+      void gpioOn(int bit); // switch immediate
+      void gpioOff(int bit);
+      void gpioSet(int bit, bool on);
+      void gpioToggle(int bit);
+
     protected:
       //      void list_end();
       void list_qswitch_period(uint16_t qswitch) { list.write({listQSwitchPeriod, qswitch}); }
-
       void markLines(PathsD&, bool reverse);
       void mark(double x, double y);
+      void mark(uint16_t x, uint16_t y);
       void setLaser(const LaserParameterSet&);
       void move(uint16_t x, uint16_t y);
-      void mark(uint16_t x, uint16_t y);
       int distance(int x, int y);
 
     public:
       LaserBJJCZ(ZCam* w, QObject* parent = nullptr);
       virtual ~LaserBJJCZ();
 
-      friend class Gpio;
       friend class CmdList;
       friend class FiberLaserState;
-
 
       // ── LaserEngine interface overrides ───────────────────────
       virtual bool initEngine(bool dryRun) override;
@@ -542,6 +527,8 @@ class LaserBJJCZ : public Laser
       virtual LaserPosition mapToGalvo(double, double) override;
       virtual const std::string_view properties() const override;
       void setLaserValuesValid(bool v) { _laserValuesValid = v; }
+
+      Q_INVOKABLE virtual void toggleOutputBit(int bit) override { gpioToggle(bit); }
       };
 
 extern void dump(Packet6* p, bool single);

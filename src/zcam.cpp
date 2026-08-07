@@ -177,7 +177,10 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
 
 void ZCam::setCurrentElement(Element3d* el) {
       Element3d* oldElement = _currentElement;
-      if (el == oldElement)
+      // Early return only if both are the same AND no multi-selection
+      // needs to be cleared.  When el is null and _selectedElements
+      // is non-empty, we must still proceed to clear the selection.
+      if (el == oldElement && (el || _selectedElements.isEmpty()))
             return;
       // Clear segment selection on the old element when switching away.
       if (oldElement) {
@@ -186,6 +189,18 @@ void ZCam::setCurrentElement(Element3d* el) {
                   oldPoly->clearSegmentSelection();
             }
       _currentElement = el;
+      // When selecting a single element (not via lasso) or when
+      // deselecting (el == nullptr, e.g. clicking on empty canvas),
+      // clear the lasso multi-selection so the two selection modes
+      // don't overlap.  When el is in _selectedElements (e.g. lassoSelect
+      // sets the first element as currentElement), keep the selection.
+      if (!_selectedElements.isEmpty() && (!el || !_selectedElements.contains(el))) {
+            auto old = _selectedElements;
+            _selectedElements.clear();
+            for (auto* e : old)
+                  emit e->curColorChanged();
+            emit selectedElementsChanged();
+            }
       emit currentElementChanged();
       // Signal color changes so the 3D view updates highlight colors.
       if (oldElement)
@@ -514,12 +529,13 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
 
       // Magnetic grid snap: when the project's Grid has snap enabled,
       // grid lines act magnetically.  The element's reference point is
-      // (0,0) in local coords, which maps to element->pos() in parent
-      // local space.  When the reference point crosses a grid line, the
-      // element snaps to that line.  Further dragging accumulates in
-      // _snapState.excess until it exceeds half the minor spacing, at
-      // which point the element "breaks free" and moves freely until
-      // the next line is crossed.
+      // (0,0) in local coords.  In world (root) space this maps to the
+      // translation part of the element's globalMatrix().  The snap
+      // computation is done in world space so the reference point lands
+      // exactly on a grid line intersection, regardless of any parent
+      // transforms (Layer position/rotation/scale).  The resulting world
+      // position is then converted back to parent-local space for
+      // element->set_pos().
       Grid* grid = nullptr;
       if (_project)
             grid = qobject_cast<Grid*>(_project->gridElement());
@@ -527,58 +543,101 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
             double spacing = grid->minorSpacing();
             if (spacing > 0.0) {
                   double halfSpacing = spacing / 2.0;
-                  double curX        = element->pos().x();
-                  double curY        = element->pos().y();
-                  double newX        = curX + localDelta.x();
-                  double newY        = curY + localDelta.y();
 
-                  // X axis snap
+                  // Current world position of the reference point (0,0 local)
+                  // = translation column of the element's globalMatrix().
+                  QMatrix4x4 gm = element->globalMatrix();
+                  QVector3D worldRef(gm(0, 3), gm(1, 3), gm(2, 3));
+
+                  // Desired world position after applying the world delta.
+                  double curWX = worldRef.x();
+                  double curWY = worldRef.y();
+                  double newWX = curWX + delta.x();
+                  double newWY = curWY + delta.y();
+
+                  // X axis snap (world space)
                   if (_snapState.activeX) {
-                        _snapState.excessX += localDelta.x();
+                        _snapState.excessX += delta.x();
                         if (std::abs(_snapState.excessX) > halfSpacing) {
-                              // Break free: snap point releases, move freely
                               _snapState.activeX = false;
-                              newX               = curX + localDelta.x();
+                              newWX              = curWX + delta.x();
                               }
                         else {
-                              // Hold snapped: keep X at the snap line
-                              newX = curX;
+                              newWX = curWX;
                               }
                         }
                   else {
-                        // Check if reference point crosses a grid line
-                        double oldLine = std::round(curX / spacing);
-                        double newLine = std::round(newX / spacing);
+                        double oldLine = std::round(curWX / spacing);
+                        double newLine = std::round(newWX / spacing);
                         if (newLine != oldLine) {
                               _snapState.activeX = true;
-                              _snapState.excessX = newX - newLine * spacing;
-                              newX               = newLine * spacing;
+                              _snapState.excessX = newWX - newLine * spacing;
+                              newWX              = newLine * spacing;
                               }
                         }
 
-                  // Y axis snap
+                  // Y axis snap (world space)
                   if (_snapState.activeY) {
-                        _snapState.excessY += localDelta.y();
+                        _snapState.excessY += delta.y();
                         if (std::abs(_snapState.excessY) > halfSpacing) {
                               _snapState.activeY = false;
-                              newY               = curY + localDelta.y();
+                              newWY              = curWY + delta.y();
                               }
                         else {
-                              newY = curY;
+                              newWY = curWY;
                               }
                         }
                   else {
-                        double oldLine = std::round(curY / spacing);
-                        double newLine = std::round(newY / spacing);
+                        double oldLine = std::round(curWY / spacing);
+                        double newLine = std::round(newWY / spacing);
                         if (newLine != oldLine) {
                               _snapState.activeY = true;
-                              _snapState.excessY = newY - newLine * spacing;
-                              newY               = newLine * spacing;
+                              _snapState.excessY = newWY - newLine * spacing;
+                              newWY              = newLine * spacing;
                               }
                         }
 
-                  QVector3D newPos(newX, newY, element->pos().z() + localDelta.z());
-                  element->set_pos(newPos);
+                  // Convert the snapped world position back to parent-local
+                  // coordinates.  The element's local-to-world transform is:
+                  //   world = parentGlobal * localMatrix(pos, rot, scale)
+                  // The reference point (0,0,0) in local space maps to
+                  // element->pos() through the local matrix (which only
+                  // translates for the reference point since rotation and
+                  // scale leave the origin unchanged).  So:
+                  //   worldRef = parentGlobal.map(element->pos())
+                  // Therefore:
+                  //   newLocalPos = parentGlobalInv.map(snappedWorldRef)
+                  QVector3D newWorldRef(newWX, newWY, worldRef.z() + delta.z());
+                  QVector3D newLocalPos = newWorldRef;
+                  if (auto* p = qobject_cast<Element3d*>(element->parent())) {
+                        QMatrix4x4 parentGlobal = p->globalMatrix();
+                        bool ok                 = false;
+                        QMatrix4x4 parentInv    = parentGlobal.inverted(&ok);
+                        if (ok)
+                              newLocalPos = parentInv.map(newWorldRef);
+                        }
+
+                  // Derive the marker position from the exact same
+                  // parent-local value that is assigned to pos below:
+                  //   worldRefPos = parentGlobal * newLocalPos
+                  // reproduces the future position of the element origin
+                  // in world space — including the parent's scale,
+                  // rotation and translation.  Computing the marker
+                  // position from the element's own globalMatrix() would
+                  // be wrong whenever the parent has a non-trivial
+                  // rotation: the local matrix is applied BEFORE the
+                  // parent rotation, so a world-space drag delta maps to
+                  // a different pos delta direction and the marker drifts
+                  // away from the element origin, eventually leaving the
+                  // view ("cross disappears").
+                  QVector3D worldRefPos = newWorldRef;
+                  if (auto* p = qobject_cast<Element3d*>(element->parent()))
+                        worldRefPos = p->globalMatrix().map(newLocalPos);
+                  if (worldRefPos != _snapState.refPos) {
+                        _snapState.refPos = worldRefPos;
+                        emit snapRefPosChanged();
+                        }
+                  element->set_pos(newLocalPos);
                   return;
                   }
             }
@@ -681,7 +740,12 @@ void ZCam::startElementDrag(Element3d* element) {
       _elementDragOrigPos   = element->pos();
       _elementDragOrigRot   = element->rot();
       _elementDragOrigScale = element->scale();
-      _snapState.reset();
+      // Seed the marker position with the live world position of the
+      // element origin so the cross appears at the element (not at the
+      // world origin (0,0)) before the first snapped drag event.
+      _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
+      _snapDragActive   = true;
+      emit snapDragActiveChanged();
       _project->undo()->beginMacro();
       }
 
@@ -742,7 +806,8 @@ void ZCam::endElementDrag() {
             // undo operations.
             applyPendingSegment();
             _elementDragElement = nullptr;
-            _snapState.reset();
+            _snapDragActive     = false;
+            emit snapDragActiveChanged();
             // Roll back the empty macro (0 children → endMacro will
             // delete it instead of pushing it onto the list).
             _project->undo()->endMacro(true);
@@ -772,10 +837,31 @@ void ZCam::endElementDrag() {
       _project->undo()->push(cmd);
 
       _elementDragElement = nullptr;
-      _snapState.reset();
+      _snapDragActive     = false;
+      emit snapDragActiveChanged();
 
       _project->undo()->endMacro();
       emit elementDragEnded();
+      }
+
+//---------------------------------------------------------
+//   snapRefPos
+//    World position used to place the snap reference-point cross.
+//    While a drag with grid snap is in progress this returns the
+//    recorded snap state position (derived from the same
+//    parent-local pos that is assigned to the element — see
+//    dragged()); otherwise the live position of the reference point
+//    (0,0 local) of the element currently being dragged, or the
+//    recorded value when idle.
+//---------------------------------------------------------
+
+QVector3D ZCam::snapRefPos() const {
+      if (_elementDragElement) {
+            if (_snapState.activeX || _snapState.activeY)
+                  return _snapState.refPos;
+            return _elementDragElement->globalMatrix().map(QVector3D(0, 0, 0));
+            }
+      return _snapState.refPos;
       }
 
 //---------------------------------------------------------
@@ -900,6 +986,14 @@ Element3d* ZCam::pickElement(double x, double y) {
 //---------------------------------------------------------
 //   pickDragTarget
 //    Picking helper used when the user starts a left-button drag.
+//
+//    When a lasso multi-selection is active, the method first
+//    checks if the click falls inside any selected element's
+//    bounding box.  If so, it returns the smallest such element
+//    directly so the user can drag it without pickElement()
+//    cycling to the parent (which would deselect the lasso
+//    selection via setCurrentElement).
+//
 //    If the currently selected element is draggable, has children,
 //    and the drag point lies inside its world bounding box, return
 //    the element itself.  This makes the visible selection bounding
@@ -914,6 +1008,30 @@ Element3d* ZCam::pickElement(double x, double y) {
 //---------------------------------------------------------
 
 Element3d* ZCam::pickDragTarget(double x, double y) {
+      // When a lasso multi-selection is active, check if the click
+      // falls inside any selected element's bounding box.  If so,
+      // return the smallest such element directly so it can be
+      // dragged without cycling to its parent (which would
+      // deselect the lasso selection).
+      if (!_selectedElements.isEmpty()) {
+            Element3d* best = nullptr;
+            double bestArea = 0.0;
+            for (auto* el : _selectedElements) {
+                  if (!el || !el->draggable() || !el->show() || !el->ancestorsShow())
+                        continue;
+                  QRectF wb = el->worldBoundingBox();
+                  if (!wb.isNull() && !wb.isEmpty() && x >= wb.left() && x <= wb.right() && y >= wb.top() &&
+                      y <= wb.bottom()) {
+                        double area = wb.width() * wb.height();
+                        if (!best || area < bestArea) {
+                              bestArea = area;
+                              best     = el;
+                              }
+                        }
+                  }
+            if (best)
+                  return best;
+            }
       // If the currently selected element is draggable, has children,
       // and the drag point lies inside its world bounding box, return
       // the element itself.  This makes the visible selection bounding
@@ -940,6 +1058,238 @@ Element3d* ZCam::pickDragTarget(double x, double y) {
                   }
             }
       return pickElement(x, y);
+      }
+
+//---------------------------------------------------------
+//   pointInPolygon
+//    Ray-casting point-in-polygon test.  Returns true if the
+//    point (x, y) lies inside the polygon defined by the given
+//    list of world-space vertices.
+//---------------------------------------------------------
+
+static bool pointInPolygon(double x, double y, const QList<QVector3D>& polygon) {
+      int n = polygon.size();
+      if (n < 3)
+            return false;
+      bool inside = false;
+      for (int i = 0, j = n - 1; i < n; j = i++) {
+            double xi = polygon[i].x(), yi = polygon[i].y();
+            double xj = polygon[j].x(), yj = polygon[j].y();
+            if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi))
+                  inside = !inside;
+            }
+      return inside;
+      }
+
+//---------------------------------------------------------
+//   collectLassoCandidates
+//    Depth-first traversal collecting all Element3d whose world
+//    bounding-box center lies inside the given polygon.  Only
+//    visible, selectable elements with a non-empty bounding box
+//    are considered.  Groups are included as individual candidates
+//    so a lasso can select a whole group at once.
+//---------------------------------------------------------
+
+static void collectLassoCandidates(Element* root, const QList<QVector3D>& polygon,
+                                   QList<Element3d*>& candidates) {
+      if (!root)
+            return;
+      auto* e3d = qobject_cast<Element3d*>(root);
+      if (e3d && e3d->show() && e3d->ancestorsShow() && e3d->selectable() && e3d->visible()) {
+            QRectF wb = e3d->worldBoundingBox();
+            if (!wb.isNull() && !wb.isEmpty()) {
+                  double cx   = wb.center().x();
+                  double cy   = wb.center().y();
+                  bool inside = pointInPolygon(cx, cy, polygon);
+                  if (inside)
+                        candidates.append(e3d);
+                  }
+            }
+      for (auto* child : root->children())
+            collectLassoCandidates(child, polygon, candidates);
+      }
+
+//---------------------------------------------------------
+//   lassoSelect
+//    Select all visible, selectable elements whose world
+//    bounding-box center lies inside the given polygon (in
+//    world/root coordinates).  The first element becomes the
+//    currentElement.  Clears any previous lasso selection.
+//---------------------------------------------------------
+
+void ZCam::lassoSelect(const QList<QVector3D>& polygon) {
+      QList<Element3d*> old = _selectedElements;
+      _selectedElements.clear();
+
+      if (polygon.size() < 3) {
+            if (!old.isEmpty()) {
+                  for (auto* e : old)
+                        emit e->curColorChanged();
+                  emit selectedElementsChanged();
+                  }
+            return;
+            }
+
+      collectLassoCandidates(_rootElement, polygon, _selectedElements);
+
+      // Remove ancestor elements whose children are already in the
+      // selection: when a Group's bounding-box center lies inside the
+      // lasso polygon alongside some of its children, the Group itself
+      // should not be selected — the user wants the individual children,
+      // not the container.
+      for (int i = _selectedElements.size() - 1; i >= 0; --i) {
+            Element3d* el   = _selectedElements[i];
+            bool isAncestor = false;
+            for (Element3d* other : _selectedElements) {
+                  if (other == el)
+                        continue;
+                  // Walk up other's parent chain; if we encounter el,
+                  // then el is an ancestor of other and should be removed.
+                  Element* p = other->parent();
+                  while (p) {
+                        if (p == el) {
+                              isAncestor = true;
+                              break;
+                              }
+                        p = p->parent();
+                        }
+                  if (isAncestor)
+                        break;
+                  }
+            if (isAncestor)
+                  _selectedElements.removeAt(i);
+            }
+
+      // Emit curColorChanged for all elements that changed selection state.
+      for (auto* e : old)
+            if (!_selectedElements.contains(e))
+                  emit e->curColorChanged();
+      for (auto* e : _selectedElements)
+            if (!old.contains(e))
+                  emit e->curColorChanged();
+
+      if (!_selectedElements.isEmpty())
+            setCurrentElement(_selectedElements.first());
+      else
+            setCurrentElement(nullptr);
+
+      emit selectedElementsChanged();
+      }
+
+//---------------------------------------------------------
+//   clearSelection
+//    Clear the multi-selection list and reset currentElement.
+//    This is called from QML (e.g. on Escape) to deselect
+//    everything — both the lasso multi-selection and the
+//    current (primary) element.
+//---------------------------------------------------------
+
+void ZCam::clearSelection() {
+      QList<Element3d*> old = _selectedElements;
+      _selectedElements.clear();
+      for (auto* e : old)
+            emit e->curColorChanged();
+      if (!old.isEmpty())
+            emit selectedElementsChanged();
+      // Also clear the primary current element so Escape truly
+      // deselects everything when a multi-selection is active.
+      setCurrentElement(nullptr);
+      }
+
+//--------------------------------------------------------------------
+//   clearSelectionList
+//    Clear only the multi-selection list without changing currentElement.
+//    Used when switching to a new single selection (e.g. plain click in
+//    the TreeView) to avoid an intermediate null state that would cause
+//    the InspectorModel to clear its data while delegates are still
+//    being torn down, leading to null-access runtime errors.
+//--------------------------------------------------------------------
+
+void ZCam::clearSelectionList() {
+      QList<Element3d*> old = _selectedElements;
+      _selectedElements.clear();
+      for (auto* e : old)
+            emit e->curColorChanged();
+      if (!old.isEmpty())
+            emit selectedElementsChanged();
+      }
+
+//---------------------------------------------------------
+//   isSelected
+//    Returns true if the given element is in the lasso selection.
+//---------------------------------------------------------
+
+bool ZCam::isSelected(const Element3d* el) const {
+      for (auto* e : _selectedElements)
+            if (e == el)
+                  return true;
+      return false;
+      }
+
+//--------------------------------------------------------------------
+//   addToSelection
+//    Add an element to the multi-selection list.  The element
+//    becomes the current (primary) element shown in the inspector.
+//    If the element is already in the list, it just becomes current.
+//    Emits selectedElementsChanged and curColorChanged as needed.
+//--------------------------------------------------------------------
+
+void ZCam::addToSelection(Element3d* el) {
+      if (!el)
+            return;
+      bool wasInList = _selectedElements.contains(el);
+      if (!wasInList) {
+            _selectedElements.append(el);
+            emit el->curColorChanged();
+            emit selectedElementsChanged();
+            }
+      // Set as current element without clearing the multi-selection.
+      // We bypass setCurrentElement() because it clears _selectedElements
+      // when the new element is not already in the list (but we just
+      // added it, so it is).  Still, calling setCurrentElement() here
+      // is safe because el IS in _selectedElements now.
+      setCurrentElement(el);
+      }
+
+//--------------------------------------------------------------------
+//   removeFromSelection
+//    Remove an element from the multi-selection list.  If it was
+//    the current element, the next remaining element (or nullptr)
+//    becomes current.
+//--------------------------------------------------------------------
+
+void ZCam::removeFromSelection(Element3d* el) {
+      if (!el)
+            return;
+      if (!_selectedElements.contains(el))
+            return;
+      _selectedElements.removeOne(el);
+      emit el->curColorChanged();
+      emit selectedElementsChanged();
+      // If the removed element was the current element, pick a new one.
+      if (_currentElement == el) {
+            if (!_selectedElements.isEmpty())
+                  setCurrentElement(_selectedElements.last());
+            else
+                  setCurrentElement(nullptr);
+            }
+      }
+
+//--------------------------------------------------------------------
+//   toggleSelection
+//    Toggle the selection state of an element.  If the element is
+//    not yet selected, it is added and becomes current.  If it is
+//    already selected, it is removed; if it was current, the next
+//    remaining element (or nullptr) becomes current.
+//--------------------------------------------------------------------
+
+void ZCam::toggleSelection(Element3d* el) {
+      if (!el)
+            return;
+      if (_selectedElements.contains(el))
+            removeFromSelection(el);
+      else
+            addToSelection(el);
       }
 
 //---------------------------------------------------------
@@ -971,6 +1321,11 @@ void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, 
                   // selected in endElementDrag() if no drag occurred.
                   return;
                   }
+            }
+      // Ctrl-click on the 3D canvas toggles multi-selection.
+      if (element && (modifiers & Qt::ControlModifier)) {
+            toggleSelection(element);
+            return;
             }
       setCurrentElement(element);
       }
@@ -1611,29 +1966,588 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
             }
       }
 
+//--------------------------------------------------------------------
+//     groupSelectedElements
+//--------------------------------------------------------------------
+//   Group the currently selected elements (lasso multi-selection or
+//   single current element) into a new Group element.
+//
+//   The new Group is created as a child of the first selected element's
+//   parent Layer (or the Cad root if the parent is not a Layer).  All
+//   selected elements are re-parented into the new Group, preserving
+//   their world-space transforms so nothing visually jumps.
+//
+//   The operation is wrapped in a single undo macro that contains:
+//     1. AddGroupCommand  — creates and inserts the new Group
+//     2. MoveElementCommand (one per element) — moves each element into
+//        the new Group, with preceding PropertyChangeCommands for
+//        pos/rot/scale adjustments (handled by reparentElement logic
+//        inlined here).
+//
+//   After grouping, the new Group becomes the current element and the
+//   lasso selection is cleared.
+//---------------------------------------------------------
+
+void ZCam::groupSelectedElements() {
+      if (!_project || !_project->cad())
+            return;
+
+      // Build the list of elements to group.
+      QList<Element3d*> toGroup;
+      if (!_selectedElements.isEmpty())
+            toGroup = _selectedElements;
+      else if (_currentElement)
+            toGroup.append(_currentElement);
+
+      // Need at least two elements to form a group.
+      if (toGroup.size() < 2)
+            return;
+
+      // Filter: keep only draggable elements that have a parent.
+      // Skip elements that are already inside one of the other
+      // selected elements (descendant) — they will be moved together
+      // with their ancestor.
+      QList<Element3d*> filtered;
+      for (auto* el : toGroup) {
+            if (!el || !el->draggable() || !el->parent())
+                  continue;
+            bool isDescendant = false;
+            for (auto* other : toGroup) {
+                  if (other == el)
+                        continue;
+                  // Walk up el's parent chain; if we encounter other,
+                  // then el is a descendant of other.
+                  Element* p = el->parent();
+                  while (p) {
+                        if (p == other) {
+                              isDescendant = true;
+                              break;
+                              }
+                        p = p->parent();
+                        }
+                  if (isDescendant)
+                        break;
+                  }
+            if (!isDescendant)
+                  filtered.append(el);
+            }
+
+      if (filtered.size() < 2)
+            return;
+
+      // Determine the common parent: use the parent of the first
+      // filtered element.  All filtered elements should share the
+      // same parent (they come from a lasso selection at the same
+      // tree level), but if they don't we use the first element's
+      // parent as the Group's parent.
+      Element* groupParent = filtered.first()->parent();
+      if (!groupParent)
+            return;
+
+      // Find the Layer ancestor for the new Group.  If groupParent
+      // is itself a Group/Layer, add the new Group as its child.
+      // Otherwise add it to the Cad root.
+      Group* targetLayer = nullptr;
+      if (auto* gp = qobject_cast<Group*>(groupParent))
+            targetLayer = gp;
+      else {
+            // Walk up to find the nearest Group ancestor.
+            for (Element* e = groupParent; e; e = e->parent()) {
+                  if (auto* g = qobject_cast<Group*>(e)) {
+                        targetLayer = g;
+                        break;
+                        }
+                  if (isType<Cad>(e))
+                        break;
+                  }
+            }
+      if (!targetLayer)
+            targetLayer = findFirstVisibleLayer(_project->cad());
+      if (!targetLayer) {
+            Debug("groupSelectedElements: no target layer");
+            return;
+            }
+
+      // Create the new Group element.
+      auto* newGroup = new Group(this, nullptr);
+      newGroup->setName("group");
+
+      // Compute the world-space bounding box of all filtered elements
+      // to position the new Group at the center of the bounding box.
+      // This keeps the Group's local origin near the visual center of
+      // its children, making subsequent transforms intuitive.
+      QRectF bbox = filtered.first()->worldBoundingBox();
+      for (int i = 1; i < filtered.size(); ++i) {
+            QRectF wb = filtered[i]->worldBoundingBox();
+            bbox      = bbox.united(wb);
+            }
+      QVector3D groupPos;
+      if (!bbox.isNull() && !bbox.isEmpty()) {
+            // The Group is placed in the target Layer's coordinate space.
+            // Convert the world-space center back to the target Layer's
+            // local space.
+            QMatrix4x4 layerGlobal = targetLayer->globalMatrix();
+            bool ok                = false;
+            QMatrix4x4 layerInv    = layerGlobal.inverted(&ok);
+            if (ok) {
+                  QVector3D worldCenter(bbox.center().x(), bbox.center().y(), 0.0);
+                  QVector3D localCenter = layerInv.map(worldCenter);
+                  groupPos              = localCenter;
+                  }
+            }
+      newGroup->set_pos(groupPos);
+
+      // Begin the undo macro.
+      _project->undo()->beginMacro();
+
+      // Insert the new Group into the target Layer.
+            {
+            int row = targetLayer->children().size();
+            if (treeModel())
+                  treeModel()->beginInsertChild(targetLayer, row);
+            targetLayer->addChild(newGroup);
+            if (treeModel())
+                  treeModel()->endInsertChild();
+            emit add3dElement(newGroup);
+            newGroup->update();
+            }
+
+      // Re-parent each filtered element into the new Group.
+      // We inline the reparent logic (coordinate transform) here
+      // and use MoveElementCommand for the actual tree move.
+      for (auto* el : filtered) {
+            Element* oldParent = el->parent();
+            if (!oldParent)
+                  continue;
+
+            // Compute the element's current world (global) matrix.
+            QMatrix4x4 oldGlobal = el->globalMatrix();
+
+            // Compute the new parent's (newGroup) global matrix.
+            QMatrix4x4 newParentGlobal = newGroup->globalMatrix();
+            bool ok                    = false;
+            QMatrix4x4 newParentInv    = newParentGlobal.inverted(&ok);
+            if (!ok)
+                  continue;
+
+            QMatrix4x4 newLocal = newParentInv * oldGlobal;
+
+            // Decompose into pos/rot/scale.
+            QVector3D newPos(newLocal(0, 3), newLocal(1, 3), newLocal(2, 3));
+            float sx = QVector3D(newLocal(0, 0), newLocal(1, 0), newLocal(2, 0)).length();
+            float sy = QVector3D(newLocal(0, 1), newLocal(1, 1), newLocal(2, 1)).length();
+            float sz = QVector3D(newLocal(0, 2), newLocal(1, 2), newLocal(2, 2)).length();
+            QVector3D newScale(sx, sy, sz);
+
+            QMatrix3x3 rotMat;
+            if (sx > 1e-9) {
+                  rotMat(0, 0) = newLocal(0, 0) / sx;
+                  rotMat(1, 0) = newLocal(1, 0) / sx;
+                  rotMat(2, 0) = newLocal(2, 0) / sx;
+                  }
+            if (sy > 1e-9) {
+                  rotMat(0, 1) = newLocal(0, 1) / sy;
+                  rotMat(1, 1) = newLocal(1, 1) / sy;
+                  rotMat(2, 1) = newLocal(2, 1) / sy;
+                  }
+            if (sz > 1e-9) {
+                  rotMat(0, 2) = newLocal(0, 2) / sz;
+                  rotMat(1, 2) = newLocal(1, 2) / sz;
+                  rotMat(2, 2) = newLocal(2, 2) / sz;
+                  }
+            QQuaternion quat = QQuaternion::fromRotationMatrix(rotMat);
+            QVector3D newRot = quat.toEulerAngles();
+
+            // Record original transforms for undo.
+            QVector3D origPos   = el->pos();
+            QVector3D origRot   = el->rot();
+            QVector3D origScale = el->scale();
+
+            el->beginBatchUpdate();
+            el->set_pos(newPos);
+            el->set_rot(newRot);
+            el->set_scale(newScale);
+            el->endBatchUpdate();
+
+            // Push undo commands for transform changes.
+            _project->undo()->push(new PropertyChangeCommand(this, el, "pos", QVariant::fromValue(origPos),
+                                                             QVariant::fromValue(newPos)));
+            _project->undo()->push(new PropertyChangeCommand(this, el, "rot", QVariant::fromValue(origRot),
+                                                             QVariant::fromValue(newRot)));
+            _project->undo()->push(new PropertyChangeCommand(
+                this, el, "scale", QVariant::fromValue(origScale), QVariant::fromValue(newScale)));
+
+            // Move the element in the tree.
+            int oldRow = 0;
+            for (const auto c : oldParent->children()) {
+                  if (c == el)
+                        break;
+                  ++oldRow;
+                  }
+            auto moveCmd = new MoveElementCommand(this, el, oldParent, oldRow, newGroup, -1);
+            _project->undo()->push(moveCmd);
+            }
+
+      _project->undo()->endMacro();
+
+      // Update the new Group and old parents.
+      newGroup->update();
+      if (auto* tp = qobject_cast<Element3d*>(targetLayer))
+            tp->update();
+
+      // Select the new Group and clear the lasso selection.
+      _selectedElements.clear();
+      emit selectedElementsChanged();
+      setCurrentElement(newGroup);
+
+      setCamDirty(true);
+      }
+
+//--------------------------------------------------------------------
+//     combineSelectedPolygons
+//--------------------------------------------------------------------
+//   Combine all selected Polygon elements that share the same parent
+//   (same tree level) into a single new Polygon.
+//
+//   For each selected Polygon, its path data (PainterPath) is converted
+//   to a PathList, each path is transformed from the polygon's local
+//   coordinate space to the common parent's local coordinate space
+//   using the polygon's globalMatrix and the parent's inverse global
+//   matrix, and all transformed paths are unioned via Clipper2.
+//
+//   The union result is converted back to a PainterPath (as a series
+//   of MoveTo / LineTo elements) and assigned to a new Polygon that
+//   is inserted as a child of the common parent.  All original selected
+//   polygons are then deleted.
+//
+//   The operation is wrapped in a single undo macro containing:
+//     1. AddPolygonCommand — creates and inserts the new combined Polygon
+//     2. RemoveElementCommand (one per original polygon) — deletes each
+//
+//   After combining, the new Polygon becomes the current element and
+//   the lasso selection is cleared.
+//---------------------------------------------------------
+
+void ZCam::combineSelectedPolygons() {
+      if (!_project || !_project->cad())
+            return;
+
+      // Build the list of selected elements.
+      QList<Element3d*> toCombine;
+      if (!_selectedElements.isEmpty())
+            toCombine = _selectedElements;
+      else if (_currentElement)
+            toCombine.append(_currentElement);
+
+      // Filter: keep only Polygon elements that have a parent.
+      QList<Polygon*> polygons;
+      for (auto* el : toCombine) {
+            auto* poly = qobject_cast<Polygon*>(el);
+            if (poly && poly->parent())
+                  polygons.append(poly);
+            }
+
+      // Need at least two polygons to combine.
+      if (polygons.size() < 2)
+            return;
+
+      // Verify all polygons share the same parent (same tree level).
+      Element* commonParent = polygons.first()->parent();
+      for (int i = 1; i < polygons.size(); ++i) {
+            if (polygons[i]->parent() != commonParent) {
+                  Debug("combineSelectedPolygons: selected polygons are not on the same tree level");
+                  return;
+                  }
+            }
+
+      auto* parent3d = qobject_cast<Element3d*>(commonParent);
+      if (!parent3d)
+            return;
+
+      // Collect all paths in the common parent's local coordinate space.
+      // For each polygon, transform its pathList from its local space
+      // to the parent's local space via:
+      //   parentLocal = parentGlobalInv * polyGlobal * polyLocal
+      // We use the polygon's globalMatrix() to map local points to
+      // world (root) space, then the parent's inverse globalMatrix to
+      // map back to parent-local space.
+      QMatrix4x4 parentGlobal = parent3d->globalMatrix();
+      bool ok                  = false;
+      QMatrix4x4 parentGlobalInv = parentGlobal.inverted(&ok);
+      if (!ok)
+            return;
+
+      Clipper2Lib::PathsD allPaths;
+      for (auto* poly : polygons) {
+            // Ensure the polygon's pathList is up to date.
+            // toPathList() converts the PainterPath (with bezier
+            // flattening) to a list of 2D point paths.
+            PathList pl = poly->painterPathData().toPathList();
+            QMatrix4x4 polyGlobal = poly->globalMatrix();
+            for (const auto& path : pl) {
+                  Clipper2Lib::PathD clipperPath;
+                  for (const auto& pt : path) {
+                        QVector3D worldPt = polyGlobal.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
+                        QVector3D parentPt = parentGlobalInv.map(worldPt);
+                        clipperPath.push_back({parentPt.x(), parentPt.y()});
+                        }
+                  if (clipperPath.size() >= 3)
+                        allPaths.push_back(clipperPath);
+                  }
+            }
+
+      if (allPaths.empty())
+            return;
+
+      // Determine nesting depth for each path.
+      // A path at odd nesting depth (inside one other path) must be
+      // reversed so that it becomes a hole in the NonZero union.
+      // Without this, two same-orientation paths where one is inside
+      // the other would simply merge into the outer contour — the
+      // inner path would be absorbed and no hole would appear.
+      for (int i = 0; i < static_cast<int>(allPaths.size()); ++i) {
+            int depth = 0;
+            // Use the first point of path i as a representative point.
+            Clipper2Lib::PointD testPt = allPaths[i][0];
+            for (int j = 0; j < static_cast<int>(allPaths.size()); ++j) {
+                  if (i == j)
+                        continue;
+                  if (Clipper2Lib::PointInPolygon(testPt, allPaths[j])
+                      == Clipper2Lib::PointInPolygonResult::IsInside)
+                        ++depth;
+                  }
+            if (depth % 2 == 1)
+                  std::reverse(allPaths[i].begin(), allPaths[i].end());
+            }
+
+      // Union all paths via Clipper2.
+      // NonZero fill rule with correct orientations (outer contours CCW,
+      // holes CW) produces a result where holes are preserved as separate
+      // paths with opposite orientation.
+      Clipper2Lib::ClipperD clipper(4);
+      clipper.AddSubject(allPaths);
+      Clipper2Lib::PathsD unioned;
+      clipper.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::NonZero, unioned);
+
+      if (unioned.empty())
+            return;
+
+      // Build a PainterPath from the union result.
+      // Each Clipper2 path becomes a subpath: MoveTo to the first point,
+      // then LineTo for each subsequent point.  The subpath is closed
+      // by adding a final LineTo back to the first point (unless the
+      // path is already closed).
+      //
+      // We do NOT use PainterPath::closeSubpath() because that method
+      // always closes to front() of the entire PainterPath, which is
+      // wrong when multiple subpaths exist.
+      PainterPath combinedPath;
+      for (const auto& path : unioned) {
+            if (path.empty())
+                  continue;
+            Vec2d firstPt(path[0].x, path[0].y);
+            combinedPath.moveTo(firstPt);
+            for (size_t i = 1; i < path.size(); ++i)
+                  combinedPath.lineTo(Vec2d(path[i].x, path[i].y));
+            // Close the subpath explicitly.
+            Vec2d lastPt(path.back().x, path.back().y);
+            if (std::abs(firstPt.x() - lastPt.x()) > 0.0001
+                || std::abs(firstPt.y() - lastPt.y()) > 0.0001)
+                  combinedPath.lineTo(firstPt);
+            }
+
+      // Find the target Layer for the new Polygon.
+      Group* targetLayer = nullptr;
+      if (auto* gp = qobject_cast<Group*>(commonParent))
+            targetLayer = gp;
+      else {
+            for (Element* e = commonParent; e; e = e->parent()) {
+                  if (auto* g = qobject_cast<Group*>(e)) {
+                        targetLayer = g;
+                        break;
+                        }
+                  if (isType<Cad>(e))
+                        break;
+                  }
+            }
+      if (!targetLayer)
+            targetLayer = findFirstVisibleLayer(_project->cad());
+      if (!targetLayer) {
+            Debug("combineSelectedPolygons: no target layer");
+            return;
+            }
+
+      // Create the new combined Polygon.
+      auto* newPoly = new Polygon(this, nullptr);
+      newPoly->setName("");
+      newPoly->set_pos(QVector3D(0.0, 0.0, 0.0));
+      // Copy visual properties from the first polygon.
+      newPoly->setColor(polygons.first()->color());
+      newPoly->set_lineWidth(polygons.first()->lineWidth());
+      newPoly->set_fill(polygons.first()->fill());
+      newPoly->set_endType(polygons.first()->endType());
+      newPoly->set_joinType(polygons.first()->joinType());
+      // Set the combined painter path.
+      newPoly->setPainterPath(combinedPath);
+      newPoly->update();
+
+      // Begin the undo macro.
+      _project->undo()->beginMacro();
+
+      // Insert the new Polygon into the target Layer.
+      {
+      int row = targetLayer->children().size();
+      if (treeModel())
+            treeModel()->beginInsertChild(targetLayer, row);
+      targetLayer->addChild(newPoly);
+      if (treeModel())
+            treeModel()->endInsertChild();
+      emit add3dElement(newPoly);
+      }
+
+      // Remove all original polygons.
+      for (auto* poly : polygons) {
+            Element* p = poly->parent();
+            if (!p)
+                  continue;
+            int row = 0;
+            for (const auto c : p->children()) {
+                  if (c == poly)
+                        break;
+                  ++row;
+                  }
+            auto cmd = new RemoveElementCommand(this, p, poly, row);
+            _project->undo()->push(cmd);
+            }
+
+      _project->undo()->endMacro();
+
+      // Update the parent's selection geometry.
+      parent3d->update();
+
+      // Select the new Polygon and clear the lasso selection.
+      _selectedElements.clear();
+      emit selectedElementsChanged();
+      setCurrentElement(newPoly);
+
+      setCamDirty(true);
+      }
+
 //---------------------------------------------------------
 //   deleteCurrentElement
-//    Delete the current element if it is deletable.
+//    Delete the current element and/or all lasso-selected
+//    elements.  When _selectedElements is non-empty, all
+//    selected elements are deleted in a single undo macro.
+//    Hierarchical de-duplication: if an element is a
+//    descendant of another selected element, the descendant
+//    is skipped (it will be removed together with its
+//    ancestor).  The current element is included in the
+//    deletion set even if it is not in _selectedElements
+//    (e.g. when the user clicked a single element without
+//    lasso).  Non-deletable elements are silently skipped.
 //    The operation is routed through the undo stack via
 //    Project::removeElement() so it can be undone/redone.
-//    The current element is cleared before deletion to avoid
-//    dangling pointer dereferences in QML bindings.
 //---------------------------------------------------------
 
 void ZCam::deleteCurrentElement() {
-      if (!_currentElement || !_project)
+      if (!_project)
             return;
-      // deletable() is defined on Element3d; _currentElement is already
-      // an Element3d* so no cast is needed.
-      if (!_currentElement->deletable())
+
+      // Build the set of elements to delete.
+      // Start with _selectedElements (lasso multi-selection).
+      // If _selectedElements is empty, fall back to just
+      // _currentElement (single selection mode).
+      QList<Element3d*> toDelete;
+      if (!_selectedElements.isEmpty())
+            toDelete = _selectedElements;
+      else if (_currentElement)
+            toDelete.append(_currentElement);
+
+      if (toDelete.isEmpty())
             return;
-      auto* el = qobject_cast<Element*>(_currentElement);
-      if (!el)
+
+      // Filter: keep only deletable elements.
+      // Also remove elements that are descendants of other
+      // elements in the deletion set — deleting the ancestor
+      // will already remove the descendant from the tree.
+      QList<Element3d*> filtered;
+      for (auto* el : toDelete) {
+            if (!el || !el->deletable())
+                  continue;
+            // Walk up the parent chain; if any ancestor is
+            // also in the deletion set, skip this element.
+            bool isDescendant = false;
+            for (Element* p = el->parent(); p; p = p->parent()) {
+                  auto* p3d = qobject_cast<Element3d*>(p);
+                  if (!p3d)
+                        continue;
+                  if (toDelete.contains(p3d)) {
+                        isDescendant = true;
+                        break;
+                        }
+                  }
+            if (!isDescendant)
+                  filtered.append(el);
+            }
+
+      if (filtered.isEmpty())
             return;
-      // Clear the current element BEFORE removing it so QML
-      // bindings don't dereference a dangling pointer.
+
+      // Clear selection BEFORE deleting so QML bindings don't
+      // dereference dangling pointers.
+      auto oldSelected = _selectedElements;
+      _selectedElements.clear();
+      for (auto* e : oldSelected)
+            emit e->curColorChanged();
+      if (!oldSelected.isEmpty())
+            emit selectedElementsChanged();
       setCurrentElement(nullptr);
-      _project->removeElement(el);
+      // Pre-compute the parent and row for each element BEFORE
+      // any deletion happens.  Since push() executes redo()
+      // immediately, deleting an element shifts the children list
+      // of its parent.  To avoid stale indices, we sort the
+      // deletion list by (parent, descending row) so that within
+      // the same parent we delete from highest to lowest index,
+      // preserving the validity of lower indices.
+      struct DelInfo {
+            Element3d* element;
+            Element* parent;
+            int row;
+            };
+      QList<DelInfo> delList;
+      for (auto* el : filtered) {
+            Element* parent = el->parent();
+            if (!parent)
+                  continue;
+            int row = 0;
+            for (const auto c : parent->children()) {
+                  if (c == el)
+                        break;
+                  ++row;
+                  }
+            delList.append({el, parent, row});
+            }
+      std::sort(delList.begin(), delList.end(), [](const DelInfo& a, const DelInfo& b) {
+            if (a.parent != b.parent)
+                  return a.parent < b.parent;
+            return a.row > b.row; // descending row within same parent
+            });
+
+      // Delete all filtered elements in a single undo macro.
+      // We create RemoveElementCommand objects directly instead of
+      // calling Project::removeElement() because removeElement()
+      // creates its own beginMacro/endMacro pair, and macro nesting
+      // is not supported by the undo stack.
+      _project->undo()->beginMacro();
+      for (const auto& info : delList) {
+            auto cmd = new RemoveElementCommand(this, info.parent, info.element, info.row);
+            _project->undo()->push(cmd);
+            }
+      _project->undo()->endMacro();
+      // Update CAD layer visibility since removing a Layer or
+      // LaserLayer may change which layers are referenced by the
+      // active fixture.
+      _project->updateCadLayerVisibility();
       }
 
 //=========================================================

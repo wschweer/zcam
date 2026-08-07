@@ -60,7 +60,13 @@ Window {
     onClosing: function (close) {
         if (ZCam.project && ZCam.project.dirty && !closeConfirmed) {
             close.accepted = false;
-            exitDialog.open();
+            checkUnsavedAndProceed(
+                qsTr("The current project has unsaved changes.\nDo you want to save before quitting?"),
+                function () { Qt.quit() },
+                function () { closeConfirmed = false })
+            // closeConfirmed must be set before proceeding so that the
+            // subsequent onClosing from Qt.quit() does not re-popup
+            closeConfirmed = true
             }
         }
 
@@ -110,6 +116,18 @@ Window {
         sequence: "Delete"
         onActivated: ZCam.deleteCurrentElement()
         }
+    Shortcut {
+        sequence: "Escape"
+        onActivated: {
+            // Escape clears any selection — both lasso multi-selection
+            // and single currentElement.  Text editing and polygon
+            // drawing are handled by their own key handlers in View3DPanel.
+            if (ZCam.selectedElements && ZCam.selectedElements.length > 0)
+                ZCam.clearSelection()
+            else if (ZCam.currentElement)
+                ZCam.currentElement = null
+            }
+        }
 
     // =========================================================================
     //  Actions
@@ -120,13 +138,9 @@ Window {
         text: qsTr("&New")
         icon.source: "qrc:/icons/dark/file-new.svg"
         shortcut: StandardKey.New
-        onTriggered: {
-            if (ZCam.project && ZCam.project.dirty) {
-                newGuard.open();
-                } else {
-                ZCam.newProject();
-                }
-            }
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a new project?"),
+            function () { ZCam.newProject() })
         }
 
     Action {
@@ -134,13 +148,9 @@ Window {
         text: qsTr("&Open…")
         icon.source: "qrc:/icons/dark/file-open.svg"
         shortcut: StandardKey.Open
-        onTriggered: {
-            if (ZCam.project && ZCam.project.dirty) {
-                openGuard.open();
-                } else {
-                openFileDialog.open();
-                }
-            }
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before opening another project?"),
+            function () { openFileDialog.open() })
         }
 
     Action {
@@ -169,6 +179,13 @@ Window {
         text: qsTr("&Import…")
         icon.source: "qrc:/icons/dark/file-import.svg"
         onTriggered: importFileDialog.open()
+        }
+
+    Action {
+        id: actionExportSvg
+        text: qsTr("&Export SVG…")
+        icon.source: "qrc:/icons/dark/file-export.svg"
+        onTriggered: exportSvgFileDialog.open()
         }
 
     Action {
@@ -205,25 +222,32 @@ Window {
     Action {
         id: actionMaterialTest
         text: qsTr("Material Test")
-        onTriggered: {
-            if (ZCam.project && ZCam.project.dirty) {
-                materialTestGuard.open();
-                } else {
-                ZCam.createMaterialTest();
-                }
-            }
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Material Test?"),
+            function () { ZCam.createMaterialTest() })
         }
 
     Action {
         id: actionGalvoTest
         text: qsTr("Galvo Test")
-        onTriggered: {
-            if (ZCam.project && ZCam.project.dirty) {
-                galvoTestGuard.open();
-                } else {
-                ZCam.createGalvoTest();
-                }
-            }
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"),
+            function () { ZCam.createGalvoTest() })
+        }
+
+    Action {
+        id: actionGalvoTest64
+        text: qsTr("Galvo Test 64")
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 64?"),
+            function () { ZCam.createGalvoTest64() })
+        }
+    Action {
+        id: actionCalibrationScan
+        text: qsTr("Interpret Calibration Scan")
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"),
+            function () { ZCam.calibrationScan() })
         }
 
     Action {
@@ -276,193 +300,83 @@ Window {
         onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
         }
 
-    // =========================================================================
-    //  Dialogs – unsaved-changes guard
-    // =========================================================================
+    FileDialog {
+        id: exportSvgFileDialog
+        title: qsTr("Export SVG")
+        nameFilters: [qsTr("SVG (*.svg)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "svg"
+        onAccepted: ZCam.exportSvg(selectedFile.toString().replace("file://", ""))
+        }
 
-    // "New" guard
+    // =========================================================================
+    //  Dialog – unsaved-changes guard (unified)
+    // =========================================================================
+    //   A single reusable guard dialog for all "unsaved changes" prompts.
+    //   Call checkUnsavedAndProceed(message, action [, onCancel]) from any
+    //   action handler.  If the project is dirty, the dialog asks the user
+    //   whether to Save, Discard or Cancel.  On Save/Discard the provided
+    //   *action* function is executed (after saving if Save was chosen).
+    //   If the project is not dirty, *action* is called immediately.
+
+    function checkUnsavedAndProceed(message, action, onCancel) {
+        if (ZCam.project && ZCam.project.dirty) {
+            unsavedChangesGuard.messageText = message
+            unsavedChangesGuard.proceedAction = action
+            unsavedChangesGuard.onCancelHandler = onCancel !== undefined ? onCancel : null
+            unsavedChangesGuard.open()
+            } else {
+            action()
+            }
+        }
+
     Dialog {
-        id: newGuard
+        id: unsavedChangesGuard
         title: qsTr("Unsaved Changes")
         modal: true
         anchors.centerIn: parent
         standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
+
+        property string messageText: ""
+        property var proceedAction: null
+        property var onCancelHandler: null
+
         Label {
-            text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a new project?")
+            text: unsavedChangesGuard.messageText
             }
         onAccepted: {   // Save
             if (ZCam.project.projectPath === "")
-                newSaveAsFileDialog.open();
+                guardSaveAsFileDialog.open()
             else {
-                ZCam.save();
-                ZCam.newProject();
+                ZCam.save()
+                if (unsavedChangesGuard.proceedAction)
+                    unsavedChangesGuard.proceedAction()
                 }
             }
         onDiscarded: Qt.callLater(function () {
-            ZCam.newProject();
-            })   // Discard
-        }
-
-    // Dedicated save-as dialog for the new-project flow
-    FileDialog {
-        id: newSaveAsFileDialog
-        title: qsTr("Save Project As")
-        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
-        fileMode: FileDialog.SaveFile
-        defaultSuffix: "zcam"
-        onAccepted: {
-            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
-            ZCam.newProject();
-            }
-        }
-
-    // "Open" guard
-    Dialog {
-        id: openGuard
-        title: qsTr("Unsaved Changes")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
-        Label {
-            text: qsTr("The current project has unsaved changes.\nDo you want to save before opening another project?")
-            }
-        onAccepted: {
-            if (ZCam.project.projectPath === "")
-                openSaveAsFileDialog.open();
-            else {
-                ZCam.save();
-                openFileDialog.open();
-                }
-            }
-        onDiscarded: Qt.callLater(function () {
-            openFileDialog.open();
+            if (unsavedChangesGuard.proceedAction)
+                unsavedChangesGuard.proceedAction()
             })
+        onRejected: {
+            if (unsavedChangesGuard.onCancelHandler)
+                unsavedChangesGuard.onCancelHandler()
+            }
         }
 
-    // Dedicated save-as dialog for the open-project flow
     FileDialog {
-        id: openSaveAsFileDialog
+        id: guardSaveAsFileDialog
         title: qsTr("Save Project As")
         nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
-            openFileDialog.open();
-            }
-        }
-
-    // "Exit" guard
-    Dialog {
-        id: exitDialog
-        title: qsTr("Unsaved Changes")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
-        Label {
-            text: qsTr("The current project has unsaved changes.\nDo you want to save before quitting?")
-            }
-        onAccepted: {
-            closeConfirmed = true;
-            if (ZCam.project.projectPath === "")
-                exitSaveAsFileDialog.open();
-            else {
-                ZCam.save();
-                Qt.quit();
-                }
-            }
-        onDiscarded: {
-            closeConfirmed = true;
-            Qt.callLater(Qt.quit);
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""))
+            if (unsavedChangesGuard.proceedAction)
+                unsavedChangesGuard.proceedAction()
             }
         onRejected: {
-            closeConfirmed = false;
-            }
-        }
-
-    // Dedicated save-as dialog for the exit flow so we can quit after saving
-    FileDialog {
-        id: exitSaveAsFileDialog
-        title: qsTr("Save Project As")
-        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
-        fileMode: FileDialog.SaveFile
-        defaultSuffix: "zcam"
-        onAccepted: {
-            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
-            Qt.quit();
-            }
-        onRejected: {
-            closeConfirmed = false;
-            }
-        }
-
-    // "Material Test" guard
-    Dialog {
-        id: materialTestGuard
-        title: qsTr("Unsaved Changes")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
-        Label {
-            text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a Material Test?")
-            }
-        onAccepted: {   // Save
-            if (ZCam.project.projectPath === "")
-                materialTestSaveAsFileDialog.open();
-            else {
-                ZCam.save();
-                ZCam.createMaterialTest();
-                }
-            }
-        onDiscarded: Qt.callLater(function () {
-            ZCam.createMaterialTest();
-            })
-        }
-
-    FileDialog {
-        id: materialTestSaveAsFileDialog
-        title: qsTr("Save Project As")
-        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
-        fileMode: FileDialog.SaveFile
-        defaultSuffix: "zcam"
-        onAccepted: {
-            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
-            ZCam.createMaterialTest();
-            }
-        }
-
-    // "Galvo Test" guard
-    Dialog {
-        id: galvoTestGuard
-        title: qsTr("Unsaved Changes")
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
-        Label {
-            text: qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?")
-            }
-        onAccepted: {   // Save
-            if (ZCam.project.projectPath === "")
-                galvoTestSaveAsFileDialog.open();
-            else {
-                ZCam.save();
-                ZCam.createGalvoTest();
-                }
-            }
-        onDiscarded: Qt.callLater(function () {
-            ZCam.createGalvoTest();
-            })
-        }
-
-    FileDialog {
-        id: galvoTestSaveAsFileDialog
-        title: qsTr("Save Project As")
-        nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
-        fileMode: FileDialog.SaveFile
-        defaultSuffix: "zcam"
-        onAccepted: {
-            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
-            ZCam.createGalvoTest();
+            if (unsavedChangesGuard.onCancelHandler)
+                unsavedChangesGuard.onCancelHandler()
             }
         }
 
@@ -538,6 +452,9 @@ Window {
                 MenuItem {
                     action: actionImport
                     }
+                MenuItem {
+                    action: actionExportSvg
+                    }
                 MenuSeparator {}
                 MenuItem {
                     action: actionQuit
@@ -566,6 +483,12 @@ Window {
                     }
                 MenuItem {
                     action: actionGalvoTest
+                    }
+                MenuItem {
+                    action: actionGalvoTest64
+                    }
+                MenuItem {
+                    action: actionCalibrationScan
                     }
                 }
 
@@ -902,6 +825,12 @@ Window {
         // Status bar: assets saved
         function onAssetsSaved() {
             statusBar.show(qsTr("Assets saved"), Material.color(Material.Green, Material.Shade400))
+            }
+
+        // Status bar: SVG exported
+        function onSvgExported(path) {
+            var name = path !== "" ? path.replace(/.*\//, "") : "svg"
+            statusBar.show(qsTr("%1 exported").arg(name), Material.color(Material.Green, Material.Shade400))
             }
         }
     }

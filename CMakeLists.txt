@@ -20,6 +20,7 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration Multimedia)
 find_package(Qt6Multimedia QUIET)
+find_package(OpenCV REQUIRED)
 get_target_property(QT_CORE_LIB Qt6::Core LOCATION)
 get_filename_component(QT_LIB_DIR "${QT_CORE_LIB}" DIRECTORY)
 set(CMAKE_BUILD_RPATH "${QT_LIB_DIR}")
@@ -131,13 +132,15 @@ qt_add_qml_module(zcam
         src/undo.cpp src/undo.h
         src/svg.cpp
         src/truncatedcubegeometry.cpp src/truncatedcubegeometry.h
-        src/dxfimport.cpp src/dxfimport.h
+        src/dxfimport.cpp src/dxfimport.h src/dxftess.h
 
         src/geometryworker.cpp src/geometryworker.h
         src/mediabrowser.cpp src/mediabrowser.h
         src/cameraelement.cpp src/cameraelement.h
         src/cameraoverlaygeometry.cpp src/cameraoverlaygeometry.h
         src/cameratexturedata.cpp src/cameratexturedata.h
+        src/cal.cpp src/cal.h
+        src/ogr.cpp src/ogr.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp
@@ -202,6 +205,7 @@ qt_add_resources(zcam icons FILES
       icons/dark/file-save.svg
       icons/dark/file-save-as.svg
       icons/dark/file-import.svg
+      icons/dark/file-export.svg
       icons/dark/edit-undo.svg
       icons/dark/edit-redo.svg
       icons/dark/config.svg
@@ -245,6 +249,18 @@ qt_add_resources(zcam data
     FILES ${DATA_FILES}
     )
 
+# ---------------------------------------------------------------------------
+# Grid line shader snippets (CustomMaterial screen-space expansion).
+# Qt resolves Shader/CustomMaterial urls relative to the owning QML
+# document, whose qrc import path is "ZCam/qml/" — so the snippets
+# must live under "qrc:/ZCam/shaders/".
+# ---------------------------------------------------------------------------
+qt_add_resources(zcam gridline_shaders
+    PREFIX "/ZCam"
+    BASE "."
+    FILES shaders/gridline.vert shaders/gridline.frag
+    )
+
 target_link_libraries(zcam PRIVATE
       Qt6::Core
       Qt6::Gui
@@ -254,6 +270,7 @@ target_link_libraries(zcam PRIVATE
       Qt6::Qml
       Qt6::QmlIntegration
       Qt6::Multimedia
+      ${OpenCV_LIBS}
       PkgConfig::UDEV
       PkgConfig::LIBUSB
       spnav

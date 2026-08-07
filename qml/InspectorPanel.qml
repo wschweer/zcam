@@ -41,6 +41,19 @@ Item {
             color: Material.accentColor
             }
 
+        // ── Multi-selection indicator ─────────────────────────────────────────
+        //   When more than one element is selected, show a small label
+        //   indicating the total count of selected elements.
+        Label {
+            visible: ZCam.selectedElements.length > 1
+            text: qsTr("%1 elements selected").arg(ZCam.selectedElements.length)
+            font.italic: true
+            font.pointSize: Math.max(7, Qt.application.font.pointSize - 2)
+            Layout.alignment: Qt.AlignHCenter
+            color: Material.foreground
+            opacity: 0.7
+            }
+
         // ── Thin accent divider ───────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true

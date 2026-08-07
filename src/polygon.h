@@ -27,150 +27,150 @@ class Polygon : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-    "class": "Line",
-    "rows": [
-        {
-            "label": "State",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "show",
-                    "sublabel": "Show"
-                },
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "burn",
-                    "sublabel": "Burn"
-                }
-            ]
-        },
-        {
-            "label": "Recipe",
-            "cells": [
-                {
-                    "name": "laserLayer",
-                    "type": "laserLayer",
-                    "default": ""
-                }
-            ]
-        },
-        {
-            "label": "Color",
-            "cells": [
-                {
-                    "name": "color",
-                    "type": "color",
-                    "default": "green"
-                }
-            ]
-        },
-        {
-            "label": "Pos.",
-            "cells": [
-                {
-                    "name": "pos",
-                    "type": "vector3d",
-                    "unit": "mm",
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Rot.",
-            "cells": [
-                {
-                    "name": "rot",
-                    "type": "vector3d",
-                    "unit": "°",
-                    "min": 0.0,
-                    "max": 360,
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Scale",
-            "cells": [
-                {
-                    "name": "scale",
-                    "type": "scale",
-                    "min": 0.001,
-                    "max": 1000.0,
-                    "precision": 3,
-                    "step": 0.1,
-                    "bigStep": 1.0,
-                    "default": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Lock",
-            "cells": [
-                {
-                    "name": "lockScale",
-                    "type": "lockScale",
-                    "default": 2
-                }
-            ]
-        },
-        {
-            "cells": [
-                {
-                    "name": "line",
-                    "type": "line"
-                }
-            ]
-        },
-        {
-            "label": "Line",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "fill",
-                    "sublabel": "fill"
-                },
-                {
-                    "type": "float",
-                    "default": 0.5,
-                    "name": "lineWidth",
-                    "sublabel": "width"
-                }
-            ]
-        },
-        {
-            "label": " ",
-            "cells": [
-                {
-                    "type": "lineJoin",
-                    "default": 0,
-                    "name": "joinType",
-                    "sublabel": "Join"
-                },
-                {
-                    "type": "lineEnd",
-                    "default": 0,
-                    "name": "endType",
-                    "sublabel": "End"
-                }
-            ]
-        }
-    ]
-})json"};
+                  "class": "Line",
+                  "rows": [
+                    {
+                      "label": "State",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "show",
+                          "sublabel": "Show"
+                        },
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "burn",
+                          "sublabel": "Burn"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Recipe",
+                      "cells": [
+                        {
+                          "name": "laserLayer",
+                          "type": "laserLayer",
+                          "default": ""
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Color",
+                      "cells": [
+                        {
+                          "name": "color",
+                          "type": "color",
+                          "default": "green"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "min": 0.001,
+                          "max": 1000.0,
+                          "precision": 3,
+                          "step": 0.1,
+                          "bigStep": 1.0,
+                          "default": [
+                            1.0,
+                            1.0,
+                            1.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Lock",
+                      "cells": [
+                        {
+                          "name": "lockScale",
+                          "type": "lockScale",
+                          "default": 2
+                        }
+                      ]
+                    },
+                    {
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Line",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "fill",
+                          "sublabel": "fill"
+                        },
+                        {
+                          "type": "float",
+                          "default": 0.5,
+                          "name": "lineWidth",
+                          "sublabel": "width"
+                        }
+                      ]
+                    },
+                    {
+                      "label": " ",
+                      "cells": [
+                        {
+                          "type": "lineJoin",
+                          "default": 0,
+                          "name": "joinType",
+                          "sublabel": "Join"
+                        },
+                        {
+                          "type": "lineEnd",
+                          "default": 0,
+                          "name": "endType",
+                          "sublabel": "End"
+                        }
+                      ]
+                    }
+                  ]
+                      })json"};
 
       int currentVertex = -1;
       QRectF _bbox;
@@ -199,6 +199,9 @@ class Polygon : public Element3d
       Q_INVOKABLE void setVertexPos(int idx, const QVector3D& pos) override;
       void lineTo(const Vec2d& p) { painterPath.lineTo(p); }
       void moveTo(const Vec2d& p) { painterPath.moveTo(p); }
+      /// Read-only access to the editable source path (used by the
+      /// SVG export to serialize lines and cubic beziers exactly).
+      const PainterPath& painterPathData() const { return painterPath; }
       bool canClose(const Vec2d& p) const;
       const Vec2d& startPos() const { return painterPath[0].pos; }
       int vertices() const { return painterPath.size(); }

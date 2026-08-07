@@ -33,7 +33,34 @@ Or use the Ninja build system (build.ninja is pre-generated).
 
 ## Coding Conventions
 - C++23, Qt6, QML
+- use camel case variable names
+- abstract object names begin with a capital letter
 - `PROP(T, name)` / `PROPV(T, name, value)` macros for Q_PROPERTY with NOTIFY
 - `nlohmann::json` for serialization
 - `std::format`-based logging (logger.h)
-- No heavy OOP hierarchies; prefer value semantics and composition
+
+## New c++ classes and functions/methos:
+Start every c++ class definition and every function/method with this header:
+
+      #--------------------------------------------------------------------
+      #     <function/class name>
+      #--------------------------------------------------------------------
+
+A c++ class is structured this way:   private - protected - public.
+
+## New c++ files
+Start every c++ file with this file header:
+
+      //=============================================================================
+      //  ZCam - manufactoring tool for G-code machines and Fiber Laser
+      //
+      //  Copyright (C) 2025-2026 Werner Schweer
+      //
+      //  This program is free software; you can redistribute it and/or modify
+      //  it under the terms of the GNU General Public License version 2
+      //  as published by the Free Software Foundation and appearing in
+      //  the file LICENCE.GPL
+      //=============================================================================
+
+## C++ Header files
+Protect header files with ```#pragma once```

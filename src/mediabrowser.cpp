@@ -11,6 +11,7 @@
 
 #include "mediabrowser.h"
 #include "logger.h"
+#include "dxftess.h"
 #include "libdxfrw.h"
 #include "drw_interface.h"
 #include "drw_base.h"
@@ -623,9 +624,12 @@ QModelIndex ArtworkTreeModel::findIndexForPath(const QString& dirPath) const {
 //    and convert them into an SVG string for preview display.
 //=========================================================
 
-class DxfToSvgConverter final : public DRW_Interface {
+class DxfToSvgConverter final : public DRW_Interface
+      {
       double m_unitScale {1.0};
-      double m_dxfScale {72.0};  // dpmm for $INSUNITS=0 (pixel units)
+      double m_dxfScale {72.0}; // dpmm for $INSUNITS=0 (pixel units)
+      int m_circleResolution {360};
+      int m_curveResolution {100};
       double m_minX {std::numeric_limits<double>::max()};
       double m_minY {std::numeric_limits<double>::max()};
       double m_maxX {std::numeric_limits<double>::lowest()};
@@ -633,7 +637,7 @@ class DxfToSvgConverter final : public DRW_Interface {
       std::ostringstream m_svgBody;
       // Block support
       struct BlockEntity {
-            enum class Type { Line, Arc, Circle, LWPolyline, Ellipse, Point };
+            enum class Type { Line, Arc, Circle, LWPolyline, Ellipse, Point, Spline };
             Type type;
             DRW_Coord p1, p2;
             double radius {0.0};
@@ -645,15 +649,31 @@ class DxfToSvgConverter final : public DRW_Interface {
             int isccw {1};
             std::vector<DRW_Vertex2D> vertices;
             int flags {0};
+            // Spline
+            int degree {0};
+            std::vector<DRW_Coord> controlPoints;
+            std::vector<double> knots;
             };
       std::unordered_map<std::string, std::vector<BlockEntity>> m_blocks;
       std::string m_currentBlockName;
       bool m_inBlock {false};
-
       double mm(double v) const { return v * m_unitScale; }
-      double mmX(double v) { double vmm = mm(v); if (vmm < m_minX) m_minX = vmm; if (vmm > m_maxX) m_maxX = vmm; return vmm; }
-      double mmY(double v) { double vmm = mm(v); if (vmm < m_minY) m_minY = vmm; if (vmm > m_maxY) m_maxY = vmm; return vmm; }
-
+      double mmX(double v) {
+            double vmm = mm(v);
+            if (vmm < m_minX)
+                  m_minX = vmm;
+            if (vmm > m_maxX)
+                  m_maxX = vmm;
+            return vmm;
+            }
+      double mmY(double v) {
+            double vmm = mm(v);
+            if (vmm < m_minY)
+                  m_minY = vmm;
+            if (vmm > m_maxY)
+                  m_maxY = vmm;
+            return vmm;
+            }
       static double unitToMm(int unit) {
             switch (unit) {
                   case 0: return 1.0;
@@ -670,54 +690,59 @@ class DxfToSvgConverter final : public DRW_Interface {
                   default: return 1.0;
                   }
             }
-
       void emitLine(double x1, double y1, double x2, double y2) {
-            m_svgBody << "<path d=\"M" << std::fixed << std::setprecision(3)
-                  << x1 << "," << y1 << " L" << x2 << "," << y2
-                  << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
+            m_svgBody << "<path d=\"M" << std::fixed << std::setprecision(3) << x1 << "," << y1 << " L" << x2
+                      << "," << y2 << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
             }
       void emitCircle(double cx, double cy, double r) {
-            m_svgBody << "<circle cx=\"" << std::fixed << std::setprecision(3)
-                  << cx << "\" cy=\"" << cy << "\" r=\"" << r
-                  << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
+            m_svgBody << "<circle cx=\"" << std::fixed << std::setprecision(3) << cx << "\" cy=\"" << cy
+                      << "\" r=\"" << r << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
             }
       void emitArc(double cx, double cy, double r, double sa, double ea, bool ccw) {
-            if (!ccw) std::swap(sa, ea);
-            if (sa > ea) ea += 2.0 * std::numbers::pi;
-            double sx = cx + std::cos(sa) * r;
-            double sy = cy + std::sin(sa) * r;
-            double ex = cx + std::cos(ea) * r;
-            double ey = cy + std::sin(ea) * r;
+            if (!ccw)
+                  std::swap(sa, ea);
+            if (sa > ea)
+                  ea += 2.0 * std::numbers::pi;
             double sweep = ea - sa;
-            bool largeArc = sweep > std::numbers::pi;
-            int sweepFlag = ccw ? 1 : 0;
-            m_svgBody << "<path d=\"M" << std::fixed << std::setprecision(3)
-                  << sx << "," << sy << " A" << r << "," << r
-                  << " 0 " << (largeArc ? 1 : 0) << " " << sweepFlag
-                  << " " << ex << "," << ey
-                  << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
+            int segs     = DxfTess::circleSegments(sweep, m_circleResolution);
+            double step  = sweep / segs;
+            bool firstPt = true;
+            m_svgBody << "<path d=\"";
+            for (int i = 0; i <= segs; ++i) {
+                  double a = sa + step * i;
+                  double x = cx + std::cos(a) * r;
+                  double y = cy + std::sin(a) * r;
+                  m_svgBody << (firstPt ? "M" : " L") << std::fixed << std::setprecision(3) << x << "," << y;
+                  firstPt = false;
+                  }
+            m_svgBody << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
             }
-      void emitPolyline(const std::vector<std::pair<double,double>>& pts, bool closed) {
-            if (pts.empty()) return;
-            m_svgBody << "<path d=\"" << std::fixed << std::setprecision(3)
-                  << "M" << pts[0].first << "," << pts[0].second;
+      void emitPolyline(const std::vector<std::pair<double, double>>& pts, bool closed) {
+            if (pts.empty())
+                  return;
+            m_svgBody << "<path d=\"" << std::fixed << std::setprecision(3) << "M" << pts[0].first << ","
+                      << pts[0].second;
             for (size_t i = 1; i < pts.size(); ++i)
                   m_svgBody << " L" << pts[i].first << "," << pts[i].second;
             if (closed)
                   m_svgBody << " Z";
             m_svgBody << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
             }
-      void emitEllipseArc(double cx, double cy, double majorR, double minorR,
-                          double rotation, double sa, double ea, bool ccw) {
-            if (!ccw) std::swap(sa, ea);
-            if (sa > ea) ea += 2.0 * std::numbers::pi;
-            constexpr int segs = 64;
-            double step = (ea - sa) / segs;
-            std::vector<std::pair<double,double>> pts;
+      void emitEllipseArc(double cx, double cy, double majorR, double minorR, double rotation, double sa,
+                          double ea, bool ccw) {
+            if (!ccw)
+                  std::swap(sa, ea);
+            if (sa > ea)
+                  ea += 2.0 * std::numbers::pi;
+            double sweep = ea - sa;
+            int segs     = DxfTess::ellipseSegments(sweep, m_circleResolution);
+            double step  = sweep / segs;
+            std::vector<std::pair<double, double>> pts;
+            pts.reserve(segs + 1);
             double cosR = std::cos(rotation);
             double sinR = std::sin(rotation);
             for (int i = 0; i <= segs; ++i) {
-                  double t = sa + step * i;
+                  double t  = sa + step * i;
                   double ex = majorR * std::cos(t);
                   double ey = minorR * std::sin(t);
                   double rx = ex * cosR - ey * sinR;
@@ -726,24 +751,32 @@ class DxfToSvgConverter final : public DRW_Interface {
                   }
             emitPolyline(pts, false);
             }
-
       void expandBBox(double x, double y) {
-            if (x < m_minX) m_minX = x;
-            if (x > m_maxX) m_maxX = x;
-            if (y < m_minY) m_minY = y;
-            if (y > m_maxY) m_maxY = y;
+            if (x < m_minX)
+                  m_minX = x;
+            if (x > m_maxX)
+                  m_maxX = x;
+            if (y < m_minY)
+                  m_minY = y;
+            if (y > m_maxY)
+                  m_maxY = y;
             }
 
-public:
-      explicit DxfToSvgConverter(double dxfScale = 72.0) : m_dxfScale(dxfScale > 0.0 ? dxfScale : 72.0) {}
-
+    public:
+      explicit DxfToSvgConverter(double dxfScale = 72.0, int circleResolution = 360,
+                                 int curveResolution = 100)
+          : m_dxfScale(dxfScale > 0.0 ? dxfScale : 72.0),
+            m_circleResolution(std::clamp(circleResolution, 8, 2048)),
+            m_curveResolution(std::clamp(curveResolution, 4, 1024)) {}
       QString svgString() const {
             if (m_minX > m_maxX || m_minY > m_maxY)
                   return {};
             double w = m_maxX - m_minX;
             double h = m_maxY - m_minY;
-            if (w < 0.001) w = 0.001;
-            if (h < 0.001) h = 0.001;
+            if (w < 0.001)
+                  w = 0.001;
+            if (h < 0.001)
+                  h = 0.001;
 
             // Target size in pixels for the generated SVG. The preview tile will
             // scale the SVG with preserveAspectRatio="xMidYMid meet", so the
@@ -755,13 +788,12 @@ public:
             constexpr double padding = 6.0;
 
             const double scale = targetSize / std::max(w, h);
-            const double viewW  = w * scale + 2.0 * padding;
-            const double viewH  = h * scale + 2.0 * padding;
+            const double viewW = w * scale + 2.0 * padding;
+            const double viewH = h * scale + 2.0 * padding;
 
             std::ostringstream oss;
             oss << std::fixed << std::setprecision(3);
-            oss << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 "
-                << viewW << " " << viewH
+            oss << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " << viewW << " " << viewH
                 << "\" width=\"" << viewW << "\" height=\"" << viewH
                 << "\" preserveAspectRatio=\"xMidYMid meet\">\n";
             // Flip Y (SVG origin top-left, DXF origin bottom-left) and scale
@@ -772,9 +804,8 @@ public:
             // 1) translate(-minX, -minY)   move lower-left corner to (0,0)
             // 2) scale(scale, -scale)    scale to target size AND flip Y
             // 3) translate(padding, viewH-padding)  place inside padded viewBox
-            oss << "<g transform=\"translate(" << padding << " " << viewH - padding
-                << ") scale(" << scale << " " << -scale
-                << ") translate(" << -m_minX << " " << -m_minY << ")\">\n";
+            oss << "<g transform=\"translate(" << padding << " " << viewH - padding << ") scale(" << scale
+                << " " << -scale << ") translate(" << -m_minX << " " << -m_minY << ")\">\n";
             // Stroke width in the drawing's local (pre-transform) coordinate
             // system.  Because the <g> transform applies scale(scale, -scale),
             // a stroke-width of S becomes S*scale device pixels.  To get a
@@ -782,13 +813,13 @@ public:
             // desired device-space width by the scale factor.  The clamp
             // ensures a minimum of 0.01 (for very large drawings) and a
             // maximum of 0.5 (for tiny drawings where scale > 1).
-            const double sw = std::clamp(targetSize * 0.012 / scale, 0.01, 0.5);
+            const double sw  = std::clamp(targetSize * 0.012 / scale, 0.01, 0.5);
             std::string body = m_svgBody.str();
             std::ostringstream swss;
             swss << std::fixed << std::setprecision(4) << sw;
             std::string old_sw = "stroke-width=\"0.3\"";
             std::string new_sw = "stroke-width=\"" + swss.str() + "\"";
-            size_t pos = 0;
+            size_t pos         = 0;
             while ((pos = body.find(old_sw, pos)) != std::string::npos) {
                   body.replace(pos, old_sw.length(), new_sw);
                   pos += new_sw.length();
@@ -831,12 +862,17 @@ public:
             m_inBlock = true;
             }
       void setBlock(int) override {}
-      void endBlock() override { m_inBlock = false; m_currentBlockName.clear(); }
-
+      void endBlock() override {
+            m_inBlock = false;
+            m_currentBlockName.clear();
+            }
       void addPoint(const DRW_Point& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Point; e.p1 = data.basePoint;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::Point;
+                  e.p1   = data.basePoint;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             double x = mmX(data.basePoint.x);
             double y = mmY(data.basePoint.y);
@@ -846,8 +882,12 @@ public:
             }
       void addLine(const DRW_Line& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Line; e.p1 = data.basePoint; e.p2 = data.secPoint;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::Line;
+                  e.p1   = data.basePoint;
+                  e.p2   = data.secPoint;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             double x1 = mmX(data.basePoint.x);
             double y1 = mmY(data.basePoint.y);
@@ -857,15 +897,21 @@ public:
             }
       void addRay(const DRW_Ray&) override {}
       void addXline(const DRW_Xline&) override {}
-
       void addArc(const DRW_Arc& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Arc; e.p1 = data.basePoint;
-                  e.radius = data.radious; e.startAng = data.staangle; e.endAng = data.endangle; e.isccw = data.isccw;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type     = BlockEntity::Type::Arc;
+                  e.p1       = data.basePoint;
+                  e.radius   = data.radious;
+                  e.startAng = data.staangle;
+                  e.endAng   = data.endangle;
+                  e.isccw    = data.isccw;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             double r = mm(data.radious);
-            if (r <= 0.0) return;
+            if (r <= 0.0)
+                  return;
             double cx = mm(data.basePoint.x);
             double cy = mm(data.basePoint.y);
             // Expand bbox by actual arc extent, not full circle.
@@ -882,8 +928,10 @@ public:
             expandBBox(cx + r * std::cos(ea), cy + r * std::sin(ea));
             for (double a : {0.0, std::numbers::pi / 2, std::numbers::pi, 3.0 * std::numbers::pi / 2}) {
                   double na = a;
-                  while (na < sa) na += 2.0 * std::numbers::pi;
-                  while (na > sa + 2.0 * std::numbers::pi + 1e-10) na -= 2.0 * std::numbers::pi;
+                  while (na < sa)
+                        na += 2.0 * std::numbers::pi;
+                  while (na > sa + 2.0 * std::numbers::pi + 1e-10)
+                        na -= 2.0 * std::numbers::pi;
                   if (na >= sa - 1e-10 && na <= ea + 1e-10)
                         expandBBox(cx + r * std::cos(na), cy + r * std::sin(na));
                   }
@@ -891,11 +939,16 @@ public:
             }
       void addCircle(const DRW_Circle& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Circle; e.p1 = data.basePoint; e.radius = data.radious;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type   = BlockEntity::Type::Circle;
+                  e.p1     = data.basePoint;
+                  e.radius = data.radious;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             double r = mm(data.radious);
-            if (r <= 0.0) return;
+            if (r <= 0.0)
+                  return;
             double cx = mmX(data.basePoint.x);
             double cy = mmY(data.basePoint.y);
             expandBBox(cx - r, cy - r);
@@ -904,16 +957,23 @@ public:
             }
       void addEllipse(const DRW_Ellipse& data) override {
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::Ellipse; e.p1 = data.basePoint; e.p2 = data.secPoint;
-                  e.ratio = data.ratio; e.staparam = data.staparam; e.endparam = data.endparam; e.isccw = data.isccw;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  BlockEntity e;
+                  e.type     = BlockEntity::Type::Ellipse;
+                  e.p1       = data.basePoint;
+                  e.p2       = data.secPoint;
+                  e.ratio    = data.ratio;
+                  e.staparam = data.staparam;
+                  e.endparam = data.endparam;
+                  e.isccw    = data.isccw;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
             double majorR = std::sqrt(data.secPoint.x * data.secPoint.x + data.secPoint.y * data.secPoint.y);
-            majorR = mm(majorR);
+            majorR        = mm(majorR);
             double minorR = majorR * data.ratio;
             double rotation = std::atan2(data.secPoint.y, data.secPoint.x);
-            double cx = mm(data.basePoint.x);
-            double cy = mm(data.basePoint.y);
+            double cx       = mm(data.basePoint.x);
+            double cy       = mm(data.basePoint.y);
             // Note: use mm() not mmX/mmY for center — the ellipse center may
             // be far outside the actual arc segment and must NOT pollute the bbox.
             bool full = (data.staparam == 0.0 && std::abs(data.endparam - 2.0 * std::numbers::pi) < 1e-6);
@@ -925,8 +985,8 @@ public:
             else {
                   // For elliptical arcs, tessellate and expand by actual points.
                   constexpr int segs = 64;
-                  double sa = data.staparam;
-                  double ea = data.endparam;
+                  double sa          = data.staparam;
+                  double ea          = data.endparam;
                   if (data.isccw == 0)
                         std::swap(sa, ea);
                   if (sa > ea)
@@ -935,23 +995,28 @@ public:
                   double cosR = std::cos(rotation);
                   double sinR = std::sin(rotation);
                   for (int i = 0; i <= segs; ++i) {
-                        double t = sa + step * i;
+                        double t  = sa + step * i;
                         double ex = majorR * std::cos(t);
                         double ey = minorR * std::sin(t);
                         expandBBox(ex * cosR - ey * sinR + cx, ex * sinR + ey * cosR + cy);
                         }
-                  emitEllipseArc(cx, cy, majorR, minorR, rotation, data.staparam, data.endparam, data.isccw != 0);
+                  emitEllipseArc(cx, cy, majorR, minorR, rotation, data.staparam, data.endparam,
+                                 data.isccw != 0);
                   }
             }
       void addLWPolyline(const DRW_LWPolyline& data) override {
-            if (data.vertlist.empty()) return;
+            if (data.vertlist.empty())
+                  return;
             if (m_inBlock) {
-                  BlockEntity e; e.type = BlockEntity::Type::LWPolyline;
-                  for (const auto& v : data.vertlist) e.vertices.push_back(*v);
+                  BlockEntity e;
+                  e.type = BlockEntity::Type::LWPolyline;
+                  for (const auto& v : data.vertlist)
+                        e.vertices.push_back(*v);
                   e.flags = data.flags;
-                  m_blocks[m_currentBlockName].push_back(std::move(e)); return;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
-            std::vector<std::pair<double,double>> pts;
+            std::vector<std::pair<double, double>> pts;
             for (const auto& v : data.vertlist) {
                   double x = mmX(v->x);
                   double y = mmY(v->y);
@@ -960,8 +1025,9 @@ public:
             emitPolyline(pts, (data.flags & 1) != 0);
             }
       void addPolyline(const DRW_Polyline& data) override {
-            if (data.vertlist.empty()) return;
-            std::vector<std::pair<double,double>> pts;
+            if (data.vertlist.empty())
+                  return;
+            std::vector<std::pair<double, double>> pts;
             for (const auto& v : data.vertlist) {
                   double x = mmX(v->basePoint.x);
                   double y = mmY(v->basePoint.y);
@@ -970,27 +1036,47 @@ public:
             emitPolyline(pts, (data.flags & 1) != 0);
             }
       void addSpline(const DRW_Spline* data) override {
-            if (!data || data->controllist.empty()) return;
-            std::vector<std::pair<double,double>> pts;
-            for (const auto& cp : data->controllist) {
-                  double x = mmX(cp->x);
-                  double y = mmY(cp->y);
-                  pts.emplace_back(x, y);
+            if (!data || data->controllist.empty())
+                  return;
+            if (m_inBlock) {
+                  BlockEntity e;
+                  e.type   = BlockEntity::Type::Spline;
+                  e.degree = data->degree;
+                  for (const auto& cp : data->controllist)
+                        e.controlPoints.push_back(*cp);
+                  e.knots = data->knotslist;
+                  m_blocks[m_currentBlockName].push_back(std::move(e));
+                  return;
                   }
-            emitPolyline(pts, false);
+            std::vector<DRW_Coord> controls;
+            controls.reserve(data->controllist.size());
+            for (const auto& cp : data->controllist)
+                  controls.push_back(*cp);
+            auto pts = DxfTess::evaluateSpline(data->degree, controls, data->knotslist, m_curveResolution);
+            if (pts.empty())
+                  return;
+            std::vector<std::pair<double, double>> svgPts;
+            svgPts.reserve(pts.size());
+            for (const auto& pt : pts) {
+                  double x = mmX(pt.x());
+                  double y = mmY(pt.y());
+                  svgPts.emplace_back(x, y);
+                  }
+            emitPolyline(svgPts, false);
             }
       void addKnot(const DRW_Entity&) override {}
       void addInsert(const DRW_Insert& data) override {
             auto it = m_blocks.find(data.name);
-            if (it == m_blocks.end()) return;
-            double ang = data.angle;
-            double sx = data.xscale;
-            double sy = data.yscale;
-            double cx = mm(data.basePoint.x);
-            double cy = mm(data.basePoint.y);
+            if (it == m_blocks.end())
+                  return;
+            double ang  = data.angle;
+            double sx   = data.xscale;
+            double sy   = data.yscale;
+            double cx   = mm(data.basePoint.x);
+            double cy   = mm(data.basePoint.y);
             double cosA = std::cos(ang);
             double sinA = std::sin(ang);
-            auto apply = [&](const DRW_Coord& p) -> std::pair<double,double> {
+            auto apply  = [&](const DRW_Coord& p) -> std::pair<double, double> {
                   double px = p.x * sx;
                   double py = p.y * sy;
                   double rx = px * cosA - py * sinA;
@@ -1009,7 +1095,7 @@ public:
                               }
                         case BlockEntity::Type::Circle: {
                               double r = mm(e.radius) * std::abs(sx);
-                              auto c = apply(e.p1);
+                              auto c   = apply(e.p1);
                               expandBBox(c.first - r, c.second - r);
                               expandBBox(c.first + r, c.second + r);
                               emitCircle(c.first, c.second, r);
@@ -1017,14 +1103,14 @@ public:
                               }
                         case BlockEntity::Type::Arc: {
                               double r = mm(e.radius);
-                              auto c = apply(e.p1);
+                              auto c   = apply(e.p1);
                               expandBBox(c.first - r, c.second - r);
                               expandBBox(c.first + r, c.second + r);
                               emitArc(c.first, c.second, r, e.startAng, e.endAng, e.isccw != 0);
                               break;
                               }
                         case BlockEntity::Type::LWPolyline: {
-                              std::vector<std::pair<double,double>> pts;
+                              std::vector<std::pair<double, double>> pts;
                               for (const auto& v : e.vertices)
                                     pts.push_back(apply(DRW_Coord(v.x, v.y, 0)));
                               emitPolyline(pts, (e.flags & 1) != 0);
@@ -1038,15 +1124,29 @@ public:
                               break;
                               }
                         case BlockEntity::Type::Ellipse: {
-                              double majorR = std::sqrt(e.p2.x * e.p2.x + e.p2.y * e.p2.y);
-                              majorR = mm(majorR);
-                              double minorR = majorR * e.ratio;
+                              double majorR   = std::sqrt(e.p2.x * e.p2.x + e.p2.y * e.p2.y);
+                              majorR          = mm(majorR);
+                              double minorR   = majorR * e.ratio;
                               double rotation = std::atan2(e.p2.y, e.p2.x);
-                              auto c = apply(e.p1);
+                              auto c          = apply(e.p1);
                               expandBBox(c.first - majorR, c.second - majorR);
                               expandBBox(c.first + majorR, c.second + majorR);
-                              emitEllipseArc(c.first, c.second, majorR, minorR, rotation,
-                                             e.staparam, e.endparam, e.isccw != 0);
+                              emitEllipseArc(c.first, c.second, majorR, minorR, rotation, e.staparam,
+                                             e.endparam, e.isccw != 0);
+                              break;
+                              }
+                        case BlockEntity::Type::Spline: {
+                              auto pts = DxfTess::evaluateSpline(e.degree, e.controlPoints, e.knots,
+                                                                 m_curveResolution);
+                              if (pts.empty())
+                                    break;
+                              std::vector<std::pair<double, double>> svgPts;
+                              svgPts.reserve(pts.size());
+                              for (const auto& pt : pts) {
+                                    auto p = apply(DRW_Coord(pt.x(), pt.y(), 0.0));
+                                    svgPts.emplace_back(p.first, p.second);
+                                    }
+                              emitPolyline(svgPts, false);
                               break;
                               }
                         default: break;
@@ -1054,7 +1154,7 @@ public:
                   }
             }
       void addTrace(const DRW_Trace& data) override {
-            std::vector<std::pair<double,double>> pts;
+            std::vector<std::pair<double, double>> pts;
             pts.push_back({mmX(data.basePoint.x), mmY(data.basePoint.y)});
             pts.push_back({mmX(data.secPoint.x), mmY(data.secPoint.y)});
             pts.push_back({mmX(data.thirdPoint.x), mmY(data.thirdPoint.y)});
@@ -1062,7 +1162,7 @@ public:
             emitPolyline(pts, true);
             }
       void add3dFace(const DRW_3Dface& data) override {
-            std::vector<std::pair<double,double>> pts;
+            std::vector<std::pair<double, double>> pts;
             pts.push_back({mmX(data.basePoint.x), mmY(data.basePoint.y)});
             pts.push_back({mmX(data.secPoint.x), mmY(data.secPoint.y)});
             pts.push_back({mmX(data.thirdPoint.x), mmY(data.thirdPoint.y)});
@@ -1071,7 +1171,7 @@ public:
             emitPolyline(pts, true);
             }
       void addSolid(const DRW_Solid& data) override {
-            std::vector<std::pair<double,double>> pts;
+            std::vector<std::pair<double, double>> pts;
             pts.push_back({mmX(data.basePoint.x), mmY(data.basePoint.y)});
             pts.push_back({mmX(data.secPoint.x), mmY(data.secPoint.y)});
             pts.push_back({mmX(data.thirdPoint.x), mmY(data.thirdPoint.y)});
@@ -1113,8 +1213,9 @@ public:
 //    for preview display in the media browser.
 //---------------------------------------------------------
 
-QString ArtworkTreeModel::dxfToSvg(const QString& filePath, double dxfScale) const {
-      DxfToSvgConverter converter(dxfScale);
+QString ArtworkTreeModel::dxfToSvg(const QString& filePath, double dxfScale, int circleResolution,
+                                   int curveResolution) const {
+      DxfToSvgConverter converter(dxfScale, circleResolution, curveResolution);
       dxfRW dxf(filePath.toUtf8().constData());
       if (!dxf.read(&converter, false)) {
             Warning("dxfToSvg: failed to read DXF file: {}", filePath.toUtf8().constData());
@@ -1130,8 +1231,9 @@ QString ArtworkTreeModel::dxfToSvg(const QString& filePath, double dxfScale) con
 //    suitable for use as an Image source in QML.
 //---------------------------------------------------------
 
-QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale) const {
-      QString svg = dxfToSvg(filePath, dxfScale);
+QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale, int circleResolution,
+                                       int curveResolution) const {
+      QString svg = dxfToSvg(filePath, dxfScale, circleResolution, curveResolution);
       if (svg.isEmpty())
             return {};
       // Write the SVG preview to the system temp directory. Using the DXF
@@ -1139,16 +1241,19 @@ QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale)
       // on read-only media. A deterministic filename lets QML reload the
       // preview whenever the DXF file changes.
       QFileInfo fi(filePath);
-      const QString base = QStringLiteral("%1_%2_dxfpreview.svg")
-                               .arg(QString::fromUtf8(fi.absoluteFilePath().toUtf8().toBase64().replace('/', '_').replace('+', '-').constData()))
-                               .arg(fi.lastModified().toMSecsSinceEpoch());
+      const QString base =
+          QStringLiteral("%1_%2_dxfpreview.svg")
+              .arg(QString::fromUtf8(
+                  fi.absoluteFilePath().toUtf8().toBase64().replace('/', '_').replace('+', '-').constData()))
+              .arg(fi.lastModified().toMSecsSinceEpoch());
       QString tempPath = QDir::tempPath() + "/" + base;
       if (!QFile::remove(tempPath)) {
             // remove may legitimately fail when the file does not exist yet
             }
       QFile f(tempPath);
       if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            Warning("dxfToSvgFile: cannot write temp file: {} ({})", tempPath.toUtf8().constData(), f.errorString().toUtf8().constData());
+            Warning("dxfToSvgFile: cannot write temp file: {} ({})", tempPath.toUtf8().constData(),
+                    f.errorString().toUtf8().constData());
             return {};
             }
       f.write(svg.toUtf8());

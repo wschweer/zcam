@@ -36,6 +36,12 @@ Item {
     // Text editing state
     property var _editingText: null      // the Text element being edited (null when idle)
 
+    // Lasso selection state
+    property bool lassoActive: false     // true while Ctrl-drag is in progress
+    property var lassoPoints: []        // list of QVector3D in scene (root) coords
+    property var lassoScreenPoints: []  // list of Qt.vector2d in screen coords for overlay
+    property int lassoPointCount: 0     // incremented on each point add (triggers binding updates)
+
     // Forward key events to the text element being edited.
     // Returns true if the event was consumed.
     function handleTextKey(event) {
@@ -181,6 +187,70 @@ Item {
         _hoveredHandle = newHover;
         }
 
+    //─────────────────────────────────────────────────────────────
+    //  Snap reference-point marker
+    //    A small cross rendered at the element's reference point
+    //    (element origin, 0,0 in local coords) while a drag with
+    //    grid snap is active.  Two thin #Cube models form the
+    //    horizontal and vertical bars.
+    //
+    //    Visibility is driven by ZCam.snapDragActive, a flag that
+    //    is set once at startElementDrag() and cleared once at
+    //    endElementDrag() — it never toggles in the middle of a drag
+    //    (unlike the per-axis snap flags that can switch on/off as
+    //    the cursor crosses grid lines), so the cross cannot flicker
+    //    or disappear mid-drag.
+    //
+    //    The position comes from ZCam.snapRefPos, which is derived
+    //    from the exact same parent-local pos value that is assigned
+    //    to the element during the drag (see ZCam::dragged).
+    //    Like the vertex handles, the marker lives inside root so
+    //    its position uses root-space coordinates directly.
+    //─────────────────────────────────────────────────────────────
+
+    Node {
+        id: snapMarker
+        parent: root
+        visible: ZCam.snapDragActive
+        position: ZCam.snapRefPos
+
+        // Scale compensation factor for a constant on-screen size
+        // regardless of the canvas zoom (root.scale), analogous to
+        // the vertex handles.  Shared by both bars.
+        property vector3d unitScale: {
+            var rs = root.scale
+            var f = rs.x !== 0 ? 1.0 / rs.x : 1.0
+            return Qt.vector3d(f, f, f)
+            }
+
+        // Thin horizontal bar at the reference point.
+        Model {
+            source: "#Cube"
+            pickable: false
+            scale: snapMarker.unitScale.times(Qt.vector3d(0.06, 0.006, 0.006))
+            materials: [
+                PrincipledMaterial {
+                    cullMode: PrincipledMaterial.NoCulling
+                    lighting: PrincipledMaterial.NoLighting
+                    baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
+                }
+            ]
+        }
+        // Thin vertical bar at the reference point.
+        Model {
+            source: "#Cube"
+            pickable: false
+            scale: snapMarker.unitScale.times(Qt.vector3d(0.006, 0.06, 0.006))
+            materials: [
+                PrincipledMaterial {
+                    cullMode: PrincipledMaterial.NoCulling
+                    lighting: PrincipledMaterial.NoLighting
+                    baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
+                }
+            ]
+        }
+    }
+
     // Finish the current polygon drawing session.
     // Closes the polygon and resets drawing state.
     function finishPolygonDrawing() {
@@ -227,7 +297,32 @@ Item {
         var top    = Math.min(tl.y, tr.y, bl.y, br.y);
         var bottom = Math.max(tl.y, tr.y, bl.y, br.y);
 
-        grid.setViewport(left, top, right, bottom);
+        // Compute the camera view direction in local (root) coordinates.
+        // Derive it EXACTLY like screenToScene(): take two points on the
+        // centre view ray (near / far) and build their difference.  This
+        // is the true camera direction (in root coordinates) and works
+        // for both orthographic AND perspective projection.  Rotating the
+        // view rotates this vector, so the billboard orientation in
+        // Grid::setViewport() always gets the real angle.
+        // (The old approximation "cam position normalised" pointed toward
+        // the root origin instead — after a rotation that vector still
+        // had a dominant Z component, so the grid kept being billboarded
+        // nearly flat and the lines appeared thicker and thicker.)
+        var cam = view3D.camera;
+        var nearC = root.mapPositionFromScene(cam.mapFromViewport(Qt.vector3d(0.5, 0.5, 0)));
+        var farC  = root.mapPositionFromScene(cam.mapFromViewport(Qt.vector3d(0.5, 0.5, 1)));
+        var viewDir = farC.minus(nearC);
+        if (viewDir.length() < 1e-9)
+            viewDir = Qt.vector3d(0, 0, -1);   // degenerate fallback: straight down
+        else
+            viewDir = viewDir.normalized();
+
+        // Pass the REAL panel size in pixels so the grid can compute
+        // the exact mm-per-pixel ratio — the hardcoded nominal canvas
+        // width of 1000 px made the freshly-built 3D canvas look
+        // different from the state after the first refresh whenever
+        // the actual layout deviated from that guess.
+        grid.setViewport(left, top, right, bottom, viewDir, panel.width, panel.height);
         }
 
     //=========================================================
@@ -242,7 +337,7 @@ Item {
         camera: panel.perspectiveCamera ? bgCameraPerspective : bgCameraOrtho
 
         environment: SceneEnvironment {
-            clearColor: Material.color(Material.BlueGrey, Material.Shade500)
+            clearColor: ZCam.config ? ZCam.config.canvasBG : Material.color(Material.BlueGrey, Material.Shade500)
             backgroundMode: SceneEnvironment.Color
             antialiasingQuality: SceneEnvironment.VeryHigh
             }
@@ -317,6 +412,20 @@ Item {
                 event.accepted = true;
                 }
             if (event.key === Qt.Key_Escape) {
+                if (lassoActive) {
+                    lassoActive = false;
+                    lassoPoints = [];
+                    lassoScreenPoints = [];
+                    lassoPointCount = 0;
+                    event.accepted = true;
+                    return;
+                    }
+                // If a lasso selection is active, Escape clears it.
+                if (ZCam.selectedElements && ZCam.selectedElements.length > 0) {
+                    ZCam.clearSelection();
+                    event.accepted = true;
+                    return;
+                    }
                 finishPolygonDrawing();
                 ZCam.currentTool = "pointer";
                 event.accepted = true;
@@ -436,6 +545,8 @@ Item {
                 ZCam.currentTool = "pointer";
                 }
             rebuildVertexHandles();
+            // The snap marker is bound to ZCam.snapRefPos / snapActive and
+            // updates itself — nothing to clean up here.
             }
         }
 
@@ -586,6 +697,12 @@ Item {
         property real frameDelta: 10
         property var curNode: null
         property variant vertexDragHandle: null
+        // Drag threshold: accumulate scene-space movement until it
+        // exceeds config.dragThreshold before actually moving the
+        // element.  This prevents accidental micro-moves when the user
+        // just clicks (without intending to drag).
+        property vector3d _dragAccum: Qt.vector3d(0, 0, 0)
+        property bool _dragThresholdMet: false
         acceptedButtons: Qt.AllButtons
 
         function pan(delta) {
@@ -675,6 +792,17 @@ Item {
             panel.focus = true;
             lastPos = Qt.vector2d(mouse.x, mouse.y);
             eLastPos = screenToScene(mouse.x, mouse.y);
+            // Reset drag threshold state on every press.
+            _dragAccum = Qt.vector3d(0, 0, 0);
+            _dragThresholdMet = false;
+            // Ctrl+Left-drag starts a lasso selection.
+            if (mouse.button == Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)) {
+                lassoActive = true;
+                lassoPoints = [Qt.vector3d(eLastPos.x, eLastPos.y, eLastPos.z)];
+                lassoScreenPoints = [Qt.vector2d(mouse.x, mouse.y)];
+                lassoPointCount = 1;
+                return;
+                }
             if (mouse.button == Qt.LeftButton) {
                 // If a text element is being edited, a click inside
                 // the text bounding box moves the cursor to that
@@ -825,6 +953,10 @@ Item {
                     curNode = pickModel(mouse.x, mouse.y);
                 if (curNode && curNode.element && !curNode.element.draggable())
                     curNode = null;
+                // Show context menu when an element or a group of
+                // elements is under the cursor.
+                if (ZCam.currentElement || (ZCam.selectedElements && ZCam.selectedElements.length > 0))
+                    canvasMenu.popup(mouse.x, mouse.y);
                 } else {
                 if (!curNode)
                     curNode = pickModel(mouse.x, mouse.y);
@@ -856,6 +988,15 @@ Item {
             }
 
         onReleased: mouse => {
+            // Finish lasso selection
+            if (lassoActive) {
+                lassoActive = false;
+                ZCam.lassoSelect(lassoPoints);
+                lassoPoints = [];
+                lassoScreenPoints = [];
+                lassoPointCount = 0;
+                return;
+                }
             if (vertexDragHandle) {
                 ZCam.endVertexDrag(vertexDragHandle._poly, vertexDragHandle._vertexIndex);
                 vertexDragHandle = null;
@@ -934,6 +1075,23 @@ Item {
             var currentPos = Qt.vector2d(mouse.x, mouse.y);
             var delta = Qt.vector2d(lastPos.x - currentPos.x, lastPos.y - currentPos.y);
 
+            // Lasso drag: accumulate points (only if moved enough to avoid clutter)
+            if (lassoActive && pos3d) {
+                var lastScreen = lassoScreenPoints[lassoScreenPoints.length - 1];
+                var dx = mouse.x - lastScreen.x;
+                var dy = mouse.y - lastScreen.y;
+                if (dx * dx + dy * dy >= 9) {  // 3px minimum
+                    // Copy the vector3d value explicitly — pushing the property
+                    // directly would store a reference and all entries would
+                    // end up with the same value.
+                    lassoPoints.push(Qt.vector3d(pos3d.x, pos3d.y, pos3d.z));
+                    lassoScreenPoints.push(Qt.vector2d(mouse.x, mouse.y));
+                    lassoPointCount = lassoPointCount + 1;
+                    }
+                lastPos = currentPos;
+                return;
+                }
+
             // Update polygon preview when drawing (no button pressed = hover).
             if (_drawingPolygon && pos3d) {
                 var lp = worldToPolygonLocal(_drawingPolygon, pos3d);
@@ -968,7 +1126,24 @@ Item {
                     } else if (curNode) {
                     var eDelta = pos3d.minus(eLastPos);
                     eLastPos = pos3d;
-                    ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
+                    // Apply drag threshold: accumulate scene-space
+                    // movement until the total displacement exceeds
+                    // config.dragThreshold (in mm).  Only then start
+                    // actually moving the element.  This prevents
+                    // accidental micro-moves on a simple click.
+                    if (!_dragThresholdMet) {
+                        _dragAccum = Qt.vector3d(_dragAccum.x + eDelta.x, _dragAccum.y + eDelta.y, _dragAccum.z + eDelta.z);
+                        var threshold = ZCam.config ? ZCam.config.dragThreshold : 0.5;
+                        if (_dragAccum.length() < threshold)
+                            return;
+                        // Threshold met — emit the accumulated delta
+                        // as a single move, then switch to live-drag.
+                        _dragThresholdMet = true;
+                        ZCam.dragged(curNode.element, _dragAccum, mouse.modifiers);
+                        _dragAccum = Qt.vector3d(0, 0, 0);
+                    } else {
+                        ZCam.dragged(curNode.element, eDelta, mouse.modifiers);
+                    }
                     }
                 } else {
                 // No button pressed — update handle hover highlight.
@@ -1159,6 +1334,47 @@ Item {
             }
         }
 
+    // Lasso selection overlay — drawn as a semi-transparent polygon
+    // outline on top of the 3D canvas while Ctrl-drag is active.
+    Canvas {
+        id: lassoOverlay
+        anchors.fill: parent
+        z: 50
+        visible: panel.lassoActive && panel.lassoPointCount > 1
+        onWidthChanged: requestPaint();
+        onHeightChanged: requestPaint();
+
+        // Repaint whenever a new lasso point is added.
+        Connections {
+            target: panel
+            function onLassoPointCountChanged() { lassoOverlay.requestPaint(); }
+            function onLassoActiveChanged() { if (!panel.lassoActive) lassoOverlay.requestPaint(); }
+        }
+
+        onPaint: {
+            var ctx = getContext('2d');
+            ctx.reset();
+            ctx.clearRect(0, 0, width, height);
+            var pts = panel.lassoScreenPoints;
+            if (pts.length < 2)
+                return;
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (var i = 1; i < pts.length; ++i)
+                ctx.lineTo(pts[i].x, pts[i].y);
+            // Close the path back to start
+            ctx.lineTo(pts[0].x, pts[0].y);
+            ctx.closePath();
+            // Fill with semi-transparent teal
+            ctx.fillStyle = Qt.rgba(0.0, 0.5, 0.5, 0.15);
+            ctx.fill();
+            // Stroke with teal outline
+            ctx.strokeStyle = Qt.rgba(0.0, 0.8, 0.8, 0.9);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            }
+        }
+
     // SVG drag-preview bounding box rendered in the 3D scene.
     // The geometry is a rectangle outline created by ZCam::startSvgDrag()
     // from the SVG's path data.  Its position is updated in
@@ -1192,6 +1408,7 @@ Item {
 
         onViewRequested: rotation => {
             root.eulerRotation = rotation;
+            updateGridViewport();
             }
         }
 
@@ -1206,6 +1423,7 @@ Item {
             icon.source: "qrc:////icons/view-top.svg"
             onClicked: {
                 root.eulerRotation = Qt.vector3d(0, 0, 0);
+                updateGridViewport();
                 }
             z: 1
             }
@@ -1213,6 +1431,7 @@ Item {
             icon.source: "qrc:////icons/view-bottom.svg"
             onClicked: {
                 root.eulerRotation = Qt.vector3d(180, 0, 0);
+                updateGridViewport();
                 }
             z: 1
             }
@@ -1220,6 +1439,7 @@ Item {
             icon.source: "qrc:////icons/view-front.svg"
             onClicked: {
                 root.eulerRotation = Qt.vector3d(-90, 0, 0);
+                updateGridViewport();
                 }
             z: 1
             }
@@ -1227,6 +1447,7 @@ Item {
             icon.source: "qrc:////icons/view-rear.svg"
             onClicked: {
                 root.eulerRotation = Qt.vector3d(-90, 180, 0);
+                updateGridViewport();
                 }
             z: 1
             }
@@ -1234,6 +1455,7 @@ Item {
             icon.source: "qrc:////icons/view-left.svg"
             onClicked: {
                 root.eulerRotation = Qt.vector3d(-90, 90, 0);
+                updateGridViewport();
                 }
             z: 1
             }
@@ -1241,6 +1463,7 @@ Item {
             icon.source: "qrc:////icons/view-right.svg"
             onClicked: {
                 root.eulerRotation = Qt.vector3d(-90, -90, 0);
+                updateGridViewport();
                 }
             z: 1
             }
@@ -1317,6 +1540,51 @@ Item {
             checked: ZCam.currentTool == "text"
             onCheckedChanged: if (checked)
                 ZCam.currentTool = "text"
+            }
+        }
+
+    //-----------------------------------------------------
+    //  Context menu for the 3D canvas
+    //    Appears on right-click when an element or a group of
+    //    elements is under the cursor.  The "Group" entry is
+    //    enabled only when two or more draggable elements are
+    //    selected (lasso multi-selection).
+    //-----------------------------------------------------
+    Menu {
+        id: canvasMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: qsTr("Group")
+            // Enabled only when two or more elements are selected.
+            enabled: ZCam.selectedElements && ZCam.selectedElements.length >= 2
+            onTriggered: {
+                ZCam.groupSelectedElements();
+                }
+            }
+        MenuItem {
+            text: qsTr("Combine")
+            // Enabled only when two or more elements are selected.
+            // The C++ side filters further to only Polygon elements
+            // on the same tree level.
+            enabled: ZCam.selectedElements && ZCam.selectedElements.length >= 2
+            onTriggered: {
+                ZCam.combineSelectedPolygons();
+                }
+            }
+        MenuSeparator {}
+        MenuItem {
+            text: qsTr("Center on Workspace")
+            enabled: ZCam.currentElement !== null
+            onTriggered: {
+                ZCam.centerOnWorkspace(ZCam.currentElement);
+                }
+            }
+        MenuItem {
+            text: qsTr("Delete")
+            enabled: ZCam.currentElement !== null
+            onTriggered: {
+                ZCam.deleteCurrentElement();
+                }
             }
         }
     }

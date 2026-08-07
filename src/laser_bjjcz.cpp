@@ -15,6 +15,7 @@
 #include "zcam.h"
 #include "project.h"
 #include "laser_bjjcz.h"
+#include "cal.h"
 
 using namespace Clipper2Lib;
 
@@ -227,7 +228,6 @@ void dump(Packet6* p, bool single) {
 LaserBJJCZ::LaserBJJCZ(ZCam* w, QObject* parent) : Laser(w, parent), list(this) {
       usb               = new Usb();
       _laserValuesValid = false;
-      gpio.init(this);
       }
 
 LaserBJJCZ::~LaserBJJCZ() {
@@ -236,6 +236,40 @@ LaserBJJCZ::~LaserBJJCZ() {
       set_fiber_mo(0);
       write_analog_port_1(409);
       delete usb;
+      }
+
+//---------------------------------------------------------
+//   mapToGalvo
+//---------------------------------------------------------
+
+LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
+      double xScale = galvoScale().x() / 100.0;
+      double yScale = galvoScale().y() / 100.0;
+      double maxX   = maxTravel().x();
+      double maxY   = maxTravel().y();
+      xScale        = xScale * 54000 / maxX;
+      yScale        = yScale * 54000 / maxY;
+
+      double xc = x - maxX / 2.0;
+      double yc = y - maxY / 2.0;
+
+      double rawX, rawY;
+      if (galvoSwapxy()) {
+            rawX = trunc(yc * yScale + 0x8000);
+            rawY = trunc(xc * xScale + 0x8000);
+            }
+      else {
+            rawX = trunc(xc * xScale + 0x8000);
+            rawY = trunc(yc * yScale + 0x8000);
+            }
+      if (rawX < 0.0 || rawX > 0xffff || rawY < 0.0 || rawY > 0xffff) {
+            Critical("position out of range 0x{:04x} {} ----  0x{:04x} {}",
+                     (unsigned)std::clamp(rawX, 0.0, (double)0xffff), x,
+                     (unsigned)std::clamp(rawY, 0.0, (double)0xffff), y);
+            return LaserPosition((unsigned)std::clamp(rawX, 0.0, (double)0xffff),
+                                 (unsigned)std::clamp(rawY, 0.0, (double)0xffff));
+            }
+      return LaserPosition((unsigned)rawX, (unsigned)rawY);
       }
 
 //---------------------------------------------------------
@@ -256,17 +290,23 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
             return false;
             }
 
-      // galvo range -32768  --  32767
+      // galvo range    -32767 -> 32767
+      // aktually used: -25800 -> 25800 ( 175mmx175mm for 250mm Lens)
+      // safety margin is typical 20%-21%
       double xScale = galvoScale().x() / 100.0;
       double yScale = galvoScale().y() / 100.0;
-      xScale        = xScale * 0x10000 / maxTravel().x();
-      yScale        = yScale * 0x10000 / maxTravel().y();
+      xScale        = xScale * 25800 / maxTravel().x();
+      yScale        = yScale * 25800 / maxTravel().y();
 
       galvos = (abs(xScale) + abs(yScale)) * .5;
       Debug("native scale {:.2f} {:.2f} galvos(scale): {} {:04x}", xScale, yScale, galvos, int(galvos));
 
       command({GetSerialNo});
+      gpioInit();
       statusFlags(); // initialize status flags
+
+      set_inputPort(command(InputPort)[1]);
+
       if (isMOPALaser())
             get_fiber_st_mo_ap();
       command({UnknownCmdx03, 0, 0, 0, 0});
@@ -303,7 +343,7 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
             set_fly_res(0, fres, 1000, 24); // 175 lens
 
             enable_z();
-            write_port(0);
+            gpioWrite(0);
             enable_z();
             write_analog_port_1(3275);
             }
@@ -317,7 +357,7 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
             enable_z();
             write_analog_port_1(2047);
             }
-      write_port(0);
+      gpioWrite(0);
       gotoXY(0x8000, 0x8000);
       return true;
       }
@@ -360,7 +400,12 @@ Packet4 LaserBJJCZ::command(Packet6 data) const {
 //---------------------------------------------------------
 
 bool LaserBJJCZ::send(const CmdList& data) const {
-      waitReady();
+      if (!waitReady())
+            return false;
+      if (stopFraming || stopMarking) {
+            Debug("send aborted");
+            return true;
+            }
       if (!usb->write((uchar*)data[0].data(), LIST_SIZE * 12)) {
             Critical("usb send failed");
             return false;
@@ -409,17 +454,25 @@ void LaserBJJCZ::wait_axis() const {
 
 //---------------------------------------------------------
 //   waitReady
+//    return false if interrupted by stopFraming or stopMarking
+//    or timeout
 //---------------------------------------------------------
 
-void LaserBJJCZ::waitReady() const {
+bool LaserBJJCZ::waitReady() const {
       if (_status.isReady()) // status from last command
-            return;
+            return true;
       // wait for ready
       for (int i = 0; !is_ready(); ++i) {
-            usleep(100);            // 100µs
-            if (i > 10 * 1000 * 10) // 10sec
+            //            Debug("{} {}    {}", stopFraming.load(), stopMarking.load(), i);
+            if (stopFraming || stopMarking)
+                  return false;
+            usleep(100);              // 100µs
+            if (i > 10 * 1000 * 10) { // 10sec
                   throw(std::string("waitReady timeout"));
+                  return false;
+                  }
             }
+      return true;
       }
 
 //---------------------------------------------------------
@@ -535,6 +588,7 @@ void LaserBJJCZ::mark(const PathD& p) {
 //---------------------------------------------------------
 
 void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
+      Debug("===");
       if (!_laserValuesValid || l.speed != laserValues.speed)
             list.write({listMarkSpeed, uint16_t(l.speed * abs(galvos) * 0.001)});
       if (!_laserValuesValid || l.jumpSpeed != laserValues.jumpSpeed)
@@ -581,7 +635,8 @@ bool LaserBJJCZ::startFramingEngine() {
             aborting = false;
             waitReady();
             //            set_control_mode(0); //??
-            write_port(0x100);
+//            gpioWrite(0x100);
+            setLight(true);
             initPosition();
             _laserValuesValid = false;
 
@@ -607,12 +662,16 @@ bool LaserBJJCZ::startFramingEngine() {
 //---------------------------------------------------------
 
 void LaserBJJCZ::stopFramingEngine() {
+      stopFraming = false;
       stop_execute();
+      reset_list(); // DEBUG
 
       if (isMOPALaser())
             set_fiber_mo(0);
 
-      write_port(0x100);
+      // gpioWrite(0x100);
+      setLight(false);
+
       waitReady();
       initPosition();
 
@@ -622,12 +681,12 @@ void LaserBJJCZ::stopFramingEngine() {
       list.end(1);
       set_control_mode(1);
 
-      write_port(0x100);
+//      gpioWrite(0x100);
       set_standby(2000, 20);
-      if (isMOPALaser())
-            write_port(0x100);
-      else
-            write_port(0x300);
+//      if (isMOPALaser())
+//            gpioWrite(0x100);
+//      else
+//            gpioWrite(0x300);
       gotoXY(0x8000, 0x8000, 0, 0);
       readPort();
       }
@@ -648,7 +707,7 @@ void LaserBJJCZ::startMarkingEngine() {
       aborting          = false;
       _laserValuesValid = false;
 
-      write_port(0x0);
+//      gpioWrite(0x0);
       list.start();
       initPosition();
       waitReady();
@@ -659,14 +718,11 @@ void LaserBJJCZ::startMarkingEngine() {
             //list_delay_time(800);
             }
       if (isUVLaser()) {
-            write_port(0x100);
+//            gpioWrite(0x100);
             set_standby(2000, 20);
-            write_port(0x300);
-            write_port(0x300);
-            write_port(0x300);
+//            gpioWrite(0x300);
             gotoXY(0x8000, 0x8000, 0, 0);
-            write_port(0x300);
-            write_port(0x200);
+//            gpioWrite(0x300);
             initPosition();
             waitReady();
             }
@@ -682,40 +738,6 @@ void LaserBJJCZ::endMarkingEngine() {
       wait_finished();
       if (isMOPALaser())
             set_fiber_mo(0);
-      }
-
-//---------------------------------------------------------
-//   mapToGalvo
-//---------------------------------------------------------
-
-LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
-      double xScale = galvoScale().x() / 100.0;
-      double yScale = galvoScale().y() / 100.0;
-      double maxX   = maxTravel().x();
-      double maxY   = maxTravel().y();
-      xScale        = xScale * 0x10000 / maxX;
-      yScale        = yScale * 0x10000 / maxY;
-
-      double xc = x - maxX / 2.0;
-      double yc = y - maxY / 2.0;
-
-      double rawX, rawY;
-      if (galvoSwapxy()) {
-            rawX = trunc(yc * yScale + 0x8000);
-            rawY = trunc(xc * xScale + 0x8000);
-            }
-      else {
-            rawX = trunc(xc * xScale + 0x8000);
-            rawY = trunc(yc * yScale + 0x8000);
-            }
-      if (rawX < 0.0 || rawX > 0xffff || rawY < 0.0 || rawY > 0xffff) {
-            Critical("position out of range 0x{:04x} {} ----  0x{:04x} {}",
-                     (unsigned)std::clamp(rawX, 0.0, (double)0xffff), x,
-                     (unsigned)std::clamp(rawY, 0.0, (double)0xffff), y);
-            return LaserPosition((unsigned)std::clamp(rawX, 0.0, (double)0xffff),
-                                 (unsigned)std::clamp(rawY, 0.0, (double)0xffff));
-            }
-      return LaserPosition((unsigned)rawX, (unsigned)rawY);
       }
 
 //---------------------------------------------------------
@@ -756,14 +778,6 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
             first = false;
             // list_delay_time(10);
             }
-      }
-
-//---------------------------------------------------------
-//   writeCorrectionTable
-//---------------------------------------------------------
-
-void LaserBJJCZ::writeCorrectionTable() {
-      write_cor_table(false);
       }
 
 static constexpr std::string_view _propertiesQ = // Q-switched Laser
@@ -1122,34 +1136,15 @@ static constexpr std::string_view _propertiesMOPA =
                      "colSpan": 2
                    },
                    {
-                     "label": "Galvo",
+                     "label": "Galvo Bulge",
                      "cells": [
                        {
-                         "type": "float",
-                         "min": 0.0,
-                         "max": 10.0,
+                         "name": "galvoBulge",
+                         "type": "vector2d",
+                         "min": -5.0,
+                         "max": 5.0,
                          "default": 0.0,
-                         "precision": 4,
-                         "name": "galvoP1",
-                         "sublabel": "P1"
-                       },
-                       {
-                         "type": "float",
-                         "min": 0.0,
-                         "max": 10.0,
-                         "precision": 4,
-                         "default": 0.0,
-                         "name": "galvoP2",
-                         "sublabel": "P2"
-                       },
-                       {
-                         "type": "float",
-                         "min": 0.0,
-                         "max": 10.0,
-                         "precision": 4,
-                         "default": 0.0,
-                         "name": "galvoP3",
-                         "sublabel": "P3"
+                         "precision": 4
                        }
                      ]
                    },
@@ -1667,20 +1662,11 @@ const std::string_view LaserBJJCZ::properties() const {
       }
 
 //---------------------------------------------------------
-//   init
-//---------------------------------------------------------
-
-void Gpio::init(LaserBJJCZ* l) {
-      laser    = l;
-      portBits = 0;
-      }
-
-//---------------------------------------------------------
 //   listWrite
 //---------------------------------------------------------
 
-void Gpio::listWrite() {
-      laser->list_write_port(portBits);
+void LaserBJJCZ::gpioListWrite() {
+      list_write_port(_outputPort);
       }
 
 //---------------------------------------------------------
@@ -1688,9 +1674,9 @@ void Gpio::listWrite() {
 //    sets gpio pin "bit" to on
 //---------------------------------------------------------
 
-void Gpio::on(int bit) {
-      portBits |= (1 << bit);
-      write();
+void LaserBJJCZ::gpioOn(int bit) {
+      _outputPort |= (1 << bit);
+      gpioWrite();
       }
 
 //---------------------------------------------------------
@@ -1698,27 +1684,50 @@ void Gpio::on(int bit) {
 //    sets gpio pin "bit" to off
 //---------------------------------------------------------
 
-void Gpio::off(int bit) {
-      portBits &= ~(1 << bit);
-      write();
+void LaserBJJCZ::gpioOff(int bit) {
+      _outputPort &= ~(1 << bit);
+      gpioWrite();
+      }
+
+//---------------------------------------------------------
+//   toggle
+//    toggle gpio pin "bit"
+//---------------------------------------------------------
+
+void LaserBJJCZ::gpioToggle(int bit) {
+      _outputPort ^= (1 << bit);
+Debug("{} = {:04x}", bit, _outputPort);
+      gpioWrite();
       }
 
 //---------------------------------------------------------
 //   set
 //---------------------------------------------------------
 
-void Gpio::set(int bit, bool on) {
+void LaserBJJCZ::gpioSet(int bit, bool on) {
       bit      = 1 << bit;
-      portBits = on ? portBits | bit : portBits & (~bit);
-      write();
+      _outputPort = on ? _outputPort | bit : _outputPort & (~bit);
+      gpioWrite();
       }
 
 //---------------------------------------------------------
 //   write
 //---------------------------------------------------------
 
-void Gpio::write() const {
-      laser->write_port(portBits);
+void LaserBJJCZ::gpioWrite() {
+      write_port(_outputPort);
+      // emit outputPortChanged() may be called from a background
+      // thread (framing/marking).  Use QMetaObject::invokeMethod with
+      // QueuedConnection to ensure the signal is delivered on the
+      // GUI thread so QML bindings re-evaluate correctly.
+      QMetaObject::invokeMethod(this, [this]() {
+            emit outputPortChanged();
+            }, Qt::QueuedConnection);
+      }
+
+void LaserBJJCZ::gpioWrite(int data) {
+      _outputPort = data;
+      gpioWrite();
       }
 
 //---------------------------------------------------------
@@ -1730,7 +1739,7 @@ void LaserBJJCZ::setLight(bool on) {
             return;
       if (lightPinInvert())
             on = !on;
-      gpio.set(lightPin(), on);
+      gpioSet(lightPin(), on);
       }
 
 //---------------------------------------------------------
@@ -1841,14 +1850,88 @@ void LaserBJJCZ::mark(uint16_t x, uint16_t y) {
       double dx  = x - currentX;
       double dy  = y - currentY;
       double dir = atan2(dx, dy);
-      double dr  = abs(dir - lastDir);
-      while (dr > (M_PI * .5))
-            dr -= (M_PI * .5);
-      uint16_t dv = dirValid ? dr * 0x10000 / M_PI : 0;
 
+      uint16_t dv;
+      if (dirValid) {
+            double dr = abs(dir - lastDir);
+            while (dr > (M_PI * .5))
+                  dr -= (M_PI * .5);
+            dv = dr * 0x10000 / M_PI;
+            }
+      else
+            dv = 0;
       list.write({listMarkTo, x, y, dv, (uint16_t)distance(x, y)});
       currentX = x;
       currentY = y;
       lastDir  = dir;
       dirValid = true;
+      }
+
+//---------------------------------------------------------
+//   writeCorrectionTable
+//---------------------------------------------------------
+
+void LaserBJJCZ::writeCorrectionTable() {
+      CalData corData(zcam);
+
+      bool errorReadingCorFile = false;
+      if (!corFile().isEmpty() && corData.read(corFile().toStdString())) {
+            Debug("cor file <{}> loaded", corFile());
+            }
+      else {
+            if (!corFile().isEmpty())
+                  Critical("error reading cor file <{}>", corFile());
+            errorReadingCorFile = true;
+            }
+      if (corFile().isEmpty() || errorReadingCorFile) {
+
+            //-----------------------------------------------------------------
+            //    create correction table from lens properties
+            //
+            //    The correction values are offsets from the nominal position.
+            //    The actual position plus correction value cannot exceed the
+            //    16 bit range and must be clamped.
+            //-----------------------------------------------------------------
+
+            // < 0 Kissen
+            // > 0 barrel distortion
+            double kx = galvoBulge().x();
+            double ky = galvoBulge().y();
+
+            int scale = 0x10000 / 64;
+
+            for (double y = -32; y <= 32; ++y) {
+                  for (double x = -32; x <= 32; ++x) {
+                        double r  = x * x + y * y;
+                        int corrX = kx * r * x;
+                        int corrY = ky * r * y;
+
+                        // clamp so that (nominal position + correction)
+                        // stays within the signed 16-bit range [-32767, 32767]
+                        int nominalX = int(x * scale);
+                        int nominalY = int(y * scale);
+                        int cX = std::clamp(corrX, -32767 - nominalX, 32767 - nominalX);
+                        int cY = std::clamp(corrY, -32767 - nominalY, 32767 - nominalY);
+//                        if (cX != corrX)
+//                              Debug("{}:{} x-overflow {:x}", x, y, cX);
+//                        if (cY != corrY)
+//                              Debug("{}:{} y-overflow {:x}", x, y, cY);
+                        corData.setValue(x, y, {cX, cY});
+                        }
+                  }
+            }
+      write_cor_table(true);
+      bool first = true;
+      for (auto pt : corData) {
+            int x       = pt.x;
+            int y       = pt.y;
+            uint16_t xx = x < 0 ? 0x8000 + abs(x) : x;
+            uint16_t yy = y < 0 ? 0x8000 + abs(y) : y;
+            if (x == 0x8000)
+                  x = 0;
+            if (y == 0x8000)
+                  y = 0;
+            write_cor_line(xx, yy, !first);
+            first = false;
+            }
       }

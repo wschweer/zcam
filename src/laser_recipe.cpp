@@ -390,6 +390,7 @@ int RecipeTreeModel::recipeIndex(const QModelIndex& idx) const {
 //    whose recipeIdx matches. Returns an invalid model index
 //    if not found.
 //---------------------------------------------------------
+
 QModelIndex RecipeTreeModel::indexForRecipe(int recipeIdx) const {
       std::function<QModelIndex(Node*)> search = [&](Node* node) -> QModelIndex {
             for (const auto& child : node->children) {
@@ -518,8 +519,8 @@ void LaserReceipes::removeRecipe(int idx) {
 LaserPass LaserReceipes::layer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             const auto& r = recipes[recipeIdx];
-            if (layerIdx >= 0 && layerIdx < r.layers()->size())
-                  return *r.layer(layerIdx);
+            if (layerIdx >= 0 && layerIdx < r.passes().size())
+                  return r.pass(layerIdx);
             }
       return LaserPass();
       }
@@ -527,8 +528,8 @@ LaserPass LaserReceipes::layer(int recipeIdx, int layerIdx) {
 LaserPass* LaserReceipes::layerPtr(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
-            if (layerIdx >= 0 && layerIdx < r.passes()->size())
-                  return r.pass(layerIdx);
+            if (layerIdx >= 0 && layerIdx < r.passes().size())
+                  return &r.pass(layerIdx);
             }
       return nullptr;
       }
@@ -536,8 +537,8 @@ LaserPass* LaserReceipes::layerPtr(int recipeIdx, int layerIdx) {
 void LaserReceipes::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
-            if (layerIdx >= 0 && layerIdx < r.passes()->size()) {
-                  *r.pass(layerIdx) = l;
+            if (layerIdx >= 0 && layerIdx < r.passes().size()) {
+                  r.pass(layerIdx) = l;
                   emit recipeChanged(recipeIdx);
                   }
             }
@@ -547,7 +548,7 @@ void LaserReceipes::addLayer(int recipeIdx, const QString& name) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             LaserPass l;
             l.set_name(name);
-            recipes[recipeIdx].passes()->push_back(l);
+            recipes[recipeIdx].passes().push_back(l);
             emit recipeChanged(recipeIdx);
             }
       }
@@ -555,8 +556,8 @@ void LaserReceipes::addLayer(int recipeIdx, const QString& name) {
 void LaserReceipes::removeLayer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
-            if (layerIdx >= 0 && layerIdx < r.passes()->size()) {
-                  r.passes()->erase(r.passes()->begin() + layerIdx);
+            if (layerIdx >= 0 && layerIdx < r.passes().size()) {
+                  r.passes().erase(r.passes().begin() + layerIdx);
                   emit recipeChanged(recipeIdx);
                   }
             }
@@ -565,7 +566,7 @@ void LaserReceipes::removeLayer(int recipeIdx, int layerIdx) {
 QStringList LaserReceipes::layerModel(int recipeIdx) const {
       QStringList names;
       if (recipeIdx >= 0 && recipeIdx < recipes.size())
-            for (const auto& l : *recipes[recipeIdx].layers())
+            for (const auto& l : recipes[recipeIdx].passes())
                   names.append(l.name());
       return names;
       }

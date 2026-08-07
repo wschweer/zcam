@@ -20,6 +20,22 @@
 
 Group::Group(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("group");
+      // Recompute the selection bounding box whenever a child is
+      // added or removed so the Group stays pickable and its
+      // selection rectangle stays in sync without requiring an
+      // explicit update() call.
+      connect(this, &Element::childAdded, this, [this](Element* child) {
+            auto* e3d = qobject_cast<Element3d*>(child);
+            if (e3d) {
+                  connect(e3d, &Element3d::vertexRevisionChanged, this, &Group::onChildChanged,
+                          Qt::UniqueConnection);
+                  connect(e3d, &Element3d::selectionGeometryChanged, this, &Group::onChildChanged,
+                          Qt::UniqueConnection);
+                  connect(e3d, &Element3d::showChanged, this, &Group::onChildChanged, Qt::UniqueConnection);
+                  }
+            onChildChanged();
+            });
+      connect(this, &Element::childRemoved, this, [this](Element*) { onChildChanged(); });
       }
 
 //---------------------------------------------------------
@@ -43,10 +59,13 @@ void Group::update(int flags) {
             e3d->update(flags);
             // Connect to each child's change signals (UniqueConnection
             // prevents duplicate connections on repeated update() calls).
-            // Qt::UniqueConnection requires a member function pointer, so
-            // we use the onChildChanged() slot instead of a lambda.
-            connect(e3d, &Element3d::vertexRevisionChanged, this, &Group::onChildChanged, Qt::UniqueConnection);
-            connect(e3d, &Element3d::selectionGeometryChanged, this, &Group::onChildChanged, Qt::UniqueConnection);
+            // These are also established in the constructor's childAdded
+            // handler, but update() may be called on a freshly loaded
+            // project before childAdded fires, so we keep both.
+            connect(e3d, &Element3d::vertexRevisionChanged, this, &Group::onChildChanged,
+                    Qt::UniqueConnection);
+            connect(e3d, &Element3d::selectionGeometryChanged, this, &Group::onChildChanged,
+                    Qt::UniqueConnection);
             connect(e3d, &Element3d::showChanged, this, &Group::onChildChanged, Qt::UniqueConnection);
             }
       updateSelectionGeometry();

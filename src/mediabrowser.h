@@ -144,11 +144,15 @@ class ArtworkTreeModel : public QAbstractItemModel
       /// Convert a DXF file to an SVG string suitable for
       /// preview display in the media browser. dxfScale is the
       /// pixel density in dots per millimeter used when $INSUNITS=0.
-      Q_INVOKABLE QString dxfToSvg(const QString& filePath, double dxfScale = 72.0) const;
+      /// circleResolution and curveResolution control how circles,
+      /// ellipses, arcs and splines are tessellated.
+      Q_INVOKABLE QString dxfToSvg(const QString& filePath, double dxfScale = 72.0,
+                                   int circleResolution = 360, int curveResolution = 100) const;
 
       /// Convert a DXF file to a temporary SVG file and return
       /// the file:// URL for use as an Image source in QML.
-      Q_INVOKABLE QString dxfToSvgFile(const QString& filePath, double dxfScale = 72.0) const;
+      Q_INVOKABLE QString dxfToSvgFile(const QString& filePath, double dxfScale = 72.0,
+                                       int circleResolution = 360, int curveResolution = 100) const;
 
       /// Returns the model index for the directory whose path matches
       /// dirPath.  All ancestor nodes are lazily loaded so the caller

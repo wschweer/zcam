@@ -52,9 +52,11 @@ class Element : public QObject
     signals:
       void nameChanged();
       void expandedChanged();
+      void childAdded(Element*);
+      void childRemoved(Element*);
 
     public:
-      bool _saveChildren { true };
+      bool _saveChildren {true};
       Element(ZCam* zcam, Element* parent = nullptr);
       virtual ~Element();
       Q_INVOKABLE virtual QString typeName() = 0;
@@ -67,11 +69,13 @@ class Element : public QObject
             _children.push_back(e);
             e->_parent = this;
             e->setParent(this);
+            emit childAdded(e);
             }
       void removeChild(Element* e) {
             _children.removeAll(e);
             if (e->_parent == this)
                   e->_parent = nullptr;
+            emit childRemoved(e);
             }
       static void clearProject();
       static Element* byName(const QString& name) { return names.value(name); }

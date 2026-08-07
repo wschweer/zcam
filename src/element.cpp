@@ -123,7 +123,7 @@ void Element::fromJson(const json& data) {
                               element = new CameraElement(zcam, this);
                               element->fromJson(value);
                               }
-                        else if (key == "laserLayer") {
+                        else if (key == "laserLayer" || key == "recipe") {
                               element = new Recipe(zcam, this);
                               element->fromJson(value);
                               }

@@ -18,10 +18,9 @@
 #include "clipper.h"
 
 //---------------------------------------------------------
-//   LaserLayer
+//   Recipe
 //    - Contains the laser parameters (recipe, overrides, etc.)
-//    - No longer references a specific Layer as baseElement.
-//    - Instead, each Element3d in the project tree (from Cad
+//    - Each Element3d in the project tree (from Cad
 //      downward) can reference a LaserLayer via its laserLayer
 //      property.  Elements that don't set it inherit the
 //      LaserLayer from their parent.
@@ -51,7 +50,7 @@ class Recipe : public Element3d
       PROPV(bool, showMoves, true)
 
       inline static constexpr std::string_view _properties {R"({
-    "class": "LaserLayer",
+    "class": "Recipe",
     "rows": [
         {
             "label": "State",

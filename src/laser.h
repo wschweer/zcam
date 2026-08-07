@@ -15,6 +15,7 @@
 #include <QVector3D>
 #include <QVector2D>
 #include <QElapsedTimer>
+#include <QTimer>
 #include <QtQml/qqmlregistration.h>
 #include <nlohmann/json.hpp>
 
@@ -129,7 +130,6 @@ struct LaserParameterSet {
       double minJumpDelay;
       double maxJumpDelay;
       double jumpDistanceLimit;
-
       LaserParameterSet() {}
       LaserParameterSet(const LaserPass*, const Laser*);
       void setOverride(ParameterType t, double val);
@@ -151,6 +151,7 @@ enum class LaserState {
       Framing,
       FramingAboutToIdle,
       FramingAboutToMark,
+      AboutToExit,
       Marking,
       MarkingAboutToIdle,
       MarkingAboutToFraming
@@ -171,12 +172,10 @@ class Laser : public Machine
 
       // Laser state properties (exposed to QML)
       // galvolaser
-      PROPV(double, galvoP1, 0.0)
-      PROPV(double, galvoP2, 0.0)
-      PROPV(double, galvoP3, 0.0)
-      PROPV(QVector2D, galvoScale, QVector2D(100.0, 100.0))
-      PROPV(double, galvoShearX, 0.0)
-      PROPV(double, galvoShearY, 0.0)
+      PROPV(QVector2D, galvoBulge, QVector2D(0.0, 0.0))
+      PROPV(QVector2D, galvoScale, QVector2D(1.0, 1.0))
+      PROPV(QVector2D, galvoShear, QVector2D(0.0, 0.0))
+      PROPV(QVector2D, galvoTrapezoid, QVector2D(0.0, 0.0))
       PROPV(double, galvoRotate, 0.0)
       PROPV(bool, galvoSwapxy, false)
 
@@ -219,12 +218,21 @@ class Laser : public Machine
       PROPV(double, estimatedEnd, 0)
       PROPV(double, currentTime, 0)
 
+      //--------------------------------------------------------------------
+      //     Input / Output port properties
+      //     16-bit IO ports exposed to QML for the LaserPanel IO buttons.
+      //     outputPort holds the current output bit mask (toggle buttons).
+      //     inputPort  holds the last-read input bit mask (display labels).
+      //--------------------------------------------------------------------
+      PROPV(int, outputPort, 0)
+      PROPV(int, inputPort, 0)
+
+      QTimer inputPortTimer;
+
       LaserState state;
       std::thread* framingThread {nullptr};
       std::thread* markingThread {nullptr};
-      std::atomic<bool> framingRunning;
       std::atomic<bool> stopFraming;
-      std::atomic<bool> markingRunning;
       std::atomic<bool> stopMarking;
 
       volatile bool aborting {false};
@@ -239,7 +247,7 @@ class Laser : public Machine
       void refreshCamAndFraming();
 
       // framing/marking threads
-      bool doStartFraming();
+      bool runFraming();
       void doStartMarking();
 
     signals:
@@ -280,4 +288,20 @@ class Laser : public Machine
       Q_INVOKABLE QStringList laserPulseList() const;
 
       virtual LaserPosition mapToGalvo(double, double);
+      //--------------------------------------------------------------------
+      //     readInputPort / writeOutputPort
+      //     Virtual interface for reading the 16-bit input port and
+      //     writing the 16-bit output port.  Concrete subclasses
+      //     (LaserBJJCZ, LaserRKQ) implement the actual hardware I/O.
+      //     The base class provides safe no-op defaults.
+      //--------------------------------------------------------------------
+
+      virtual int readInputPort() { return 0; }
+
+      //--------------------------------------------------------------------
+      //     toggleOutputBit
+      //     Q_INVOKABLE helper for QML: toggles a single bit in the
+      //     output port and writes the new value to the hardware.
+      //--------------------------------------------------------------------
+      Q_INVOKABLE virtual void toggleOutputBit(int bit) {}
       };

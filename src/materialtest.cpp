@@ -423,7 +423,7 @@ void MaterialTest::createChildren() {
             if (lls) {
                   // the laser values of the first pass are marked on the
                   // material test card
-                  ls = lls->layer(0);
+                  ls = &lls->pass(0);
                   }
             else
                   Debug("no LaserSettings");
@@ -618,17 +618,27 @@ double MaterialTest::columnValue(int col) const {
 //---------------------------------------------------------
 
 void ZCam::createGalvoTest() {
+      // Preserve the machine from the current project before
+      // creating a new one.  The Machine* is owned by the
+      // Machines asset (not by the Project), so the pointer
+      // remains valid across project recreation.
+      Machine* savedMachine = project() ? project()->machine() : nullptr;
+      startNewProject();
 
-      Project* top = createFiberLaserProject(this);
-      if (!top)
-            return;
-      top->setName("Galvo-Test");
+      // Restore the machine to the new project so the material
+      // test pattern uses the same machine as the current project.
+      if (savedMachine)
+            project()->set_machine(savedMachine);
 
-      Cad* cad         = top->cad();
-      Cam* cam         = top->cam();
-      Fixture* fixture = top->fixture();
-      if (!cad || !cam || !fixture)
-            return;
+      project()->setName("Galvo-Test");
+
+      // Create a Grid covering the machine work area
+      auto grid = new Grid(this, project());
+      project()->addChild(grid);
+
+      Cad* cad         = project()->cad();
+      Cam* cam         = project()->cam();
+      Fixture* fixture = project()->fixture();
 
       cad->setExpanded(true);
       cam->setExpanded(true);
@@ -640,72 +650,38 @@ void ZCam::createGalvoTest() {
       layer->setExpanded(true);
       cad->addChild(layer);
 
-      // Border rectangle — 100×100 mm, centered at origin
-      auto border = new Rectangle(this, layer);
-      border->setName("border");
-      border->set_size(QVector2D(100.0, 100.0));
-      border->set_pos(QVector3D(-50.0, -50.0, 0.0));
-      border->set_fill(false);
-      border->set_lineWidth(0.2);
-      border->setColor(QColor("yellow"));
-      border->update();
-      layer->addChild(border);
-
-      // Crosshair: horizontal line and vertical line through center
-      // Each line is a thin rectangle
-      auto hLine = new Rectangle(this, layer);
-      hLine->setName("hLine");
-      hLine->set_size(QVector2D(100.0, 0.5));
-      hLine->set_pos(QVector3D(-50.0, -0.25, 0.0));
-      hLine->set_fill(true);
-      hLine->setColor(QColor("cyan"));
-      hLine->update();
-      layer->addChild(hLine);
-
-      auto vLine = new Rectangle(this, layer);
-      vLine->setName("vLine");
-      vLine->set_size(QVector2D(0.5, 100.0));
-      vLine->set_pos(QVector3D(-0.25, -50.0, 0.0));
-      vLine->set_fill(true);
-      vLine->setColor(QColor("cyan"));
-      vLine->update();
-      layer->addChild(vLine);
+      double w         = project()->machine()->maxTravel().x();
+      double h         = project()->machine()->maxTravel().y();
+      QVector3D center = QVector3D(w * .5, h * .5, 0.0);
 
       // Concentric squares for linearity check
-      const double squares[] = {20.0, 40.0, 60.0, 80.0};
+      const double squares[] = {w, w * .8, w * .6, w * .4, w * .2};
       for (double sz : squares) {
             auto sq = new Rectangle(this, layer);
             sq->setName(format("square-{}", int(sz)).c_str());
             sq->set_size(QVector2D(sz, sz));
-            sq->set_pos(QVector3D(-sz * 0.5, -sz * 0.5, 0.0));
+            sq->set_pos(center);
             sq->set_fill(false);
-            sq->set_lineWidth(0.1);
-            sq->setColor(QColor("green"));
+            sq->set_lineWidth(0.0);
+            sq->setColor(QColor("black"));
             sq->update();
             layer->addChild(sq);
             }
 
-      // Diagonal lines (two thin rectangles at 45°)
-      // Diagonal from top-left to bottom-right: rotate -45° around center
-      auto diag1 = new Rectangle(this, layer);
-      diag1->setName("diag1");
-      diag1->set_size(QVector2D(141.42, 0.3)); // sqrt(100^2 + 100^2)
-      diag1->set_pos(QVector3D(-70.71, -0.15, 0.0));
-      diag1->set_rot(QVector3D(0, 0, -45.0));
-      diag1->set_fill(true);
-      diag1->setColor(QColor("magenta"));
+      // lines
+      auto diag1 = new Polygon(this, layer);
+      diag1->setName("lines");
+      diag1->moveTo({0.0, h});
+      diag1->lineTo({w, 0.0});
+      diag1->moveTo({w, h});
+      diag1->lineTo({0.0, 0.0});
+      diag1->moveTo({0, h * .5});
+      diag1->lineTo({w, h * .5});
+      diag1->moveTo({w * .5, h});
+      diag1->lineTo({w * .5, 0.0});
+      diag1->setColor(QColor("black"));
       diag1->update();
       layer->addChild(diag1);
-
-      auto diag2 = new Rectangle(this, layer);
-      diag2->setName("diag2");
-      diag2->set_size(QVector2D(141.42, 0.3));
-      diag2->set_pos(QVector3D(-70.71, -0.15, 0.0));
-      diag2->set_rot(QVector3D(0, 0, 45.0));
-      diag2->set_fill(true);
-      diag2->setColor(QColor("magenta"));
-      diag2->update();
-      layer->addChild(diag2);
 
       // Label text
       auto label = new Text(this, layer);
@@ -713,7 +689,7 @@ void ZCam::createGalvoTest() {
       label->set_text("Galvo Test");
       label->set_pointSize(8.0);
       label->set_fontFamily("Noto Sans");
-      label->set_pos(QVector3D(-50.0, 52.0, 0.0));
+      label->set_pos(QVector3D(50.0, 25.0, 0.0));
       label->setColor(QColor("yellow"));
       label->update();
       layer->addChild(label);
@@ -727,7 +703,7 @@ void ZCam::createGalvoTest() {
             ll->set_recipe(recipes->recipePtr(0));
       fixture->addChild(ll);
 
-      finalizeProject(this);
+      endNewProject();
       }
 
 //---------------------------------------------------------
