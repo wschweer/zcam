@@ -72,6 +72,11 @@ class TessGeometry : public QQuick3DGeometry
       void setPolygons(const PathList& _pathList);
       void setLines(const Clipper2Lib::PathD&);
       void setLines(const Clipper2Lib::PathsD&);
+      /// 3D wireframe edges (pairs of vertices connected as independent
+      /// segments).  Used for the 3D selection box of volumetric
+      /// elements (BREP).
+      void setEdges3D(const std::vector<QVector3D>& p0,
+                      const std::vector<QVector3D>& p1);
       /// Render line segments as thin quads (triangle pairs) instead of
       /// GPU line primitives.  GL_LINES with lineWidth=1 suffers from
       /// sub-pixel rasterization that makes some lines appear twice as

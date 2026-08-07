@@ -103,4 +103,5 @@ init-gcc:
 #
 init:
 	git submodule update --init --recursive libdxfrw
-	rm -rf build; mkdir build; cd build; cmake -D CMAKE_CXX_COMPILER=clang++ -G Ninja ..
+#	rm -rf build; mkdir build; cd build; cmake -D CMAKE_CXX_COMPILER=clang++ -G Ninja ..
+	rm -rf build; mkdir build; cd build; cmake -G Ninja ..

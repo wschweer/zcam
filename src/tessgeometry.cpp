@@ -424,6 +424,61 @@ void TessGeometry::setLines(const Clipper2Lib::PathsD& lines) {
       emit geometryRevisionChanged();
       update();
       }
+
+//---------------------------------------------------------
+//   setEdges3D
+//    Upload 3D line segments (independent pairs of vertices
+//    connected as GL_LINES — e.g. the 12 edges of a selection
+//    brick) for the element-selection overlay.
+//---------------------------------------------------------
+
+void TessGeometry::setEdges3D(const std::vector<QVector3D>& p0, const std::vector<QVector3D>& p1) {
+      clear();
+      if (p0.empty() || p0.size() != p1.size()) {
+            ++_geometryRevision;
+            emit geometryRevisionChanged();
+            update();
+            return;
+            }
+      addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
+      setStride(3 * sizeof(float));
+      setPrimitiveType(PrimitiveType::Lines);
+
+      const int pairCount   = static_cast<int>(p0.size());
+      const int vertexCount = pairCount * 2;
+      QByteArray vertices;
+      vertices.resize(vertexCount * 3 * sizeof(float));
+      float* data = reinterpret_cast<float*>(vertices.data());
+
+      QVector3D allMin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                       std::numeric_limits<float>::max());
+      QVector3D allMax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                       std::numeric_limits<float>::lowest());
+      for (int i = 0; i < pairCount; ++i) {
+            const QVector3D& a = p0[i];
+            const QVector3D& b = p1[i];
+            *data++            = a.x();
+            *data++            = a.y();
+            *data++            = a.z();
+            *data++            = b.x();
+            *data++            = b.y();
+            *data++            = b.z();
+            for (const auto& v : { a, b }) {
+                  allMin.setX(std::min(allMin.x(), v.x()));
+                  allMin.setY(std::min(allMin.y(), v.y()));
+                  allMin.setZ(std::min(allMin.z(), v.z()));
+                  allMax.setX(std::max(allMax.x(), v.x()));
+                  allMax.setY(std::max(allMax.y(), v.y()));
+                  allMax.setZ(std::max(allMax.z(), v.z()));
+                  }
+            }
+      setVertexData(vertices);
+      addSubset(0, vertexCount, allMin, allMax);
+      setBounds(allMin, allMax);
+      ++_geometryRevision;
+      emit geometryRevisionChanged();
+      update();
+      }
 //---------------------------------------------------------
 //   setLinesForExpandedQuads
 //    Upload raw line segments as flat quad geometry for the

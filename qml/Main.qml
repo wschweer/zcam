@@ -295,7 +295,7 @@ Window {
     FileDialog {
         id: importFileDialog
         title: qsTr("Import File")
-        nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj)"), qsTr("All files (*)")]
+        nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj *.xml *.cvg)"), qsTr("IPC-2581 (*.xml *.cvg)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
         onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
         }

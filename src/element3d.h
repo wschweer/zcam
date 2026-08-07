@@ -223,6 +223,12 @@ class Element3d : public Element
       /// Returns nullptr if no ancestor (including self) has a laserLayer set.
       Recipe* effectiveLaserLayer() const;
       QRectF boundingBox() const;
+      /// Element-specific content bounding box.  The base
+      /// implementation returns an empty rect; elements that carry
+      /// their own cached box (BREP mesh, DXF import) override this
+      /// so boundingBox() can prefer it over the pathList-derived
+      /// fallback.  Children are NOT included.
+      virtual QRectF contentBoundingBox() const { return QRectF(); }
       /// Returns the axis-aligned bounding box of all child Element3d
       /// in this element's local coordinate system.  Used by Group
       /// and any element that has children but no own path data.
@@ -232,10 +238,23 @@ class Element3d : public Element
       /// Returns the axis-aligned bounding box in world (root) coordinates
       /// by transforming the local boundingBox() through globalMatrix().
       QRectF worldBoundingBox() const;
+      /// Returns the local 3D bounding box.  The base implementation
+      /// derives it from the 2D boundingBox() with z = 0 (flat canvas
+      /// elements); elements with real volume (BREP) override this
+      /// with actual mesh z extents.
+      virtual void boundingBox3D(QVector3D& bMin, QVector3D& bMax) const;
+      /// Returns the axis-aligned world (root) space 3D bounding box:
+      /// all eight local boundingBox3D() corners transformed through
+      /// globalMatrix().
+      void worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const;
       /// Returns true if the given world-space point (x, y) lies inside
       /// this element's world bounding box.
       bool containsWorldPoint(double x, double y) const;
-      TessGeometry* selectionGeometry() const { return _selectionGeometry; }
+      /// Rebuilds the content of the (constructor-created) selection
+      /// geometry for the current bounding box before returning it,
+      /// so the QML binding always sees a filled rectangle.
+      TessGeometry* selectionGeometry();
+      const TessGeometry* selectionGeometry() const { return _selectionGeometry; }
       QColor color() const { return _color; }
       void setColor(const QColor&);
       Q_INVOKABLE QColor curColor() const;

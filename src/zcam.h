@@ -24,6 +24,7 @@
 #include "project.h"
 #include "recipe.h"
 #include "machines.h"
+#include "logger.h"
 #include "group.h"
 
 class Project;
@@ -55,6 +56,12 @@ class Config : public QObject
       PROPV(QColor, framingColor, QColor("#00ff00"))
       PROPV(bool, showGrid, true)
       PROPV(double, gridSpacing, 10.0)
+      PROPV(double, smPanX, 4.0)
+      PROPV(double, smPanY, 4.0)
+      PROPV(double, smZoom, 12.0)
+      PROPV(double, smPitch, 1.0)
+      PROPV(double, smYaw, 1.0)
+      PROPV(double, smRoll, 1.0)
       PROPV(QString, defaultMachine, QString())
       PROPV(QString, artworkDirectory, QString())
       PROPV(QString, iconDirectory, QString::fromUtf8("/usr/share/icons"))
@@ -302,6 +309,84 @@ class Config : public QObject
                           "default": 100,
                           "step": 4,
                           "bigStep": 25
+                        }
+                      ]
+                    },
+                    {
+                      "columns": 2,
+                      "cat": "SpaceMouse",
+                      "cells": [
+                        {
+                          "name": "smPanX",
+                          "label": "Pan Left/Right",
+                          "type": "float",
+                          "cat": "SpaceMouse",
+                          "min": 0.1,
+                          "max": 50.0,
+                          "default": 4.0,
+                          "precision": 1,
+                          "step": 0.5,
+                          "bigStep": 2.0
+                        },
+                        {
+                          "name": "smPanY",
+                          "label": "Pan Up/Down",
+                          "type": "float",
+                          "cat": "SpaceMouse",
+                          "min": 0.1,
+                          "max": 50.0,
+                          "default": 4.0,
+                          "precision": 1,
+                          "step": 0.5,
+                          "bigStep": 2.0
+                        },
+                        {
+                          "name": "smZoom",
+                          "label": "Zoom",
+                          "type": "float",
+                          "cat": "SpaceMouse",
+                          "min": 0.1,
+                          "max": 50.0,
+                          "default": 12.0,
+                          "precision": 1,
+                          "step": 0.5,
+                          "bigStep": 2.0
+                        },
+                        {
+                          "name": "smPitch",
+                          "label": "Tilt Up/Down",
+                          "type": "float",
+                          "cat": "SpaceMouse",
+                          "min": 0.1,
+                          "max": 10.0,
+                          "default": 1.0,
+                          "precision": 1,
+                          "step": 0.1,
+                          "bigStep": 0.5
+                        },
+                        {
+                          "name": "smYaw",
+                          "label": "Turn Left/Right",
+                          "type": "float",
+                          "cat": "SpaceMouse",
+                          "min": 0.1,
+                          "max": 10.0,
+                          "default": 1.0,
+                          "precision": 1,
+                          "step": 0.1,
+                          "bigStep": 0.5
+                        },
+                        {
+                          "name": "smRoll",
+                          "label": "Twist",
+                          "type": "float",
+                          "cat": "SpaceMouse",
+                          "min": 0.1,
+                          "max": 10.0,
+                          "default": 1.0,
+                          "precision": 1,
+                          "step": 0.1,
+                          "bigStep": 0.5
                         }
                       ]
                     }
@@ -574,6 +659,34 @@ class ZCam : public QObject
       /// (and therefore all its children).
       /// In all other cases this delegates to pickElement().
       Q_INVOKABLE Element3d* pickDragTarget(double x, double y);
+
+      /// Ray-based picking used by the 3D viewport.  Tests the pick ray
+      /// (origin/direction in root coordinates) against the world 3D
+      /// bounding boxes of all visible, selectable elements and returns
+      /// the element whose box is hit closest to the origin.  Unlike
+      /// pickElement() this also works for volumetric elements (BREP)
+      /// whose z-offset differs from zero and in tilted views where a
+      /// z = 0 plane projection would miss the visible object.
+      Q_INVOKABLE Element3d* pickElementAtRay(const QVector3D& origin, const QVector3D& dir);
+
+      /// Dump all ray-pick candidates (hit t, name, world 3D box)
+      /// to the application log — diagnosis helper for picking issues.
+      Q_INVOKABLE void debugRayPick(const QVector3D& origin, const QVector3D& dir);
+
+      /// Simple log bridge for QML diagnosis output (console.log from
+      /// QML does not necessarily reach zcam.log depending on how the
+      /// app was started).
+      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
+
+      /// Convenience helper for QML: unproject the viewport point
+      /// (x, y in pixels) of the given View3D through its camera and
+      /// root node and pick with the resulting ray via
+      /// pickElementAtRay().  Doing the unprojection in C++ avoids
+      /// the QQuick3D coordinate-flip pitfalls of the equivalent QML
+      /// expression (mapFromViewport returns y-flipped scene
+      /// coordinates, and root.mapPositionFromScene in QML resolves
+      /// against the parent Node of View3DPanel).
+      Q_INVOKABLE Element3d* pickAt(QObject* view3d, QObject* rootNode, double x, double y);
 
       /// Lasso selection: given a polygon in world (root) coordinates
       /// (a list of points), select all visible, selectable elements

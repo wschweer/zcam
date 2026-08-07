@@ -326,6 +326,31 @@ Item {
         }
 
     //=========================================================
+    //  Quaternion helpers
+    //    The SpaceMouse rotates the world node (root) relative
+    //    to the CAMERA, so the scene always turns the way the
+    //    knob is pushed — no matter where the camera currently
+    //    looks.  A camera-space rotation is applied in world
+    //    space as   q' = qCam ⊗ q ⊗ qCam⁻¹.
+    //=========================================================
+    function qMul(a, b) {
+        return Qt.quaternion(a.scalar * b.scalar - a.x * b.x - a.y * b.y - a.z * b.z, a.scalar * b.x + a.x * b.scalar + a.y * b.z - a.z * b.y, a.scalar * b.y - a.x * b.z + a.y * b.scalar + a.z * b.x, a.scalar * b.z + a.x * b.y - a.y * b.x + a.z * b.scalar);
+        }
+
+    // Rotate vector v by quaternion q:  v' = q · (0,v) · q⁻¹
+    function qRotVec(q, v) {
+        var qv3 = qMul(qMul(q, Qt.quaternion(0, v.x, v.y, v.z)), Qt.quaternion(q.scalar, -q.x, -q.y, -q.z));
+        return Qt.vector3d(qv3.x, qv3.y, qv3.z);
+        }
+
+    // Quaternion for `deg` degrees around (normalized) axis.
+    function qAxisAngle(axis, deg) {
+        var half = deg * Math.PI / 360.0;
+        var s = Math.sin(half);
+        return Qt.quaternion(Math.cos(half), axis.x * s, axis.y * s, axis.z * s);
+        }
+
+    //=========================================================
     //  Background View3D — renders only the Grid element so
     //  the grid is always rendered behind all other 3D geometry
     //  regardless of z-stacking within the main scene.
@@ -625,31 +650,60 @@ Item {
         }
 
     SpaceMouse {
+        // Per-axis sensitivity, configurable in Config → SpaceMouse.
+        // The raw device values are only roughly ±0.7 at full
+        // deflection, so they are amplified to make moving, zooming
+        // and rotating feel responsive.
+        property real sensPanX: ZCam.config ? ZCam.config.smPanX : 4.0
+        property real sensPanY: ZCam.config ? ZCam.config.smPanY : 4.0
+        property real sensZoom: ZCam.config ? ZCam.config.smZoom : 12.0
+        property real sensPitch: ZCam.config ? ZCam.config.smPitch : 1.0
+        property real sensYaw: ZCam.config ? ZCam.config.smYaw : 1.0
+        property real sensRoll: ZCam.config ? ZCam.config.smRoll : 1.0
+        // All motions are interpreted in CAMERA space: pushing the knob
+        // left always moves the content to the left on screen, twisting
+        // the knob always rolls the view, etc. — independent of how the
+        // world node (root) is currently rotated.
         onRotate: v => {
-            var r = root.eulerRotation;
-            r.x -= v.x;
-            r.y += v.y;
-            r.z -= v.z;
-            root.eulerRotation = r;
+            // Camera axes expressed in world coordinates (cameras sit at
+            // world identity, looking down -Z).
+            var right = Qt.vector3d(1, 0, 0);
+            var up = Qt.vector3d(0, 1, 0);
+            var fwd = Qt.vector3d(0, 0, -1);
+
+            // Axis (world space) and angle for each SpaceMouse component:
+            //   tilt  (v.x, up/down) → pitch around camera right
+            //   twist (v.z)          → roll  around camera forward
+            //   turn  (v.y, l/r)     → yaw   around camera up
+            // The signs match the previous behaviour in the home view
+            // (yaw around +up, roll around +z), only the axes are now
+            // fixed to the camera instead of the rotated object.
+            var q = qMul(qAxisAngle(right, -v.x * sensPitch), qAxisAngle(fwd, v.z * sensRoll));
+            q = qMul(q, qAxisAngle(up, v.y * sensYaw));
+
+            // Rotate root.position as well so the node spins around its
+            // origin instead of orbiting the world origin.
+            var pos = qRotVec(q, root.position);
+            var rot = qMul(q, root.rotation);
+            root.rotation = rot;
+            root.position = pos;
             updateGridViewport();
             }
         onTranslate: v => {
-            var mag = 0.3;
-
-            let delta = Qt.vector3d(0, 0, 0);
-            delta.x = (v.x / mag) * 10.0;
-            delta.y = (-v.y / mag) * 10.0;
-            delta.z = v.z * -0.1;
-
-            let velocity = Qt.vector3d(0, 0, 0);
-            let xDirection = root.right;
-            velocity = velocity.plus(Qt.vector3d(xDirection.x * delta.x, xDirection.y * delta.x, xDirection.z * delta.x));
-
-            let yDirection = root.up;
-            velocity = velocity.plus(Qt.vector3d(yDirection.x * delta.y, yDirection.y * delta.y, yDirection.z * delta.y));
-
-            root.position = root.position.plus(velocity);
-            root.scale = root.scale.times(1.0 + delta.z);
+            // Camera-space offset.  The cameras sit at world identity,
+            // so the camera axes ARE the world axes and the offset can
+            // be applied directly — independent of how the world node
+            // (root) is currently rotated:
+            //   knob right/left   → +x / -x  (content right/left)
+            //   knob up           → +y       (content up)
+            //   knob pushed away  → +z       (content toward the
+            //                                   viewer → zoom in)
+            // The root scale is applied so the content keeps moving
+            // proportionally to the zoom factor like before; the
+            // sensPan*/sensZoom factors amplify the raw device values.
+            var s = root.scale;
+            var world = Qt.vector3d(v.x * s.x * sensPanX, -v.y * s.y * sensPanY, -v.z * s.z * sensZoom);
+            root.position = root.position.plus(world);
             updateGridViewport();
             }
         }
@@ -1007,35 +1061,56 @@ Item {
             }
 
         function pickModel(x, y) {
-            // Custom picking: use C++ bounding-box-based picking
-            // instead of Qt Quick 3D's built-in pickAll.
-            // The C++ side traverses the element tree and returns
-            // the innermost (smallest area) visible element whose
-            // world bounding box contains the screen-to-scene point.
-            var scenePos = screenToScene(x, y);
-            if (!scenePos)
+            // The coordinates come from the panel-level MouseArea and
+            // are relative to the panel, not to the View3D — convert
+            // them into View3D-local coordinates before any picking.
+            var posInView = mouseArea.mapToItem(view3D, x, y);
+            var vx = posInView.x;
+            var vy = posInView.y;
+            // Try Qt Quick 3D's own raycast picker first: it works in
+            // exactly the same coordinate space as the rendering, so
+            // there is no risk of a coordinate-frame mismatch.  Walk
+            // the results (nearest first) and return the first element
+            // hit that is a real Element3d with an actual pickable
+            // object (not a helper node like the grid background).
+            let results = view3D.pickAll(vx, vy);
+            // Walk the hits (nearest first).  PickResult.element is
+            // always null for QML-instantiated Models, so read the
+            // Element3d from the picked Model's own "element" property
+            // (set by ProjectTree.addElement).
+            for (let i = 0; i < results.length; ++i) {
+                var obj = results[i].objectHit;
+                // Walk up the QML parent chain until a Model with an
+                // "element" property is found — child helper Models
+                // (edge lines, bboxOverlay) live inside the real
+                // element Model.
+                while (obj && obj.element === undefined)
+                    obj = obj.parent;
+                if (!obj || obj.element === null || obj.element === undefined)
+                    continue;
+                var el = obj.element;
+                if (el.show)
+                    return { element: el, objectHit: results[i].objectHit, bounds: results[i].bounds };
+                }
+            ZCam.logLine("pickAll: " + results.length + " hits");
+            if (results.length === 0)
+                ZCam.logLine("pickAll -> no usable element (0 hits), falling back to pickAt");
+            // Fallback: C++ ray-based 3D-bbox picking.
+            var el2 = ZCam.pickAt(view3D, root, vx, vy);
+            if (!el2)
                 return null;
-            var el = ZCam.pickElement(scenePos.x, scenePos.y);
-            if (!el)
-                return null;
-            // Return a pseudo-result object with .element so the
-            // callers that expect { element: ... } still work.
-            return { element: el, objectHit: null, bounds: null };
+            return { element: el2, objectHit: null, bounds: null };
             }
 
         // Picking variant used to start a left-button drag.
-        // When the currently selected element is a Group and the click
-        // lies inside the Group's world bounding box, return the Group
-        // itself so the visible selection bounding box acts as a drag
-        // handle for the whole group (and its children).
+        // Uses the same ray-based approach as pickModel().  The
+        // Group-drag-handle special case (return the selected Group
+        // itself when clicking inside its box) is intentionally not
+        // re-implemented here — ray-based picking on 3D elements
+        // already returns the innermost draggable element, which is
+        // the correct drag target for the 3D viewport.
         function pickDragTarget(x, y) {
-            var scenePos = screenToScene(x, y);
-            if (!scenePos)
-                return null;
-            var el = ZCam.pickDragTarget(scenePos.x, scenePos.y);
-            if (!el)
-                return null;
-            return { element: el, objectHit: null, bounds: null };
+            return pickModel(x, y);
             }
 
         // Returns the vertex handle Model under x/y, or null.

@@ -18,3 +18,6 @@ tools/linuxdeploy-plugin-qt.AppImage
 tools/lib
 testfiles
 sniffer
+# OpenCASCADE (now using system-installed packages, not bundled)
+external/occt/
+Papers

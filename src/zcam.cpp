@@ -10,6 +10,10 @@
 //=============================================================================
 
 #include "zcam.h"
+#include <functional>
+#include <QtQuick3D/private/qquick3dcamera_p.h>
+#include <QtQuick3D/private/qquick3dnode_p.h>
+#include <QtQuick3D/private/qquick3dviewport_p.h>
 #include "project.h"
 #include "cad.h"
 #include "cameraelement.h"
@@ -33,6 +37,8 @@
 #include "framing.h"
 #include "stock.h"
 #include "dxfimport.h"
+#include "brepimport.h"
+#include "importipc2581.h"
 
 #include <QSettings>
 #include <QFileInfo>
@@ -966,6 +972,239 @@ Element3d* ZCam::pickElement(double x, double y) {
       // Sort by area ascending (innermost first).  On equal areas
       // the deeper tree node (larger depth) comes first so the
       // innermost shape wins over its ancestor containers.
+      std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+            if (std::get<0>(a) != std::get<0>(b))
+                  return std::get<0>(a) < std::get<0>(b);
+            return std::get<1>(a) > std::get<1>(b);
+            });
+      if (_currentElement) {
+            for (size_t i = 0; i < candidates.size(); ++i) {
+                  if (std::get<2>(candidates[i]) == _currentElement) {
+                        if (i + 1 < candidates.size())
+                              return std::get<2>(candidates[i + 1]);
+                        return std::get<2>(candidates[0]);
+                        }
+                  }
+            }
+      return std::get<2>(candidates[0]);
+      }
+
+//---------------------------------------------------------
+//   collectRayPickCandidates
+//    Depth-first traversal collecting every visible, selectable
+//    Element3d whose world 3D bounding box is intersected by the
+//    pick ray, using the slab method.  The hit parameter t
+//    (distance along the ray) is stored with each candidate.
+//---------------------------------------------------------
+
+static void collectRayPickCandidates(Element* root, const QVector3D& origin, const QVector3D& dir, int depth,
+                                     std::vector<std::tuple<float, int, Element3d*>>& candidates) {
+      if (!root)
+            return;
+      auto* e3d = qobject_cast<Element3d*>(root);
+      if (e3d && e3d->show() && e3d->ancestorsShow() && e3d->selectable() && e3d->visible()) {
+            QVector3D bMin, bMax;
+            e3d->worldBoundingBox3D(bMin, bMax);
+            if (bMin.x() <= bMax.x()) {
+                  // Slab test: intersect the ray with the three axis
+                  // planes pairs; the box is hit iff the largest entry
+                  // parameter does not exceed the smallest exit one.
+                  float tNear = std::numeric_limits<float>::lowest();
+                  float tFar  = std::numeric_limits<float>::max();
+                  bool hit    = true;
+                  for (int axis = 0; axis < 3; ++axis) {
+                        float o = origin[axis], d = dir[axis];
+                        float lo = bMin[axis], hi = bMax[axis];
+                        if (qFuzzyIsNull(d)) {
+                              if (o < lo || o > hi) {
+                                    hit = false;
+                                    break;
+                                    }
+                              continue;
+                              }
+                        float t0 = (lo - o) / d;
+                        float t1 = (hi - o) / d;
+                        if (t0 > t1)
+                              std::swap(t0, t1);
+                        tNear = std::max(tNear, t0);
+                        tFar  = std::min(tFar, t1);
+                        if (tNear > tFar) {
+                              hit = false;
+                              break;
+                              }
+                        }
+                  if (hit && tFar >= 0.0f)
+                        candidates.emplace_back(std::max(tNear, 0.0f), depth, e3d);
+                  }
+            }
+      for (auto* child : root->children())
+            collectRayPickCandidates(child, origin, dir, depth + 1, candidates);
+      }
+
+//---------------------------------------------------------
+//   debugRayPick
+//    Diagnosis helper: log all elements along the pick ray —
+//    which are skipped by the visibility gate, which boxes are
+//    hit and at what ray parameter.
+//---------------------------------------------------------
+
+void ZCam::debugRayPick(const QVector3D& origin, const QVector3D& dir) {
+      std::function<void(Element*, int)> walk = [&](Element* e, int depth) {
+            if (!e)
+                  return;
+            if (auto* e3d = qobject_cast<Element3d*>(e)) {
+                  QVector3D bMin, bMax;
+                  e3d->worldBoundingBox3D(bMin, bMax);
+                  Debug("  [{}] vis={}/{} sel={} show={}/{} box=({:.1f},{:.1f},{:.1f})..({:.1f},{:.1f},{:.1f})", depth,
+                        e3d->visible(), e3d->draggable(), e3d->selectable(), e3d->show(), e3d->ancestorsShow(),
+                        bMin.x(), bMin.y(), bMin.z(), bMax.x(), bMax.y(), bMax.z());
+                  }
+            for (auto* c : e->children())
+                  walk(c, depth + 1);
+            };
+      Debug("debugRayPick: origin=({:.1f},{:.1f},{:.1f}) dir=({:.3f},{:.3f},{:.3f})", origin.x(), origin.y(),
+            origin.z(), dir.x(), dir.y(), dir.z());
+      walk(_rootElement, 0);
+      std::vector<std::tuple<float, int, Element3d*>> candidates;
+      collectRayPickCandidates(_rootElement, origin, dir.normalized(), 0, candidates);
+      std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+            return std::get<0>(a) < std::get<0>(b);
+            });
+      Debug("  {} candidate(s):", candidates.size());
+      for (const auto& [t, depth, el] : candidates)
+            Debug("    t={:.1f} depth={} name={}", t, depth, el->name().toUtf8().constData());
+      }
+
+//---------------------------------------------------------
+//   pickAt
+//    Convenience helper for QML: unproject the viewport point
+//    (x, y in pixels) through the view's camera and root node
+//    and pick with the resulting ray.  The unprojection uses
+//    the official QQuick3D C++ API so the pick ray is the same
+//    ray the internal picker would use — including the y-flip
+//    between View3D viewport coordinates and scene coordinates.
+//---------------------------------------------------------
+
+Element3d* ZCam::pickAt(QObject* view3d, QObject* rootNode, double x, double y) {
+      auto* view = qobject_cast<QQuick3DViewport*>(view3d);
+      auto* root = qobject_cast<QQuick3DNode*>(rootNode);
+      if (!view || !root)
+            return nullptr;
+      auto* cam = view->camera();
+      if (!cam || view->width() <= 0.0 || view->height() <= 0.0)
+            return nullptr;
+      const float nx = float(x / view->width());
+      const float ny = float(y / view->height());
+      const QVector3D nearPos = root->mapPositionFromScene(cam->mapFromViewport(QVector3D(nx, ny, 0.0f)));
+      const QVector3D farPos  = root->mapPositionFromScene(cam->mapFromViewport(QVector3D(nx, ny, 1.0f)));
+      QVector3D dir           = farPos - nearPos;
+      if (dir.isNull())
+            return nullptr;
+      dir.normalize();
+
+      // Pick in the QML root node's local coordinate space: the ray
+      // (nearPos/dir) already lives there.  The element C++ hierarchy
+      // starts at Cad, so globalMatrix() misses the QML root node's
+      // own transform (scale / rotation / position) — collect the
+      // candidates' globalMatrix boxes and pre-multiply the QML root
+      // scene transform so both sides share the same coordinate frame.
+      const QMatrix4x4 qmlRoot = root->sceneTransform();
+
+      std::vector<std::tuple<float, int, Element3d*>> candidates;
+      std::function<void(Element*, int)> walk = [&](Element* e, int depth) {
+            if (!e)
+                  return;
+            if (auto* e3d = qobject_cast<Element3d*>(e)) {
+                  if (e3d->show() && e3d->ancestorsShow() && e3d->selectable() && e3d->visible()) {
+                        QVector3D lMin, lMax;
+                        e3d->boundingBox3D(lMin, lMax);
+                        if (lMin.x() <= lMax.x()) {
+                              // 8 local corners through (qmlRoot * globalMatrix).
+                              QMatrix4x4 m = qmlRoot * e3d->globalMatrix();
+                              QVector3D bMin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                                             std::numeric_limits<float>::max());
+                              QVector3D bMax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                                             std::numeric_limits<float>::lowest());
+                              for (int i = 0; i < 8; ++i) {
+                                    QVector3D c = m.map(QVector3D((i & 1) ? lMax.x() : lMin.x(),
+                                                                  (i & 2) ? lMax.y() : lMin.y(),
+                                                                  (i & 4) ? lMax.z() : lMin.z()));
+                                    bMin.setX(std::min(bMin.x(), c.x()));
+                                    bMin.setY(std::min(bMin.y(), c.y()));
+                                    bMin.setZ(std::min(bMin.z(), c.z()));
+                                    bMax.setX(std::max(bMax.x(), c.x()));
+                                    bMax.setY(std::max(bMax.y(), c.y()));
+                                    bMax.setZ(std::max(bMax.z(), c.z()));
+                                    }
+                              // Slab test.
+                              float tNear = std::numeric_limits<float>::lowest();
+                              float tFar  = std::numeric_limits<float>::max();
+                              bool hit    = true;
+                              for (int axis = 0; axis < 3; ++axis) {
+                                    float o = nearPos[axis], d = dir[axis];
+                                    float lo = bMin[axis], hi = bMax[axis];
+                                    if (qFuzzyIsNull(d)) {
+                                          if (o < lo || o > hi) {
+                                                hit = false;
+                                                break;
+                                                }
+                                          continue;
+                                          }
+                                    float t0 = (lo - o) / d;
+                                    float t1 = (hi - o) / d;
+                                    if (t0 > t1)
+                                          std::swap(t0, t1);
+                                    tNear = std::max(tNear, t0);
+                                    tFar  = std::min(tFar, t1);
+                                    if (tNear > tFar) {
+                                          hit = false;
+                                          break;
+                                          }
+                                    }
+                              if (hit && tFar >= 0.0f)
+                                    candidates.emplace_back(std::max(tNear, 0.0f), depth, e3d);
+                              }
+                        }
+                  }
+            for (auto* c : e->children())
+                  walk(c, depth + 1);
+            };
+      walk(_rootElement, 0);
+      if (candidates.empty())
+            return nullptr;
+      std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+            if (std::get<0>(a) != std::get<0>(b))
+                  return std::get<0>(a) < std::get<0>(b);
+            return std::get<1>(a) > std::get<1>(b);
+            });
+      if (_currentElement) {
+            for (size_t i = 0; i < candidates.size(); ++i) {
+                  if (std::get<2>(candidates[i]) == _currentElement) {
+                        if (i + 1 < candidates.size())
+                              return std::get<2>(candidates[i + 1]);
+                        return std::get<2>(candidates[0]);
+                        }
+                  }
+            }
+      return std::get<2>(candidates[0]);
+      }
+
+//---------------------------------------------------------
+//   pickElementAtRay
+//    Return the candidate hit closest to the ray origin; on equal
+//    distances the deepest tree node wins so innermost shapes are
+//    preferred over their ancestor containers.  Selection cycling
+//    behaves like in pickElement(): clicking again on the already
+//    selected element returns the next-farther candidate.
+//---------------------------------------------------------
+
+Element3d* ZCam::pickElementAtRay(const QVector3D& origin, const QVector3D& dir) {
+      if (dir.isNull())
+            return nullptr;
+      std::vector<std::tuple<float, int, Element3d*>> candidates;
+      collectRayPickCandidates(_rootElement, origin, dir.normalized(), 0, candidates);
+      if (candidates.empty())
+            return nullptr;
       std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
             if (std::get<0>(a) != std::get<0>(b))
                   return std::get<0>(a) < std::get<0>(b);
@@ -2811,6 +3050,10 @@ bool ZCam::importFile(const QString& path) {
             importSvg(path);
       else if (suffix == QStringLiteral("dxf") || suffix == QStringLiteral("dwg"))
             return DxfImport::import(this, path);
+      else if (ImportIpc2581::isIpc2581File(path))
+            return ImportIpc2581::import(this, path);
+      else if (suffix == QStringLiteral("brep"))
+            return BrepElementInterface::import(this, path);
       else {
             Warning("ZCam::importFile: unsupported file type: {}", suffix);
             return false;

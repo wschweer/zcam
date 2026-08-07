@@ -19,6 +19,7 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration Multimedia)
+find_package(Qt6 COMPONENTS Quick3DPrivate QUIET)
 find_package(Qt6Multimedia QUIET)
 find_package(OpenCV REQUIRED)
 get_target_property(QT_CORE_LIB Qt6::Core LOCATION)
@@ -73,6 +74,7 @@ qt_add_qml_module(zcam
         qml/Shape.qml
         qml/GridShape.qml
         qml/LaserLayer1.qml
+        qml/BRepShape.qml
         qml/TreeViewPanel.qml
         qml/InspectorPanel.qml
         qml/PropertyEditor.qml
@@ -133,6 +135,12 @@ qt_add_qml_module(zcam
         src/svg.cpp
         src/truncatedcubegeometry.cpp src/truncatedcubegeometry.h
         src/dxfimport.cpp src/dxfimport.h src/dxftess.h
+        src/importipc2581.cpp src/importipc2581.h
+        src/xmlreader.cpp src/xmlreader.h src/xmlwriter.cpp src/xmlwriter.h
+        src/brepelement.cpp src/brepelement.h
+        src/brepgeometry.cpp src/brepgeometry.h
+        src/brepedgegeometry.cpp src/brepedgegeometry.h
+        src/brepimport.cpp src/brepimport.h
 
         src/geometryworker.cpp src/geometryworker.h
         src/mediabrowser.cpp src/mediabrowser.h
@@ -266,6 +274,7 @@ target_link_libraries(zcam PRIVATE
       Qt6::Gui
       Qt6::Quick
       Qt6::Quick3D
+      Qt6::Quick3DPrivate
       Qt6::QuickControls2
       Qt6::Qml
       Qt6::QmlIntegration
@@ -290,6 +299,15 @@ target_include_directories(zcam PRIVATE src)
 target_include_directories(zcam PRIVATE clipper2/include)
 target_include_directories(zcam PRIVATE tess2)
 target_include_directories(zcam PRIVATE libdxfrw/src)
+
+#--------------------------------------------------------------------
+#     OpenCASCADE (system-installed)
+#--------------------------------------------------------------------
+find_package(OpenCASCADE REQUIRED)
+
+target_link_libraries(zcam PRIVATE
+      TKernel TKMath TKBRep TKPrim TKMesh TKShHealing TKGeomBase TKG3d TKG2d TKTopAlgo TKGeomAlgo TKHLR
+      )
 
 # ---------------------------------------------------------------------------
 # Install targets – required by "make appimage" (linuxdeploy)

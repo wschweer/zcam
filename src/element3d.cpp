@@ -11,6 +11,8 @@
 
 #include "element3d.h"
 #include "zcam.h"
+#include "logger.h"
+#include "brepelement.h"
 #include "clipper2/clipper.h"
 #include "propertyjson.h"
 #include "group.h"
@@ -393,6 +395,13 @@ Recipe* Element3d::effectiveLaserLayer() const {
 //---------------------------------------------------------
 
 QRectF Element3d::boundingBox() const {
+      // Prefer the element-specific content box (BREP mesh, DXF
+      // import) — a BREP element has no pathList but a cached mesh
+      // box.  If that is empty, fall back to the pathList-derived
+      // rectangle, then to the children union.
+      QRectF cb = contentBoundingBox();
+      if (!cb.isNull() && (cb.width() > 0.0 || cb.height() > 0.0))
+            return cb;
       if (_pathList.empty())
             return childrenBoundingBox();
       double minX = std::numeric_limits<double>::max();
@@ -484,6 +493,50 @@ QRectF Element3d::worldBoundingBox() const {
       }
 
 //---------------------------------------------------------
+//   boundingBox3D
+//    Local 3D bounding box.  Flat canvas elements derive it from
+//    the 2D path bounding box with z = 0; elements with real
+//    volume override this.
+//---------------------------------------------------------
+
+void Element3d::boundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
+      QRectF bb = boundingBox();
+      bMin      = QVector3D(float(bb.left()), float(bb.top()), 0.0f);
+      bMax      = QVector3D(float(bb.right()), float(bb.bottom()), 0.0f);
+      }
+
+//---------------------------------------------------------
+//   worldBoundingBox3D
+//    Axis-aligned world (root) space 3D bounding box: all eight
+//    local boundingBox3D() corners transformed through
+//    globalMatrix(), then reduced to the enclosing AABB.
+//    Unlike worldBoundingBox() this keeps the z extent, so
+//    volumetric elements (BREP) are picked where they are
+//    actually rendered instead of at a z = 0 slice.
+//---------------------------------------------------------
+
+void Element3d::worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
+      QVector3D lMin, lMax;
+      boundingBox3D(lMin, lMax);
+      QMatrix4x4 gm = globalMatrix();
+      bMin          = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                                std::numeric_limits<float>::max());
+      bMax          = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                                std::numeric_limits<float>::lowest());
+      for (int i = 0; i < 8; ++i) {
+            QVector3D c((i & 1) ? lMax.x() : lMin.x(), (i & 2) ? lMax.y() : lMin.y(),
+                        (i & 4) ? lMax.z() : lMin.z());
+            c = gm.map(c);
+            bMin.setX(std::min(bMin.x(), c.x()));
+            bMin.setY(std::min(bMin.y(), c.y()));
+            bMin.setZ(std::min(bMin.z(), c.z()));
+            bMax.setX(std::max(bMax.x(), c.x()));
+            bMax.setY(std::max(bMax.y(), c.y()));
+            bMax.setZ(std::max(bMax.z(), c.z()));
+            }
+      }
+
+//---------------------------------------------------------
 //   containsWorldPoint
 //    Returns true if the given world-space point (x, y) lies
 //    inside this element's world bounding box.
@@ -497,9 +550,24 @@ bool Element3d::containsWorldPoint(double x, double y) const {
       }
 
 //---------------------------------------------------------
+//   selectionGeometry
+//    Lazy accessor: creates the selection geometry on first use,
+//    so a QML binding never sees a stale null when the element was
+//    created before its bounding box / pathList data existed.
+//---------------------------------------------------------
+
+TessGeometry* Element3d::selectionGeometry() {
+      // _selectionGeometry is created in the constructor; just ensure
+      // its content is up to date for the current bounding box.
+      if (_selectionGeometry)
+            updateSelectionGeometry();
+      return _selectionGeometry;
+      }
+
+//---------------------------------------------------------
 //   updateSelectionGeometry
-//    build a line rectangle for the bounding box so the QML
-//    layer can render it when this element is selected
+//    Rebuild the line rectangle around boundingBox() so the QML
+//    layer can render it when this element is selected.
 //---------------------------------------------------------
 
 void Element3d::updateSelectionGeometry() {

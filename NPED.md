@@ -31,6 +31,16 @@ Or use the Ninja build system (build.ninja is pre-generated).
   CameraOverlayGeometry). CameraTextureData binds to the element for the 3D
   overlay texture; visibility gates camera capture.
 
+## File Imports
+- **SVG / DXF / BREP**: `ZCam::importFile()` dispatches by suffix to the
+  respective importers (`svg.cpp`, `dxfimport.cpp`, `brepimport.cpp`).
+- **IPC-2581 (revision C)**: `importipc2581.cpp` parses the PCB "digital twin"
+  XML. All layers become Groups with Polygon children (arcs/primitives are
+  flattened) below a new import layer; negative polarity and Cutout geometry is
+  imported as red filled polygons. A linked Recipe (laser layer) is added to the
+  active fixture. Sniffed by root element so plain `.xml` imports are routed
+  correctly (see `ImportIpc2581::isIpc2581File`).
+
 ## Coding Conventions
 - C++23, Qt6, QML
 - use camel case variable names
