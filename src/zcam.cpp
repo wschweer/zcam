@@ -611,7 +611,14 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       _snapState.cursorPos += delta;
       QVector3D newWorldRef = _snapState.cursorPos;
 
-      if (grid && grid->snap()) {
+      // Shift+drag inverts the snap behaviour: when grid snap is ON,
+      // Shift temporarily disables it (free drag); when grid snap is
+      // OFF, Shift temporarily enables it (snap drag).
+      bool snapActive = grid && grid->snap();
+      if (modifiers & Qt::ShiftModifier)
+            snapActive = !snapActive;
+
+      if (snapActive && grid) {
             double spacing = grid->minorSpacing();
             if (spacing > 0.0) {
                   double halfSpacing = spacing / 2.0;
