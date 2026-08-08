@@ -723,7 +723,12 @@ Item {
                 propagateComposedEvents: true
 
                 onPressed: function(mouse) {
-                    if (mouse.button === Qt.LeftButton
+                    if (mouse.button === Qt.RightButton) {
+                        // Accept right-click so onClicked receives it and
+                        // can show the context menu.
+                        mouse.accepted = true;
+                        }
+                    else if (mouse.button === Qt.LeftButton
                         && (mouse.modifiers & Qt.ControlModifier
                             || mouse.modifiers & Qt.ShiftModifier)) {
                         // Accept the press so ItemDelegate.onClicked doesn't fire.
