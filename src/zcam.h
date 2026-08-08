@@ -622,8 +622,9 @@ class ZCam : public QObject
       void camDirtyChanged();
       void currentElementChanged();
       void selectedElementsChanged();
-      /// Emitted when snapRefPos changes (snap engages / disengages /
-      /// reference point moves during a drag with active grid snap).
+      /// Emitted when snapRefPos changes: snap engages / disengages,
+      /// the reference point moves during a drag (with or without grid
+      /// snap), at drag start, and during pivot-scale.
       void snapRefPosChanged();
       /// Emitted once when a drag with grid snap starts (true) and ends
       /// (false).  Unlike snapRefPosChanged this never toggles mid-drag.

@@ -669,6 +669,11 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
 
       QVector3D newPos = element->pos() + localDelta;
       element->set_pos(newPos);
+      // The snap reference-point marker position is derived from the
+      // element's live world position when snap is not active (see
+      // snapRefPos()).  Emit snapRefPosChanged so the QML marker binding
+      // updates and the cross follows the element during non-snap drags.
+      emit snapRefPosChanged();
       }
 
 //---------------------------------------------------------
@@ -748,6 +753,9 @@ void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifier
       element->beginBatchUpdate();
       element->set_pos(element->pos() + localDelta);
       element->endBatchUpdate();
+      // The pivot-scale changes the element's world origin, so update the
+      // snap reference-point marker as well.
+      emit snapRefPosChanged();
       }
 
 //---------------------------------------------------------
@@ -765,12 +773,16 @@ void ZCam::startElementDrag(Element3d* element) {
       _elementDragOrigPos   = element->pos();
       _elementDragOrigRot   = element->rot();
       _elementDragOrigScale = element->scale();
+      // Reset snap state from any previous drag so the magnetic-snap
+      // logic starts clean.
+      _snapState = {};
       // Seed the marker position with the live world position of the
       // element origin so the cross appears at the element (not at the
       // world origin (0,0)) before the first snapped drag event.
       _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
       _snapDragActive   = true;
       emit snapDragActiveChanged();
+      emit snapRefPosChanged();
       _project->undo()->beginMacro();
       }
 
