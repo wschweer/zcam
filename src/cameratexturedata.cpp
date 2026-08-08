@@ -130,8 +130,11 @@ void CameraTextureData::onVideoFrameChanged(const QVideoFrame& frame) {
       if (rgba.size() != size())
             setSize(rgba.size());
 
-      setTextureData(
-          QByteArray::fromRawData(reinterpret_cast<const char*>(rgba.constBits()), rgba.sizeInBytes()));
+      // Deep copy: 'rgba' is a local QImage and will be destroyed when
+      // this function returns.  QByteArray::fromRawData only aliases the
+      // buffer (no copy), so the texture data would point to freed memory
+      // by the time the render thread reads it.
+      setTextureData(QByteArray(reinterpret_cast<const char*>(rgba.constBits()), rgba.sizeInBytes()));
 
       emit textureDataNodeDirty();
       }

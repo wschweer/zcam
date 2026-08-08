@@ -19,7 +19,6 @@
 #include <QImage>
 #include <QSize>
 #include <cfloat>
-
 //=========================================================
 //  ImagePlaneGeometry
 //=========================================================
@@ -42,12 +41,14 @@ ImagePlaneGeometry::ImagePlaneGeometry(QQuick3DObject* parent) : QQuick3DGeometr
 void ImagePlaneGeometry::rebuild() {
       //   corners (bottom-left, bottom-right, top-right, top-left)
       //   UV: (0,1) (1,1) (1,0) (0,0)  — origin bottom-left
-      struct Vert { float x, y, z, nx, ny, nz, u, v; };
+      struct Vert {
+            float x, y, z, nx, ny, nz, u, v;
+            };
       const Vert verts[4] = {
-            {-0.5f, -0.5f, 0.0f,  0.0f, 0.0f, 1.0f, 0.0f, 1.0f},
-            { 0.5f, -0.5f, 0.0f,  0.0f, 0.0f, 1.0f, 1.0f, 1.0f},
-            { 0.5f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f, 1.0f, 0.0f},
-            {-0.5f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f, 0.0f, 0.0f},
+               {-0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f},
+               { 0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f},
+               { 0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f},
+               {-0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f},
             };
       const int indices[6] = {0, 1, 2, 0, 2, 3};
 
@@ -116,8 +117,12 @@ void ImageTextureData::loadFromFile(const QString& path) {
       _filePath = path;
       if (rgba.size() != size())
             setSize(rgba.size());
-      setTextureData(QByteArray::fromRawData(
-            reinterpret_cast<const char*>(rgba.constBits()), rgba.sizeInBytes()));
+      // Deep copy: the QImage 'rgba' is a local variable and will be
+      // destroyed when this function returns.  QByteArray::fromRawData
+      // only aliases the original buffer (no copy), so the texture data
+      // would point to freed memory.  Use an explicit copy so the pixel
+      // data remains valid until the next setTextureData() call.
+      setTextureData(QByteArray(reinterpret_cast<const char*>(rgba.constBits()), rgba.sizeInBytes()));
       emit textureDataNodeDirty();
       }
 
