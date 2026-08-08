@@ -133,17 +133,21 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
 
                 //
                 //  stop the elapsed-time timer and store the
-                //  measured job duration in the active fixture
-                //  (only when the fixture does not yet have a cached
-                //  value, i.e. jobDuration == 0)
+                //  measured job duration in the active fixture.
+                //  If the duration was only a guess (jobDurationEstimated),
+                //  replace it with the actually measured time and clear
+                //  the estimate marker.  Using changeProperty marks the
+                //  project dirty so the value is saved on exit.
                 //
                 markTimer.stop();
                 double elapsed = markTime.elapsed() / 1000.0;
                 set_currentTime(elapsed);
                 if (zcam->project() && zcam->project()->fixture()) {
                       Fixture* fixture = zcam->project()->fixture();
-                      if (fixture->jobDuration() == 0.0)
+                      if (fixture->jobDurationEstimated()) {
                             zcam->project()->changeProperty(fixture, QStringLiteral("jobDuration"), QVariant::fromValue(elapsed));
+                            fixture->set_jobDurationEstimated(false);
+                            }
                       }
 
                 if (state == LaserState::MarkingAboutToIdle) {
@@ -477,8 +481,17 @@ void Laser::doStartMarking() {
       //
       Fixture* fixture = zcam->project()->fixture();
       double duration = fixture->jobDuration();
-      if (duration == 0.0)
+      if (duration == 0.0) {
+            //
+            //  No measured duration yet — estimate it from the laser
+            //  path geometry and remember that this is only a guess.
+            //  The marker jobDurationEstimated is set so that after the
+            //  job finishes the measured time can replace the estimate.
+            //
             duration = guessJobDuration();
+            fixture->set_jobDuration(duration);
+            fixture->set_jobDurationEstimated(true);
+            }
       set_estimatedEnd(duration);
       set_currentTime(0.0);
       markTime.start();

@@ -89,6 +89,7 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
 json Fixture::toJson() const {
       json data = Element3d::toJson();
       data["jobDuration"] = _jobDuration;
+      data["jobDurationEstimated"] = _jobDurationEstimated;
       return data;
       }
 
@@ -102,4 +103,6 @@ void Fixture::fromJson(const json& data) {
       Element3d::fromJson(data);
       if (data.contains("jobDuration"))
             _jobDuration = data.at("jobDuration").get<double>();
+      if (data.contains("jobDurationEstimated"))
+            _jobDurationEstimated = data.at("jobDurationEstimated").get<bool>();
       }

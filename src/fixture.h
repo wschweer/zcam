@@ -23,6 +23,7 @@ class Fixture : public Element3d
 
       PROPV(Framing*, framing, nullptr);
       PROPV(double, jobDuration, 0)
+      PROPV(bool, jobDurationEstimated, false)
       inline static constexpr std::string_view _properties {R"({
     "class": "Fixture",
     "rows": [
