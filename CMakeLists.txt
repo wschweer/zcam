@@ -75,6 +75,7 @@ qt_add_qml_module(zcam
         qml/GridShape.qml
         qml/LaserLayer1.qml
         qml/BRepShape.qml
+        qml/ImageShape.qml
         qml/TreeViewPanel.qml
         qml/InspectorPanel.qml
         qml/PropertyEditor.qml
@@ -147,6 +148,8 @@ qt_add_qml_module(zcam
         src/cameraelement.cpp src/cameraelement.h
         src/cameraoverlaygeometry.cpp src/cameraoverlaygeometry.h
         src/cameratexturedata.cpp src/cameratexturedata.h
+        src/imageelement.cpp src/imageelement.h
+        src/imageimport.cpp src/imageimport.h
         src/cal.cpp src/cal.h
         src/ogr.cpp src/ogr.h
 

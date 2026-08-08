@@ -672,12 +672,10 @@ class ZCam : public QObject
       /// Dump all ray-pick candidates (hit t, name, world 3D box)
       /// to the application log — diagnosis helper for picking issues.
       Q_INVOKABLE void debugRayPick(const QVector3D& origin, const QVector3D& dir);
-
       /// Simple log bridge for QML diagnosis output (console.log from
       /// QML does not necessarily reach zcam.log depending on how the
       /// app was started).
       Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
-
       /// Convenience helper for QML: unproject the viewport point
       /// (x, y in pixels) of the given View3D through its camera and
       /// root node and pick with the resulting ray via
@@ -857,6 +855,15 @@ class ZCam : public QObject
       /// the bounding box's bottom-left corner is at (x, y) in the
       /// parent layer's local coordinate space.
       Q_INVOKABLE void importSvgAt(const QString& path, double x, double y);
+
+      /// Import an image file (PNG, JPEG, BMP, ...) and position the
+      /// resulting ImageElement so the bounding box's bottom-left
+      /// corner is at (x, y) in scene coordinates.
+      Q_INVOKABLE bool importImageAt(const QString& path, double x, double y);
+
+      /// Compute the bounding box (in mm) of an image file, assuming
+      /// the default scale (larger axis = 100 mm).
+      Q_INVOKABLE QRectF imageBoundingBox(const QString& path);
 
       /// Export the project's CAD tree to an SVG file.
       /// The CAD hierarchy (Cad root, Group layers and nested groups)

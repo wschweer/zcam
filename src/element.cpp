@@ -27,6 +27,7 @@
 #include "ellipse.h"
 #include "materialtest.h"
 #include "brepelement.h"
+#include "imageelement.h"
 #include "treemodel.h"
 #include "zcam.h"
 
@@ -146,6 +147,10 @@ void Element::fromJson(const json& data) {
                               }
                         else if (key == "brep") {
                               element = new BrepElement(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "image") {
+                              element = new ImageElement(zcam, this);
                               element->fromJson(value);
                               }
                         if (!element) {

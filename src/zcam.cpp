@@ -38,6 +38,7 @@
 #include "stock.h"
 #include "dxfimport.h"
 #include "brepimport.h"
+#include "imageimport.h"
 #include "importipc2581.h"
 
 #include <QSettings>
@@ -1055,9 +1056,10 @@ void ZCam::debugRayPick(const QVector3D& origin, const QVector3D& dir) {
             if (auto* e3d = qobject_cast<Element3d*>(e)) {
                   QVector3D bMin, bMax;
                   e3d->worldBoundingBox3D(bMin, bMax);
-                  Debug("  [{}] vis={}/{} sel={} show={}/{} box=({:.1f},{:.1f},{:.1f})..({:.1f},{:.1f},{:.1f})", depth,
-                        e3d->visible(), e3d->draggable(), e3d->selectable(), e3d->show(), e3d->ancestorsShow(),
-                        bMin.x(), bMin.y(), bMin.z(), bMax.x(), bMax.y(), bMax.z());
+                  Debug(
+                      "  [{}] vis={}/{} sel={} show={}/{} box=({:.1f},{:.1f},{:.1f})..({:.1f},{:.1f},{:.1f})",
+                      depth, e3d->visible(), e3d->draggable(), e3d->selectable(), e3d->show(),
+                      e3d->ancestorsShow(), bMin.x(), bMin.y(), bMin.z(), bMax.x(), bMax.y(), bMax.z());
                   }
             for (auto* c : e->children())
                   walk(c, depth + 1);
@@ -1067,9 +1069,8 @@ void ZCam::debugRayPick(const QVector3D& origin, const QVector3D& dir) {
       walk(_rootElement, 0);
       std::vector<std::tuple<float, int, Element3d*>> candidates;
       collectRayPickCandidates(_rootElement, origin, dir.normalized(), 0, candidates);
-      std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
-            return std::get<0>(a) < std::get<0>(b);
-            });
+      std::sort(candidates.begin(), candidates.end(),
+                [](const auto& a, const auto& b) { return std::get<0>(a) < std::get<0>(b); });
       Debug("  {} candidate(s):", candidates.size());
       for (const auto& [t, depth, el] : candidates)
             Debug("    t={:.1f} depth={} name={}", t, depth, el->name().toUtf8().constData());
@@ -1093,8 +1094,8 @@ Element3d* ZCam::pickAt(QObject* view3d, QObject* rootNode, double x, double y) 
       auto* cam = view->camera();
       if (!cam || view->width() <= 0.0 || view->height() <= 0.0)
             return nullptr;
-      const float nx = float(x / view->width());
-      const float ny = float(y / view->height());
+      const float nx          = float(x / view->width());
+      const float ny          = float(y / view->height());
       const QVector3D nearPos = root->mapPositionFromScene(cam->mapFromViewport(QVector3D(nx, ny, 0.0f)));
       const QVector3D farPos  = root->mapPositionFromScene(cam->mapFromViewport(QVector3D(nx, ny, 1.0f)));
       QVector3D dir           = farPos - nearPos;
@@ -1121,9 +1122,11 @@ Element3d* ZCam::pickAt(QObject* view3d, QObject* rootNode, double x, double y) 
                         if (lMin.x() <= lMax.x()) {
                               // 8 local corners through (qmlRoot * globalMatrix).
                               QMatrix4x4 m = qmlRoot * e3d->globalMatrix();
-                              QVector3D bMin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                              QVector3D bMin(std::numeric_limits<float>::max(),
+                                             std::numeric_limits<float>::max(),
                                              std::numeric_limits<float>::max());
-                              QVector3D bMax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                              QVector3D bMax(std::numeric_limits<float>::lowest(),
+                                             std::numeric_limits<float>::lowest(),
                                              std::numeric_limits<float>::lowest());
                               for (int i = 0; i < 8; ++i) {
                                     QVector3D c = m.map(QVector3D((i & 1) ? lMax.x() : lMin.x(),
@@ -2510,8 +2513,8 @@ void ZCam::combineSelectedPolygons() {
       // We use the polygon's globalMatrix() to map local points to
       // world (root) space, then the parent's inverse globalMatrix to
       // map back to parent-local space.
-      QMatrix4x4 parentGlobal = parent3d->globalMatrix();
-      bool ok                  = false;
+      QMatrix4x4 parentGlobal    = parent3d->globalMatrix();
+      bool ok                    = false;
       QMatrix4x4 parentGlobalInv = parentGlobal.inverted(&ok);
       if (!ok)
             return;
@@ -2521,12 +2524,12 @@ void ZCam::combineSelectedPolygons() {
             // Ensure the polygon's pathList is up to date.
             // toPathList() converts the PainterPath (with bezier
             // flattening) to a list of 2D point paths.
-            PathList pl = poly->painterPathData().toPathList();
+            PathList pl           = poly->painterPathData().toPathList();
             QMatrix4x4 polyGlobal = poly->globalMatrix();
             for (const auto& path : pl) {
                   Clipper2Lib::PathD clipperPath;
                   for (const auto& pt : path) {
-                        QVector3D worldPt = polyGlobal.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
+                        QVector3D worldPt  = polyGlobal.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
                         QVector3D parentPt = parentGlobalInv.map(worldPt);
                         clipperPath.push_back({parentPt.x(), parentPt.y()});
                         }
@@ -2551,8 +2554,8 @@ void ZCam::combineSelectedPolygons() {
             for (int j = 0; j < static_cast<int>(allPaths.size()); ++j) {
                   if (i == j)
                         continue;
-                  if (Clipper2Lib::PointInPolygon(testPt, allPaths[j])
-                      == Clipper2Lib::PointInPolygonResult::IsInside)
+                  if (Clipper2Lib::PointInPolygon(testPt, allPaths[j]) ==
+                      Clipper2Lib::PointInPolygonResult::IsInside)
                         ++depth;
                   }
             if (depth % 2 == 1)
@@ -2590,8 +2593,7 @@ void ZCam::combineSelectedPolygons() {
                   combinedPath.lineTo(Vec2d(path[i].x, path[i].y));
             // Close the subpath explicitly.
             Vec2d lastPt(path.back().x, path.back().y);
-            if (std::abs(firstPt.x() - lastPt.x()) > 0.0001
-                || std::abs(firstPt.y() - lastPt.y()) > 0.0001)
+            if (std::abs(firstPt.x() - lastPt.x()) > 0.0001 || std::abs(firstPt.y() - lastPt.y()) > 0.0001)
                   combinedPath.lineTo(firstPt);
             }
 
@@ -2634,15 +2636,15 @@ void ZCam::combineSelectedPolygons() {
       _project->undo()->beginMacro();
 
       // Insert the new Polygon into the target Layer.
-      {
-      int row = targetLayer->children().size();
-      if (treeModel())
-            treeModel()->beginInsertChild(targetLayer, row);
-      targetLayer->addChild(newPoly);
-      if (treeModel())
-            treeModel()->endInsertChild();
-      emit add3dElement(newPoly);
-      }
+            {
+            int row = targetLayer->children().size();
+            if (treeModel())
+                  treeModel()->beginInsertChild(targetLayer, row);
+            targetLayer->addChild(newPoly);
+            if (treeModel())
+                  treeModel()->endInsertChild();
+            emit add3dElement(newPoly);
+            }
 
       // Remove all original polygons.
       for (auto* poly : polygons) {
@@ -3054,6 +3056,8 @@ bool ZCam::importFile(const QString& path) {
             return ImportIpc2581::import(this, path);
       else if (suffix == QStringLiteral("brep"))
             return BrepElementInterface::import(this, path);
+      else if (ImageImport::isImageFile(path))
+            return ImageImport::import(this, path);
       else {
             Warning("ZCam::importFile: unsupported file type: {}", suffix);
             return false;
@@ -3079,6 +3083,26 @@ QRectF ZCam::dxfBoundingBox(const QString& path) {
 
 bool ZCam::importDxfAt(const QString& path, double x, double y) {
       return DxfImport::importAt(this, path, x, y);
+      }
+
+//---------------------------------------------------------
+//   importImageAt
+//    Import an image file (PNG, JPEG, ...) and position it so
+//    the bounding box's bottom-left corner is at (x, y) in
+//    scene coordinates.
+//---------------------------------------------------------
+
+bool ZCam::importImageAt(const QString& path, double x, double y) {
+      return ImageImport::importAt(this, path, x, y);
+      }
+
+//---------------------------------------------------------
+//   imageBoundingBox
+//    Compute the bounding box (in mm) of an image file.
+//---------------------------------------------------------
+
+QRectF ZCam::imageBoundingBox(const QString& path) {
+      return ImageImport::boundingBox(this, path);
       }
 
 //---------------------------------------------------------

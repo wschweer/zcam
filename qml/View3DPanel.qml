@@ -1247,7 +1247,10 @@ Item {
         function containsImportable(urls) {
             for (var i = 0; i < urls.length; ++i) {
                 var path = urls[i].toString().toLowerCase();
-                if (path.endsWith(".svg") || path.endsWith(".dxf") || path.endsWith(".dwg"))
+                if (path.endsWith(".svg") || path.endsWith(".dxf") || path.endsWith(".dwg")
+                    || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg")
+                    || path.endsWith(".bmp") || path.endsWith(".gif") || path.endsWith(".tiff")
+                    || path.endsWith(".tif") || path.endsWith(".webp"))
                     return true;
                 }
             return false;
@@ -1284,7 +1287,10 @@ Item {
                 for (var i = 0; i < drop.urls.length; ++i) {
                     var path = drop.urls[i].toString();
                     var lower = path.toLowerCase();
-                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
+                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")
+                        || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                        || lower.endsWith(".bmp") || lower.endsWith(".gif") || lower.endsWith(".tiff")
+                        || lower.endsWith(".tif") || lower.endsWith(".webp")) {
                         if (path.startsWith("file://"))
                             path = path.substring("file://".length);
                         return path;
@@ -1358,6 +1364,15 @@ Item {
                             ZCam.importFile(path);
                         imported = true;
                         }
+                    else if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                             || lower.endsWith(".bmp") || lower.endsWith(".gif") || lower.endsWith(".tiff")
+                             || lower.endsWith(".tif") || lower.endsWith(".webp")) {
+                        if (dropPos)
+                            ZCam.importImageAt(path, dropPos.x, dropPos.y);
+                        else
+                            ZCam.importFile(path);
+                        imported = true;
+                        }
                     }
                 }
             else if (isArtworkDrag(drop)) {
@@ -1368,6 +1383,14 @@ Item {
                         ZCam.importSvgAt(artworkPath, dropPos.x, dropPos.y);
                     else if ((artLower.endsWith(".dxf") || artLower.endsWith(".dwg")) && dropPos)
                         ZCam.importDxfAt(artworkPath, dropPos.x, dropPos.y);
+                    else if (artLower.endsWith(".png") || artLower.endsWith(".jpg") || artLower.endsWith(".jpeg")
+                             || artLower.endsWith(".bmp") || artLower.endsWith(".gif") || artLower.endsWith(".tiff")
+                             || artLower.endsWith(".tif") || artLower.endsWith(".webp")) {
+                        if (dropPos)
+                            ZCam.importImageAt(artworkPath, dropPos.x, dropPos.y);
+                        else
+                            ZCam.importFile(artworkPath);
+                    }
                     else
                         ZCam.importFile(artworkPath);
                     imported = true;
@@ -1400,7 +1423,7 @@ Item {
 
         Label {
             anchors.centerIn: parent
-            text: qsTr("Drop SVG / DXF to import")
+            text: qsTr("Drop SVG / DXF / Image to import")
             font.pixelSize: 24
             font.bold: true
             color: "white"

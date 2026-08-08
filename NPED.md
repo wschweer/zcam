@@ -30,10 +30,22 @@ Or use the Ninja build system (build.ninja is pre-generated).
   in the XY plane (pos/rot/overlaySize + trapezX/trapezY keystone correction via
   CameraOverlayGeometry). CameraTextureData binds to the element for the 3D
   overlay texture; visibility gates camera capture.
+- **ImageElement : Element3d**: Displays a pixel-based image (PNG, JPEG, BMP,
+  GIF, TIFF, WEBP) on the 3D canvas as a textured quad in the XY plane.
+  ImagePlaneGeometry provides a unit quad with UVs; ImageTextureData loads the
+  image file and uploads it as an RGBA8 texture. The element's scale represents
+  the physical size in mm; on import the larger axis defaults to 100 mm with
+  aspect-ratio preserved (lockScale = Lock). The filePath property stores the
+  source path; the image is reloaded from disk on project load. Import via
+  `ZCam::importFile()`, drag-drop on the 3D canvas, or `importImageAt()` for
+  positioned placement.
 
 ## File Imports
 - **SVG / DXF / BREP**: `ZCam::importFile()` dispatches by suffix to the
   respective importers (`svg.cpp`, `dxfimport.cpp`, `brepimport.cpp`).
+- **Images (PNG, JPEG, BMP, GIF, TIFF, WEBP)**: `ImageImport::import()` /
+  `ImageImport::importAt()` create an `ImageElement` in the CAD tree.
+  Dispatched by suffix from `ZCam::importFile()` and drag-drop on the 3D canvas.
 - **IPC-2581 (revision C)**: `importipc2581.cpp` parses the PCB "digital twin"
   XML. All layers become Groups with Polygon children (arcs/primitives are
   flattened) below a new import layer; negative polarity and Cutout geometry is
