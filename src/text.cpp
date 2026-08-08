@@ -311,7 +311,6 @@ void Text::updateSelectionGeometry() {
             for (const auto& cl : _cursorLines)
                   lines.push_back(cl);
             _selectionGeometry->setLines(lines);
-            emit selectionGeometryChanged();
             }
       else
             Element3d::updateSelectionGeometry();

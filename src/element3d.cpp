@@ -557,10 +557,12 @@ bool Element3d::containsWorldPoint(double x, double y) const {
 //---------------------------------------------------------
 
 TessGeometry* Element3d::selectionGeometry() {
-      // _selectionGeometry is created in the constructor; just ensure
-      // its content is up to date for the current bounding box.
-      if (_selectionGeometry)
-            updateSelectionGeometry();
+      // Return the pre-built selection geometry without side effects.
+      // The content is updated proactively in strokeAndFill() and
+      // other update paths *before* selectionGeometryChanged is emitted.
+      // Calling updateSelectionGeometry() here would cause a QML binding
+      // loop: the getter → setLines() → geometryRevisionChanged() →
+      // QML re-evaluates the geometry binding → reads the getter again.
       return _selectionGeometry;
       }
 
@@ -871,8 +873,8 @@ void closePath(PathList& pl) {
 //    See declaration in element3d.h for full documentation.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective,
-                                        double projectionHeight, const QPointF& viewCenter) {
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective, double projectionHeight,
+                                        const QPointF& viewCenter) {
       Clipper2Lib::PathsD result;
       const auto& pl = element->pathList();
       if (pl.empty())
@@ -888,10 +890,10 @@ Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspecti
       // (identity on the work plane); z != 0 -> perspective distortion.
       // Clamp the denominator to keep points near/above the viewpoint from
       // blowing up.
-      const bool persp     = perspective && projectionHeight > 0.0;
-      const double H       = projectionHeight;
-      const double cx      = viewCenter.x();
-      const double cy      = viewCenter.y();
+      const bool persp      = perspective && projectionHeight > 0.0;
+      const double H        = projectionHeight;
+      const double cx       = viewCenter.x();
+      const double cy       = viewCenter.y();
       constexpr double zEps = 0.1; // mm — pole clamp distance
 
       for (const auto& path : pl) {

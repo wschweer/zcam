@@ -358,6 +358,8 @@ Window {
 
         Label {
             text: unsavedChangesGuard.messageText
+            width: 360
+            wrapMode: Text.WordWrap
             }
         onAccepted: {   // Save
             if (ZCam.project.projectPath === "")
