@@ -426,15 +426,15 @@ Item {
             // created, causing the initial positionChanged signal
             // to be missed.
             position: camera1.position
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
         PerspectiveCamera {
             id: bgCameraPerspective
             // See comment above for bgCameraOrtho.
             position: camera2.position
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
 
         Node {
@@ -527,14 +527,14 @@ Item {
         OrthographicCamera {
             id: camera1
             position: Qt.vector3d(0, 0, 1000)
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
         PerspectiveCamera {
             id: camera2
             position: Qt.vector3d(0, 0, 1000)
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
         DirectionalLight {
             eulerRotation.x: -30

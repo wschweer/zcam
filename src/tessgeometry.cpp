@@ -178,7 +178,8 @@ void TessGeometry::setPolygons(const PathList& _pathList) {
 //    infinitely wide one.
 //---------------------------------------------------------
 
-void TessGeometry::setLinesAsQuads(const Clipper2Lib::PathsD& lines, float halfWidth, QVector3D viewDir, float spacing) {
+void TessGeometry::setLinesAsQuads(const Clipper2Lib::PathsD& lines, float halfWidth, QVector3D viewDir,
+                                   float spacing) {
       clear();
       if (lines.empty()) {
             ++_geometryRevision;
@@ -273,13 +274,14 @@ void TessGeometry::setLinesAsQuads(const Clipper2Lib::PathsD& lines, float halfW
                   //    into a woven hatched mess in oblique views
                   //    (see the zig-zag screenshot).
                   static constexpr double MAX_WIDEN = 60.0;
-                  double zAbs    = std::abs(static_cast<double>(viewDir.z()));
+                  double zAbs                       = std::abs(static_cast<double>(viewDir.z()));
                   double widen   = std::min(1.0 / std::max(zAbs, 1.0 / MAX_WIDEN), MAX_WIDEN);
                   double hwWorld = halfWidth * widen;
                   if (spacing > 1e-9f)
                         hwWorld = std::min(hwWorld, static_cast<double>(spacing) * 0.45);
-                  QVector3D perp = QVector3D(static_cast<float>(-dir.y()), static_cast<float>(dir.x()), 0.0f)
-                                   * static_cast<float>(hwWorld);
+                  QVector3D perp =
+                      QVector3D(static_cast<float>(-dir.y()), static_cast<float>(dir.x()), 0.0f) *
+                      static_cast<float>(hwWorld);
 
                   // Four corners of the flat quad (all z == 0)
                   // v0 = p0 + perp   v1 = p0 - perp
@@ -463,7 +465,7 @@ void TessGeometry::setEdges3D(const std::vector<QVector3D>& p0, const std::vecto
             *data++            = b.x();
             *data++            = b.y();
             *data++            = b.z();
-            for (const auto& v : { a, b }) {
+            for (const auto& v : {a, b}) {
                   allMin.setX(std::min(allMin.x(), v.x()));
                   allMin.setY(std::min(allMin.y(), v.y()));
                   allMin.setZ(std::min(allMin.z(), v.z()));
@@ -479,6 +481,7 @@ void TessGeometry::setEdges3D(const std::vector<QVector3D>& p0, const std::vecto
       emit geometryRevisionChanged();
       update();
       }
+
 //---------------------------------------------------------
 //   setLinesForExpandedQuads
 //    Upload raw line segments as flat quad geometry for the
@@ -601,11 +604,23 @@ void TessGeometry::setLinesForExpandedQuads(const Clipper2Lib::PathsD& lines) {
 
       setVertexData(vertices);
       setIndexData(indices);
-      // Expand the bounds by a small world margin so the pixel-wide
-      // shader expansion never triggers view-frustum culling.
-      float margin = 1.0f;
-      setBounds(QVector3D(static_cast<float>(minX) - margin, static_cast<float>(minY) - margin, static_cast<float>(minZ) - margin),
-                QVector3D(static_cast<float>(maxX) + margin, static_cast<float>(maxY) + margin, static_cast<float>(maxZ) + margin));
+      // The vertex shader expands each degenerate quad in CLIP SPACE
+      // by a constant pixel amount perpendicular to the projected
+      // line direction.  The on-screen expansion is only a few pixels,
+      // but at low zoom a single pixel can cover many local mm, so a
+      // small fixed margin is insufficient and QtQuick3D's frustum
+      // culling clips the grid prematurely (it appears half or not
+      // at all at certain camera positions).
+      //
+      // Use a very generous margin so the bounds always enclose the
+      // shader-expanded geometry regardless of zoom level.  The
+      // background View3D renders ONLY the grid, so the performance
+      // impact of a large bounding box is negligible.
+      float margin = 10000.0f;
+      setBounds(QVector3D(static_cast<float>(minX) - margin, static_cast<float>(minY) - margin,
+                          static_cast<float>(minZ) - margin),
+                QVector3D(static_cast<float>(maxX) + margin, static_cast<float>(maxY) + margin,
+                          static_cast<float>(maxZ) + margin));
       ++_geometryRevision;
       emit geometryRevisionChanged();
       update();
