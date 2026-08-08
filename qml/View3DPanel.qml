@@ -283,7 +283,7 @@ Item {
     function pushViewCamera() {
         if (typeof ZCam.updateViewCamera !== "function")
             return;
-        ZCam.updateViewCamera(camera2.position, root.scale.x);
+        ZCam.updateViewCamera(camera2.position, root.position, root.scale.x);
         }
 
     //=========================================================
@@ -294,6 +294,10 @@ Item {
     //    area at the current zoom/pan state.
     //=========================================================
     function updateGridViewport() {
+        // Mirror the current camera into ZCam so Cam::grabCameraView()
+        // always sees the latest view state (pan / zoom / rotate).
+        pushViewCamera();
+
         var grid = ZCam.project ? ZCam.project.gridElement : null;
         if (!grid)
             return;
@@ -1123,9 +1127,9 @@ Item {
                 if (el.show)
                     return { element: el, objectHit: results[i].objectHit, bounds: results[i].bounds };
                 }
-            ZCam.logLine("pickAll: " + results.length + " hits");
-            if (results.length === 0)
-                ZCam.logLine("pickAll -> no usable element (0 hits), falling back to pickAt");
+//            ZCam.logLine("pickAll: " + results.length + " hits");
+//            if (results.length === 0)
+//                ZCam.logLine("pickAll -> no usable element (0 hits), falling back to pickAt");
             // Fallback: C++ ray-based 3D-bbox picking.
             var el2 = ZCam.pickAt(view3D, root, vx, vy);
             if (!el2)

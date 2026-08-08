@@ -510,21 +510,27 @@ class ZCam : public QObject
       //----------------------------------------------------------------
       Q_PROPERTY(QVector3D viewCameraEye READ viewCameraEye NOTIFY viewCameraEyeChanged)
       Q_PROPERTY(double viewCameraScale READ viewCameraScale NOTIFY viewCameraScaleChanged)
+      Q_PROPERTY(QVector3D viewRootPosition READ viewRootPosition NOTIFY viewRootPositionChanged)
 
     public:
       QVector3D viewCameraEye() const { return _viewCameraEye; }
       double viewCameraScale() const { return _viewCameraScale; }
-      /// Called from QML (3D panel) whenever the perspective camera or
-      /// the root zoom scale changes.  Publishes the camera eye position
-      /// (scene units) and the root scale used to convert scene units
-      /// back into root-local mm.
-      Q_INVOKABLE void updateViewCamera(const QVector3D& eye, double scale);
+      QVector3D viewRootPosition() const { return _viewRootPosition; }
+      /// Called from QML (3D panel) whenever the perspective camera, the
+      /// root zoom scale or the root translation changes.  Publishes the
+      /// camera eye position, the root translation and the root scale (all
+      /// in scene units) so Cam::grabCameraView() can convert the camera
+      /// back into root-local millimetres:
+      ///   rootLocal = (eye - rootPosition) / scale .
+      Q_INVOKABLE void updateViewCamera(const QVector3D& eye, const QVector3D& rootPos, double scale);
     Q_SIGNALS:
       void viewCameraEyeChanged();
       void viewCameraScaleChanged();
+      void viewRootPositionChanged();
     protected:
       QVector3D _viewCameraEye {QVector3D(0.0, 0.0, 1000.0)};
       double _viewCameraScale {1.0};
+      QVector3D _viewRootPosition {QVector3D(0.0, 0.0, 0.0)};
 
       // SVG drag-preview state
       TessGeometry* _dragPreviewGeometry {nullptr};
@@ -704,7 +710,7 @@ class ZCam : public QObject
       /// Simple log bridge for QML diagnosis output (console.log from
       /// QML does not necessarily reach zcam.log depending on how the
       /// app was started).
-      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
+//      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
       /// Convenience helper for QML: unproject the viewport point
       /// (x, y in pixels) of the given View3D through its camera and
       /// root node and pick with the resulting ray via

@@ -242,14 +242,22 @@ void Cam::grabCameraView() {
       if (!zcam)
             return;
 
-      QVector3D eye   = zcam->viewCameraEye();
-      double scale    = zcam->viewCameraScale();
+      QVector3D eye     = zcam->viewCameraEye();
+      QVector3D rootPos = zcam->viewRootPosition();
+      double scale      = zcam->viewCameraScale();
       if (scale <= 1e-9)
             scale = 1.0;
 
-      double cx = eye.x() / scale;
-      double cy = eye.y() / scale;
-      double h  = eye.z() / scale;
+      // Convert the camera eye from scene units back into root-local
+      // millimetres: the world maps a root-local point p (mm) to
+      //   world = rot * scale * p + rootPosition,
+      // so the perpendicular foot of the top-down camera on z=0 is
+      //   viewCenter = (eye.xy - rootPosition.xy) / scale
+      // and its height above z=0 is
+      //   projectionHeight = (eye.z - rootPosition.z) / scale .
+      double cx = (eye.x() - rootPos.x()) / scale;
+      double cy = (eye.y() - rootPos.y()) / scale;
+      double h  = (eye.z() - rootPos.z()) / scale;
 
       // Fallback: when no meaningful camera position has been mirrored
       // yet (e.g. eye still at the default over the origin), use the

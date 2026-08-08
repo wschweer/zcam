@@ -238,6 +238,7 @@ static QString label(ParameterType t) {
             case ParameterType::Count: return "Count";
             case ParameterType::Pulse: return "Pulse (nm)";
             }
+      return "??";
       }
 
 //---------------------------------------------------------

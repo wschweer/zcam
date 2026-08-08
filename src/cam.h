@@ -165,13 +165,26 @@ class Cam : public Element3d
             ]
         },
         {
-            "label": "Projection",
+            "cells": [
+                {
+                    "name": "line",
+                    "type": "line"
+                }
+            ]
+        },
+        {
+            "label": "3D",
             "cells": [
                 {
                     "type": "bool",
                     "default": false,
                     "name": "perspective",
-                    "sublabel": "Perspective"
+                    "sublabel": " "
+                },
+                {
+                    "name": "cameraCapture",
+                    "type": "cameraCapture",
+                    "sublabel": " "
                 },
                 {
                     "type": "float",
@@ -180,12 +193,12 @@ class Cam : public Element3d
                     "max": 100000.0,
                     "default": 1000.0,
                     "name": "projectionHeight",
-                    "sublabel": "Height"
+                    "sublabel": "h"
                 }
             ]
         },
         {
-            "label": "View Center",
+            "label": "Center",
             "cells": [
                 {
                     "name": "viewCenter",
@@ -195,16 +208,6 @@ class Cam : public Element3d
                         0.0,
                         0.0
                     ]
-                }
-            ]
-        },
-        {
-            "label": "Camera",
-            "cells": [
-                {
-                    "name": "cameraCapture",
-                    "type": "cameraCapture",
-                    "sublabel": "Grab Camera"
                 }
             ]
         }
