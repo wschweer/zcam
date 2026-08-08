@@ -1230,7 +1230,8 @@ Item {
         }
 
     //-----------------------------------------------------
-    //  Drag & Drop area for SVG / DXF / DWG import
+    //  Drag & Drop area for file import (SVG, DXF, DWG, BREP,
+    //  PNG, JPEG, BMP, GIF, TIFF, WEBP, IPC-2581 XML/CVG)
     //-----------------------------------------------------
 
     DropArea {
@@ -1248,9 +1249,11 @@ Item {
             for (var i = 0; i < urls.length; ++i) {
                 var path = urls[i].toString().toLowerCase();
                 if (path.endsWith(".svg") || path.endsWith(".dxf") || path.endsWith(".dwg")
+                    || path.endsWith(".brep")
                     || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg")
                     || path.endsWith(".bmp") || path.endsWith(".gif") || path.endsWith(".tiff")
-                    || path.endsWith(".tif") || path.endsWith(".webp"))
+                    || path.endsWith(".tif") || path.endsWith(".webp")
+                    || path.endsWith(".xml") || path.endsWith(".cvg"))
                     return true;
                 }
             return false;
@@ -1288,9 +1291,11 @@ Item {
                     var path = drop.urls[i].toString();
                     var lower = path.toLowerCase();
                     if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")
+                        || lower.endsWith(".brep")
                         || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
                         || lower.endsWith(".bmp") || lower.endsWith(".gif") || lower.endsWith(".tiff")
-                        || lower.endsWith(".tif") || lower.endsWith(".webp")) {
+                        || lower.endsWith(".tif") || lower.endsWith(".webp")
+                        || lower.endsWith(".xml") || lower.endsWith(".cvg")) {
                         if (path.startsWith("file://"))
                             path = path.substring("file://".length);
                         return path;
@@ -1373,6 +1378,12 @@ Item {
                             ZCam.importFile(path);
                         imported = true;
                         }
+                    else {
+                        // brep, xml (IPC-2581), cvg and any other importable
+                        // format — use importFile() which dispatches by suffix.
+                        ZCam.importFile(path);
+                        imported = true;
+                        }
                     }
                 }
             else if (isArtworkDrag(drop)) {
@@ -1423,7 +1434,7 @@ Item {
 
         Label {
             anchors.centerIn: parent
-            text: qsTr("Drop SVG / DXF / Image to import")
+            text: qsTr("Drop file to import")
             font.pixelSize: 24
             font.bold: true
             color: "white"
