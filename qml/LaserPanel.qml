@@ -189,14 +189,6 @@ Rectangle {
                                 font.pixelSize: 10
                                 }
                             }
-                        Label {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignCenter
-                            horizontalAlignment: Text.AlignHCenter
-                            text: modelData
-                            color: Material.foreground
-                            font.pixelSize: 9
-                            }
                         }
                     }
                 }
@@ -236,14 +228,6 @@ Rectangle {
                                 font.bold: true
                                 font.pixelSize: 10
                                 }
-                            }
-                        Label {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignCenter
-                            horizontalAlignment: Text.AlignHCenter
-                            text: modelData + 8
-                            color: Material.foreground
-                            font.pixelSize: 9
                             }
                         }
                     }
@@ -293,14 +277,6 @@ Rectangle {
                                 font.pixelSize: 10
                                 }
                             }
-                        Label {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignCenter
-                            horizontalAlignment: Text.AlignHCenter
-                            text: modelData
-                            color: Material.foreground
-                            font.pixelSize: 9
-                            }
                         }
                     }
                 }
@@ -331,14 +307,6 @@ Rectangle {
                                 font.bold: true
                                 font.pixelSize: 10
                                 }
-                            }
-                        Label {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignCenter
-                            horizontalAlignment: Text.AlignHCenter
-                            text: modelData + 8
-                            color: Material.foreground
-                            font.pixelSize: 9
                             }
                         }
                     }
