@@ -1,162 +1,152 @@
 # Perspektivische Projektion für das Lasern (WYSIWYG)
 
-Stand: 2026 (nach Klarstellung durch den Benutzer).
+Stand: 2026 (nach zweiter Klarstellung durch den Benutzer).
 Referenz-Implementierung: `projectPathListToXY()` in `src/element3d.cpp`.
 
-## Entscheidungen (vom Benutzer festgelegt)
+## Entscheidungen / Anforderungen (vom Benutzer festgelegt)
 
-1. **Projektion ist FIX von oben auf die XY-Ebene bei z=0.**
-   → Keine Abhängigkeit von der frei rotierbaren 3D-Ansicht (root.eulerRotation).
-   → Die „perspektivische Projektion" ist eine **Zentralprojektion** von einem
-     festen Punkt auf der Z-Achse in Höhe `h` (dem Galvo/Objektiv) auf die
-     Arbeitsebene z=0.
-   → Mathematisch ist das eine **Skalierung XY mit dem Faktor `s = h / (h − z)`**.
+1. **Der Laser bekommt ausschließlich 2D-Koordinaten in mm.**
+   Er hat nichts mit Projektion/Galvo-Optik zu tun. Die Projektion ist eine
+   reine Darstellungseigenschaft.
 
-2. **Hatch-Dichte physikalisch konstant, wie im Recipe angegeben**
-   (Linien/mm bzw. Linienabstand `interval`).
-   → Da die Projektion **auf die z=0-Ebene in mm** erfolgt (nicht in
-     Screen-Pixel) und der Laser ebenfalls auf z=0 arbeitet, ist der
-     konstante Recipe-Linienabstand in der projizierten 2D-Domäne
-     **automatisch = physischer Abstand auf dem Werkstück**.
-   → **Die bestehende Hatch-Logik (`createFill`, `Clipper::hatch`) braucht
-     KEINE Änderung.**
+2. **Elemente, die exakt auf der z=0-Ebene liegen, bleiben 1:1 in mm
+   unverändert.** Die mm-Größe auf z=0 darf sich nicht ändern.
 
-## Kern-Mathematik
+3. **Nur Geometrie mit z ≠ 0** (z. B. ein um die Y-Achse gedrehter Text)
+   **verändert sich durch die perspektivische Projektion** — sie wird
+   verzerrt, so wie sie aus der Blickrichtung erscheint.
 
-Die perspektivische Projektion von oben auf z=0 ist im Gegensatz zur
-bisherigen orthografischen Projektion (z einfach verwerfen) eine
-zentralperspektivische Vergrößerung:
+4. **Was gelasert wird = was man in der Draufsicht sieht.**
+   Die Ortho-Draufsicht (current) ist die 1:1-mm-Abbildung. Die
+   Perspektive soll die z ≠ 0-Geometrie „von oben" als Zentralprojektion
+   auf die z=0-Ebene abbilden.
+
+5. **„Feste Skalierung":** Die Projektion ist unabhängig von Zoom/Pan und der
+   frei rotierbaren 3D-Ansicht. Ergebnis immer in mm auf z=0.
+
+## Kern-Transformation
+
+Für jeden Punkt `p = (x, y, z)` in Szene-mm:
 
 ```
-orthografisch (heute):   (x, y, z)  →  (x, y)              // z wegwerfen
-perspektivisch (Ziel):   (x, y, z)  →  (x·s, y·s)          // s = h / (h − z)
+orthografisch (heute):   (x, y, z)  →  (x, y)
+perspektivisch (Ziel):   (x, y, z)  →  (x·s, y·s),   s = H / (H − z)
 ```
 
-- Ein Punkt auf z=0     → s = 1        (unverändert)
-- Ein Punkt über z=0    → s > 1        (erscheint vergrößert/„näher")
-- Ein Punkt unter z=0   → s < 1        (erscheint verkleinert)
-- z → h (Punkt nähert sich dem Projektionszentrum) → s → ∞  (Singularität,
-  muss geklemmt werden: `denom = max(h − z, ε)`)
+mit `H` = Höhe des Projektionszentrums (der Perspektivkamera) über z=0.
 
-Da das Galvo-Feld physikalisch begrenzt ist und alle zu lasernden Objekte
-auf/unter der Arbeitsebene z=0 liegen (z ≤ 0), ist `denom = h − z ≥ h > 0`,
-also numerisch unproblematisch. Nur für z nahe an h (Objekt ragt fast bis
-zum Galvo) muss geklemmt werden.
+Eigenschaften:
+- z = 0   → s = 1   → **z=0-Ebene bleibt 1:1 in mm** ✔ (Anforderung 2)
+- z ≠ 0   → s ≠ 1   → erhöhte/rotierte Geometrie wird verzerrt ✔ (Anforderung 3)
+- Kein Bezug zu Galvo/Optik/Zoom ✔ (Anforderungen 1, 5)
 
-## Was zu tun ist
+**Dies ist die einzige Transformation, die alle Anforderungen gleichzeitig
+erfüllt.** Eine echte Screen-Space-Projektion (über NDC + Viewport, mit FOV
+und Zoom) würde die z=0-Ebene abhängig vom Zoom skalieren und verletzt
+Anforderung 2 — deshalb kommt sie für den Laser nicht in Frage.
 
-### 1. Neue Maschineneigenschaft: Projektionszentrum-Höhe `h`
+## Woher kommt `H`? — DER OFFENE DESIN-PUNKT
 
-`h` ist der physikalische Abstand Galvo/Objektiv → Arbeitsfläche z=0 (mm).
-Das ist eine **Maschinen-Eigenschaft** (je nach verbauter Linse/Mechanik),
-also in `src/machine.h` als `PROPV(double, projectionHeight, <default>)`.
+`H` ist die **einzige neue Größe**. Es ist NICHT die Galvo-Objektivhöhe, es
+ist die Höhe des virtuellen Projektionszentrums (Blickpunkt der
+Perspektiv-Draufsicht). Je kleiner `H`, desto stärker der perspektivische
+Effekt; je größer `H`, desto ortho-ähnlicher.
 
-Wichtig: die Serialisierung läuft über die `_propertiesQ/MOPA/UV`-JSON in
-`src/laser_bjjcz.cpp`. Dort muss ein neues Feld ergänzt werden, sonst wird
-`h` weder gespeichert/geladen noch im Inspector angezeigt.
+Es gibt zwei konzeptionell verschiedene Optionen — **der Benutzer muss
+wählen**:
 
-**Design-Alternativen für h:**
-- (a) **Absolut** in mm (z. B. 250 mm): direkt der Objektiv-Abstand.
-  Perspektivischer Effekt wirkt nur, wenn Objekte z ≠ 0 haben.
-- (b) **0 = orthografisch** (Rückwärtskompatibel): `h ≤ 0` schaltet die
-  Perspektive ab → altes Verhalten. Empfohlen als Default, damit
-  bestehende Projekte/Maschinen unverändert bleiben.
+### Option A — Fixe Blickhöhe (empfohlen, einfach)
 
-### 2. `projectPathListToXY()` erweitern (element3d.cpp / element3d.h)
+`H` ist ein konstanter, konfigurierbarer Wert (z. B. ein Property an ZCam
+oder Cam, Default z. B. 1000 mm = „Standard-Blickhöhe", mit der die View
+auch initialisiert wird: `camera2.position.z = 1000`).
 
-Signatur um `projectionHeight` erweitern:
+- Ortho/Persp-Umschalter steuert, ob zusätzlich `s` angewendet wird.
+- Unabhängig vom aktuellen Kamera-Standort in der View → reproduzierbar.
+- `H = 0` oder „perspective aus" → orthografisch (1:1), abwärtskompatibel.
+
+### Option B — Live aus der aktuellen Perspektiv-Ansicht
+
+`H` = `camera2.position.z` (die aktuelle Höhe der Perspektivkamera aus der
+QML-View). Die Projektion folgt der aktuellen Ansicht, aber normalisiert auf
+z=0-mm (unabhängig vom Zoom, da Zoom in `root.scale`/`root.position` steckt,
+nicht in der Kamerahöhe).
+
+- „Was man sieht" wird wortwörtlich gelasert (abhängig von aktueller Höhe).
+- Erfordert Übergabe von `camera2.position.z` von QML an C++ vor jedem
+  Laserauftrag.
+- Kamerahöhe ~1000 mm bei typischen Objekt-größen → s ≈ 1.001, praktisch
+  kein Effekt. Um einen sichtbaren Effekt zu haben, müsste man die Kamera
+  sehr nah heranfahren.
+
+**Wichtige Erkenntnis aus der View (View3DPanel.qml):**
+In der QML-View ist die Kamera praktisch IMMER auf ~1000 mm Höhe
+(`camera2.position` z=1000, Zoom über `root.scale`, nicht über Kamerahöhe).
+Das bedeutet: Eine an die View gekoppelte Projektion (Option B) ergäbe bei
+normaler Ansicht praktisch eine Orthografie. Ein sichtbarer perspektivischer
+Effekt auf z ≠ 0-Geometrie entsteht nur mit einem deutlich kleineren `H`.
+
+## Implementierung (element3d.cpp / zcam.h / QML)
+
+### 1. `ZCam`: neuer Zustand „perspektivisch laser"
 
 ```cpp
-Clipper2Lib::PathsD projectPathListToXY(const Element3d* element,
-                                        double projectionHeight = 0.0);
+// zcam.h
+Q_PROPERTY(bool perspectiveCamera READ perspectiveCamera
+           WRITE setPerspectiveCamera NOTIFY perspectiveCameraChanged)
+PROPV(bool, perspectiveCamera, false)
+PROPV(double, projectionHeight, 0.0)   // [mm] 0 = ortho (default)
 ```
 
-Implementierung (nach `matrix.map(...)`):
+### 2. `projectPathListToXY()` erweitern
 
 ```cpp
-auto r = matrix.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
-if (projectionHeight > 0.0) {
-      double denom = projectionHeight - r.z();
-      if (denom < 0.1)          // Klemme nahe Projektionszentrum
-            denom = 0.1;
+// element3d.h — Signatur mit Default-Param (Aufrufer können angepasst,
+// aber auch unverändert bleiben für ortho)
+PathsD projectPathListToXY(const Element3d* element,
+                           bool perspective = false,
+                           double projectionHeight = 0.0);
+```
+
+```cpp
+// element3d.cpp — nach matrix.map():
+auto r = matrix.map(QVector3D(float(pt.x()), float(pt.y()), 0));
+if (perspective && projectionHeight > 0.0) {
+      double denom = projectionHeight - double(r.z());
+      if (denom < 0.1) denom = 0.1;       // Singularitäts-Klemme
       double s = projectionHeight / denom;
-      cp.push_back({r.x() * s, r.y() * s});
+      cp.push_back({double(r.x()) * s, double(r.y()) * s});
       }
-else {
-      cp.push_back({r.x(), r.y()});   // orthografisch (bisheriges Verhalten)
-      }
+else
+      cp.push_back({double(r.x()), double(r.y())});   // 1:1 ortho
 ```
 
-Hinweis: Es existiert bereits ein **ungespeicherter Editor-Buffer**
-`src/.element3d.cpp,` mit genau diesem Ansatz
-(`projectPathListToXY(element, projectionHeight)` + `H/denom`-Clamping).
-Der Ansatz ist korrekt und kann übernommen werden — allerdings ist die
-Singularitäts-Klemme `denom < 0.01` für mm-Einheiten sehr aggressiv;
-`0.1` mm ist praxisnäher. Bézier-Kontrollpunkte werden implizit behandelt,
-da `pathList()` die bereits aufgelösten Punkte liefert.
+### 3. Aufrufer verdrahten (4 Stellen)
 
-### 3. Aufrufer mit `h` versorgen
+`recipe.cpp:114`, `recipe.cpp:139` (Fill), `recipe.cpp:266`,
+`fixture.cpp:57` → übergeben `zcam->perspectiveCamera()` und
+`zcam->projectionHeight()`.
 
-Vier Stellen rufen `projectPathListToXY(ce)` auf und müssen die Höhe
-der aktiven Maschine übergeben:
+### 4. QML: Ortho/Persp-Button mit C++-Zustand synchronisieren
 
-- `src/recipe.cpp:114`  (`collectLayerPath`)
-- `src/recipe.cpp:139`  (`processTileLines`)  → Fill/Hatch
-- `src/recipe.cpp:266`  (`collectLaserPath`)  → eigentlicher Laser
-- `src/fixture.cpp:57`  (`Fixture::size`)
+In `View3DPanel.qml` bei den Umschaltern (`panel.perspectiveCamera = true/false`,
+Zeilen ~1585/1600) zusätzlich `ZCam.perspectiveCamera = ...` setzen und
+`ZCam.projectionHeight` aus einem konfigurierbaren Wert (Option A) oder
+`camera2.position.z` (Option B).
 
-Zugriff auf die Maschine: `zcam->project()->machine()` →
-`machine()->projectionHeight()`.
+### Was sich NICHT ändert
 
-Am besten eine kleine Hilfsfunktion in `element3d.cpp`:
+- **Fill/Hatch** (`createFill`, `Clipper::hatch`): läuft auf den projizierten
+  2D-Polygonen mit konstantem `interval` → physikalisch konstante Dichte.
+- Panel-Raster, Frame, Framing, Konvexhülle: unverändert auf den
+  projizierten 2D-Daten.
 
-```cpp
-double currentProjectionHeight(const ZCam* zcam) {
-      auto* proj = zcam ? zcam->project() : nullptr;
-      auto* m    = proj ? proj->machine() : nullptr;
-      return m ? m->projectionHeight() : 0.0;
-      }
-```
+## Zusammenfassung der offenen Entscheidung
 
-und die Aufrufer rufen `projectPathListToXY(ce, currentProjectionHeight(zcam))`.
+- **Option A (fixe Blickhöhe):** reproduzierbar, einstellbare Stärke des
+  Effekts, empfohlen.
+- **Option B (Live-Kamerahöhe):** wortwörtlich „was man sieht", aber bei
+  normaler Ansicht praktisch ortho; Effekt nur bei sehr nahem Heranzoomen.
 
-### 4. Was sich NICHT ändert
-
-- **Fill/Hatch** (`Recipe::createFill`, `Clipper::hatch`): arbeitet auf den
-  projizierten 2D-Polygonen mit konstantem `interval` → physikalisch
-  konstante Dichte auf z=0. **Keine Änderung.**
-- **Panel-Raster-Offsets** (mm): unverändert.
-- **Cam-Geometrie / convexHull / boundingBox / Framing**: arbeiten auf den
-  projizierten 2D-Polygonen, unverändert.
-- **QML-View** (`View3DPanel.qml`): Die frei rotierbare 3D-Ansicht bleibt ein
-  reines Darstellungs-Feature. Die Laser-Projektion ist davon entkoppelt.
-
-## Offener Design-Punkt (Benutzer entscheidet)
-
-**Semantik von z in der Szene.** Liegen die zu lasernden Objekte
-- **immer auf z=0** (flache CAD-Geometrie, der Normalfall) → dann hat die
-  perspektivische Projektion **keinen sichtbaren Effekt**, weil s=1. Die
-  Perspektive wäre dann nur bei 3D-Objekten (BREP, um X/Y rotierte Elemente)
-  relevant.
-- oder wird die **Objekt-Höhe über der Arbeitsebene** (Dicke des Werkstücks,
-  z > 0) berücksichtigt, sodass die Draufsicht-Vergrößerung sichtbar wird.
-
-Das bestimmt, ob `h` (a) der tatsächliche Objektiv-Abstand ist (groß, kaum
-Effekt) oder (b) ein künstlich kleiner Wert, der den perspektivischen Effekt
-bewusst erzeugt (z. B. um ein 3D-Objekt so zu lasern, wie es aus einer
-bestimmten Blickhöhe aussieht).
-
-**Meine Empfehlung:** `PROPV(double, projectionHeight, 0.0)` mit
-**0 = orthografisch** als Default (rückwärtskompatibel), und der Benutzer
-setzt bei Bedarf die Höhe des Galvos (≈ 250 mm) oder eine künstliche
-Blickhöhe.
-
-## Reihenfolge der Umsetzung
-
-1. `machine.h`: `PROPV(double, projectionHeight, 0.0)` hinzufügen
-2. `laser_bjjcz.cpp` `_propertiesQ/MOPA/UV` + `machinegcode.cpp`:
-   Inspector-Feld „Projection Height" (mm) ergänzen
-3. `element3d.h/.cpp`: Signatur + perspektivischer Zweig (Klemme)
-4. Aufrufer (recipe.cpp ×3, fixture.cpp ×1) mit `h` verdrahten
-5. Bauen, Test: BREP-Würfel mit z-Ausdehnung → mit/ohne h lasern und
-   Framing-Rahmen mit Projektion vergleichen
+Beide teilen denselben C++-Code (s = H/(H−z)); nur die Quelle von `H` und
+die QML-Verdrahtung unterscheiden sich.
