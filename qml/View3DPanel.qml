@@ -274,16 +274,45 @@ Item {
 
     //=========================================================
     //  Mirror the perspective camera into ZCam
-    //    Pushes the camera eye position and the root zoom scale to
-    //    ZCam (ZCam.updateViewCamera) so Cam::grabCameraView() can
-    //    derive viewCenter / projectionHeight matching this view.
-    //    Called whenever the perspective camera position or the root
-    //    scale changes, and once at startup.
+    //    Computes EXACTLY like screenToScene()/updateGridViewport():
+    //    the camera's perpendicular foot on z=0 and its height above
+    //    z=0, both in root-local millimetres, by raycasting the centre
+    //    view ray through cam.mapFromViewport + root.mapPositionFromScene.
+    //    This reproduces the true GPU projection (incl. FOV, aspect,
+    //    clip range and the root scale/rotation) instead of approximating
+    //    it from camera2.position.  Pushed to ZCam so Cam::grabCameraView()
+    //    makes the laser projection match what is shown on the canvas.
     //=========================================================
     function pushViewCamera() {
         if (typeof ZCam.updateViewCamera !== "function")
             return;
-        ZCam.updateViewCamera(camera2.position, root.position, root.scale.x);
+
+        var cam = view3D.camera;
+
+        // Camera eye in root-local coordinates (the point the GPU
+        // projects from).  camera2.position is in scene units; map it
+        // into root-local (mm) exactly like the near/far raycast below.
+        var eyeRoot = root.mapPositionFromScene(camera2.position);
+
+        // Centre view ray through the viewport (0.5, 0.5) at near/far
+        // depth, mapped into root-local coordinates.  Its intersection
+        // with the z=0 plane is the camera's perpendicular foot = viewCenter.
+        var nearC = root.mapPositionFromScene(cam.mapFromViewport(Qt.vector3d(0.5, 0.5, 0)));
+        var farC  = root.mapPositionFromScene(cam.mapFromViewport(Qt.vector3d(0.5, 0.5, 1)));
+        var dir   = farC.minus(nearC);
+
+        var cx = 0.0, cy = 0.0;
+        if (Math.abs(dir.z) > 1e-9) {
+            var t = (0.0 - nearC.z) / dir.z;
+            var fp = nearC.plus(dir.times(t));
+            cx = fp.x;
+            cy = fp.y;
+            }
+
+        // Height above z=0 in root-local mm = camera eye z-component.
+        var h = eyeRoot.z;
+
+        ZCam.updateViewCamera(cx, cy, h);
         }
 
     //=========================================================

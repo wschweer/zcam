@@ -344,25 +344,19 @@ void ZCam::refreshCam() {
 
 //---------------------------------------------------------
 //   updateViewCamera
-//    Called from QML (3D panel) whenever the perspective camera, the
-//    root translation or the root zoom scale changes.  Stores the live
-//    camera eye position, root position and root scale (scene units) so
-//    Cam::grabCameraView() can align the laser projection with what is
-//    shown on the canvas.
+//    Called from QML (3D panel) whenever the canvas view changes
+//    (pan / zoom / rotate).  Stores the camera's perpendicular foot
+//    point on z=0 (cx, cy) and its height above z=0, both in
+//    root-local millimetres, so Cam::grabCameraView() can align the
+//    laser projection with what is shown on the canvas.
 //---------------------------------------------------------
 
-void ZCam::updateViewCamera(const QVector3D& eye, const QVector3D& rootPos, double scale) {
-      if (eye != _viewCameraEye) {
-            _viewCameraEye = eye;
-            emit viewCameraEyeChanged();
-            }
-      if (rootPos != _viewRootPosition) {
-            _viewRootPosition = rootPos;
-            emit viewRootPositionChanged();
-            }
-      if (scale != _viewCameraScale) {
-            _viewCameraScale = scale;
-            emit viewCameraScaleChanged();
+void ZCam::updateViewCamera(double cx, double cy, double height) {
+      QVector2D c(cx, cy);
+      if (c != _viewCameraCenter || height != _viewCameraHeight) {
+            _viewCameraCenter = c;
+            _viewCameraHeight = height;
+            emit viewCameraChanged();
             }
       }
 

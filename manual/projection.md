@@ -92,22 +92,39 @@ Für die Standard-Draufsicht ist das der Workspace-Mittelpunkt
 der gelben Kamera-Darstellung zu überlagern, `viewCenter` auf diesen Wert
 setzen (nicht `(0,0)`).
 
-### 1b. „Grab Camera View" — Kamera automatisch übernehmen
+### 1b. „Grab Camera View" — Kamera EXAKT übernehmen
 
 Statt `viewCenter`/`projectionHeight` von Hand zu setzen, gibt es im
-Cam-Inspector neben „Perspective" den Button **„Grab Camera View"**:
+Cam-Inspector neben „Perspective" den Button **„Grab"**.
 
-- Die QML-3D-Ansicht (View3DPanel.qml) spiegelt die aktuelle Perspektivkamera
-  laufend via `ZCam.updateViewCamera(eye, scale)` in den C++-Singleton
-  (transienter View-Zustand `viewCameraEye`/`viewCameraScale`, nicht Teil der
-  Projektdatei).
-- Der Button ruft `Cam::grabCameraView()` (Q_INVOKABLE), das
-  `viewCenter = eye.xy / scale` und `projectionHeight = eye.z / scale`
-  ableitet, beide Properties setzt (→ camDirty) und `refreshCam()` zur
-  unmittelbaren Neuberechnung auslöst.
+**Wichtig:** Die Werte werden jetzt **EXAKT** aus der GPU-Projektion
+abgeleitet, nicht mehr aus `camera2.position` approximiert:
+
+- Die QML-3D-Ansicht (View3DPanel.qml) berechnet **wie screenToScene()/**
+  **updateGridViewport()** über `cam.mapFromViewport()` +
+  `root.mapPositionFromScene()`:
+  - `viewCenter` (cx, cy) = Schnittpunkt des Mittelstrahls (viewport 0.5, 0.5)
+    mit der z=0-Ebene, in **root-lokalen mm**,
+  - `projectionHeight` = z-Komponente des Kamera-Auges in **root-lokalen mm**.
+- `ZCam.updateViewCamera(cx, cy, h)` publiziert beide in den Singleton
+  (transienter View-Zustand `viewCameraCenter`/`viewCameraHeight`).
+- `Cam::grabCameraView()` (Q_INVOKABLE) übernimmt sie direkt (→ camDirty)
+  und ruft `refreshCam()`.
+
+Das reproduziert die echte GPU-Projektion (inkl. FOV, Aspect, Clip,
+root-Scale und -Rotation) statt einer Näherung. Die projizierte
+Laser-Geometrie stimmt daher exakt mit der Kamera-Darstellung überein —
+sofern die Canvas-Ansicht eine z=0-Top-Down-Ansicht ist.
+
+**Hinweis zur Verzeichnungsstärke:** Die perspektivische Verzerrung hängt von
+`projectionHeight` ab (s = H/(H−z)). Die QML-Kamera steht meist auf ~1000 mm
+→ s ≈ 1 → fast orthografisch. Ein starker perspektivischer Canvas-Effekt
+entsteht überwiegend durch die freie **Rotation** der Szene, nicht durch die
+Kamerahöhe.
+
 - Implementierung: `cam.h/.cpp` (`grabCameraView`), `zcam.h/.cpp`
-  (`updateViewCamera` + `viewCameraEye/Scale`), Property-Typ `cameraCapture`
-  in `cam.h`-JSON + Button-Delegate in `PropertyEditor.qml`.
+  (`updateViewCamera` + `viewCameraCenter/Height`), Property-Typ `cameraCapture`
+  in `cam.h`-JSON + Button-Delegate(s) in `PropertyEditor.qml`.
 
 ### 2. `projectPathListToXY()` erweitert (element3d.h / element3d.cpp)
 

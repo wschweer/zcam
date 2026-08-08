@@ -222,46 +222,33 @@ void Cam::updateCam() {
 
 //---------------------------------------------------------
 //   grabCameraView
-//    Adopt the live view-camera from the 3D canvas.  The QML 3D
-//    panel continuously mirrors the perspective camera's eye and the
-//    root zoom scale into ZCam (ZCam::updateViewCamera).  From these
-//    values derive:
-//
-//      viewCenter      = perpendicular foot of the camera on z=0 in
-//                        root-local mm  = (eye.x, eye.y) / rootScale
-//      projectionHeight = camera height above z=0 = eye.z / rootScale
-//
-//    (scene units are mm * rootScale, so dividing by the root scale
-//    converts them back into root-local millimetres).  When no valid
-//    eye is mirrored yet, fall back to the workspace centre.  Both
-//    properties are then assigned (which marks the cam data dirty via
-//    the constructor connections) and a recalculation is triggered.
+//    Adopt the live view-camera from the 3D canvas.  The QML 3D panel
+//    continuously mirrors the camera's perpendicular foot on z=0 (cx, cy)
+//    and its height above z=0 — both in root-local millimetres — into
+//    ZCam (ZCam::updateViewCamera), computed exactly like screenToScene()
+//    via cam.mapFromViewport + root.mapPositionFromScene.  This reproduces
+//    the true GPU projection instead of approximating it.  The values are
+//    assigned to viewCenter / projectionHeight (which marks the cam data
+//    dirty via the constructor connections) and a recalculation is
+//    triggered so the laser projection matches the canvas view.
 //---------------------------------------------------------
 
 void Cam::grabCameraView() {
       if (!zcam)
             return;
 
-      QVector3D eye     = zcam->viewCameraEye();
-      QVector3D rootPos = zcam->viewRootPosition();
-      double scale      = zcam->viewCameraScale();
-      if (scale <= 1e-9)
-            scale = 1.0;
+      // The QML 3D panel has already computed the camera's
+      // perpendicular foot on z=0 (cx, cy) and its height above z=0
+      // in root-local millimetres via cam.mapFromViewport +
+      // root.mapPositionFromScene (exactly like screenToScene).
+      // Adopt them directly.
+      double cx = zcam->viewCameraCenter().x();
+      double cy = zcam->viewCameraCenter().y();
+      double h  = zcam->viewCameraHeight();
 
-      // Convert the camera eye from scene units back into root-local
-      // millimetres: the world maps a root-local point p (mm) to
-      //   world = rot * scale * p + rootPosition,
-      // so the perpendicular foot of the top-down camera on z=0 is
-      //   viewCenter = (eye.xy - rootPosition.xy) / scale
-      // and its height above z=0 is
-      //   projectionHeight = (eye.z - rootPosition.z) / scale .
-      double cx = (eye.x() - rootPos.x()) / scale;
-      double cy = (eye.y() - rootPos.y()) / scale;
-      double h  = (eye.z() - rootPos.z()) / scale;
-
-      // Fallback: when no meaningful camera position has been mirrored
-      // yet (e.g. eye still at the default over the origin), use the
-      // workspace centre of the current machine as the foot point.
+      // Fallback: when no meaningful camera height has been mirrored
+      // yet, use the workspace centre of the current machine as the
+      // foot point and 1000 mm as the height.
       if (h < 1e-6) {
             Machine* m = zcam->project() ? zcam->project()->machine() : nullptr;
             if (m) {

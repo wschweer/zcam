@@ -15,6 +15,7 @@
 #include <QQmlEngine>
 #include <QJSEngine>
 #include <QVector3D>
+#include <QVector2D>
 #include <QFont>
 #include <QColor>
 #include <QRectF>
@@ -501,36 +502,31 @@ class ZCam : public QObject
       //----------------------------------------------------------------
       //   Live 3D view-camera mirror
       //    The QML 3D panel (View3DPanel.qml) continuously pushes the
-      //    perspective camera's current eye position and the root zoom
-      //    scale here via updateViewCamera().  Cam::grabCameraView()
-      //    consumes these values to derive its projection viewCenter /
-      //    projectionHeight so the laser projection matches what is
-      //    shown on the canvas.  These are transient view state, not
-      //    part of the project file.
+      //    perpendicular foot point of the canvas camera on z=0 and its
+      //    height above z=0 — BOTH in root-local millimetres, computed
+      //    exactly like screenToScene()/updateGridViewport() via
+      //    cam.mapFromViewport + root.mapPositionFromScene — via
+      //    updateViewCamera().  Cam::grabCameraView() consumes these to
+      //    align its projection viewCenter / projectionHeight so the
+      //    laser projection matches what is shown on the canvas.
+      //    These are transient view state, not part of the project file.
       //----------------------------------------------------------------
-      Q_PROPERTY(QVector3D viewCameraEye READ viewCameraEye NOTIFY viewCameraEyeChanged)
-      Q_PROPERTY(double viewCameraScale READ viewCameraScale NOTIFY viewCameraScaleChanged)
-      Q_PROPERTY(QVector3D viewRootPosition READ viewRootPosition NOTIFY viewRootPositionChanged)
+      Q_PROPERTY(QVector2D viewCameraCenter READ viewCameraCenter NOTIFY viewCameraChanged)
+      Q_PROPERTY(double viewCameraHeight READ viewCameraHeight NOTIFY viewCameraChanged)
 
     public:
-      QVector3D viewCameraEye() const { return _viewCameraEye; }
-      double viewCameraScale() const { return _viewCameraScale; }
-      QVector3D viewRootPosition() const { return _viewRootPosition; }
-      /// Called from QML (3D panel) whenever the perspective camera, the
-      /// root zoom scale or the root translation changes.  Publishes the
-      /// camera eye position, the root translation and the root scale (all
-      /// in scene units) so Cam::grabCameraView() can convert the camera
-      /// back into root-local millimetres:
-      ///   rootLocal = (eye - rootPosition) / scale .
-      Q_INVOKABLE void updateViewCamera(const QVector3D& eye, const QVector3D& rootPos, double scale);
+      QVector2D viewCameraCenter() const { return _viewCameraCenter; }
+      double viewCameraHeight() const { return _viewCameraHeight; }
+      /// Called from QML (3D panel) whenever the canvas view changes
+      /// (pan / zoom / rotate).  Publishes the camera's perpendicular
+      /// foot point on z=0 (cx, cy) and its height above z=0, both in
+      /// root-local millimetres.
+      Q_INVOKABLE void updateViewCamera(double cx, double cy, double height);
     Q_SIGNALS:
-      void viewCameraEyeChanged();
-      void viewCameraScaleChanged();
-      void viewRootPositionChanged();
+      void viewCameraChanged();
     protected:
-      QVector3D _viewCameraEye {QVector3D(0.0, 0.0, 1000.0)};
-      double _viewCameraScale {1.0};
-      QVector3D _viewRootPosition {QVector3D(0.0, 0.0, 0.0)};
+      QVector2D _viewCameraCenter {QVector2D(0.0, 0.0)};
+      double _viewCameraHeight {1000.0};
 
       // SVG drag-preview state
       TessGeometry* _dragPreviewGeometry {nullptr};
