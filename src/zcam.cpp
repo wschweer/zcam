@@ -592,6 +592,18 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                   double newWY = curWY + delta.y();
 
                   // X axis snap (world space)
+                  //
+                  // Line-crossing detection uses floor() so that a
+                  // crossing is detected whenever the element passes
+                  // through ANY grid line — not just when it crosses
+                  // the midpoint between two lines (which is what
+                  // round() would do).  After a break-free the element
+                  // sits past the midpoint of the next line, so round()
+                  // would already assign it to that line and miss the
+                  // crossing, causing it to snap only on every second
+                  // grid line.  floor() detects the actual line
+                  // crossing; the snap target is the nearest line
+                  // (round).
                   if (_snapState.activeX) {
                         _snapState.excessX += delta.x();
                         if (std::abs(_snapState.excessX) > halfSpacing) {
@@ -606,13 +618,13 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                               }
                         }
                   else {
-                        // Check if the free movement crosses a grid line.
-                        double oldLine = std::round(curWX / spacing);
-                        double newLine = std::round(newWX / spacing);
-                        if (newLine != oldLine) {
+                        long oldFloor = (long)std::floor(curWX / spacing);
+                        long newFloor = (long)std::floor(newWX / spacing);
+                        if (newFloor != oldFloor) {
+                              long snapLine      = std::lround(newWX / spacing);
                               _snapState.activeX = true;
-                              _snapState.excessX = newWX - newLine * spacing;
-                              newWX              = newLine * spacing;
+                              _snapState.excessX = newWX - snapLine * spacing;
+                              newWX              = snapLine * spacing;
                               }
                         }
 
@@ -629,12 +641,13 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                               }
                         }
                   else {
-                        double oldLine = std::round(curWY / spacing);
-                        double newLine = std::round(newWY / spacing);
-                        if (newLine != oldLine) {
+                        long oldFloor = (long)std::floor(curWY / spacing);
+                        long newFloor = (long)std::floor(newWY / spacing);
+                        if (newFloor != oldFloor) {
+                              long snapLine      = std::lround(newWY / spacing);
                               _snapState.activeY = true;
-                              _snapState.excessY = newWY - newLine * spacing;
-                              newWY              = newLine * spacing;
+                              _snapState.excessY = newWY - snapLine * spacing;
+                              newWY              = snapLine * spacing;
                               }
                         }
 
