@@ -498,6 +498,34 @@ class ZCam : public QObject
       Q_PROPERTY(QVector3D snapRefPos READ snapRefPos NOTIFY snapRefPosChanged)
       QVector3D snapRefPos() const;
 
+      //----------------------------------------------------------------
+      //   Live 3D view-camera mirror
+      //    The QML 3D panel (View3DPanel.qml) continuously pushes the
+      //    perspective camera's current eye position and the root zoom
+      //    scale here via updateViewCamera().  Cam::grabCameraView()
+      //    consumes these values to derive its projection viewCenter /
+      //    projectionHeight so the laser projection matches what is
+      //    shown on the canvas.  These are transient view state, not
+      //    part of the project file.
+      //----------------------------------------------------------------
+      Q_PROPERTY(QVector3D viewCameraEye READ viewCameraEye NOTIFY viewCameraEyeChanged)
+      Q_PROPERTY(double viewCameraScale READ viewCameraScale NOTIFY viewCameraScaleChanged)
+
+    public:
+      QVector3D viewCameraEye() const { return _viewCameraEye; }
+      double viewCameraScale() const { return _viewCameraScale; }
+      /// Called from QML (3D panel) whenever the perspective camera or
+      /// the root zoom scale changes.  Publishes the camera eye position
+      /// (scene units) and the root scale used to convert scene units
+      /// back into root-local mm.
+      Q_INVOKABLE void updateViewCamera(const QVector3D& eye, double scale);
+    Q_SIGNALS:
+      void viewCameraEyeChanged();
+      void viewCameraScaleChanged();
+    protected:
+      QVector3D _viewCameraEye {QVector3D(0.0, 0.0, 1000.0)};
+      double _viewCameraScale {1.0};
+
       // SVG drag-preview state
       TessGeometry* _dragPreviewGeometry {nullptr};
       QString _svgDragPath;

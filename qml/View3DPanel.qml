@@ -273,6 +273,20 @@ Item {
         }
 
     //=========================================================
+    //  Mirror the perspective camera into ZCam
+    //    Pushes the camera eye position and the root zoom scale to
+    //    ZCam (ZCam.updateViewCamera) so Cam::grabCameraView() can
+    //    derive viewCenter / projectionHeight matching this view.
+    //    Called whenever the perspective camera position or the root
+    //    scale changes, and once at startup.
+    //=========================================================
+    function pushViewCamera() {
+        if (typeof ZCam.updateViewCamera !== "function")
+            return;
+        ZCam.updateViewCamera(camera2.position, root.scale.x);
+        }
+
+    //=========================================================
     //  Grid viewport update
     //    Computes the currently visible scene region in local
     //    coordinates and pushes it to the Grid element so the
@@ -647,7 +661,24 @@ Item {
         pCamera.checked = panel.perspectiveCamera;
         // Initialize the grid to cover the default viewport.
         Qt.callLater(updateGridViewport);
+        // Publish the initial camera state so Cam::grabCameraView() has a
+        // valid position even before the user moves the camera.
+        Qt.callLater(pushViewCamera);
         }
+
+    // Mirror the perspective camera into ZCam whenever its position or the
+    // root zoom scale changes (pan via SpaceMouse / middle-drag, wheel zoom).
+    Connections {
+        target: camera2
+        function onPositionChanged() { pushViewCamera(); }
+        }
+    Connections {
+        target: root
+        function onScaleChanged() { pushViewCamera(); }
+        }
+    // The camera is also moved by pan gestures (mouseArea.pan) and by
+    // SpaceMouse translate; those update camera2.position and thus already
+    // trigger onPositionChanged above.
 
     SpaceMouse {
         // Per-axis sensitivity, configurable in Config → SpaceMouse.

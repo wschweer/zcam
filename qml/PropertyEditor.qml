@@ -450,6 +450,7 @@ Item {
                         case "cameraResolution": return cameraResolutionDelegate
                         case "cameraFrameRate": return cameraFrameRateDelegate
                         case "cameraView": return cameraViewDelegate
+                        case "cameraCapture": return cameraCaptureDelegate
                         case "empty":      return emptyDelegate
                         default:          return stringDelegate
                         }
@@ -4532,6 +4533,60 @@ Item {
                         colCameraView._pan = Qt.point(colCameraView._pan.x + mx * (1.0 - k), colCameraView._pan.y + my * (1.0 - k))
                         colCameraView._zoom = newZoom
                         }
+                    }
+                }
+            }
+        }
+
+    // ── cameraCapture: button that adopts the live 3D canvas camera ──
+    //    Shown next to "Perspective" in the Cam inspector.  Clicking calls
+    //    Cam::grabCameraView(), which copies the current perspective camera's
+    //    foot point (viewCenter) and height (projectionHeight), marks the cam
+    //    data dirty and triggers a recalculation so the laser projection
+    //    matches the canvas view.
+    Component {
+        id: cameraCaptureDelegate
+
+        Item {
+            width: parent ? parent.width : 0
+            implicitHeight: grabCamButton.implicitHeight + 4
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setModelValue: function(v) {}
+
+            property var camElement: (ZCam.project && ZCam.project.cam) ? ZCam.project.cam : null
+
+            Button {
+                id: grabCamButton
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                enabled: parent.camElement !== null
+                text: parent.camElement ? qsTr("Grab Camera View") : qsTr("No Cam")
+                onClicked: {
+                    if (parent.camElement)
+                        parent.camElement.grabCameraView()
+                    }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Adopt the current 3D canvas camera as the projection viewpoint")
+                ToolTip.delay: 800
+                ToolTip.timeout: 4000
+                background: Rectangle {
+                    color: grabCamButton.pressed ? Material.accentColor
+                           : (grabCamButton.hovered ? Material.color(Material.Teal, Material.Shade700)
+                              : "#3a3a3a")
+                    radius: 4
+                    border.width: grabCamButton.hovered ? 1 : 0
+                    border.color: Material.accentColor
+                    }
+                contentItem: Label {
+                    text: grabCamButton.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    color: grabCamButton.enabled ? Material.foreground : "#888888"
                     }
                 }
             }

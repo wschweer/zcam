@@ -92,6 +92,23 @@ Für die Standard-Draufsicht ist das der Workspace-Mittelpunkt
 der gelben Kamera-Darstellung zu überlagern, `viewCenter` auf diesen Wert
 setzen (nicht `(0,0)`).
 
+### 1b. „Grab Camera View" — Kamera automatisch übernehmen
+
+Statt `viewCenter`/`projectionHeight` von Hand zu setzen, gibt es im
+Cam-Inspector neben „Perspective" den Button **„Grab Camera View"**:
+
+- Die QML-3D-Ansicht (View3DPanel.qml) spiegelt die aktuelle Perspektivkamera
+  laufend via `ZCam.updateViewCamera(eye, scale)` in den C++-Singleton
+  (transienter View-Zustand `viewCameraEye`/`viewCameraScale`, nicht Teil der
+  Projektdatei).
+- Der Button ruft `Cam::grabCameraView()` (Q_INVOKABLE), das
+  `viewCenter = eye.xy / scale` und `projectionHeight = eye.z / scale`
+  ableitet, beide Properties setzt (→ camDirty) und `refreshCam()` zur
+  unmittelbaren Neuberechnung auslöst.
+- Implementierung: `cam.h/.cpp` (`grabCameraView`), `zcam.h/.cpp`
+  (`updateViewCamera` + `viewCameraEye/Scale`), Property-Typ `cameraCapture`
+  in `cam.h`-JSON + Button-Delegate in `PropertyEditor.qml`.
+
 ### 2. `projectPathListToXY()` erweitert (element3d.h / element3d.cpp)
 
 ```cpp

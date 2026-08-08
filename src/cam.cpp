@@ -16,8 +16,11 @@
 #include "framing.h"
 #include "recipe.h"
 #include "geometryworker.h"
+#include "machine.h"
 
 #include <QPointer>
+#include <QVector2D>
+#include <QVector3D>
 #include <future>
 #include <limits>
 #include <memory>
@@ -215,6 +218,59 @@ void Cam::updateCam() {
                                                             return;
                                                       _geometry->setLines(r.combinedLines);
                                                       });
+      }
+
+//---------------------------------------------------------
+//   grabCameraView
+//    Adopt the live view-camera from the 3D canvas.  The QML 3D
+//    panel continuously mirrors the perspective camera's eye and the
+//    root zoom scale into ZCam (ZCam::updateViewCamera).  From these
+//    values derive:
+//
+//      viewCenter      = perpendicular foot of the camera on z=0 in
+//                        root-local mm  = (eye.x, eye.y) / rootScale
+//      projectionHeight = camera height above z=0 = eye.z / rootScale
+//
+//    (scene units are mm * rootScale, so dividing by the root scale
+//    converts them back into root-local millimetres).  When no valid
+//    eye is mirrored yet, fall back to the workspace centre.  Both
+//    properties are then assigned (which marks the cam data dirty via
+//    the constructor connections) and a recalculation is triggered.
+//---------------------------------------------------------
+
+void Cam::grabCameraView() {
+      if (!zcam)
+            return;
+
+      QVector3D eye   = zcam->viewCameraEye();
+      double scale    = zcam->viewCameraScale();
+      if (scale <= 1e-9)
+            scale = 1.0;
+
+      double cx = eye.x() / scale;
+      double cy = eye.y() / scale;
+      double h  = eye.z() / scale;
+
+      // Fallback: when no meaningful camera position has been mirrored
+      // yet (e.g. eye still at the default over the origin), use the
+      // workspace centre of the current machine as the foot point.
+      if (h < 1e-6) {
+            Machine* m = zcam->project() ? zcam->project()->machine() : nullptr;
+            if (m) {
+                  cx = m->maxTravel().x() * 0.5;
+                  cy = m->maxTravel().y() * 0.5;
+                  }
+            h = 1000.0;
+            }
+
+      // Assign the properties.  Setting them emits *Changed signals,
+      // which the constructor has connected to setCamDirty(true).
+      set_viewCenter(QVector2D(cx, cy));
+      set_projectionHeight(h);
+
+      // Trigger a recalculation so the projected geometry immediately
+      // reflects the newly adopted camera view.
+      zcam->refreshCam();
       }
 
 //---------------------------------------------------------

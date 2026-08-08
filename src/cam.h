@@ -197,6 +197,16 @@ class Cam : public Element3d
                     ]
                 }
             ]
+        },
+        {
+            "label": "Camera",
+            "cells": [
+                {
+                    "name": "cameraCapture",
+                    "type": "cameraCapture",
+                    "sublabel": "Grab Camera"
+                }
+            ]
         }
     ]
       })"};
@@ -221,4 +231,11 @@ class Cam : public Element3d
       /// Property changes only set the camDirty flag so the user knows
       /// a refresh is pending.
       Q_INVOKABLE void updateCam();
+      /// Adopt the live view-camera from the 3D canvas (View3DPanel).
+      /// Reads the camera eye / root scale mirrored into ZCam by
+      /// ZCam::updateViewCamera(), derives viewCenter (the perpendicular
+      /// foot of the camera on z=0 in root-local mm) and projectionHeight,
+      /// assigns both properties, marks the cam data dirty and triggers a
+      /// recalculation so the laser projection matches the canvas view.
+      Q_INVOKABLE void grabCameraView();
       };
