@@ -558,6 +558,7 @@ class ZCam : public QObject
       // ── Project lifecycle (moved from ProjectManager) ───────────────────
       /// Start a fresh, unnamed project.  Returns false if user cancelled.
       Q_INVOKABLE void newProject(bool clearPersistedPath = true);
+      Q_INVOKABLE void createTestProject();
       void startNewProject(bool clearPersistedPath = true);
       void endNewProject();
 

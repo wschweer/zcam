@@ -251,6 +251,14 @@ Window {
         }
 
     Action {
+        id: actionTestProject
+        text: qsTr("Test Project")
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Test Project?"),
+            function () { ZCam.createTestProject() })
+        }
+
+    Action {
         id: actionShowLaserPanel
         text: qsTr("Show laser panel")
         checkable: true
@@ -496,6 +504,10 @@ Window {
                     }
                 MenuItem {
                     action: actionCalibrationScan
+                    }
+                MenuSeparator {}
+                MenuItem {
+                    action: actionTestProject
                     }
                 }
 

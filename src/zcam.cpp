@@ -2817,6 +2817,17 @@ static QString lastProjectPath() {
 
 void ZCam::newProject(bool clearPersistedPath) {
       startNewProject(clearPersistedPath);
+      endNewProject();
+      }
+
+//---------------------------------------------------------
+//   createTestProject
+//    Create a project pre-populated with test geometry (text,
+//    rectangle, polygon, ellipse) for quick experimentation.
+//---------------------------------------------------------
+
+void ZCam::createTestProject() {
+      startNewProject();
 
       auto project = this->project();
       auto fixture = project->fixture();
