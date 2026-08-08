@@ -561,6 +561,17 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       // transforms (Layer position/rotation/scale).  The resulting world
       // position is then converted back to parent-local space for
       // element->set_pos().
+      //
+      // Snap algorithm (per axis, independently):
+      //   1. Free phase (not snapped): the element follows the cursor.
+      //      When the reference point crosses a grid line, it snaps to
+      //      that line and the signed distance from the old free
+      //      position to the line becomes the initial excess.
+      //   2. Snapped phase (snapped to a line): the element stays on the
+      //      line while the accumulated excess grows.  When |excess|
+      //      exceeds half the spacing, the element breaks free and
+      //      jumps by the FULL accumulated excess — not just the
+      //      current frame delta — so no drag distance is lost.
       Grid* grid = nullptr;
       if (_project)
             grid = qobject_cast<Grid*>(_project->gridElement());
@@ -585,13 +596,17 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         _snapState.excessX += delta.x();
                         if (std::abs(_snapState.excessX) > halfSpacing) {
                               _snapState.activeX = false;
-                              newWX              = curWX + delta.x();
+                              // Jump by the full accumulated excess so
+                              // no drag distance is lost.
+                              newWX              = curWX + _snapState.excessX;
+                              _snapState.excessX = 0.0;
                               }
                         else {
                               newWX = curWX;
                               }
                         }
                   else {
+                        // Check if the free movement crosses a grid line.
                         double oldLine = std::round(curWX / spacing);
                         double newLine = std::round(newWX / spacing);
                         if (newLine != oldLine) {
@@ -606,7 +621,8 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         _snapState.excessY += delta.y();
                         if (std::abs(_snapState.excessY) > halfSpacing) {
                               _snapState.activeY = false;
-                              newWY              = curWY + delta.y();
+                              newWY              = curWY + _snapState.excessY;
+                              _snapState.excessY = 0.0;
                               }
                         else {
                               newWY = curWY;
@@ -623,15 +639,7 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                         }
 
                   // Convert the snapped world position back to parent-local
-                  // coordinates.  The element's local-to-world transform is:
-                  //   world = parentGlobal * localMatrix(pos, rot, scale)
-                  // The reference point (0,0,0) in local space maps to
-                  // element->pos() through the local matrix (which only
-                  // translates for the reference point since rotation and
-                  // scale leave the origin unchanged).  So:
-                  //   worldRef = parentGlobal.map(element->pos())
-                  // Therefore:
-                  //   newLocalPos = parentGlobalInv.map(snappedWorldRef)
+                  // coordinates.
                   QVector3D newWorldRef(newWX, newWY, worldRef.z() + delta.z());
                   QVector3D newLocalPos = newWorldRef;
                   if (auto* p = qobject_cast<Element3d*>(element->parent())) {
@@ -642,26 +650,13 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
                               newLocalPos = parentInv.map(newWorldRef);
                         }
 
-                  // Derive the marker position from the exact same
-                  // parent-local value that is assigned to pos below:
-                  //   worldRefPos = parentGlobal * newLocalPos
-                  // reproduces the future position of the element origin
-                  // in world space — including the parent's scale,
-                  // rotation and translation.  Computing the marker
-                  // position from the element's own globalMatrix() would
-                  // be wrong whenever the parent has a non-trivial
-                  // rotation: the local matrix is applied BEFORE the
-                  // parent rotation, so a world-space drag delta maps to
-                  // a different pos delta direction and the marker drifts
-                  // away from the element origin, eventually leaving the
-                  // view ("cross disappears").
+                  // The marker world position is derived from the same
+                  // parent-local value that is assigned to pos below.
                   QVector3D worldRefPos = newWorldRef;
                   if (auto* p = qobject_cast<Element3d*>(element->parent()))
                         worldRefPos = p->globalMatrix().map(newLocalPos);
-                  if (worldRefPos != _snapState.refPos) {
-                        _snapState.refPos = worldRefPos;
-                        emit snapRefPosChanged();
-                        }
+                  _snapState.refPos = worldRefPos;
+                  emit snapRefPosChanged();
                   element->set_pos(newLocalPos);
                   return;
                   }
@@ -669,11 +664,12 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
 
       QVector3D newPos = element->pos() + localDelta;
       element->set_pos(newPos);
-      // The snap reference-point marker position is derived from the
-      // element's live world position when snap is not active (see
-      // snapRefPos()).  Emit snapRefPosChanged so the QML marker binding
-      // updates and the cross follows the element during non-snap drags.
-      emit snapRefPosChanged();
+      // Update the snap reference-point marker to follow the element
+      // during non-snap drags.
+      if (_snapDragActive) {
+            _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
+            emit snapRefPosChanged();
+            }
       }
 
 //---------------------------------------------------------
@@ -753,9 +749,12 @@ void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifier
       element->beginBatchUpdate();
       element->set_pos(element->pos() + localDelta);
       element->endBatchUpdate();
-      // The pivot-scale changes the element's world origin, so update the
-      // snap reference-point marker as well.
-      emit snapRefPosChanged();
+      // The pivot-scale changes the element's world origin, so update
+      // the snap reference-point marker as well.
+      if (_snapDragActive) {
+            _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
+            emit snapRefPosChanged();
+            }
       }
 
 //---------------------------------------------------------
@@ -884,20 +883,12 @@ void ZCam::endElementDrag() {
 //---------------------------------------------------------
 //   snapRefPos
 //    World position used to place the snap reference-point cross.
-//    While a drag with grid snap is in progress this returns the
-//    recorded snap state position (derived from the same
-//    parent-local pos that is assigned to the element — see
-//    dragged()); otherwise the live position of the reference point
-//    (0,0 local) of the element currently being dragged, or the
-//    recorded value when idle.
+//    _snapState.refPos is kept in sync with the element origin in
+//    every drag frame (both snap and non-snap paths in dragged()),
+//    so the QML marker binding stays up to date.
 //---------------------------------------------------------
 
 QVector3D ZCam::snapRefPos() const {
-      if (_elementDragElement) {
-            if (_snapState.activeX || _snapState.activeY)
-                  return _snapState.refPos;
-            return _elementDragElement->globalMatrix().map(QVector3D(0, 0, 0));
-            }
       return _snapState.refPos;
       }
 

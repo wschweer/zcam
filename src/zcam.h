@@ -559,19 +559,15 @@ class ZCam : public QObject
             };
       SnapState _snapState;
 
-      /// True while an element drag with grid snap (and therefore the
-      /// reference-point cross) is active.  Unlike the per-axis
-      /// activeX/activeY flags this is set once at startElementDrag()
-      /// and cleared once at endElementDrag() — it never toggles in the
-      /// middle of a drag, so the QML marker cannot flicker.
+      /// True while an element drag is in progress.  Set once at
+      /// startElementDrag() and cleared once at endElementDrag() —
+      /// it never toggles in the middle of a drag.
       Q_PROPERTY(bool snapDragActive READ snapDragActive NOTIFY snapDragActiveChanged)
       bool _snapDragActive {false};
       bool snapDragActive() const { return _snapDragActive; }
 
-      /// World position of the reference point (element origin) as used
-      /// for the current drag / snap state.  Returns the position recorded
-      /// while a drag with grid snap is in progress, otherwise the live
-      /// position from the element's current globalMatrix().
+      /// World position of the element reference point (origin).
+      /// Kept in sync in every drag frame by dragged() / scaled().
       Q_PROPERTY(QVector3D snapRefPos READ snapRefPos NOTIFY snapRefPosChanged)
       QVector3D snapRefPos() const;
 
