@@ -143,7 +143,7 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                 if (zcam->project() && zcam->project()->fixture()) {
                       Fixture* fixture = zcam->project()->fixture();
                       if (fixture->jobDuration() == 0.0)
-                            fixture->set_jobDuration(elapsed);
+                            zcam->project()->changeProperty(fixture, QStringLiteral("jobDuration"), QVariant::fromValue(elapsed));
                       }
 
                 if (state == LaserState::MarkingAboutToIdle) {
