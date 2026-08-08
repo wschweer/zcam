@@ -751,6 +751,7 @@ Item {
         property real frameDelta: 10
         property var curNode: null
         property variant vertexDragHandle: null
+        property var _panGrabPoint: null   // scene point grabbed at middle-button press
         // Drag threshold: accumulate scene-space movement until it
         // exceeds config.dragThreshold before actually moving the
         // element.  This prevents accidental micro-moves when the user
@@ -759,29 +760,33 @@ Item {
         property bool _dragThresholdMet: false
         acceptedButtons: Qt.AllButtons
 
-        function pan(delta) {
+        //-----------------------------------------------------
+        //  pan
+        //    Grab-and-drag panning: on middle-button press the scene
+        //    point under the cursor is stored in _panGrabPoint.  On
+        //    each subsequent move the camera is shifted so that the
+        //    grabbed scene point stays exactly under the cursor.
+        //    This works correctly regardless of zoom level (root.scale),
+        //    rotation or projection type because it uses the same
+        //    screenToScene raycast the rest of the viewport uses.
+        //-----------------------------------------------------
+        function pan(grabScene, currentScene) {
+            if (!grabScene || !currentScene)
+                return;
+            // Delta in root-local coordinates (mm).
+            var localDelta = currentScene.minus(grabScene);
+            // Convert root-local delta to world (scene) delta.
+            // mapPositionToScene applies root's rotation + scale but
+            // also root.position; subtracting the mapped origin
+            // (== root.position) cancels the translation so we get
+            // only the rotation + scale contribution.
+            var worldOrigin = root.mapPositionToScene(Qt.vector3d(0, 0, 0));
+            var worldTarget = root.mapPositionToScene(localDelta);
+            var worldDelta  = worldTarget.minus(worldOrigin);
+            // Move the camera opposite to the delta so the grabbed
+            // point follows the cursor (grab-and-drag metaphor).
             var cam = view3D.camera;
-            var up = cam.up;
-            var right = cam.right;
-            var unitsPerPixel = 1.0;
-
-            if (cam.fieldOfView !== undefined) {
-                var fovRad = cam.fieldOfView * (Math.PI / 180);
-                var distance = cam.z;
-                distance = Math.abs(distance);
-                var viewHeightAtDepth = 2 * distance * Math.tan(fovRad / 2);
-                unitsPerPixel = viewHeightAtDepth / panel.height;
-                } else {
-                var camScale = (cam.scale) ? cam.scale.y : 1.0;
-                if (camScale === 0)
-                    camScale = 0.001;
-                unitsPerPixel = 1.0 / camScale;
-                }
-
-            var moveX = -delta.x * unitsPerPixel;
-            var moveY = delta.y * unitsPerPixel;
-            var moveVec = right.times(moveX).plus(up.times(moveY));
-            cam.position = cam.position.minus(moveVec);
+            cam.position = cam.position.minus(worldDelta);
             }
 
         // Step sizes for mouse-wheel scaling/zooming:
@@ -849,6 +854,8 @@ Item {
             // Reset drag threshold state on every press.
             _dragAccum = Qt.vector3d(0, 0, 0);
             _dragThresholdMet = false;
+            // Store the scene point under the cursor for grab-and-drag panning.
+            _panGrabPoint = eLastPos;
             // Ctrl+Left-drag starts a lasso selection.
             if (mouse.button == Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)) {
                 lassoActive = true;
@@ -1055,6 +1062,7 @@ Item {
                 ZCam.endVertexDrag(vertexDragHandle._poly, vertexDragHandle._vertexIndex);
                 vertexDragHandle = null;
                 }
+            _panGrabPoint = null;
             ZCam.endElementDrag();
             if (ZCam.currentTool != "rectangle" && ZCam.currentTool != "polygon" && ZCam.currentTool != "circle")
                 curNode = null;
@@ -1189,7 +1197,7 @@ Item {
                 lastPos = currentPos;
                 updateGridViewport();
                 } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
-                pan(delta);
+                pan(_panGrabPoint, pos3d);
                 // The drag deltas delivered to ZCam.dragged() are only
                 // valid while the canvas camera is fixed.  A pan mid-drag
                 // discontinues the delta stream, so re-anchor the snap
