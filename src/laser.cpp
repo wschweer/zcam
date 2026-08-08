@@ -81,6 +81,18 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
       state = LaserState::Off;
 
       //
+      //  mark timer: updates currentTime every 100 ms while a
+      //  mark job is running.  estimatedEnd is set from the
+      //  active fixture's jobDuration (if known from a previous
+      //  run) when marking starts.
+      //
+      markTimer.setInterval(100);
+      connect(&markTimer, &QTimer::timeout, this, [this] {
+            double elapsed = markTime.elapsed() / 1000.0;
+            set_currentTime(elapsed);
+            });
+
+      //
       //  action: the framing thread actually stopped
       //
       connect(
@@ -118,6 +130,22 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                       markingThread->join();
                 delete markingThread;
                 markingThread = nullptr;
+
+                //
+                //  stop the elapsed-time timer and store the
+                //  measured job duration in the active fixture
+                //  (only when the fixture does not yet have a cached
+                //  value, i.e. jobDuration == 0)
+                //
+                markTimer.stop();
+                double elapsed = markTime.elapsed() / 1000.0;
+                set_currentTime(elapsed);
+                if (zcam->project() && zcam->project()->fixture()) {
+                      Fixture* fixture = zcam->project()->fixture();
+                      if (fixture->jobDuration() == 0.0)
+                            fixture->set_jobDuration(elapsed);
+                      }
+
                 if (state == LaserState::MarkingAboutToIdle) {
                       changeState(LaserState::Idle);
                       }
@@ -226,8 +254,7 @@ void Laser::exit() {
                   changeState(LaserState::AboutToExit);
                   stopFraming = true;
                   return;
-            default:
-                  break;
+            default: break;
             }
       exitEngine();
       changeState(LaserState::Off);
@@ -321,6 +348,21 @@ void Laser::doStartMarking() {
             Critical("incomplete project");
             return;
             }
+
+      //
+      //  set up the elapsed-time tracking:
+      //   - estimatedEnd is set from the fixture's cached jobDuration
+      //     (0 when unknown, i.e. first run)
+      //   - currentTime is reset to 0
+      //   - markTime (QElapsedTimer) is started
+      //   - markTimer fires every 100 ms to update currentTime for
+      //     the slider in the LaserPanel
+      //
+      Fixture* fixture = zcam->project()->fixture();
+      set_estimatedEnd(fixture->jobDuration());
+      set_currentTime(0.0);
+      markTime.start();
+      markTimer.start();
 
       markingThread = new std::thread([this] {
             //
@@ -433,6 +475,7 @@ void Laser::shutdown() {
       // any blocking USB operations.
       stopFraming = true;
       stopMarking = true;
+      markTimer.stop();
 
       setAbortFlag();
 

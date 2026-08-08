@@ -75,7 +75,14 @@ Project::Project(ZCam* z, Element* parent) : Element3d(z, parent) {
 
       // Forward UndoStack signal changes to Project::dirtyChanged
       // so QML bindings on project.dirty update automatically.
-      connect(_undo, &UndoStack::dirtyChanged, this, [this] { emit dirtyChanged(); });
+      // When the project becomes dirty (undo stack changed), reset
+      // the jobDuration of the active fixture to 0 so that the next
+      // mark job re-measures the elapsed time.
+      connect(_undo, &UndoStack::dirtyChanged, this, [this] {
+            emit dirtyChanged();
+            if (dirty() && _fixture)
+                  _fixture->set_jobDuration(0.0);
+            });
 
       // The camera element is created in ensureCameraElement() after
       // loading, or in endNewProject() for new projects, to avoid duplicates.

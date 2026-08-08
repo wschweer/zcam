@@ -228,6 +228,7 @@ class Laser : public Machine
       PROPV(int, inputPort, 0)
 
       QTimer inputPortTimer;
+      QTimer markTimer;
 
       LaserState state;
       std::thread* framingThread {nullptr};

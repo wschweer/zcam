@@ -66,7 +66,7 @@ Rectangle {
             to: laserPanel.laser?.estimatedEnd ?? 0
             value: laserPanel.laser?.currentTime ?? 0
             Layout.fillWidth: true
-            enabled: laserPanel.laser?.enabled ?? false
+            enabled: false
             Layout.margins: 10
             }
 

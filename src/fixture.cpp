@@ -78,3 +78,28 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
       height               = std::abs(r.top - r.bottom);
       return r;
       }
+
+//---------------------------------------------------------
+//   toJson
+//    Serialize the Fixture including the hidden jobDuration
+//    property which is not part of the properties() JSON and
+//    therefore not handled by the base class Element3d::toJson().
+//---------------------------------------------------------
+
+json Fixture::toJson() const {
+      json data = Element3d::toJson();
+      data["jobDuration"] = _jobDuration;
+      return data;
+      }
+
+//---------------------------------------------------------
+//   fromJson
+//    Deserialize the Fixture including the hidden jobDuration
+//    property.
+//---------------------------------------------------------
+
+void Fixture::fromJson(const json& data) {
+      Element3d::fromJson(data);
+      if (data.contains("jobDuration"))
+            _jobDuration = data.at("jobDuration").get<double>();
+      }
