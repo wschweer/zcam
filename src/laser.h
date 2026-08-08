@@ -297,7 +297,6 @@ class Laser : public Machine
       //--------------------------------------------------------------------
 
       virtual int readInputPort() { return 0; }
-
       //--------------------------------------------------------------------
       //     toggleOutputBit
       //     Q_INVOKABLE helper for QML: toggles a single bit in the

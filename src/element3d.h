@@ -21,6 +21,7 @@
 #include "element.h"
 #include "tessgeometry.h"
 #include "painterpath.h"
+#include "clipper.h"
 
 class Recipe;
 Q_DECLARE_OPAQUE_POINTER(Recipe*)
@@ -116,7 +117,7 @@ class Element3d : public Element
       PathList _pathList;
       mutable QMatrix4x4 _matrix;
       int _vertexRevision {0};
-      bool _batching {false}; ///< suppresses vertexRevisionChanged during batch updates
+      bool _batching {false};    ///< suppresses vertexRevisionChanged during batch updates
       bool _snapActiveX {false}; ///< grid snap active on X (for reference-point marker)
       bool _snapActiveY {false}; ///< grid snap active on Y (for reference-point marker)
 
@@ -268,6 +269,25 @@ class Element3d : public Element
       QMatrix4x4 globalMatrix() const;
       void strokeAndFill();
       };
+
+//---------------------------------------------------------
+//   projectPathListToXY
+//    Transform a 2D PathList through the element's globalMatrix()
+//    and orthographically project the resulting 3D points onto
+//    the z=0 plane (i.e. discard the z component).
+//
+//    The globalMatrix() contains the full 3D transformation
+//    (translation, rotation, scale, mirror) of the element and
+//    all its ancestors.  By mapping the 2D path points as
+//    QVector3D(pt.x(), pt.y(), 0) and then dropping z, we obtain
+//    the orthographic top-down view of the element as it appears
+//    on the z=0 plane.  An element rotated around Y will appear
+//    foreshortened in X, matching the on-screen 3D representation.
+//
+//    The returned PathsD are in project-root coordinate space.
+//---------------------------------------------------------
+
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element);
 
 extern void closePath(PathList& _pathList);
 

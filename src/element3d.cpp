@@ -118,7 +118,7 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
             }
       else if (type == "laserLayer") {
             Recipe* recipe = value.value<Recipe*>();
-            data[name] = recipe ? recipe->name().toStdString() : "";
+            data[name]     = recipe ? recipe->name().toStdString() : "";
             return true;
             }
       else if (type == "machine") {
@@ -864,4 +864,33 @@ void closePath(PathList& pl) {
       for (auto& p : pl)
             if (p.size() > 2 && p.front() != p.back())
                   p.push_back(p.front());
+      }
+
+//---------------------------------------------------------
+//   projectPathListToXY
+//    See declaration in element3d.h for full documentation.
+//---------------------------------------------------------
+
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element) {
+      Clipper2Lib::PathsD result;
+      const auto& pl = element->pathList();
+      if (pl.empty())
+            return result;
+
+      QMatrix4x4 matrix = element->globalMatrix();
+
+      for (const auto& path : pl) {
+            Clipper2Lib::PathD cp;
+            cp.reserve(path.size());
+            for (const auto& pt : path) {
+                  // Map the 2D path point through the full 3D
+                  // globalMatrix and discard z.  This is the
+                  // orthographic top-down projection onto the
+                  // z=0 plane — exactly what the laser sees.
+                  auto r = matrix.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
+                  cp.push_back({r.x(), r.y()});
+                  }
+            result.push_back(std::move(cp));
+            }
+      return result;
       }

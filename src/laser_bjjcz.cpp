@@ -635,7 +635,7 @@ bool LaserBJJCZ::startFramingEngine() {
             aborting = false;
             waitReady();
             //            set_control_mode(0); //??
-//            gpioWrite(0x100);
+            //            gpioWrite(0x100);
             setLight(true);
             initPosition();
             _laserValuesValid = false;
@@ -681,12 +681,12 @@ void LaserBJJCZ::stopFramingEngine() {
       list.end(1);
       set_control_mode(1);
 
-//      gpioWrite(0x100);
+      //      gpioWrite(0x100);
       set_standby(2000, 20);
-//      if (isMOPALaser())
-//            gpioWrite(0x100);
-//      else
-//            gpioWrite(0x300);
+      //      if (isMOPALaser())
+      //            gpioWrite(0x100);
+      //      else
+      //            gpioWrite(0x300);
       gotoXY(0x8000, 0x8000, 0, 0);
       readPort();
       }
@@ -707,7 +707,7 @@ void LaserBJJCZ::startMarkingEngine() {
       aborting          = false;
       _laserValuesValid = false;
 
-//      gpioWrite(0x0);
+      //      gpioWrite(0x0);
       list.start();
       initPosition();
       waitReady();
@@ -718,11 +718,11 @@ void LaserBJJCZ::startMarkingEngine() {
             //list_delay_time(800);
             }
       if (isUVLaser()) {
-//            gpioWrite(0x100);
+            //            gpioWrite(0x100);
             set_standby(2000, 20);
-//            gpioWrite(0x300);
+            //            gpioWrite(0x300);
             gotoXY(0x8000, 0x8000, 0, 0);
-//            gpioWrite(0x300);
+            //            gpioWrite(0x300);
             initPosition();
             waitReady();
             }
@@ -1696,7 +1696,7 @@ void LaserBJJCZ::gpioOff(int bit) {
 
 void LaserBJJCZ::gpioToggle(int bit) {
       _outputPort ^= (1 << bit);
-Debug("{} = {:04x}", bit, _outputPort);
+      Debug("{} = {:04x}", bit, _outputPort);
       gpioWrite();
       }
 
@@ -1705,7 +1705,7 @@ Debug("{} = {:04x}", bit, _outputPort);
 //---------------------------------------------------------
 
 void LaserBJJCZ::gpioSet(int bit, bool on) {
-      bit      = 1 << bit;
+      bit         = 1 << bit;
       _outputPort = on ? _outputPort | bit : _outputPort & (~bit);
       gpioWrite();
       }
@@ -1720,9 +1720,7 @@ void LaserBJJCZ::gpioWrite() {
       // thread (framing/marking).  Use QMetaObject::invokeMethod with
       // QueuedConnection to ensure the signal is delivered on the
       // GUI thread so QML bindings re-evaluate correctly.
-      QMetaObject::invokeMethod(this, [this]() {
-            emit outputPortChanged();
-            }, Qt::QueuedConnection);
+      QMetaObject::invokeMethod(this, [this]() { emit outputPortChanged(); }, Qt::QueuedConnection);
       }
 
 void LaserBJJCZ::gpioWrite(int data) {
@@ -1910,12 +1908,12 @@ void LaserBJJCZ::writeCorrectionTable() {
                         // stays within the signed 16-bit range [-32767, 32767]
                         int nominalX = int(x * scale);
                         int nominalY = int(y * scale);
-                        int cX = std::clamp(corrX, -32767 - nominalX, 32767 - nominalX);
-                        int cY = std::clamp(corrY, -32767 - nominalY, 32767 - nominalY);
-//                        if (cX != corrX)
-//                              Debug("{}:{} x-overflow {:x}", x, y, cX);
-//                        if (cY != corrY)
-//                              Debug("{}:{} y-overflow {:x}", x, y, cY);
+                        int cX       = std::clamp(corrX, -32767 - nominalX, 32767 - nominalX);
+                        int cY       = std::clamp(corrY, -32767 - nominalY, 32767 - nominalY);
+                        //                        if (cX != corrX)
+                        //                              Debug("{}:{} x-overflow {:x}", x, y, cX);
+                        //                        if (cY != corrY)
+                        //                              Debug("{}:{} y-overflow {:x}", x, y, cY);
                         corData.setValue(x, y, {cX, cY});
                         }
                   }

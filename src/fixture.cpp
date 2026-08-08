@@ -18,6 +18,7 @@
 #include "recipe.h"
 #include "project.h"
 #include "cad.h"
+#include "element3d.h"
 
 //---------------------------------------------------------
 //   Fixture
@@ -51,17 +52,10 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
                   continue;
             auto elements = layer->collectElements();
             for (const auto* ce : elements) {
-                  // Single-tile geometry in project-root space.
-                  QMatrix4x4 m = ce->globalMatrix();
-
-                  for (auto p : ce->pathList()) {
-                        Clipper2Lib::PathD path;
-                        for (auto pp : p) {
-                              auto pt = m.map(QVector3D(pp.x(), pp.y(), 0.0));
-                              path.emplace_back(pt.x(), pt.y());
-                              }
-                        pl.push_back(path);
-                        }
+                  // Project the 3D path data orthographically onto
+                  // the z=0 plane (top-down view).
+                  Clipper2Lib::PathsD paths = projectPathListToXY(ce);
+                  pl.append_range(paths);
                   }
             }
 

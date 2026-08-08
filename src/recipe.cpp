@@ -111,18 +111,8 @@ PathsD Recipe::collectLayerPath() {
       auto elements = collectElements();
 
       for (const auto* ce : elements) {
-            const auto& pl = ce->pathList();
-
-            QMatrix4x4 matrix = ce->globalMatrix();
-
-            for (const auto& p : pl) {
-                  Clipper2Lib::PathD cp;
-                  for (const auto& pt : p) {
-                        auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                        cp.push_back({r.x(), r.y()});
-                        }
-                  spl.push_back(cp);
-                  }
+            Clipper2Lib::PathsD paths = projectPathListToXY(ce);
+            spl.append_range(paths);
             }
 
       return spl;
@@ -146,21 +136,10 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
       auto elements = collectElements();
 
       for (const auto* ce : elements) {
-            PathList pl = ce->pathList();
+            Clipper2Lib::PathsD ll = projectPathListToXY(ce);
 
-            QMatrix4x4 matrix = ce->globalMatrix();
-
-            Clipper2Lib::PathsD ll;
-            for (const auto& p : pl) {
-                  Clipper2Lib::PathD cp;
-                  for (const auto& pt : p) {
-                        auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                        cp.push_back({r.x(), r.y()});
-                        }
-                  ll.push_back(cp);
-                  }
             auto* ls = &recipe()->pass(0);
-            if (pl.fill())
+            if (ce->pathList().fill())
                   lineList.append_range(createFill(ll));
             else if (ls->wobble()) {
                   for (const auto& p : ll) {
@@ -284,26 +263,22 @@ LaserPath Recipe::collectLaserPath() const {
                   double yo = (panelVD + h) * row;
 
                   for (const auto* ce : elements) {
-                        PathList pl = ce->pathList();
-
-                        QMatrix4x4 matrix = ce->globalMatrix();
+                        Clipper2Lib::PathsD ll = projectPathListToXY(ce);
 
                         //===========================================
                         //    convert to CAM coordinate system
                         //===========================================
 
-                        Clipper2Lib::PathsD ll;
-                        for (const auto& p : pl) {
-                              Clipper2Lib::PathD cp;
-                              for (const auto& pt : p) {
-                                    auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                                    cp.push_back({r.x() + xo, r.y() + yo});
+                        // Apply panel-grid offsets
+                        for (auto& p : ll)
+                              for (auto& pt : p) {
+                                    pt.x += xo;
+                                    pt.y += yo;
                                     }
-                              ll.push_back(cp);
-                              }
+
                         auto* ls        = &recipe()->pass(0);
                         bool mustWobble = ls->wobble();
-                        if (pl.fill()) {
+                        if (ce->pathList().fill()) {
                               lineList.append_range(createFill(ll));
                               }
                         else {
