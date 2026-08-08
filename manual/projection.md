@@ -1,180 +1,162 @@
 # Perspektivische Projektion für das Lasern (WYSIWYG)
 
-Stand: 2026.  Referenz-Implementierung: `projectPathListToXY()` in
-`src/element3d.cpp` (orthografische Projektion, z wird verworfen).
+Stand: 2026 (nach Klarstellung durch den Benutzer).
+Referenz-Implementierung: `projectPathListToXY()` in `src/element3d.cpp`.
 
-## Ausgangslage (Was heute passiert)
+## Entscheidungen (vom Benutzer festgelegt)
 
-Der Datenpfad zum Laser läuft ausschließlich über 2D-Polygone (Clipper, mm,
-XY-Ebene):
+1. **Projektion ist FIX von oben auf die XY-Ebene bei z=0.**
+   → Keine Abhängigkeit von der frei rotierbaren 3D-Ansicht (root.eulerRotation).
+   → Die „perspektivische Projektion" ist eine **Zentralprojektion** von einem
+     festen Punkt auf der Z-Achse in Höhe `h` (dem Galvo/Objektiv) auf die
+     Arbeitsebene z=0.
+   → Mathematisch ist das eine **Skalierung XY mit dem Faktor `s = h / (h − z)`**.
+
+2. **Hatch-Dichte physikalisch konstant, wie im Recipe angegeben**
+   (Linien/mm bzw. Linienabstand `interval`).
+   → Da die Projektion **auf die z=0-Ebene in mm** erfolgt (nicht in
+     Screen-Pixel) und der Laser ebenfalls auf z=0 arbeitet, ist der
+     konstante Recipe-Linienabstand in der projizierten 2D-Domäne
+     **automatisch = physischer Abstand auf dem Werkstück**.
+   → **Die bestehende Hatch-Logik (`createFill`, `Clipper::hatch`) braucht
+     KEINE Änderung.**
+
+## Kern-Mathematik
+
+Die perspektivische Projektion von oben auf z=0 ist im Gegensatz zur
+bisherigen orthografischen Projektion (z einfach verwerfen) eine
+zentralperspektivische Vergrößerung:
 
 ```
-CAD Element3d (pathList)
-   │  globalMatrix()            ← volle 3D-Transformation (Translate/Rot/Scale)
-   ▼
-projectPathListToXY()          ← ORTHOGRAFISCH: Punkte als (x, y, 0) mappen,
-   │                              z-Verhalten ignorieren
-   ▼
-2D PathsD (project-root space, mm)
-   │  Recipe::createFill()      ← Hatch/Füllung in 2D
-   │  wobble()
-   │  panel-grid Offsets
-   ▼
-Recipe::collectLaserPath()
-   ▼
-Laser (mark/ framing)
+orthografisch (heute):   (x, y, z)  →  (x, y)              // z wegwerfen
+perspektivisch (Ziel):   (x, y, z)  →  (x·s, y·s)          // s = h / (h − z)
 ```
 
-Die Füllung (`Recipe::createFill`) findet bereits **in der 2D-Domäne** statt –
-sie trifft aber auf **falsch projizierte** Polygone, sobald Objekte um X/Y
-rotiert sind oder über der XY-Ebene liegen (z ≠ 0).
+- Ein Punkt auf z=0     → s = 1        (unverändert)
+- Ein Punkt über z=0    → s > 1        (erscheint vergrößert/„näher")
+- Ein Punkt unter z=0   → s < 1        (erscheint verkleinert)
+- z → h (Punkt nähert sich dem Projektionszentrum) → s → ∞  (Singularität,
+  muss geklemmt werden: `denom = max(h − z, ε)`)
 
-Wenn die Szene aus einer beliebigen Rotation heraus (root.eulerRotation ≠ 0)
-gelasert werden soll, muss die perspektivische Kamera-Projektion auf die
-Polygone übertragen werden – und das Ergebnis am Ende wieder in die
-Laser-Ebene (z = 0, mm) zurücktransformiert werden.
+Da das Galvo-Feld physikalisch begrenzt ist und alle zu lasernden Objekte
+auf/unter der Arbeitsebene z=0 liegen (z ≤ 0), ist `denom = h − z ≥ h > 0`,
+also numerisch unproblematisch. Nur für z nahe an h (Objekt ragt fast bis
+zum Galvo) muss geklemmt werden.
 
 ## Was zu tun ist
 
-### 1. Kamera-Parameter aus der QML-Szene holen
+### 1. Neue Maschineneigenschaft: Projektionszentrum-Höhe `h`
 
-In `qml/View3DPanel.qml` stehen die relevanten Werte:
+`h` ist der physikalische Abstand Galvo/Objektiv → Arbeitsfläche z=0 (mm).
+Das ist eine **Maschinen-Eigenschaft** (je nach verbauter Linse/Mechanik),
+also in `src/machine.h` als `PROPV(double, projectionHeight, <default>)`.
 
-- `camera2` (PerspectiveCamera), Position & `fieldOfView`
-- `root.eulerRotation`, `root.position`, `root.scale`  (Welt-Transform)
-- `panel.width`, `panel.height` (Viewport in Pixeln)
+Wichtig: die Serialisierung läuft über die `_propertiesQ/MOPA/UV`-JSON in
+`src/laser_bjjcz.cpp`. Dort muss ein neues Feld ergänzt werden, sonst wird
+`h` weder gespeichert/geladen noch im Inspector angezeigt.
 
-Diese Werte müssen auf die C++-Seite gebracht werden (neue `PROPV` an ZCam /
-Cam, oder `Q_INVOKABLE` mit Parametern). Aktuell errechnet der Laser den
-2D-Pfad komplett ohne Rückgriff auf die View.
+**Design-Alternativen für h:**
+- (a) **Absolut** in mm (z. B. 250 mm): direkt der Objektiv-Abstand.
+  Perspektivischer Effekt wirkt nur, wenn Objekte z ≠ 0 haben.
+- (b) **0 = orthografisch** (Rückwärtskompatibel): `h ≤ 0` schaltet die
+  Perspektive ab → altes Verhalten. Empfohlen als Default, damit
+  bestehende Projekte/Maschinen unverändert bleiben.
 
-### 2. Projektions-Pipeline anpassen (`elementPathListTo3D` / neue Funktion)
+### 2. `projectPathListToXY()` erweitern (element3d.cpp / element3d.h)
 
-Die bisherige Funktion `projectPathListToXY()` muss so erweitert werden,
-dass sie zwischen
-
-- `Orthographic` (altes Verhalten: z wegwerfen) und
-- `Perspective`   (Kamera-Projektion)
-
-umschaltbar ist (`Cam::perspective` / `ZCam::perspectiveCamera`).
-
-Implementierungs-Variante (perspektivisch):
+Signatur um `projectionHeight` erweitern:
 
 ```cpp
-for each path in element->pathList():
-    for each pt in path:
-        // 1. lokaler Punkt in 3D-Hauptkoordinaten (x, y, z=0)
-        QVector3D vLocal(pt.x(), pt.y(), 0.0f);
-        // 2. in Welt/Koordinatenraum bringen (Root-Node = Welt)
-        QVector3D vWorld = element->globalMatrix().map(vLocal);
-        // 3. durch Kamera-View projizieren (ViewProj-Matrix aus QML/C++ bauen)
-        QVector3D vClip = viewProjMatrix.map(vWorld);   // inkl. Division
-        // 4. NDC → Screen-Koordinaten (Pixel)
-        // 5. Screen → Welt-XY-Ebene zurück (Ray-Plane-Intersection
-        //    entlang des Blickstrahls auf z == 0)
-        cp.push_back({backProjected.x(), backProjected.y()});
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element,
+                                        double projectionHeight = 0.0);
 ```
 
-Wichtig: Die Ausgabe muss **in mm auf der Laser-Ebene (z = 0)** liegen, damit
-Panel-Raster, Framing und Galvo-Kalibrierung weiter funktionieren. Eine Rein
-Screen-Pixel-Projektion reicht nicht.
+Implementierung (nach `matrix.map(...)`):
 
-### 3. Polygon-Geometrie als 3D-Pfad verfügbar machen
-
-`pathList()` liefert aktuell 2D-Punkte mit z = 0. Für die Kamera-Projektion
-reicht das, denn die Transformationsmatrizen (`globalMatrix()`) enthalten
-die gesamte 3D-Information. Es ist **keine** Änderung an `PathList` nötig.
-
-Edge-Cases, die bedacht werden müssen:
-
-- Punkte hinter der Kamera (w < 0) -> projizieren invalid
-- Punkte mit z ≠ 0 (rotierte Objekte) → projizieren korrekt
-- Bézier-Kontrollpunkte → ebenfalls projizieren, nicht nur Vertices
-
-### 4. Füllung in der projizierten 2D-Domäne
-
-Die Hatch-Logik (`Clipper::hatch`, `Recipe::createFill`) bleibt unverändert –
-sie arbeitet auf den **projizierten** 2D-Polygonen weiter. Der Unterschied:
-Das Polygon-Material wird vorab perspektivisch verzerrt, die `interval`
-(Abstand zwischen Hatch-Lines) entspricht damit nicht mehr einem konstanten
-physikalischen Abstand auf der Arbeitsfläche, sondern einem konstanten
-Abstand in der projizierten Ebene.
-
-Wenn die Fülldichte auf dem Werkstück (nicht auf der Projektion) konstant sein
-soll, müsste das `interval` pro Zeile an die lokale Projektionsvergrößerung
-angepasst werden (aufwendiger). Das ist eine bewusste Design-Entscheidung.
-
-### 5. Panel-Raster & Framing aktualisieren
-
-Die nachfolgenden Schritte arbeiten alle auf dem bereits transformierten
-2D-Pfad:
-
-- `Cam::updateCam()` / `Cam::convexHull()` / `Cam::boundingBox()`
-  → bekommen die perspektivisch verzerrten Polygone, müssen also nicht
-  angepasst werden
-- Panel-Offsets (mm) → funktionieren unverändert auf dem 2D-Ergebnis
-- `Framing::update()` → funktioniert unverändert
-- `Recipe::collectLaserPath()` → funktioniert unverändert
-
-### 6. Synchronisation View ↔ Mark-Pfad
-
-Damit „was der Benutzer sieht“ auch wirklich das ist, was gelasert wird:
-
-- Aktuelle Kamera-Position/Rotation aus QML an
-  `Cam::updateCam()` übergeben (nicht nur beim Klick auf „Cam Refresh“,
-  sondern auch vor jedem Marking-Vorgang – `Laser::refreshCamAndFraming()`
-  ruft `zcam->refreshCam()` auf; dort kann die aktuelle View-Matrix
-  mitgegeben werden).
-- Beim Umschalten Ortho ↔ Perspective muss `camDirty` gesetzt und ein
-  Refresh ausgelöst werden.
-- Wenn die perspektivische Ansicht aktiv ist, sollte die Eingabe von
-  Rotationen am Element (pos/rot via Canvas) mit Vorsicht behandelt
-  werden – ein perspektivisch verzogener 2D-Screen→Scene-Mapping ist
-  nicht mehr eindeutig.
-
-### 7. Umschaltbarkeit sicherstellen
-
-Bereits vorhanden: `panel.perspectiveCamera` (QML, View3DPanel.qml) – in
-Settings gespeichert (`property alias projection`).
-
-Fehlt: Übergabe an C++. Vorschlag:
-- `ZCam::perspectiveCamera {get; set;}` als PROP in C++
-- In `ZCam::refreshCam()` bzw. vor `collectLaserPath()` den aktuellen
-  Viewport-Zustand als `CamProjection` struct übergeben:
+```cpp
+auto r = matrix.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
+if (projectionHeight > 0.0) {
+      double denom = projectionHeight - r.z();
+      if (denom < 0.1)          // Klemme nahe Projektionszentrum
+            denom = 0.1;
+      double s = projectionHeight / denom;
+      cp.push_back({r.x() * s, r.y() * s});
+      }
+else {
+      cp.push_back({r.x(), r.y()});   // orthografisch (bisheriges Verhalten)
+      }
 ```
-struct CamProjection {
-    bool        perspective;
-    QVector3D   cameraPos;
-    QVector3D   eulerRot;    // root
-    QVector3D   rootPos;
-    QVector3D   rootScale;
-    float       fovDeg;
-    float       viewportW, viewportH;
-};
+
+Hinweis: Es existiert bereits ein **ungespeicherter Editor-Buffer**
+`src/.element3d.cpp,` mit genau diesem Ansatz
+(`projectPathListToXY(element, projectionHeight)` + `H/denom`-Clamping).
+Der Ansatz ist korrekt und kann übernommen werden — allerdings ist die
+Singularitäts-Klemme `denom < 0.01` für mm-Einheiten sehr aggressiv;
+`0.1` mm ist praxisnäher. Bézier-Kontrollpunkte werden implizit behandelt,
+da `pathList()` die bereits aufgelösten Punkte liefert.
+
+### 3. Aufrufer mit `h` versorgen
+
+Vier Stellen rufen `projectPathListToXY(ce)` auf und müssen die Höhe
+der aktiven Maschine übergeben:
+
+- `src/recipe.cpp:114`  (`collectLayerPath`)
+- `src/recipe.cpp:139`  (`processTileLines`)  → Fill/Hatch
+- `src/recipe.cpp:266`  (`collectLaserPath`)  → eigentlicher Laser
+- `src/fixture.cpp:57`  (`Fixture::size`)
+
+Zugriff auf die Maschine: `zcam->project()->machine()` →
+`machine()->projectionHeight()`.
+
+Am besten eine kleine Hilfsfunktion in `element3d.cpp`:
+
+```cpp
+double currentProjectionHeight(const ZCam* zcam) {
+      auto* proj = zcam ? zcam->project() : nullptr;
+      auto* m    = proj ? proj->machine() : nullptr;
+      return m ? m->projectionHeight() : 0.0;
+      }
 ```
+
+und die Aufrufer rufen `projectPathListToXY(ce, currentProjectionHeight(zcam))`.
+
+### 4. Was sich NICHT ändert
+
+- **Fill/Hatch** (`Recipe::createFill`, `Clipper::hatch`): arbeitet auf den
+  projizierten 2D-Polygonen mit konstantem `interval` → physikalisch
+  konstante Dichte auf z=0. **Keine Änderung.**
+- **Panel-Raster-Offsets** (mm): unverändert.
+- **Cam-Geometrie / convexHull / boundingBox / Framing**: arbeiten auf den
+  projizierten 2D-Polygonen, unverändert.
+- **QML-View** (`View3DPanel.qml`): Die frei rotierbare 3D-Ansicht bleibt ein
+  reines Darstellungs-Feature. Die Laser-Projektion ist davon entkoppelt.
+
+## Offener Design-Punkt (Benutzer entscheidet)
+
+**Semantik von z in der Szene.** Liegen die zu lasernden Objekte
+- **immer auf z=0** (flache CAD-Geometrie, der Normalfall) → dann hat die
+  perspektivische Projektion **keinen sichtbaren Effekt**, weil s=1. Die
+  Perspektive wäre dann nur bei 3D-Objekten (BREP, um X/Y rotierte Elemente)
+  relevant.
+- oder wird die **Objekt-Höhe über der Arbeitsebene** (Dicke des Werkstücks,
+  z > 0) berücksichtigt, sodass die Draufsicht-Vergrößerung sichtbar wird.
+
+Das bestimmt, ob `h` (a) der tatsächliche Objektiv-Abstand ist (groß, kaum
+Effekt) oder (b) ein künstlich kleiner Wert, der den perspektivischen Effekt
+bewusst erzeugt (z. B. um ein 3D-Objekt so zu lasern, wie es aus einer
+bestimmten Blickhöhe aussieht).
+
+**Meine Empfehlung:** `PROPV(double, projectionHeight, 0.0)` mit
+**0 = orthografisch** als Default (rückwärtskompatibel), und der Benutzer
+setzt bei Bedarf die Höhe des Galvos (≈ 250 mm) oder eine künstliche
+Blickhöhe.
 
 ## Reihenfolge der Umsetzung
 
-1. `ZCam::perspectiveCamera` + `CamProjection` struct anlegen und aus
-   QML heraus setzen (bei Kamera-/View-Änderung)
-2. `projectPathListToXY()` um Parameter `CamProjection` erweitern;
-   bisherige `ortho`-Variante als Default beibehalten
-3. Perspektivische Pfad-Transformation implementieren + auf z = 0
-   zurückprojizieren
-4. `Recipe::collectLayerPath()` / `processTileLines()` /
-   `collectLaserPath()` auf neue Signatur umstellen
-5. Umschalt-Button (pCamera) auf `camDirty` + `refreshCam` verdrahten
-6. Tests: Würfel (BREP) drehen, perspektivisch lasern, Framing-Rahmen
-   mit sichtbarer Kontur vergleichen
-
-## Offene Design-Fragen
-
-- Soll die perspektivische Projektion relativ zur aktuellen Ansicht
-  (user rotiert mit Maus) oder relativ zu einer fixen „Laser-Kamera“
-  (z. B. Galvo-Blick von oben, Objektiv-Verzeichnung) erfolgen?
-- Soll bei aktiver perspektivischer Projektion die Hatch-Dichte
-  („interval“) ortsabhängig skaliert werden, um auf dem Werkstück
-  eine konstante physikalische Dichte zu erhalten?
-- Soll das Ergebnis nach der Projektion wieder auf die z = 0-Ebene
-  (mm) zurückgerechnet werden (für Galvo-Kalibrierung), oder als
-  reiner Screen-Space-Pfad direkt an den Galvo gehen?
+1. `machine.h`: `PROPV(double, projectionHeight, 0.0)` hinzufügen
+2. `laser_bjjcz.cpp` `_propertiesQ/MOPA/UV` + `machinegcode.cpp`:
+   Inspector-Feld „Projection Height" (mm) ergänzen
+3. `element3d.h/.cpp`: Signatur + perspektivischer Zweig (Klemme)
+4. Aufrufer (recipe.cpp ×3, fixture.cpp ×1) mit `h` verdrahten
+5. Bauen, Test: BREP-Würfel mit z-Ausdehnung → mit/ohne h lasern und
+   Framing-Rahmen mit Projektion vergleichen
