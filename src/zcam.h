@@ -558,6 +558,7 @@ class ZCam : public QObject
             bool hasCursorPos {false};    ///< true once cursorPos/refPos/lastSnappedX/Y are seeded
             double lastSnappedX {0.0};    ///< last snapped line position on X (valid when hasCursorPos)
             double lastSnappedY {0.0};    ///< last snapped line position on Y (valid when hasCursorPos)
+            bool lastSnapModifier {false}; ///< last Shift state — detects mid-drag modifier change
             };
       SnapState _snapState;
 

@@ -608,15 +608,28 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       // (Seeded with the element origin in startElementDrag(); kept
       // in sync with the cursor by QML via updateDragAnchor() — e.g.
       // after camera pans / rotations mid-drag.)
-      _snapState.cursorPos += delta;
-      QVector3D newWorldRef = _snapState.cursorPos;
-
-      // Shift+drag inverts the snap behaviour: when grid snap is ON,
-      // Shift temporarily disables it (free drag); when grid snap is
-      // OFF, Shift temporarily enables it (snap drag).
+      //
+      // IMPORTANT: detect a modifier change mid-drag (Shift pressed
+      // or released) and re-anchor the cursor to the current element
+      // position so the element does not jump when the snap mode
+      // toggles.  Without this, cursorPos (which has been
+      // accumulating deltas all along) would be at a completely
+      // different position than the snapped element origin, causing
+      // a visible jump.
       bool snapActive = grid && grid->snap();
       if (modifiers & Qt::ShiftModifier)
             snapActive = !snapActive;
+
+      bool curSnap = (modifiers & Qt::ShiftModifier) != 0;
+      if (_snapState.lastSnapModifier != curSnap) {
+            // Modifier changed — re-anchor cursor to the element's
+            // current world position and reset the snap seed.
+            _snapState.cursorPos     = element->globalMatrix().map(QVector3D(0, 0, 0));
+            _snapState.hasCursorPos   = false;
+            _snapState.lastSnapModifier = curSnap;
+            }
+      _snapState.cursorPos += delta;
+      QVector3D newWorldRef = _snapState.cursorPos;
 
       if (snapActive && grid) {
             double spacing = grid->minorSpacing();
