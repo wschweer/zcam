@@ -538,24 +538,26 @@ class ZCam : public QObject
       QPointer<Element3d> _pendingSegmentElement;
       QVector3D _pendingSegmentClickPos;
       bool _pendingSegmentToggleOff {false};
+      void logPosition(const char* caller);
+
       // State for magnetic grid snap during element drag.
       // The reference point for each element is (0,0) in local coords.
-      // When the reference point crosses a grid line, the element "snaps"
-      // to that line.  Further dragging accumulates in _snapExcess and
-      // once it exceeds half the minor spacing, the element "breaks free"
-      // and moves freely until the next line is crossed.
+      //
+      // Simple nearest-line algorithm (per axis, independently):
+      // the cursor always "owns" a virtual position that follows the
+      // mouse unhindered; the element snaps to the grid line nearest
+      // to the cursor and sticks to it until the cursor moves more
+      // than half the minor spacing away — then the element jumps to
+      // the new nearest line.  There is no special "break free"
+      // threshold on top of the snap distance, so the element can
+      // never lag a full grid cell behind the cursor.
       struct SnapState {
-            bool activeX {false}; ///< currently snapped on X axis
-            bool activeY {false}; ///< currently snapped on Y axis
-            double excessX {0.0}; ///< accumulated drag beyond the snap point (X)
-            double excessY {0.0}; ///< accumulated drag beyond the snap point (Y)
-            QVector3D refPos;     ///< world position of the element reference point (0,0 local)
-            void reset(bool keepRef = false) {
-                  activeX = activeY = false;
-                  excessX = excessY = 0.0;
-                  if (!keepRef)
-                        refPos = QVector3D();
-                  }
+            QVector3D refPos;             ///< world position of the element reference point (0,0 local)
+            QVector3D cursorPos;          ///< world position the cursor currently points at (element origin
+                                          ///< at drag start, cursorPos + drag delta afterwards)
+            bool hasCursorPos {false};    ///< true once cursorPos/refPos/lastSnappedX/Y are seeded
+            double lastSnappedX {0.0};    ///< last snapped line position on X (valid when hasCursorPos)
+            double lastSnappedY {0.0};    ///< last snapped line position on Y (valid when hasCursorPos)
             };
       SnapState _snapState;
 
@@ -715,10 +717,19 @@ class ZCam : public QObject
       /// Called from QML when an element is dragged in the 3D viewport.
       /// When the project's Grid has snap enabled, grid lines act
       /// magnetically: the element's reference point (0,0 in local
-      /// coords) snaps to a grid line when it crosses it, and the
-      /// element only breaks free after the drag exceeds half the
-      /// minor grid spacing beyond the snap point.
+      /// coords), which follows the cursor, snaps to the nearest grid
+      /// line and only jumps to another line once the cursor is closer
+      /// to that line (distance > half the minor spacing).
       Q_INVOKABLE void dragged(Element3d* element, const QVector3D& delta, int modifiers);
+
+      /// Called from QML during a drag to re-anchor the grid-snap
+      /// reference point to the current cursor position (in root
+      /// coordinates).  Must be invoked whenever the canvas camera
+      /// pans or rotates mid-drag:  the delta streams from
+      /// screenToScene() are only valid as long as the camera is
+      /// fixed, so after a camera jump they would corrupt the snap
+      /// position without a re-anchor.
+      Q_INVOKABLE void updateDragAnchor(Element3d* element, const QVector3D& cursorPos);
 
       /// Called from QML when an element is rotated in the 3D viewport.
       Q_INVOKABLE void rotated(Element3d* element, const QVector3D& deltaRotation, int modifiers);

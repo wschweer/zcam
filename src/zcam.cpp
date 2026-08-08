@@ -513,6 +513,37 @@ void ZCam::loadAssets() {
 //    The undo record is created once at endElementDrag().
 //---------------------------------------------------------
 
+//---------------------------------------------------------
+//   worldToParentLocal
+//    Convert a world (root) space position into the local
+//    coordinate system of the element's parent, so it can be
+//    assigned to element->pos().
+//---------------------------------------------------------
+
+static QVector3D worldToParentLocal(Element3d* element, const QVector3D& worldPos) {
+      QVector3D local = worldPos;
+      if (auto* p = qobject_cast<Element3d*>(element->parent())) {
+            bool ok              = false;
+            QMatrix4x4 parentInv = p->globalMatrix().inverted(&ok);
+            if (ok)
+                  local = parentInv.map(worldPos);
+            }
+      return local;
+      }
+
+void ZCam::logPosition(const char* caller) {
+      Element3d* el = _elementDragElement;
+      if (!el)
+            return;
+      QVector3D origin = el->globalMatrix().map(QVector3D(0, 0, 0));
+      Debug("{}: element '{}' pos=({:.3f},{:.3f},{:.3f}) worldOrigin=({:.3f},{:.3f},{:.3f}) "
+            "snapRef=({:.3f},{:.3f},{:.3f}) snapCursor=({:.3f},{:.3f},{:.3f})",
+            caller, el->name(), el->pos().x(), el->pos().y(), el->pos().z(),
+            origin.x(), origin.y(), origin.z(),
+            _snapState.refPos.x(), _snapState.refPos.y(), _snapState.refPos.z(),
+            _snapState.cursorPos.x(), _snapState.cursorPos.y(), _snapState.cursorPos.z());
+      }
+
 void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       if (!element || !element->draggable())
             return;
@@ -554,134 +585,93 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
 
       // Magnetic grid snap: when the project's Grid has snap enabled,
       // grid lines act magnetically.  The element's reference point is
-      // (0,0) in local coords.  In world (root) space this maps to the
-      // translation part of the element's globalMatrix().  The snap
-      // computation is done in world space so the reference point lands
-      // exactly on a grid line intersection, regardless of any parent
-      // transforms (Layer position/rotation/scale).  The resulting world
-      // position is then converted back to parent-local space for
-      // element->set_pos().
+      // (0,0) in local coords; in world (root) space this is the
+      // translation part of the element's globalMatrix().
       //
-      // Snap algorithm (per axis, independently):
-      //   1. Free phase (not snapped): the element follows the cursor.
-      //      When the reference point crosses a grid line, it snaps to
-      //      that line and the signed distance from the old free
-      //      position to the line becomes the initial excess.
-      //   2. Snapped phase (snapped to a line): the element stays on the
-      //      line while the accumulated excess grows.  When |excess|
-      //      exceeds half the spacing, the element breaks free and
-      //      jumps by the FULL accumulated excess — not just the
-      //      current frame delta — so no drag distance is lost.
+      // The QML panel delivers the drag as a stream of world-space
+      // deltas (differences of consecutive screenToScene() results).
+      // We accumulate them into _snapState.cursorPos — the world
+      // position the cursor currently points at.  The element then
+      // snaps per axis (independently) to the grid line nearest to
+      // the cursor:  as long as the snapped line stays within half
+      // the minor spacing of the cursor, the element sticks to it;
+      // beyond that it snaps to the new nearest line.  This makes
+      // the element follow the cursor with at most half a grid cell
+      // of lag and with no hysteresis effects (no "skipping every
+      // second line", no "running away" from the cursor, and
+      // direction reversals work instantly).
       Grid* grid = nullptr;
       if (_project)
             grid = qobject_cast<Grid*>(_project->gridElement());
+
+      // Advance the virtual cursor position that owns the snap.
+      // (Seeded with the element origin in startElementDrag(); kept
+      // in sync with the cursor by QML via updateDragAnchor() — e.g.
+      // after camera pans / rotations mid-drag.)
+      _snapState.cursorPos += delta;
+      QVector3D newWorldRef = _snapState.cursorPos;
+
       if (grid && grid->snap()) {
             double spacing = grid->minorSpacing();
             if (spacing > 0.0) {
                   double halfSpacing = spacing / 2.0;
 
-                  // Current world position of the reference point (0,0 local)
-                  // = translation column of the element's globalMatrix().
-                  QMatrix4x4 gm = element->globalMatrix();
-                  QVector3D worldRef(gm(0, 3), gm(1, 3), gm(2, 3));
-
-                  // Desired world position after applying the world delta.
-                  double curWX = worldRef.x();
-                  double curWY = worldRef.y();
-                  double newWX = curWX + delta.x();
-                  double newWY = curWY + delta.y();
-
-                  // X axis snap (world space)
-                  //
-                  // Line-crossing detection uses floor() so that a
-                  // crossing is detected whenever the element passes
-                  // through ANY grid line — not just when it crosses
-                  // the midpoint between two lines (which is what
-                  // round() would do).  After a break-free the element
-                  // sits past the midpoint of the next line, so round()
-                  // would already assign it to that line and miss the
-                  // crossing, causing it to snap only on every second
-                  // grid line.  floor() detects the actual line
-                  // crossing; the snap target is the nearest line
-                  // (round).
-                  if (_snapState.activeX) {
-                        _snapState.excessX += delta.x();
-                        if (std::abs(_snapState.excessX) > halfSpacing) {
-                              _snapState.activeX = false;
-                              // Jump by the full accumulated excess so
-                              // no drag distance is lost.
-                              newWX              = curWX + _snapState.excessX;
-                              _snapState.excessX = 0.0;
-                              }
-                        else {
-                              newWX = curWX;
-                              }
+                  // Snap per axis:  candidate line nearest to the
+                  // cursor.  On the first snap frame the element
+                  // snaps directly to the nearest line; afterwards
+                  // it sticks to the previously snapped line until
+                  // the cursor is closer to another one (distance
+                  // from the current line > half spacing).
+                  if (!_snapState.hasCursorPos) {
+                        _snapState.lastSnappedX = std::lround(newWorldRef.x() / spacing) * spacing;
+                        _snapState.lastSnappedY = std::lround(newWorldRef.y() / spacing) * spacing;
+                        _snapState.hasCursorPos = true;
                         }
                   else {
-                        long oldFloor = (long)std::floor(curWX / spacing);
-                        long newFloor = (long)std::floor(newWX / spacing);
-                        if (newFloor != oldFloor) {
-                              long snapLine      = std::lround(newWX / spacing);
-                              _snapState.activeX = true;
-                              _snapState.excessX = newWX - snapLine * spacing;
-                              newWX              = snapLine * spacing;
-                              }
+                        if (std::abs(newWorldRef.x() - _snapState.lastSnappedX) > halfSpacing)
+                              _snapState.lastSnappedX = std::lround(newWorldRef.x() / spacing) * spacing;
+                        if (std::abs(newWorldRef.y() - _snapState.lastSnappedY) > halfSpacing)
+                              _snapState.lastSnappedY = std::lround(newWorldRef.y() / spacing) * spacing;
                         }
 
-                  // Y axis snap (world space)
-                  if (_snapState.activeY) {
-                        _snapState.excessY += delta.y();
-                        if (std::abs(_snapState.excessY) > halfSpacing) {
-                              _snapState.activeY = false;
-                              newWY              = curWY + _snapState.excessY;
-                              _snapState.excessY = 0.0;
-                              }
-                        else {
-                              newWY = curWY;
-                              }
-                        }
-                  else {
-                        long oldFloor = (long)std::floor(curWY / spacing);
-                        long newFloor = (long)std::floor(newWY / spacing);
-                        if (newFloor != oldFloor) {
-                              long snapLine      = std::lround(newWY / spacing);
-                              _snapState.activeY = true;
-                              _snapState.excessY = newWY - snapLine * spacing;
-                              newWY              = snapLine * spacing;
-                              }
-                        }
-
-                  // Convert the snapped world position back to parent-local
-                  // coordinates.
-                  QVector3D newWorldRef(newWX, newWY, worldRef.z() + delta.z());
-                  QVector3D newLocalPos = newWorldRef;
-                  if (auto* p = qobject_cast<Element3d*>(element->parent())) {
-                        QMatrix4x4 parentGlobal = p->globalMatrix();
-                        bool ok                 = false;
-                        QMatrix4x4 parentInv    = parentGlobal.inverted(&ok);
-                        if (ok)
-                              newLocalPos = parentInv.map(newWorldRef);
-                        }
-
-                  // The marker world position is derived from the same
-                  // parent-local value that is assigned to pos below.
-                  QVector3D worldRefPos = newWorldRef;
-                  if (auto* p = qobject_cast<Element3d*>(element->parent()))
-                        worldRefPos = p->globalMatrix().map(newLocalPos);
-                  _snapState.refPos = worldRefPos;
-                  emit snapRefPosChanged();
-                  element->set_pos(newLocalPos);
-                  return;
+                  newWorldRef.setX(_snapState.lastSnappedX);
+                  newWorldRef.setY(_snapState.lastSnappedY);
                   }
             }
 
-      QVector3D newPos = element->pos() + localDelta;
-      element->set_pos(newPos);
-      // Update the snap reference-point marker to follow the element
-      // during non-snap drags.
-      if (_snapDragActive) {
-            _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
-            emit snapRefPosChanged();
+      QVector3D newLocalPos = worldToParentLocal(element, newWorldRef);
+
+      _snapState.refPos = newWorldRef;
+      emit snapRefPosChanged();
+      element->set_pos(newLocalPos);
+      }
+
+//---------------------------------------------------------
+//   updateDragAnchor
+//    Re-anchor the grid-snap reference to the current cursor
+//    position.  Called from QML when the canvas camera pans or
+//    rotates while a drag is in progress:  the delta stream from
+//    screenToScene() discontinues at a camera jump, so the virtual
+//    cursor position must be re-seeded; otherwise the snap logic
+//    (and the element) would drift away from the cursor.
+//---------------------------------------------------------
+
+void ZCam::updateDragAnchor(Element3d* element, const QVector3D& cursorPos) {
+      if (!_snapDragActive || element != _elementDragElement || !element)
+            return;
+
+      // Preserve the current offset between the element's (possibly
+      // snapped) reference point and the cursor so the element does
+      // not jump when the anchor is corrected.
+      if (_snapState.hasCursorPos) {
+            QVector3D offset     = _snapState.refPos - _snapState.cursorPos;
+            _snapState.cursorPos = cursorPos;
+            _snapState.refPos    = cursorPos + offset;
+            }
+      else {
+            // No drag frame processed yet — anchor at the element.
+            _snapState.cursorPos = element->globalMatrix().map(QVector3D(0, 0, 0));
+            _snapState.refPos    = _snapState.cursorPos;
             }
       }
 
@@ -763,9 +753,12 @@ void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifier
       element->set_pos(element->pos() + localDelta);
       element->endBatchUpdate();
       // The pivot-scale changes the element's world origin, so update
-      // the snap reference-point marker as well.
+      // the snap reference-point marker as well.  The virtual cursor
+      // position follows the element so a subsequent dragged() call
+      // does not continue from the stale pre-scale location.
       if (_snapDragActive) {
-            _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
+            _snapState.refPos    = element->globalMatrix().map(QVector3D(0, 0, 0));
+            _snapState.cursorPos = _snapState.refPos;
             emit snapRefPosChanged();
             }
       }
@@ -786,15 +779,17 @@ void ZCam::startElementDrag(Element3d* element) {
       _elementDragOrigRot   = element->rot();
       _elementDragOrigScale = element->scale();
       // Reset snap state from any previous drag so the magnetic-snap
-      // logic starts clean.
-      _snapState = {};
-      // Seed the marker position with the live world position of the
-      // element origin so the cross appears at the element (not at the
-      // world origin (0,0)) before the first snapped drag event.
-      _snapState.refPos = element->globalMatrix().map(QVector3D(0, 0, 0));
-      _snapDragActive   = true;
+      // logic starts clean.  Seed the virtual cursor position with
+      // the live world position of the element origin so the element
+      // does not jump on the first drag delta (cursorPos must start
+      // AT the element, not at the world origin).
+      _snapState           = {};
+      _snapState.cursorPos = element->globalMatrix().map(QVector3D(0, 0, 0));
+      _snapState.refPos    = _snapState.cursorPos;
+      _snapDragActive      = true;
       emit snapDragActiveChanged();
       emit snapRefPosChanged();
+      logPosition("startElementDrag");
       _project->undo()->beginMacro();
       }
 
