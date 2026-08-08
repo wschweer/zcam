@@ -147,7 +147,7 @@ Rectangle {
             }
         GridLayout {
             id: outputPortGrid
-            columns: 16
+            columns: 8
             Layout.fillWidth: true
             Layout.margins: 5
             enabled: laserPanel.laser?.enabled ?? false
@@ -206,7 +206,7 @@ Rectangle {
             }
         GridLayout {
             id: inputPortGrid
-            columns: 16
+            columns: 8
             Layout.fillWidth: true
             Layout.margins: 5
             enabled: laserPanel.laser?.enabled ?? false
