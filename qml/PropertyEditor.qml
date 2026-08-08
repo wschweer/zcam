@@ -4568,6 +4568,7 @@ Item {
                 id: grabCamSubBtn
                 anchors.centerIn: parent
                 enabled: subGrabCam.camElement !== null
+                flat: true
                 text: qsTr("Grab")
                 onClicked: {
                     if (subGrabCam.camElement)
@@ -4608,6 +4609,7 @@ Item {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 enabled: parent.camElement !== null
+                flat: true
                 text: parent.camElement ? qsTr("Grab Camera View") : qsTr("No Cam")
                 onClicked: {
                     if (parent.camElement)
@@ -4617,20 +4619,6 @@ Item {
                 ToolTip.text: qsTr("Adopt the current 3D canvas camera as the projection viewpoint")
                 ToolTip.delay: 800
                 ToolTip.timeout: 4000
-                background: Rectangle {
-                    color: grabCamButton.pressed ? Material.accentColor
-                           : (grabCamButton.hovered ? Material.color(Material.Teal, Material.Shade700)
-                              : "#3a3a3a")
-                    radius: 4
-                    border.width: grabCamButton.hovered ? 1 : 0
-                    border.color: Material.accentColor
-                    }
-                contentItem: Label {
-                    text: grabCamButton.text
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    color: grabCamButton.enabled ? Material.foreground : "#888888"
-                    }
                 }
             }
         }
