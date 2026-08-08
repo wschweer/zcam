@@ -25,6 +25,7 @@
 
 #include <thread>
 #include <atomic>
+#include <cmath>
 
 class ZCam;
 class Machine;
@@ -281,6 +282,15 @@ class Laser : public Machine
       // ── LaserEngine helpers ───────────────────────────────────
       void setAbortFlag() { aborting = true; }
       QElapsedTimer markTime;
+
+      //--------------------------------------------------------------------
+      //     guessJobDuration
+      //     Estimate the total mark-job duration in seconds by
+      //     analyzing the laser path geometry and the recipe
+      //     parameters.  Called when jobDuration is 0 (first run)
+      //     to provide an initial estimate for the progress slider.
+      //--------------------------------------------------------------------
+      double guessJobDuration() const;
 
       // Pulse table (shared by all laser variants)
       static const std::vector<Pulse33>& pulseTable();

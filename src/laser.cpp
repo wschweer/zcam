@@ -339,6 +339,123 @@ void Laser::startFraming() {
       }
 
 //---------------------------------------------------------
+//   guessJobDuration
+//    Estimate the total mark-job duration in seconds.
+//
+//    Iterates over all recipes in the fixture, collects the
+//    laser path for each, and accumulates:
+//      - total jump distance (mm) for all MoveTo segments
+//      - total mark distance (mm) for all MarkTo segments
+//      - number of jumps and marks
+//    The estimated time is:
+//      (jumpDistance / jumpSpeed + markDistance / markSpeed
+//         + numJumps * K1 + numMarks * K2) * K3
+//    where K1, K2, K3 are empirical magic constants.
+//---------------------------------------------------------
+
+double Laser::guessJobDuration() const
+      {
+      if (!zcam->project() || !zcam->project()->fixture())
+            return 0.0;
+
+      // Empirical magic constants
+      constexpr double K1 = 0.0001;  // per-jump overhead (seconds)
+      constexpr double K2 = 0.0001;  // per-mark overhead (seconds)
+      constexpr double K3 = 1.2;     // global fudge factor
+
+      double totalJumpDistance = 0.0;
+      double totalMarkDistance = 0.0;
+      int    numJumps           = 0;
+      int    numMarks           = 0;
+      double totalJumpTime     = 0.0;
+      double totalMarkTime     = 0.0;
+
+      Fixture* fixture = zcam->project()->fixture();
+      for (auto e : fixture->children()) {
+            if (!isType<Recipe>(e))
+                  continue;
+            auto ll = toType<Recipe>(e);
+            if (!ll->burn())
+                  continue;
+            const LaserRecipe* recipe = ll->recipe();
+            if (!recipe)
+                  continue;
+
+            LaserPath path = ll->collectLaserPath();
+
+            // Determine the effective speeds from the first enabled pass.
+            // If no pass is enabled, skip this recipe.
+            double jumpSpeed = this->jumpSpeed();
+            double markSpeed = 0.0;
+            for (int i = 0; i < static_cast<int>(recipe->passes().size()); ++i) {
+                  const LaserPass& pass = recipe->pass(i);
+                  if (!pass.enabled())
+                        continue;
+                  markSpeed = pass.speed();
+                  if (pass.overrideTimings())
+                        jumpSpeed = pass.jumpSpeed();
+                  break;
+                  }
+            if (markSpeed <= 0.0)
+                  continue;
+
+            // Accumulate distances and counts, scaled by the number
+            // of global passes and the number of enabled sub-layers.
+            int numEnabledLayers = 0;
+            for (int i = 0; i < static_cast<int>(recipe->passes().size()); ++i)
+                  if (recipe->pass(i).enabled())
+                        ++numEnabledLayers;
+            int totalPasses = recipe->numPasses() * numEnabledLayers;
+            if (totalPasses <= 0)
+                  continue;
+
+            if (path.size() < 2)
+                  continue;
+
+            double recipeJumpDist = 0.0;
+            double recipeMarkDist = 0.0;
+            int    recipeJumps    = 0;
+            int    recipeMarks    = 0;
+
+            Vec2d prev = path.front().p;
+            for (size_t i = 1; i < path.size(); ++i) {
+                  const auto& elem = path[i];
+                  double dx = elem.x() - prev.x();
+                  double dy = elem.y() - prev.y();
+                  double dist = std::sqrt(dx * dx + dy * dy);
+                  if (elem.type == LaserPathElementType::MoveTo) {
+                        recipeJumpDist += dist;
+                        ++recipeJumps;
+                        }
+                  else {
+                        recipeMarkDist += dist;
+                        ++recipeMarks;
+                        }
+                  prev = elem.p;
+                  }
+
+            // Scale by the number of passes — the path is marked
+            // once per global pass per enabled sub-layer.
+            recipeJumpDist *= totalPasses;
+            recipeMarkDist *= totalPasses;
+            recipeJumps    *= totalPasses;
+            recipeMarks    *= totalPasses;
+
+            totalJumpDistance += recipeJumpDist;
+            totalMarkDistance += recipeMarkDist;
+            numJumps          += recipeJumps;
+            numMarks          += recipeMarks;
+
+            if (jumpSpeed > 0.0)
+                  totalJumpTime += recipeJumpDist / jumpSpeed;
+            if (markSpeed > 0.0)
+                  totalMarkTime += recipeMarkDist / markSpeed;
+            }
+
+      return (totalJumpTime + totalMarkTime + numJumps * K1 + numMarks * K2) * K3;
+      }
+
+//---------------------------------------------------------
 //   doStartMarking
 //    we are in idle state and want to start marking
 //---------------------------------------------------------
@@ -359,7 +476,10 @@ void Laser::doStartMarking() {
       //     the slider in the LaserPanel
       //
       Fixture* fixture = zcam->project()->fixture();
-      set_estimatedEnd(fixture->jobDuration());
+      double duration = fixture->jobDuration();
+      if (duration == 0.0)
+            duration = guessJobDuration();
+      set_estimatedEnd(duration);
       set_currentTime(0.0);
       markTime.start();
       markTimer.start();
