@@ -143,6 +143,12 @@ Cam::Cam(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
       // Cam is hidden by default — the user enables it via the
       // visibility toggle in the project tree when needed.
       set_show(false);
+
+      // Toggling the projection mode or changing the viewpoint height
+      // alters the projected (laser) geometry, so mark the cam data
+      // dirty to prompt a refresh before the next marking run.
+      connect(this, &Cam::perspectiveChanged, zcam, [zcam] { zcam->setCamDirty(true); });
+      connect(this, &Cam::projectionHeightChanged, zcam, [zcam] { zcam->setCamDirty(true); });
       };
 
 //---------------------------------------------------------

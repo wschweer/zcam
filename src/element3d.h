@@ -273,21 +273,37 @@ class Element3d : public Element
 //---------------------------------------------------------
 //   projectPathListToXY
 //    Transform a 2D PathList through the element's globalMatrix()
-//    and orthographically project the resulting 3D points onto
-//    the z=0 plane (i.e. discard the z component).
+//    and project the resulting 3D points onto the z=0 plane.
 //
 //    The globalMatrix() contains the full 3D transformation
 //    (translation, rotation, scale, mirror) of the element and
-//    all its ancestors.  By mapping the 2D path points as
-//    QVector3D(pt.x(), pt.y(), 0) and then dropping z, we obtain
-//    the orthographic top-down view of the element as it appears
-//    on the z=0 plane.  An element rotated around Y will appear
-//    foreshortened in X, matching the on-screen 3D representation.
+//    all its ancestors.  Mapping the 2D path points as
+//    QVector3D(pt.x(), pt.y(), 0) yields the element's position
+//    in project-root (scene) space.  Two projection modes are
+//    supported:
 //
-//    The returned PathsD are in project-root coordinate space.
+//      Orthographic (perspective == false, default):
+//          drop z.  The z=0 plane is reproduced 1:1 in mm and
+//          geometry at z != 0 is foreshortened without depth cue.
+//
+//      Perspective (perspective == true):
+//          central projection from a fixed viewpoint on the z-axis
+//          at height `projectionHeight` above z=0 onto the z=0
+//          plane.  Each point is radially scaled by
+//              s = projectionHeight / (projectionHeight - z).
+//          The z=0 plane again maps 1:1 in mm (s == 1); only
+//          geometry with z != 0 is perspectively distorted — e.g.
+//          a text rotated about the Y axis appears smaller where
+//          it recedes below z=0.  Points at or above the viewpoint
+//          height are clamped away from the s -> infinity pole.
+//
+//    In both modes the result is in project-root coordinate space
+//    (mm) on the z=0 plane — exactly the 2D data the laser needs.
+//    projectionHeight <= 0 falls back to orthographic projection.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD projectPathListToXY(const Element3d* element);
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective = false,
+                                        double projectionHeight = 0.0);
 
 extern void closePath(PathList& _pathList);
 

@@ -30,6 +30,8 @@ class Cam : public Element3d
       PROPV(double, panelHDistance, 0.0)
       PROPV(double, panelVDistance, 0.0)
       PROPV(Stock*, stock, nullptr)
+      PROPV(bool, perspective, false)         ///< project with central (perspective) projection
+      PROPV(double, projectionHeight, 1000.0) ///< viewpoint height [mm] above the z=0 plane
 
       inline static constexpr std::string_view _properties {R"({
     "class": "Cam",
@@ -160,9 +162,29 @@ class Cam : public Element3d
                     "sublabel": "V"
                 }
             ]
+        },
+        {
+            "label": "Projection",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": false,
+                    "name": "perspective",
+                    "sublabel": "Perspective"
+                },
+                {
+                    "type": "float",
+                    "unit": "mm",
+                    "min": 1.0,
+                    "max": 100000.0,
+                    "default": 1000.0,
+                    "name": "projectionHeight",
+                    "sublabel": "Height"
+                }
+            ]
         }
     ]
-})"};
+      })"};
 
     signals:
       void panelChanged();

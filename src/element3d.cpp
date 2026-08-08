@@ -871,7 +871,8 @@ void closePath(PathList& pl) {
 //    See declaration in element3d.h for full documentation.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD projectPathListToXY(const Element3d* element) {
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective,
+                                        double projectionHeight) {
       Clipper2Lib::PathsD result;
       const auto& pl = element->pathList();
       if (pl.empty())
@@ -879,16 +880,34 @@ Clipper2Lib::PathsD projectPathListToXY(const Element3d* element) {
 
       QMatrix4x4 matrix = element->globalMatrix();
 
+      // Perspective central projection onto the z=0 plane.  The
+      // projection centre sits on the z-axis at (0, 0, projectionHeight).
+      // A 3D point p = (x, y, z) is projected onto z=0 by the radial
+      // scale s = H / (H - z).  z == 0 -> s == 1 (identity on the work
+      // plane); z != 0 -> perspective distortion.  Clamp the denominator
+      // to keep points near/above the viewpoint from blowing up.
+      const bool persp     = perspective && projectionHeight > 0.0;
+      const double H       = projectionHeight;
+      constexpr double zEps = 0.1; // mm — pole clamp distance
+
       for (const auto& path : pl) {
             Clipper2Lib::PathD cp;
             cp.reserve(path.size());
             for (const auto& pt : path) {
                   // Map the 2D path point through the full 3D
-                  // globalMatrix and discard z.  This is the
-                  // orthographic top-down projection onto the
-                  // z=0 plane — exactly what the laser sees.
+                  // globalMatrix.  Depending on the mode the z
+                  // component is either discarded (orthographic) or
+                  // drives the central-projection scale (perspective).
                   auto r = matrix.map(QVector3D(float(pt.x()), float(pt.y()), 0.0f));
-                  cp.push_back({r.x(), r.y()});
+                  if (persp) {
+                        double denom = H - double(r.z());
+                        if (denom < zEps)
+                              denom = zEps;
+                        double s = H / denom;
+                        cp.push_back({double(r.x()) * s, double(r.y()) * s});
+                        }
+                  else
+                        cp.push_back({double(r.x()), double(r.y())});
                   }
             result.push_back(std::move(cp));
             }

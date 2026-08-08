@@ -110,8 +110,16 @@ PathsD Recipe::collectLayerPath() {
       spl.clear();
       auto elements = collectElements();
 
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool   persp = false;
+      double h     = 0.0;
+      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
+            persp = cam->perspective();
+            h     = cam->projectionHeight();
+            }
+
       for (const auto* ce : elements) {
-            Clipper2Lib::PathsD paths = projectPathListToXY(ce);
+            Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h);
             spl.append_range(paths);
             }
 
@@ -135,8 +143,16 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
       Clipper2Lib::PathsD lineList;
       auto elements = collectElements();
 
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool   persp = false;
+      double h     = 0.0;
+      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
+            persp = cam->perspective();
+            h     = cam->projectionHeight();
+            }
+
       for (const auto* ce : elements) {
-            Clipper2Lib::PathsD ll = projectPathListToXY(ce);
+            Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, h);
 
             auto* ls = &recipe()->pass(0);
             if (ce->pathList().fill())
@@ -251,6 +267,9 @@ LaserPath Recipe::collectLaserPath() const {
 
       double panelHD = cam->panelHDistance();
       double panelVD = cam->panelVDistance();
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool persp   = cam->perspective();
+      double prjH  = cam->projectionHeight();
       double w, h;
       zcam->project()->fixture()->size(w, h);
 
@@ -263,7 +282,7 @@ LaserPath Recipe::collectLaserPath() const {
                   double yo = (panelVD + h) * row;
 
                   for (const auto* ce : elements) {
-                        Clipper2Lib::PathsD ll = projectPathListToXY(ce);
+                        Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, prjH);
 
                         //===========================================
                         //    convert to CAM coordinate system

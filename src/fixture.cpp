@@ -16,6 +16,7 @@
 #include "fixture.h"
 #include "group.h"
 #include "recipe.h"
+#include "cam.h"
 #include "project.h"
 #include "cad.h"
 #include "element3d.h"
@@ -44,6 +45,14 @@ Fixture::Fixture(ZCam* w, Element* parent) : Element3d(w, parent) {
 Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
       Clipper2Lib::PathsD pl;
 
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool   persp = false;
+      double h     = 0.0;
+      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
+            persp = cam->perspective();
+            h     = cam->projectionHeight();
+            }
+
       for (auto e : children()) {
             if (!isType<Recipe>(e))
                   continue;
@@ -52,9 +61,10 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
                   continue;
             auto elements = layer->collectElements();
             for (const auto* ce : elements) {
-                  // Project the 3D path data orthographically onto
-                  // the z=0 plane (top-down view).
-                  Clipper2Lib::PathsD paths = projectPathListToXY(ce);
+                  // Project the 3D path data onto the z=0 plane
+                  // (top-down view, orthographic or perspective
+                  // depending on the Cam settings).
+                  Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h);
                   pl.append_range(paths);
                   }
             }
