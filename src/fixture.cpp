@@ -46,11 +46,13 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
       Clipper2Lib::PathsD pl;
 
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool   persp = false;
-      double h     = 0.0;
+      bool    persp = false;
+      double  h     = 0.0;
+      QPointF vc;
       if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
             persp = cam->perspective();
             h     = cam->projectionHeight();
+            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
             }
 
       for (auto e : children()) {
@@ -64,7 +66,7 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
                   // Project the 3D path data onto the z=0 plane
                   // (top-down view, orthographic or perspective
                   // depending on the Cam settings).
-                  Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h);
+                  Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h, vc);
                   pl.append_range(paths);
                   }
             }

@@ -149,6 +149,7 @@ Cam::Cam(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
       // dirty to prompt a refresh before the next marking run.
       connect(this, &Cam::perspectiveChanged, zcam, [zcam] { zcam->setCamDirty(true); });
       connect(this, &Cam::projectionHeightChanged, zcam, [zcam] { zcam->setCamDirty(true); });
+      connect(this, &Cam::viewCenterChanged, zcam, [zcam] { zcam->setCamDirty(true); });
       };
 
 //---------------------------------------------------------

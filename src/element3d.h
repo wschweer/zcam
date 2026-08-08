@@ -17,6 +17,7 @@
 #include <QColor>
 #include <QMatrix4x4>
 #include <QRectF>
+#include <QPointF>
 #include "macros.h"
 #include "element.h"
 #include "tessgeometry.h"
@@ -287,15 +288,18 @@ class Element3d : public Element
 //          geometry at z != 0 is foreshortened without depth cue.
 //
 //      Perspective (perspective == true):
-//          central projection from a fixed viewpoint on the z-axis
-//          at height `projectionHeight` above z=0 onto the z=0
-//          plane.  Each point is radially scaled by
-//              s = projectionHeight / (projectionHeight - z).
-//          The z=0 plane again maps 1:1 in mm (s == 1); only
-//          geometry with z != 0 is perspectively distorted — e.g.
-//          a text rotated about the Y axis appears smaller where
-//          it recedes below z=0.  Points at or above the viewpoint
-//          height are clamped away from the s -> infinity pole.
+//          central projection from a fixed viewpoint onto the z=0
+//          plane.  The viewpoint is the perpendicular foot point
+//          viewCenter = (cx, cy) raised to projectionHeight above
+//          z=0:  eye = (cx, cy, H).  A scene point p = (x, y, z) is
+//          projected radially about the foot point by the scale
+//              s = H / (H - z)
+//          applied to the offset from (cx, cy):
+//              out = (cx, cy) + (p_xy - (cx, cy)) * s .
+//          The z=0 plane maps 1:1 in mm about (cx, cy); only geometry
+//          with z != 0 is perspectively distorted.  Points at or above
+//          the viewpoint height are clamped away from the s -> infinity
+//          pole.
 //
 //    In both modes the result is in project-root coordinate space
 //    (mm) on the z=0 plane — exactly the 2D data the laser needs.
@@ -303,7 +307,8 @@ class Element3d : public Element
 //---------------------------------------------------------
 
 Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective = false,
-                                        double projectionHeight = 0.0);
+                                        double projectionHeight = 0.0,
+                                        const QPointF& viewCenter = QPointF());
 
 extern void closePath(PathList& _pathList);
 

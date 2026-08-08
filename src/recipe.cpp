@@ -111,15 +111,17 @@ PathsD Recipe::collectLayerPath() {
       auto elements = collectElements();
 
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool   persp = false;
-      double h     = 0.0;
+      bool    persp = false;
+      double  h     = 0.0;
+      QPointF vc;
       if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
             persp = cam->perspective();
             h     = cam->projectionHeight();
+            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
             }
 
       for (const auto* ce : elements) {
-            Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h);
+            Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h, vc);
             spl.append_range(paths);
             }
 
@@ -144,15 +146,17 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
       auto elements = collectElements();
 
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool   persp = false;
-      double h     = 0.0;
+      bool    persp = false;
+      double  h     = 0.0;
+      QPointF vc;
       if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
             persp = cam->perspective();
             h     = cam->projectionHeight();
+            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
             }
 
       for (const auto* ce : elements) {
-            Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, h);
+            Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, h, vc);
 
             auto* ls = &recipe()->pass(0);
             if (ce->pathList().fill())
@@ -270,6 +274,7 @@ LaserPath Recipe::collectLaserPath() const {
       // Projection settings of the active Cam (perspective vs. orthographic).
       bool persp   = cam->perspective();
       double prjH  = cam->projectionHeight();
+      QPointF vc   = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
       double w, h;
       zcam->project()->fixture()->size(w, h);
 
@@ -282,7 +287,7 @@ LaserPath Recipe::collectLaserPath() const {
                   double yo = (panelVD + h) * row;
 
                   for (const auto* ce : elements) {
-                        Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, prjH);
+                        Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, prjH, vc);
 
                         //===========================================
                         //    convert to CAM coordinate system

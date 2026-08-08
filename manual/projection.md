@@ -25,14 +25,23 @@ Referenz-Implementierung: `projectPathListToXY()` in `src/element3d.cpp`.
 
 ## Kern-Transformation
 
-Für jeden Punkt `p = (x, y, z)` in Szene-mm:
+Für jeden Punkt `p = (x, y, z)` in Szene-mm, mit Blickpunkt
+`eye = (cx, cy, H)`:
 
 ```
 orthografisch:   (x, y, z)  →  (x, y)
-perspektivisch:  (x, y, z)  →  (x·s, y·s),   s = H / (H − z)
+perspektivisch:  out_xy = (cx, cy) + (p_xy − (cx, cy)) · s,   s = H / (H − z)
 ```
 
-mit `H` = Höhe des Projektionszentrums (der Perspektivkamera) über z=0.
+mit `H` = Höhe des Blickpunkts über z=0 und `viewCenter = (cx, cy)` = senkrechter
+Fußpunkt des Blickpunkts auf der Arbeitsebene.
+
+**Wichtig:** Die Skalierung erfolgt **radial um den Fußpunkt `(cx, cy)`**, nicht
+um den Koordinaten-Ursprung `(0,0)`. Das war der Fehler der ersten Umsetzung:
+Skalierung um den Ursprung verzerrt die Geometrie versetzt relativ zur
+Kamera-Darstellung (siehe Bild: schwarz ≠ gelb). Erst die Skalierung um den
+Fußpunkt der Blickrichtung (`out = c + (p_xy − c)·s`) entspricht der
+GPU-Zentralprojektion der Canvas-Kamera.
 
 Eigenschaften:
 - z = 0  → s = 1  → **z=0-Ebene bleibt 1:1 in mm** ✔ (Anforderung 2)
@@ -56,21 +65,32 @@ praktisch orthografisch wäre.
 
 ## Implementierung
 
-### 1. `Cam`: neue Properties `perspective` + `projectionHeight` (cam.h)
+### 1. `Cam`: neue Properties `perspective`, `projectionHeight`, `viewCenter` (cam.h)
 
 ```cpp
 PROPV(bool, perspective, false)            ///< Zentralprojektion an/aus
 PROPV(double, projectionHeight, 1000.0)    ///< Blickpunkt-Höhe [mm] über z=0
+PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0))  ///< Fußpunkt (x,y) [mm] auf z=0
 ```
 
-- Inspector-Zeile „Projection": Checkbox `perspective`, Feld `projectionHeight`.
+- Inspector-Zeilen „Projection" (Checkbox `perspective`, Feld `projectionHeight`)
+  und „View Center" (`viewCenter`, vector2d).
 - Serialisierung über das bestehende `properties()`-JSON
-  (`parseAllPropertyNames`, Typen `bool`/`float` → `double`).
-- Im Constructor werden `perspectiveChanged`/`projectionHeightChanged` mit
-  `zcam->setCamDirty(true)` verbunden → der Cam-Refresh-Button wird aktiv,
-  sobald sich die Projektion ändert.
+  (`parseAllPropertyNames`, Typen `bool`/`float`/`vector2d`).
+- Im Constructor werden `perspectiveChanged`/`projectionHeightChanged`/
+  `viewCenterChanged` mit `zcam->setCamDirty(true)` verbunden.
 - Default: `perspective = false` → unverändertes orthografisches Verhalten
-  (abwärtskompatibel), `projectionHeight = 1000` mm.
+  (abwärtskompatibel), `projectionHeight = 1000` mm, `viewCenter = (0,0)`.
+
+**Bezug zur Canvas-Kamera (View3DPanel.qml):** Die QML-`camera2.position` ist
+`(cx·scale, cy·scale, H)` in Szenen-Einheiten, wobei die QML `root.scale` den
+Zoom liefert und die Geometrie in mm (root-lokal) liegt. Der senkrechte
+Fußpunkt der Kamera auf z=0 in root-lokalen mm ist also
+`viewCenter = (camera2.position.x / root.scale, camera2.position.y / root.scale)`.
+Für die Standard-Draufsicht ist das der Workspace-Mittelpunkt
+`(maxTravel.x/2, maxTravel.y/2)`. Um die projizierte Cam-Geometrie exakt mit
+der gelben Kamera-Darstellung zu überlagern, `viewCenter` auf diesen Wert
+setzen (nicht `(0,0)`).
 
 ### 2. `projectPathListToXY()` erweitert (element3d.h / element3d.cpp)
 
@@ -85,14 +105,14 @@ Perspektivischer Zweig nach `matrix.map()`:
 double denom = H - double(r.z());
 if (denom < zEps) denom = zEps;   // 0.1 mm — Pol-Klemme
 double s = H / denom;
-cp.push_back({r.x() * s, r.y() * s});
+cp.push_back({cx + (r.x() - cx) * s, cy + (r.y() - cy) * s});
 ```
 
 `perspective == false` oder `projectionHeight <= 0` → orthografisch (z droppen),
 1:1 wie bisher. Die Klemme `zEps` verhindert, dass Punkte nahe/über der
 Blickpunkt-Höhe gegen unendlich skalieren.
 
-### 3. Aufrufer verdrahtet (lesen `perspective`/`projectionHeight` vom Cam)
+### 3. Aufrufer verdrahtet (lesen `perspective`/`projectionHeight`/`viewCenter` vom Cam)
 
 - `recipe.cpp` `collectLayerPath()`        — Layer-Polygone (z. B. convexHull)
 - `recipe.cpp` `processTileLines()`        — Fill/Wobble/Linien (Anzeige)
@@ -114,5 +134,9 @@ Blickpunkt-Höhe gegen unendlich skalieren.
   BREP-Volumen) und als perspektivische Draufsicht gelasert werden sollen.
 - `projectionHeight` klein wählen (z. B. 50–200 mm) für einen deutlich
   sichtbaren perspektivischen Effekt; groß (≥ 1000 mm) für fast orthografisch.
+- `viewCenter` auf den Fußpunkt der Blickrichtung setzen — typischerweise der
+  Mittelpunkt des angeschauten Bereichs (z. B. Workspace-Mitte
+  `(maxTravel.x/2, maxTravel.y/2)`). Nur dann stimmt die projizierte
+  Cam-Geometrie mit der Kamera-Darstellung auf dem Canvas überein.
 - Flache Elemente (z = 0) sind von der Perspektive unberührt (s = 1) und
   bleiben maßstabsgetreu in mm.

@@ -872,7 +872,7 @@ void closePath(PathList& pl) {
 //---------------------------------------------------------
 
 Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective,
-                                        double projectionHeight) {
+                                        double projectionHeight, const QPointF& viewCenter) {
       Clipper2Lib::PathsD result;
       const auto& pl = element->pathList();
       if (pl.empty())
@@ -880,14 +880,18 @@ Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspecti
 
       QMatrix4x4 matrix = element->globalMatrix();
 
-      // Perspective central projection onto the z=0 plane.  The
-      // projection centre sits on the z-axis at (0, 0, projectionHeight).
-      // A 3D point p = (x, y, z) is projected onto z=0 by the radial
-      // scale s = H / (H - z).  z == 0 -> s == 1 (identity on the work
-      // plane); z != 0 -> perspective distortion.  Clamp the denominator
-      // to keep points near/above the viewpoint from blowing up.
+      // Perspective central projection onto the z=0 plane.  The viewpoint
+      // sits on the perpendicular over viewCenter = (cx, cy) raised to
+      // (cx, cy, projectionHeight).  A 3D point p = (x, y, z) is projected
+      // radially about the foot point (cx, cy) by the scale s = H / (H - z)
+      // applied to the offset from that foot point.  z == 0 -> s == 1
+      // (identity on the work plane); z != 0 -> perspective distortion.
+      // Clamp the denominator to keep points near/above the viewpoint from
+      // blowing up.
       const bool persp     = perspective && projectionHeight > 0.0;
       const double H       = projectionHeight;
+      const double cx      = viewCenter.x();
+      const double cy      = viewCenter.y();
       constexpr double zEps = 0.1; // mm — pole clamp distance
 
       for (const auto& path : pl) {
@@ -904,7 +908,7 @@ Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspecti
                         if (denom < zEps)
                               denom = zEps;
                         double s = H / denom;
-                        cp.push_back({double(r.x()) * s, double(r.y()) * s});
+                        cp.push_back({cx + (double(r.x()) - cx) * s, cy + (double(r.y()) - cy) * s});
                         }
                   else
                         cp.push_back({double(r.x()), double(r.y())});

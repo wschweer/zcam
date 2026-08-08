@@ -32,6 +32,7 @@ class Cam : public Element3d
       PROPV(Stock*, stock, nullptr)
       PROPV(bool, perspective, false)         ///< project with central (perspective) projection
       PROPV(double, projectionHeight, 1000.0) ///< viewpoint height [mm] above the z=0 plane
+      PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0)) ///< foot point (x,y) [mm] of the viewpoint on z=0
 
       inline static constexpr std::string_view _properties {R"({
     "class": "Cam",
@@ -180,6 +181,20 @@ class Cam : public Element3d
                     "default": 1000.0,
                     "name": "projectionHeight",
                     "sublabel": "Height"
+                }
+            ]
+        },
+        {
+            "label": "View Center",
+            "cells": [
+                {
+                    "name": "viewCenter",
+                    "type": "vector2d",
+                    "unit": "mm",
+                    "default": [
+                        0.0,
+                        0.0
+                    ]
                 }
             ]
         }
