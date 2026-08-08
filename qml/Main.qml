@@ -295,7 +295,14 @@ Window {
     FileDialog {
         id: importFileDialog
         title: qsTr("Import File")
-        nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj *.xml *.cvg)"), qsTr("IPC-2581 (*.xml *.cvg)"), qsTr("All files (*)")]
+        nameFilters: [
+            qsTr("All supported formats (*.svg *.dxf *.dwg *.brep *.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp *.xml *.cvg)"),
+            qsTr("Vector graphics (*.svg *.dxf *.dwg)"),
+            qsTr("BREP CAD (*.brep)"),
+            qsTr("Pixel images (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp)"),
+            qsTr("IPC-2581 (*.xml *.cvg)"),
+            qsTr("All files (*)")
+            ]
         fileMode: FileDialog.OpenFile
         onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
         }
