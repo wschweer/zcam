@@ -1200,7 +1200,7 @@ Item {
                 pan(_panGrabPoint, pos3d);
                 lastPos = currentPos;
                 updateGridViewport();
-                } else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
+                } else if ((mouse.buttons == Qt.LeftButton) && ((mouse.modifiers == Qt.NoModifier) || (mouse.modifiers == Qt.ShiftModifier))) {
                 if (vertexDragHandle) {
                     // The handle is a child of root, so pos3d is already
                     // in the same coordinate space as the handle.
