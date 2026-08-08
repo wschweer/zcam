@@ -628,6 +628,7 @@ Item {
                                 case "ethDevice":  return subEthDeviceDelegate
                                 case "multiline":return subMultilineDelegate
                                 case "singleline":return subSinglelineDelegate
+                                case "cameraCapture": return subCameraCaptureDelegate
                                 case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
                                 default:          return subStringDelegate
@@ -994,6 +995,7 @@ Item {
                                 case "ethDevice":  return subEthDeviceDelegate
                                 case "multiline":return subMultilineDelegate
                                 case "singleline":return subSinglelineDelegate
+                                case "cameraCapture": return subCameraCaptureDelegate
                                 case "empty":      return subEmptyDelegate
                                 case "string":    return subStringDelegate
                                 default:          return subStringDelegate
@@ -4535,6 +4537,46 @@ Item {
                         colCameraView._zoom = newZoom
                         }
                     }
+                }
+            }
+        }
+
+    // ── cameraCapture: button that adopts the live 3D canvas camera ──
+    //    Shown next to "Perspective" in the Cam inspector.  Clicking calls
+    //    Cam::grabCameraView(), which copies the current perspective camera's
+    //    foot point (viewCenter) and height (projectionHeight), marks the cam
+    //    data dirty and triggers a recalculation so the laser projection
+    //    matches the canvas view.
+    Component {
+        id: subCameraCaptureDelegate
+
+        ValueBox {
+            id: subGrabCam
+            Layout.fillWidth: true
+            Layout.minimumWidth: 60
+            width: parent ? parent.width : 0
+            subLabelText: subGrabCam.subMeta ? subGrabCam.subMeta.sublabel ?? subGrabCam.subMeta.label ?? "" : ""
+
+            property string subName
+            property var subValue
+            property var subMeta
+            property var setSub: function(v) {}
+
+            property var camElement: (ZCam.project && ZCam.project.cam) ? ZCam.project.cam : null
+
+            Button {
+                id: grabCamSubBtn
+                anchors.centerIn: parent
+                enabled: subGrabCam.camElement !== null
+                text: qsTr("Grab")
+                onClicked: {
+                    if (subGrabCam.camElement)
+                        subGrabCam.camElement.grabCameraView()
+                    }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Adopt the current 3D canvas camera as the projection viewpoint")
+                ToolTip.delay: 800
+                ToolTip.timeout: 4000
                 }
             }
         }
