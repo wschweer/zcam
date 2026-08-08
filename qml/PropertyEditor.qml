@@ -837,6 +837,7 @@ Item {
                                         case "cameraResolution": return cameraResolutionDelegate
                                         case "cameraFrameRate": return cameraFrameRateDelegate
                                         case "cameraView": return cameraViewDelegate
+                                        case "cameraCapture": return cameraCaptureDelegate
                                         case "empty":      return emptyDelegate
                                         default:          return stringDelegate
                                         }
