@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include <QAbstractListModel>
 #include "element3d.h"
 
 class ZCam;

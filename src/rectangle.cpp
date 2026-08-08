@@ -33,14 +33,14 @@ void Rectangle::set_size(QVector2D v) {
       auto mode = static_cast<LockScaleMode>(lockSize());
       if (mode == LockScaleMode::Square) {
             double s = std::max(v.x(), v.y());
-            v = QVector2D(s, s);
+            v        = QVector2D(s, s);
             }
       else if (mode == LockScaleMode::Lock) {
             if (qAbs(_size.x()) >= 1e-12 && qAbs(_size.y()) >= 1e-12) {
                   double factorW = v.x() / _size.x();
                   double factorH = v.y() / _size.y();
                   double factor  = std::max(factorW, factorH);
-                  v = QVector2D(_size.x() * factor, _size.y() * factor);
+                  v              = QVector2D(_size.x() * factor, _size.y() * factor);
                   }
             }
       if (v == _size)
@@ -58,6 +58,8 @@ Rectangle::Rectangle(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill     = true;
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
+      if (w->config())
+            setColor(w->config()->rectangleColor());
 
       connect(this, &Rectangle::cornerChanged, [this] {
             if (!_suppressUpdate)
@@ -228,21 +230,21 @@ void Rectangle::setVertexPos(int idx, const QVector3D& pos) {
       auto mode = static_cast<LockScaleMode>(lockSize());
       if (mode == LockScaleMode::Square) {
             double s = std::max(newW, newH);
-            newW = s;
-            newH = s;
+            newW     = s;
+            newH     = s;
             }
       else if (mode == LockScaleMode::Lock) {
             if (qAbs(_size.x()) < 1e-12 || qAbs(_size.y()) < 1e-12) {
                   double s = std::max(newW, newH);
-                  newW = s;
-                  newH = s;
+                  newW     = s;
+                  newH     = s;
                   }
             else {
                   double factorW = newW / _size.x();
                   double factorH = newH / _size.y();
                   double factor  = std::max(factorW, factorH);
-                  newW = _size.x() * factor;
-                  newH = _size.y() * factor;
+                  newW           = _size.x() * factor;
+                  newH           = _size.y() * factor;
                   }
             }
 

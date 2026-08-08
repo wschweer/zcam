@@ -34,6 +34,8 @@
 
 CameraElement::CameraElement(ZCam* z, Element* parent) : Element3d(z, parent), _zcam(z) {
       setName(QStringLiteral("camera"));
+      if (z->config())
+            setColor(z->config()->cameraColor());
 
       _sink = new QVideoSink(this);
       connect(_sink, &QVideoSink::videoFrameChanged, this,

@@ -2860,20 +2860,17 @@ void ZCam::createTestProject() {
       // Set the LaserLayer on the Layer so all children inherit it.
       layer->set_laserLayer(ll);
       auto text = new Text(this, layer);
-      text->setColor("yellow");
       text->set_text("ZCam");
 
       auto rectangle = new Rectangle(this, layer);
       rectangle->set_size(QVector2D(40.0, 30.0));
       rectangle->set_pos(QVector3D(50.0, 50.0, 0.0));
-      rectangle->setColor(QColor("blue"));
       rectangle->set_corner(5.0);
       rectangle->set_lineWidth(1.0);
       rectangle->set_fill(false);
 
       auto poly = new Polygon(this, layer);
       poly->set_pos(QVector3D(10.0, 25.0, 0.0));
-      poly->setColor(QColor("green"));
       poly->set_lineWidth(1.0);
       poly->moveTo({0.0, 0.0});
       poly->lineTo({20.0, 20.0});
@@ -2883,7 +2880,6 @@ void ZCam::createTestProject() {
       auto ell = new Ellipse(this, layer);
       ell->set_size(QVector2D(25.0, 25.0));
       ell->set_pos(QVector3D(-30.0, 40.0, 0.0));
-      ell->setColor(QColor("magenta"));
       ell->set_lineWidth(1.0);
       ell->set_fill(false);
 

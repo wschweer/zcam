@@ -11,13 +11,13 @@
 
 #pragma once
 
-#include "element3d.h"
+#include "group.h"
 
 //---------------------------------------------------------
 //   Cad
 //---------------------------------------------------------
 
-class Cad : public Element3d
+class Cad : public Group
       {
       Q_OBJECT
       QML_ELEMENT

@@ -39,6 +39,8 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill = true;
       set_geometry(new TessGeometry(this));
       QJSEngine::setObjectOwnership(geometry(), QJSEngine::CppOwnership);
+      if (w->config())
+            setColor(w->config()->textColor());
 
       connect(this, &Text::textChanged, [this]() { update(TEXT); });
       connect(this, &Text::fontFamilyChanged, [this]() { update(FONT); });
@@ -348,7 +350,7 @@ bool Text::setCursorPositionFromWorld(const QVector3D& worldPos) {
       // where fontLineSpacing() = lineSpacing * lineSpacing% * 0.01 * FONT_SCALE (positive).
       // Row 0 is at y=0, row 1 at y=-fontLineSpacing(), etc.
       // We divide ly by -fontLineSpacing() to get the row number.
-      double fls = fontLineSpacing();  // positive
+      double fls = fontLineSpacing(); // positive
       QFontMetricsF fm(font);
       QStringList sl = text().split('\n');
       int numRows    = sl.size();

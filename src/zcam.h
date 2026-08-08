@@ -55,6 +55,17 @@ class Config : public QObject
       PROPV(QColor, markColor, QColor("#000000"))
       PROPV(QColor, moveColor, QColor("#0000ff"))
       PROPV(QColor, framingColor, QColor("#00ff00"))
+      // Default colours for displayable elements
+      PROPV(QColor, rectangleColor, QColor("cyan"))
+      PROPV(QColor, polygonColor, QColor("cyan"))
+      PROPV(QColor, ellipseColor, QColor("cyan"))
+      PROPV(QColor, textColor, QColor("green"))
+      PROPV(QColor, stockColor, QColor("green"))
+      PROPV(QColor, brepColor, QColor(120, 150, 180))
+      PROPV(QColor, imageColor, QColor(180, 180, 180))
+      PROPV(QColor, fixtureColor, QColor("green"))
+      PROPV(QColor, materialTestColor, QColor("gray"))
+      PROPV(QColor, cameraColor, QColor("green"))
       PROPV(bool, showGrid, true)
       PROPV(double, gridSpacing, 10.0)
       PROPV(double, smPanX, 4.0)
@@ -217,6 +228,71 @@ class Config : public QObject
                         {
                           "name": "moveColor",
                           "label": "Move Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "type": "line",
+                          "name": "line",
+                          "colSpan": 2
+                        },
+                        {
+                          "name": "rectangleColor",
+                          "label": "Rectangle",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "polygonColor",
+                          "label": "Polygon",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "ellipseColor",
+                          "label": "Ellipse",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "textColor",
+                          "label": "Text",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "stockColor",
+                          "label": "Stock",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "brepColor",
+                          "label": "BREP",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "imageColor",
+                          "label": "Image",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "fixtureColor",
+                          "label": "Fixture",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "materialTestColor",
+                          "label": "Material Test",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "cameraColor",
+                          "label": "Camera",
                           "type": "color",
                           "cat": "Colors"
                         }
@@ -524,6 +600,7 @@ class ZCam : public QObject
       Q_INVOKABLE void updateViewCamera(double cx, double cy, double height);
     Q_SIGNALS:
       void viewCameraChanged();
+
     protected:
       QVector2D _viewCameraCenter {QVector2D(0.0, 0.0)};
       double _viewCameraHeight {1000.0};
@@ -706,7 +783,7 @@ class ZCam : public QObject
       /// Simple log bridge for QML diagnosis output (console.log from
       /// QML does not necessarily reach zcam.log depending on how the
       /// app was started).
-//      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
+      //      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
       /// Convenience helper for QML: unproject the viewport point
       /// (x, y in pixels) of the given View3D through its camera and
       /// root node and pick with the resulting ray via

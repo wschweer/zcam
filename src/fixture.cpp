@@ -27,6 +27,8 @@
 
 Fixture::Fixture(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("fixture");
+      if (w->config())
+            setColor(w->config()->fixtureColor());
       if (w->project())
             w->project()->addFixture(this);
       }
@@ -46,8 +48,8 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
       Clipper2Lib::PathsD pl;
 
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool    persp = false;
-      double  h     = 0.0;
+      bool persp = false;
+      double h   = 0.0;
       QPointF vc;
       if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
             persp = cam->perspective();

@@ -32,14 +32,14 @@ void Ellipse::set_size(QVector2D v) {
       auto mode = static_cast<LockScaleMode>(lockSize());
       if (mode == LockScaleMode::Square) {
             double s = std::max(v.x(), v.y());
-            v = QVector2D(s, s);
+            v        = QVector2D(s, s);
             }
       else if (mode == LockScaleMode::Lock) {
             if (qAbs(_size.x()) >= 1e-12 && qAbs(_size.y()) >= 1e-12) {
                   double factorW = v.x() / _size.x();
                   double factorH = v.y() / _size.y();
                   double factor  = std::max(factorW, factorH);
-                  v = QVector2D(_size.x() * factor, _size.y() * factor);
+                  v              = QVector2D(_size.x() * factor, _size.y() * factor);
                   }
             }
       if (v == _size)
@@ -57,6 +57,8 @@ Ellipse::Ellipse(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill     = true;
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
+      if (w->config())
+            setColor(w->config()->ellipseColor());
 
       connect(this, &Ellipse::sizeChanged, [this] {
             if (!_suppressUpdate)
@@ -242,16 +244,16 @@ void Ellipse::setVertexPos(int idx, const QVector3D& pos) {
       if (mode == LockScaleMode::Square) {
             // Force width == height using the larger dimension.
             double s = std::max(newW, newH);
-            newW = s;
-            newH = s;
+            newW     = s;
+            newH     = s;
             }
       else if (mode == LockScaleMode::Lock) {
             if (qAbs(_size.x()) < 1e-12 || qAbs(_size.y()) < 1e-12) {
                   // Initial creation with zero size: no aspect ratio
                   // to preserve yet — fall back to a square.
                   double s = std::max(newW, newH);
-                  newW = s;
-                  newH = s;
+                  newW     = s;
+                  newH     = s;
                   }
             else {
                   // Preserve the current aspect ratio using the
@@ -259,8 +261,8 @@ void Ellipse::setVertexPos(int idx, const QVector3D& pos) {
                   double factorW = newW / _size.x();
                   double factorH = newH / _size.y();
                   double factor  = std::max(factorW, factorH);
-                  newW = _size.x() * factor;
-                  newH = _size.y() * factor;
+                  newW           = _size.x() * factor;
+                  newH           = _size.y() * factor;
                   }
             }
 

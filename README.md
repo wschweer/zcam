@@ -12,10 +12,3 @@ version with a 60W MOPA Fiber Laser.
 - [Manual](manual/manual.md)
 
 ### Third-Party Code
-For convenience, ZCam includes some third-party sources:
-
-- clipper2 from Angus Johnson; License: https://www.boost.org/LICENSE_1_0.txt
-- tess2 from Mikko Mononen; License: SGI FREE SOFTWARE LICENSE B (Version 2.0, Sept. 18, 2008)
-- libdxfrw — DXF file reading/writing
-- nanosvg — SVG file parsing
-- libpcap — Raw Ethernet frame capture (for RKQ-LM-441 laser communication)

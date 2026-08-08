@@ -34,6 +34,8 @@
 //---------------------------------------------------------
 
 MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
+      if (zcam->config())
+            setColor(zcam->config()->materialTestColor());
       createChildren();
       connect(this, &MaterialTest::rowsChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::columnsChanged, [this] { createChildren(); });

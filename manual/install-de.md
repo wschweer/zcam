@@ -20,6 +20,12 @@ Verbindung Rechner-Laser zu verwenden.
 
 - teste, ob connect eine Verbindung zum Laser herstellen kann
 
+> [!WARNING]
+RKQ-LM-441 basierende Geräte werden z.Z. nicht unterstützt. Das dort verwendete
+Protokoll ist undokumentiert und es gibt wenig Informationen darüber im Netz.
+Ich habe meinen UV-Laser inzwischen mit einem BJJCZ Board umgerüstet was es
+unwarscheinlich macht das von mir in absehbarer Zeit ein RKQ Treiber kommt.
+
 ### BJJCZ Boards
 
 Dies ist die am weitesten verbreitete Controller Variante für Galvo Laser
