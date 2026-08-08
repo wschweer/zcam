@@ -187,70 +187,6 @@ Item {
         _hoveredHandle = newHover;
         }
 
-    //─────────────────────────────────────────────────────────────
-    //  Snap reference-point marker
-    //    A small cross rendered at the element's reference point
-    //    (element origin, 0,0 in local coords) while a drag with
-    //    grid snap is active.  Two thin #Cube models form the
-    //    horizontal and vertical bars.
-    //
-    //    Visibility is driven by ZCam.snapDragActive, a flag that
-    //    is set once at startElementDrag() and cleared once at
-    //    endElementDrag() — it never toggles in the middle of a drag
-    //    (unlike the per-axis snap flags that can switch on/off as
-    //    the cursor crosses grid lines), so the cross cannot flicker
-    //    or disappear mid-drag.
-    //
-    //    The position comes from ZCam.snapRefPos, which is derived
-    //    from the exact same parent-local pos value that is assigned
-    //    to the element during the drag (see ZCam::dragged).
-    //    Like the vertex handles, the marker lives inside root so
-    //    its position uses root-space coordinates directly.
-    //─────────────────────────────────────────────────────────────
-
-    Node {
-        id: snapMarker
-        parent: root
-        visible: ZCam.snapDragActive
-        position: ZCam.snapRefPos
-
-        // Scale compensation factor for a constant on-screen size
-        // regardless of the canvas zoom (root.scale), analogous to
-        // the vertex handles.  Shared by both bars.
-        property vector3d unitScale: {
-            var rs = root.scale
-            var f = rs.x !== 0 ? 1.0 / rs.x : 1.0
-            return Qt.vector3d(f, f, f)
-            }
-
-        // Thin horizontal bar at the reference point.
-        Model {
-            source: "#Cube"
-            pickable: false
-            scale: snapMarker.unitScale.times(Qt.vector3d(0.06, 0.006, 0.006))
-            materials: [
-                PrincipledMaterial {
-                    cullMode: PrincipledMaterial.NoCulling
-                    lighting: PrincipledMaterial.NoLighting
-                    baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
-                }
-            ]
-        }
-        // Thin vertical bar at the reference point.
-        Model {
-            source: "#Cube"
-            pickable: false
-            scale: snapMarker.unitScale.times(Qt.vector3d(0.006, 0.06, 0.006))
-            materials: [
-                PrincipledMaterial {
-                    cullMode: PrincipledMaterial.NoCulling
-                    lighting: PrincipledMaterial.NoLighting
-                    baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
-                }
-            ]
-        }
-    }
-
     // Finish the current polygon drawing session.
     // Closes the polygon and resets drawing state.
     function finishPolygonDrawing() {
@@ -550,6 +486,69 @@ Item {
             ProjectTree {
                 id: projectTree
                 }
+
+            //─────────────────────────────────────────────────────────────
+            //  Snap reference-point marker
+            //    A small cross rendered at the element's reference point
+            //    (element origin, 0,0 in local coords) while a drag is in
+            //    progress.  Two thin #Cube models form the horizontal and
+            //    vertical bars.
+            //
+            //    Visibility is driven by ZCam.snapDragActive, a flag that
+            //    is set once at startElementDrag() and cleared once at
+            //    endElementDrag() — it never toggles in the middle of a
+            //    drag (unlike the per-axis snap flags that can switch on/off
+            //    as the cursor crosses grid lines), so the cross cannot
+            //    flicker or disappear mid-drag.
+            //
+            //    The position comes from ZCam.snapRefPos, which is derived
+            //    from the exact same parent-local pos value that is assigned
+            //    to the element during the drag (see ZCam::dragged).
+            //    The marker lives inside root so its position uses
+            //    root-space coordinates directly.
+            //─────────────────────────────────────────────────────────────
+
+            Node {
+                id: snapMarker
+                visible: ZCam.snapDragActive
+                position: ZCam.snapRefPos
+
+                // Scale compensation factor for a constant on-screen size
+                // regardless of the canvas zoom (root.scale), analogous to
+                // the vertex handles.  Shared by both bars.
+                property vector3d unitScale: {
+                    var rs = root.scale
+                    var f = rs.x !== 0 ? 1.0 / rs.x : 1.0
+                    return Qt.vector3d(f, f, f)
+                    }
+
+                // Thin horizontal bar at the reference point.
+                Model {
+                    source: "#Cube"
+                    pickable: false
+                    scale: snapMarker.unitScale.times(Qt.vector3d(0.06, 0.006, 0.006))
+                    materials: [
+                        PrincipledMaterial {
+                            cullMode: PrincipledMaterial.NoCulling
+                            lighting: PrincipledMaterial.NoLighting
+                            baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
+                        }
+                    ]
+                }
+                // Thin vertical bar at the reference point.
+                Model {
+                    source: "#Cube"
+                    pickable: false
+                    scale: snapMarker.unitScale.times(Qt.vector3d(0.006, 0.06, 0.006))
+                    materials: [
+                        PrincipledMaterial {
+                            cullMode: PrincipledMaterial.NoCulling
+                            lighting: PrincipledMaterial.NoLighting
+                            baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
+                        }
+                    ]
+                }
+            }
 
             //─────────────────────────────────────────────────────────────
             //  Camera overlay
