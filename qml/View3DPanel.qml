@@ -1198,14 +1198,6 @@ Item {
                 updateGridViewport();
                 } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
                 pan(_panGrabPoint, pos3d);
-                // The drag deltas delivered to ZCam.dragged() are only
-                // valid while the canvas camera is fixed.  A pan mid-drag
-                // discontinues the delta stream, so re-anchor the snap
-                // reference to the new cursor position — otherwise the
-                // element and the snap marker drift away from the cursor.
-                var panDragEl = ZCam.elementDragElement();
-                if (panDragEl && pos3d)
-                    ZCam.updateDragAnchor(panDragEl, pos3d);
                 lastPos = currentPos;
                 updateGridViewport();
                 } else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
