@@ -1811,7 +1811,8 @@ nlohmann::json Config::toJson() const {
 
       auto propNames = propjson::parseAllPropertyNames(_properties);
       for (const auto& [name, type] : propNames)
-            propjson::writePropertyToJson(data, this, meta, false, name, type);
+            propjson::writePropertyToJson(data, this, meta, false, name, type,
+                                          propjson::precisionForName(_properties, name));
       return data;
       }
 

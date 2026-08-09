@@ -53,7 +53,15 @@ PropNameList parseAllPropertyNames(std::string_view propStr);
 //             false for QObject (uses read)
 //---------------------------------------------------------
 bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObject* meta, bool gadget,
-                         const std::string& name, const std::string& type);
+                         const std::string& name, const std::string& type, int precision = -1);
+
+//---------------------------------------------------------
+//   precisionForName
+//    Return the "precision" metadata declared in the properties()
+//    JSON definition for the given property name.  Returns -1 if no
+//    precision is declared or the name is not found.
+//---------------------------------------------------------
+int precisionForName(std::string_view propStr, const std::string& name);
 
 //---------------------------------------------------------
 //   readPropertyFromJson

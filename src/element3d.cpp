@@ -245,7 +245,8 @@ json Element3d::toJson() const {
             if (type == "layer" || type == "recipe" || type == "machine" || type == "laserLayer")
                   writeLayerOrRecipe(data, this, name, type);
             else
-                  propjson::writePropertyToJson(data, this, meta, false, name, type);
+                  propjson::writePropertyToJson(data, this, meta, false, name, type,
+                                              propjson::precisionForName(propStr, name));
 
       return data;
       }

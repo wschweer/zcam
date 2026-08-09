@@ -98,20 +98,9 @@ Item {
     function metaForSub(rowKey, subName) {
         if (propMetaMap && propMetaMap[subName])
             return propMetaMap[subName]
-        if (!propMeta || !propMeta[rowKey])
-            return null
-        const rowVal = propMeta[rowKey]
-        if (Array.isArray(rowVal)) {
-            for (let i = 0; i < rowVal.length; ++i) {
-                const elem = rowVal[i]
-                if (elem && elem[subName])
-                    return elem[subName]
-                }
-            return null
-            }
-        if (!rowVal || !rowVal[subName])
-            return null
-        return rowVal[subName]
+        // Fallback: some sub-cells are not flattened into propMetaMap,
+        // so look them up directly by name.
+        return metaFor(subName)
         }
 
     function defaultScalar(name, component) {
@@ -607,6 +596,7 @@ Item {
                         property string subName: modelData
                         property var subMeta: root.metaForSub(rowContainer.propName, subName)
                         property var subValue: rowContainer.subValues ? rowContainer.subValues[index] : undefined
+                        
 
                         sourceComponent: {
                             if (subLoader.subName === "empty")
@@ -1174,8 +1164,11 @@ Item {
                     bigStep: root.defaultBigStep(subFloat.subMeta)
                     minStep: root.defaultMinStep(subFloat.subMeta)
                     resetValue: root.defaultScalarFromMeta(subFloat.subMeta, 0)
-
-                    decimals: subFloat.subMeta && subFloat.subMeta.precision !== undefined ? subFloat.subMeta.precision : 2
+                    
+                    decimals: {
+                        const m = subFloat.subMeta || root.metaFor(subFloat.subName)
+                        return m && m.precision !== undefined ? m.precision : 2
+                    }
 
                     property real modelValue: subFloat.subValue !== undefined ? Number(subFloat.subValue) : 0.0
                     value: modelValue
@@ -1245,7 +1238,10 @@ Item {
                         bigStep: root.defaultBigStep(subVec3.subMeta)
                         minStep: root.defaultMinStep(subVec3.subMeta)
                         resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 0)
-                        decimals: subVec3.subMeta && subVec3.subMeta.precision !== undefined ? subVec3.subMeta.precision : 2
+                        decimals: {
+                            const m = subVec3.subMeta || root.metaFor(subVec3.subName)
+                            return m && m.precision !== undefined ? m.precision : 2
+                        }
 
                         property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.x !== undefined ? Number(subVec3.subValue.x) : 0.0
                         value: modelValue
@@ -1273,7 +1269,10 @@ Item {
                         bigStep: root.defaultBigStep(subVec3.subMeta)
                         minStep: root.defaultMinStep(subVec3.subMeta)
                         resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 1)
-                        decimals: subVec3.subMeta && subVec3.subMeta.precision !== undefined ? subVec3.subMeta.precision : 2
+                        decimals: {
+                            const m = subVec3.subMeta || root.metaFor(subVec3.subName)
+                            return m && m.precision !== undefined ? m.precision : 2
+                        }
 
                         property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.y !== undefined ? Number(subVec3.subValue.y) : 0.0
                         value: modelValue
@@ -1301,7 +1300,10 @@ Item {
                         bigStep: root.defaultBigStep(subVec3.subMeta)
                         minStep: root.defaultMinStep(subVec3.subMeta)
                         resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 2)
-                        decimals: subVec3.subMeta && subVec3.subMeta.precision !== undefined ? subVec3.subMeta.precision : 2
+                        decimals: {
+                            const m = subVec3.subMeta || root.metaFor(subVec3.subName)
+                            return m && m.precision !== undefined ? m.precision : 2
+                        }
 
                         property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.z !== undefined ? Number(subVec3.subValue.z) : 0.0
                         value: modelValue
@@ -1346,7 +1348,10 @@ Item {
                         bigStep: root.defaultBigStep(subVec2.subMeta)
                         minStep: root.defaultMinStep(subVec2.subMeta)
                         resetValue: root.defaultScalarFromMeta(subVec2.subMeta, 0)
-                        decimals: subVec2.subMeta && subVec2.subMeta.precision !== undefined ? subVec2.subMeta.precision : 2
+                        decimals: {
+                            const m = subVec2.subMeta || root.metaFor(subVec2.subName)
+                            return m && m.precision !== undefined ? m.precision : 2
+                        }
 
                         property real modelValue: subVec2.subValue !== undefined && subVec2.subValue.x !== undefined ? Number(subVec2.subValue.x) : 0.0
                         value: modelValue
@@ -1374,7 +1379,10 @@ Item {
                         bigStep: root.defaultBigStep(subVec2.subMeta)
                         minStep: root.defaultMinStep(subVec2.subMeta)
                         resetValue: root.defaultScalarFromMeta(subVec2.subMeta, 1)
-                        decimals: subVec2.subMeta && subVec2.subMeta.precision !== undefined ? subVec2.subMeta.precision : 2
+                        decimals: {
+                            const m = subVec2.subMeta || root.metaFor(subVec2.subName)
+                            return m && m.precision !== undefined ? m.precision : 2
+                        }
 
                         property real modelValue: subVec2.subValue !== undefined && subVec2.subValue.y !== undefined ? Number(subVec2.subValue.y) : 0.0
                         value: modelValue
