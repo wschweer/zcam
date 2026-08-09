@@ -172,5 +172,5 @@ class ArtworkTreeModel : public QAbstractItemModel
 
       QString _rootPath;
       std::unique_ptr<ArtworkNode> _root;
-      QStringList _imageExtensions {"svg", "png", "dxf"};
+      QStringList _imageExtensions {"svg", "png", "dxf", "SVG", "PNG", "SVG"};
       };

@@ -19,7 +19,7 @@ using json = nlohmann::json;
 #include "macros.h"
 
 //---------------------------------------------------------
-//   LaserLayerSetting
+//   LaserPass
 //---------------------------------------------------------
 
 class LaserPass

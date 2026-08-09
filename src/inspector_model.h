@@ -106,7 +106,7 @@ class InspectorModel : public QAbstractListModel
       Q_INVOKABLE Recipe* nameToLaserLayer(const QString& name) const;
 
       // Resolve a Recipe* pointer to its name (for display in ComboBox).
-      Q_INVOKABLE QString recipeToName(LaserRecipe* recipe) const;
+      Q_INVOKABLE QString recipeToName(QVariant recipe) const;
 
       // Resolve a name back to a Recipe* pointer.
       Q_INVOKABLE LaserRecipe* nameToRecipe(const QString& name) const;

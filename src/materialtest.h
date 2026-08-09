@@ -11,14 +11,13 @@
 
 #pragma once
 
-#include "element3d.h"
+#include "group.h"
 #include "laser.h"
 
 //---------------------------------------------------------
 //   MaterialTest
 //---------------------------------------------------------
-
-class MaterialTest : public Element3d
+class MaterialTest : public Group
       {
       Q_OBJECT
       QML_ELEMENT
@@ -79,6 +78,62 @@ class MaterialTest : public Element3d
                           "name": "description",
                           "type": "singleline",
                           "default": "Test"
+                        }
+                      ]
+                    },
+                    {
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "min": 0.001,
+                          "max": 1000,
+                          "default": [
+                            1.0,
+                            1.0,
+                            1.0
+                          ]
                         }
                       ]
                     },
@@ -277,7 +332,6 @@ class MaterialTest : public Element3d
       QString genColText(int col) const;
       double rowValue(int row) const;
       double columnValue(int col) const;
-      void updateChildren();
       void addText(double x, double y, const QString& s, Group* layer, double pt, double rot);
       void createChildren();
 

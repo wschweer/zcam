@@ -1,134 +1,61 @@
-# Umstrukturierung Machine — ERLEDIGT
+# 9-Punkt Galvo Kalibrierung
 
-Bisher enthielt Machine einen Pointer auf Laser. Machine ist nun die Basisklasse von
-Laser. Ebenso ist LaserEngine Teil von Laser, welches die Basisklasse für Laser-Varianten
-darstellt. Es ergibt sich folgende Struktur:
+Implementiere die 9-Punkt Galvo Kalibrierung.
+Der User muss den "Galvo Test 9" auf Laser Papier brennen und die Länge
+von 12 Linien ausmessen und die Ergebnisse in einer Tabelle Eintragen.
 
-- QObject
-  - class Machine : public QObject        (virtuelle Klasse)
-    - class Laser : public Machine        (virtuelle Klasse)
-      - class LaserBJJCZ : public Laser
-      - class LaserRKQ : public Laser
-    - class MachineGCode : public Machine      (neu)
+Es soll ein Popup erscheinen mit folgenden Komponenten:
 
+- Eine Titlezeile mit dem Namen des aktuellen (zu korrigierenden) Lasers
+  (Machine)
 
-## Implementierung
+- eine Grafik, die die 12 horizontalen und vertikalen Linien bezeichnet
+  und dem Nutzer eine Zuordnung
+  zu den 12 Eingabefeldern für die Längenwerte ermöglicht.
+  Die Grafik soll direkt in Qml erstellt werden (Canvas Objekt?)
 
-Die `LaserEngine`-Klasse wurde aufgelöst. Ihre Funktionalität wurde in die `Laser`-
-Basisklasse integriert:
+- neben der Grafik 12 Eingabefelder für die 12 Linienlängen
 
-- **laserengine.h** — Enthält nur noch Datentypen und Hilfsstrukturen (LaserPath,
-  LaserParameterSet, ParameterType, Pulse33, LaserStatusFlags, etc.). Die
-  `LaserEngine`-Klasse selbst wurde entfernt.
-- **laser.h** — `Laser` erbt nun von `Machine` (statt von `QObject`). Die
-  LaserEngine-Schnittstelle (init, exit, stop, startFraming, etc.) ist als
-  pure virtual Methoden in `Laser` definiert. Die Pulse-Tabelle ist eine statische
-  Methode von `Laser`. Die Laser-Status-Properties (enabled, framing, marking,
-  testMode, dryRun, etc.) sind direkt in `Laser` definiert.
-- **laser.cpp** — Implementiert die Framing/Marking-State-Machine und die
-  Hintergrund-Threads. Ruft die abstrakten Engine-Methoden (startFramingEngine,
-  stopMarkingEngine, etc.) auf, die von den konkreten Laser-Varianten implementiert
-  werden.
-- **laser_bjjcz.h/.cpp** — `LaserBJJCZ` erbt von `Laser` (statt von `LaserEngine`).
-  Implementiert die USB-Kommunikation und alle BJJCZ-spezifischen Befehle.
-- **laser_rkq.h/.cpp** — `LaserRKQ` erbt von `Laser` (statt von `LaserEngine`).
-  Implementiert die Ethernet-Kommunikation via libpcap.
+- Eine Button-Reihe mit den Buttons "Change Calibration" und "Abort".
+  Change Calibration setzt die ermittelten Korrekturwerte für
+  die Linsenkorrektur.
 
-### Machine als virtuelle Basisklasse
+Zur Berechnung der Korrekturwerte:
 
-- **machine.h** — `Machine` hat `virtual ~Machine() = default` und die
-  `PROPV(Laser*, laser, nullptr)` Property wurde entfernt. Eine statische
-  Factory-Methode `Machine::create(zcam, machineType, boardType)` wurde
-  hinzugefügt, die die korrekte konkrete Unterklasse erzeugt.
-- **machine.cpp** — Verwendet `metaObject()` statt `&Machine::staticMetaObject`
-  für die JSON-Serialisierung, so dass die korrekte Metatabelle der konkreten
-  Unterklasse verwendet wird. Die `fromJson`-Methode erzeugt keinen `Laser` mehr.
+Ermittel werden soll galvoScale und galvoBulk in machine.h
+Wenn alle gemessenen Linie gleich der Field-Breite * .5 sind (Field
+ist quadratisch), dann ist scale = 1.0 und bulk = 0.0.
 
-### MachineGCode (neu)
+Das äussere Rechteck der gemessenen Grafik entspricht der konfigurierten
+Field Grösse des Lasers. Der Wertebereich des galvos is -32767 -> 32767.
+Die Fieldgrösse ist -25800 -> 25800.
 
-- **machinegcode.h/.cpp** — Neue konkrete `Machine`-Subklasse für G-Code CNC
-  Maschinen. Verwendet die `Machine`-Basisklassen-Implementierung für
-  `toJson`/`fromJson`/`properties`.
+Die Kissen/Tonnen abweichung berechnet sich wie folgt:
+```
+            // Berechne die 65x65 Korrekturmatrix
+            // für einen -32767 +32767 Scanbereich.
+            // Jedes Feld enthält die Abweichung von der korrekten
+            // Position.
 
-### Machines
+            double kx = galvoBulge().x();
+            double ky = galvoBulge().y();
+            int scale = 0x10000 / 64;
 
-- **machines.cpp** — Verwendet `Machine::create()` Factory, um die korrekte
-  `Machine`-Subklasse basierend auf `type` und `boardType` aus dem JSON zu erzeugen.
+            for (double y = -32; y <= 32; ++y) {
+                  for (double x = -32; x <= 32; ++x) {
+                        // berechne die nicht-lineare Verzerrung
+                        double r  = x * x + y * y;
+                        // bei x == 0 und y == 0 sind die Korrekturwerte 0
+                        int corrX = kx * r * x;
+                        int corrY = ky * r * y;
+                        .
+                        .
+                        }
+                  }
+            }
+```
 
-### Anpassungen an Anwendungen
-
-- **materialtest.cpp** — Verwendet `Laser::pulseTable()` (statisch) statt
-  `machine()->laser()->engine()->pulseTable()`.
-- **inspector_model.cpp** — Verwendet `qobject_cast<Laser*>()` um die
-  `laserPulseList()` vom Machine-Objekt aufzurufen.
-- **LaserPanel.qml** — Die `laser` Property bezieht sich direkt auf das Machine-
-  Objekt (da Laser nun von Machine erbt). Die `toString()`-Methode prüft, ob
-  das Machine-Objekt ein Laser ist.
-- **PropertyEditor.qml** — Die `freqModel()`-Funktionen verwenden
-  `ZCam.project?.machine?.laserPulseList` statt
-  `ZCam.project.laser.engine.laserPulseList`.
-
-### CMakeLists.txt
-
-- Neue Dateien `src/machinegcode.cpp`/`src/machinegcode.h` wurden hinzugefügt.
-- Der doppelte Eintrag `src/laser.h` wurde entfernt.
-
-
-# Umstrukturierung der JSON Property Listen — ERLEDIGT
-
-In der Gui werden Properties wie folgt angeordnet: Eine "row" besteht aus einem oder mehreren
-Properties "cells". Eine "cell" kann den typ "empty" haben und nimmt dann nur leeren Platz ein.
-Eine "row" hat ein Label und eine "cell" ein "sublabel" welches optional ist.
-
-Rows können in mehreren Spalten angeordnet werden ("columns"). "columns" ist optional und
-default ist "1".
-Eine Row kann leer sein "{}" und nimmt in der GUI dann nur Platz ein.
-
-Beispiel:
-
-              "class": "Text",
-              "columns": 1,
-              "rows": [
-                    {
-                    "label": "Location",
-                    "cells": [
-                          {
-                          "name": "property1",
-                          "sublabel": "x",
-                          "type": "float"
-                          },
-                          {
-                          "name": "property2",
-                          "sublabel": "y",
-                          "type": "double"
-                          }
-                          ]
-                     },
-                    {
-                    "label": "Rotation",
-                    "cells": [
-                          {
-                          "name": "property3",
-                          "type": "vector3d"
-                          }
-                          ]
-                     },
-                    ]
-              ]
-
-## Implementierung
-
-Die C++ Routinen wurden angepasst, um sowohl das neue "rows"/"cells" Format als auch das
-alte "items"/"row" Format zu unterstützen. Beide Formate können gleichzeitig verwendet werden,
-wobei das alte Format als Rückfalloption dient.
-
-### Geänderte Dateien:
-
-- `src/propertyjson.h` — unverändert (Schnittstelle bleibt gleich)
-- `src/propertyjson.cpp` — `collectPropertyNames()` und `parseAllPropertyNames()` unterstützen jetzt "rows"/"cells"
-- `src/inspector_model.h` — `ColumnItem` um `isEmpty` Feld erweitert
-- `src/inspector_model.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format; `connectPropertySignals()` überspringt "empty" Einträge; `setData()` blockiert "empty" Einträge
-- `src/machinemodel.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format
-- `src/configmodel.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format
-- `src/layersettingmodel.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format
-- `qml/PropertyEditor.qml` — `propMetaMap` verarbeitet "rows"/"cells"; "empty" propName wird zu `emptyDelegate` geroutet; `sublabel` wird für Unter-Property-Labels unterstützt (mit Fallback auf `label`)
+Die vom Anwender ermittelten Werte werden gemittelt und durch Rückrechnung
+nach obiger Formel sollen Korrekturwerte ermittel werden, die die ermittelten
+Werte möglichst gut abdecken.
+Implementiere die Berechnungen in c++.

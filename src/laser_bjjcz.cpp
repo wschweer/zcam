@@ -10,6 +10,7 @@
 //=============================================================================
 
 #include <algorithm>
+#include <unistd.h>
 #include "usb.h"
 #include "group.h"
 #include "zcam.h"
@@ -1049,6 +1050,7 @@ static constexpr std::string_view _propertiesMOPA =
                  "cells": [
                    {
                      "name": "line",
+                     "label": "Field",
                      "type": "line"
                    }
                  ]
@@ -1133,10 +1135,11 @@ static constexpr std::string_view _propertiesMOPA =
                    {
                      "name": "line",
                      "type": "line",
+                     "label": "Galvo Scanner",
                      "colSpan": 2
                    },
                    {
-                     "label": "Galvo Bulge",
+                     "label": "Bulge",
                      "cells": [
                        {
                          "name": "galvoBulge",
@@ -1150,7 +1153,7 @@ static constexpr std::string_view _propertiesMOPA =
                    },
                    {
                      "name": "galvoScale",
-                     "label": "Galvo Scale",
+                     "label": "Scale",
                      "type": "vector2d",
                      "default": [
                        100.0,
@@ -1159,6 +1162,7 @@ static constexpr std::string_view _propertiesMOPA =
                    },
                    {
                      "label": " ",
+                     "label": "Shear",
                      "cells": [
                        {
                          "type": "float",
@@ -1167,7 +1171,7 @@ static constexpr std::string_view _propertiesMOPA =
                          "precision": 3,
                          "default": 0.0,
                          "name": "galvoShearX",
-                         "sublabel": "Shear X"
+                         "sublabel": "X"
                        },
                        {
                          "type": "float",
@@ -1176,7 +1180,7 @@ static constexpr std::string_view _propertiesMOPA =
                          "precision": 3,
                          "default": 0.0,
                          "name": "galvoShearY",
-                         "sublabel": "Shear Y"
+                         "sublabel": "Y"
                        }
                      ]
                    },
@@ -1236,6 +1240,7 @@ static constexpr std::string_view _propertiesMOPA =
                    },
                    {
                      "name": "line",
+                     "label": "Laser",
                      "type": "line",
                      "colSpan": 2
                    },
@@ -1259,7 +1264,7 @@ static constexpr std::string_view _propertiesMOPA =
                      ]
                    },
                    {
-                     "label": "LaserDelay",
+                     "label": "Delay",
                      "cells": [
                        {
                          "name": "onDelay",
@@ -1303,6 +1308,7 @@ static constexpr std::string_view _propertiesMOPA =
                    },
                    {
                      "name": "line",
+                     "label": "I/O",
                      "type": "line",
                      "colSpan": 2
                    },

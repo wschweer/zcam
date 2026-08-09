@@ -124,7 +124,9 @@ class FiberLaserState
             }
       double frequency() const { return _frequency; }
       void setFrequency(double);
-      void move(int x, int y);
+      void move(int x,       // galvo range    -32767 -> 32767
+      // aktually used: -25800 -> 25800 ( 175mmx175mm for 250mm Lens)
+int y);
       void mark(int x, int y);
       int distance(int x, int y);
       void setPosition(uint16_t newX, uint16_t newY) {
