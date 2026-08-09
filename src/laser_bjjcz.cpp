@@ -1291,7 +1291,7 @@ static constexpr std::string_view _propertiesMOPA =
                          "type": "int",
                          "sublabel": "RedLight",
                          "name": "lightPin",
-                         "min": 0,
+                         "min": -1,
                          "max": 15,
                          "default": 8
                        },
@@ -1305,7 +1305,7 @@ static constexpr std::string_view _propertiesMOPA =
                          "type": "int",
                          "sublabel": "FootPedal",
                          "name": "footPin",
-                         "min": 0,
+                         "min": -1,
                          "max": 15,
                          "default": 15
                        },
@@ -1606,7 +1606,7 @@ static constexpr std::string_view _propertiesUV =
                          "type": "int",
                          "sublabel": "RedLight",
                          "name": "lightPin",
-                         "min": 0,
+                         "min": -1,
                          "max": 15,
                          "default": 8
                        },
@@ -1614,7 +1614,7 @@ static constexpr std::string_view _propertiesUV =
                          "type": "int",
                          "sublabel": "FootPedal",
                          "name": "footPin",
-                         "min": 0,
+                         "min": -1,
                          "max": 15,
                          "default": 15
                        }
