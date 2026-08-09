@@ -22,9 +22,7 @@
 #include "cam.h"
 #include "recipe.h"
 #include "fixture.h"
-#include "framing.h"
 #include "grid.h"
-#include "stock.h"
 #include "project.h"
 #include "treemodel.h"
 #include "logger.h"
@@ -47,6 +45,7 @@ MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Group(zcam, parent) {
       connect(this, &MaterialTest::rowMaxChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::columnMinChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::columnMaxChanged, [this] { createChildren(); });
+      connect(this, &MaterialTest::fillChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::showBorderChanged, [this] {
             borderL->set_show(showBorder());
             borderL->set_burn(showBorder());
@@ -369,7 +368,8 @@ void MaterialTest::createChildren() {
                   double xx = samples.left() + xd + boxWidth() * .5;
                   double yy = samples.top() + yd + boxHeight() * .5;
                   r->set_pos(QVector3D(xx + column * w, yy + row * h, 0.0));
-                  r->set_fill(true);
+                  r->set_lineWidth(0.0);
+                  r->set_fill(fill());
                   r->setColor(QColor("gray"));
                   layer->addChild(r);
                   }

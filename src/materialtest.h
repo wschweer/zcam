@@ -39,6 +39,7 @@ class MaterialTest : public Group
       PROPV(LaserRecipe*, borderLayer, nullptr)
       PROPV(bool, showBorder, true)
       PROPV(bool, showText, true)
+      PROPV(bool, fill, true)
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -259,6 +260,16 @@ class MaterialTest : public Group
                           "default": 80.0,
                           "name": "columnMax",
                           "sublabel": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Fill",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "fill"
                         }
                       ]
                     },
