@@ -36,7 +36,6 @@ class GalvoCalibration;
 //---------------------------------------------------------
 //   Config
 //---------------------------------------------------------
-
 class Config : public QObject
       {
       Q_OBJECT
@@ -481,7 +480,6 @@ class Config : public QObject
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
-
 class ZCam : public QObject
       {
       Q_OBJECT
@@ -541,7 +539,6 @@ class ZCam : public QObject
       QVector3D _pendingSegmentClickPos;
       bool _pendingSegmentToggleOff {false};
       void logPosition(const char* caller);
-
       // State for magnetic grid snap during element drag.
       // The reference point for each element is (0,0) in local coords.
       //
@@ -554,12 +551,12 @@ class ZCam : public QObject
       // threshold on top of the snap distance, so the element can
       // never lag a full grid cell behind the cursor.
       struct SnapState {
-            QVector3D refPos;             ///< world position of the element reference point (0,0 local)
-            QVector3D cursorPos;          ///< world position the cursor currently points at (element origin
-                                          ///< at drag start, cursorPos + drag delta afterwards)
-            bool hasCursorPos {false};    ///< true once cursorPos/refPos/lastSnappedX/Y are seeded
-            double lastSnappedX {0.0};    ///< last snapped line position on X (valid when hasCursorPos)
-            double lastSnappedY {0.0};    ///< last snapped line position on Y (valid when hasCursorPos)
+            QVector3D refPos;              ///< world position of the element reference point (0,0 local)
+            QVector3D cursorPos;           ///< world position the cursor currently points at (element origin
+                                           ///< at drag start, cursorPos + drag delta afterwards)
+            bool hasCursorPos {false};     ///< true once cursorPos/refPos/lastSnappedX/Y are seeded
+            double lastSnappedX {0.0};     ///< last snapped line position on X (valid when hasCursorPos)
+            double lastSnappedY {0.0};     ///< last snapped line position on Y (valid when hasCursorPos)
             bool lastSnapModifier {false}; ///< last Shift state — detects mid-drag modifier change
             };
       SnapState _snapState;
@@ -701,6 +698,13 @@ class ZCam : public QObject
       void setCamDirty(bool v);
       Element3d* currentElement() const { return _currentElement; }
       void setCurrentElement(Element3d* el);
+
+      /// Clear all tracking pointers (hoverElement, currentElement,
+      /// _selectedElements) that reference the given element.  Called
+      /// from the Element3d destructor to prevent dangling-pointer
+      /// dereferences when elements are deleted (e.g. when
+      /// MaterialTest::createChildren() recreates its children).
+      void forgetElement(Element3d* el);
 
       /// Return the default machines directory: $(HOME)/ZCam/machines
       static QString defaultMachinesDirectory();

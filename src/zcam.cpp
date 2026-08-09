@@ -63,7 +63,6 @@ using json = nlohmann::json;
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
-
 ZCam::ZCam(QObject* parent) : QObject(parent) {
       _config = new Config(this);
 
@@ -184,7 +183,6 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
 //    colors regardless of whether the selection originated from
 //    QML (TreeView click) or C++ (3D canvas pick).
 //---------------------------------------------------------
-
 void ZCam::setCurrentElement(Element3d* el) {
       Element3d* oldElement = _currentElement;
       // Early return only if both are the same AND no multi-selection
@@ -225,12 +223,34 @@ void ZCam::setCurrentElement(Element3d* el) {
       }
 
 //---------------------------------------------------------
+//   forgetElement
+//    Clear all tracking pointers that reference the given element.
+//    Called from the Element3d destructor to prevent dangling-pointer
+//    dereferences when elements are deleted while still being tracked
+//    as hoverElement, currentElement, or in _selectedElements.
+//    Emits changed signals on ZCam (not on the dying element) so QML
+//    stays in sync, but never emits curColorChanged on the deleted
+//    element — that would activate connections on a dying object.
+//---------------------------------------------------------
+void ZCam::forgetElement(Element3d* el) {
+      if (!el)
+            return;
+      if (_hoverElement == el)
+            set_hoverElement(nullptr);
+      if (_currentElement == el) {
+            _currentElement = nullptr;
+            emit currentElementChanged();
+            }
+      if (!_selectedElements.isEmpty() && _selectedElements.removeAll(el))
+            emit selectedElementsChanged();
+      }
+
+//---------------------------------------------------------
 //   applyFontToCurrentText
 //    Apply a font family to the currently selected Text
 //    element. The change goes through the Project undo system so it
 //    is undoable and marks the project dirty.
 //---------------------------------------------------------
-
 void ZCam::applyFontToCurrentText(const QString& family) {
       if (!_currentElement)
             return;
@@ -247,7 +267,6 @@ void ZCam::applyFontToCurrentText(const QString& family) {
 //    Mark the cam data as out-of-date.  The QML "Cam" refresh
 //    button becomes enabled when this is true.
 //---------------------------------------------------------
-
 void ZCam::setCamDirty(bool v) {
       if (v == _camDirty)
             return;
@@ -263,7 +282,6 @@ void ZCam::setCamDirty(bool v) {
 //    Rectangle elements are accepted; Z is always set to zero.
 //    The operation is routed through the undo stack.
 //---------------------------------------------------------
-
 void ZCam::centerOnWorkspace(Element3d* element) {
       if (!element || !element->draggable())
             return;
@@ -334,7 +352,6 @@ void ZCam::centerOnWorkspace(Element3d* element) {
 //   refreshCam
 //    Recalculate cam data and clear the dirty flag.
 //---------------------------------------------------------
-
 void ZCam::refreshCam() {
       if (!_project)
             return;
@@ -353,7 +370,6 @@ void ZCam::refreshCam() {
 //    root-local millimetres, so Cam::grabCameraView() can align the
 //    laser projection with what is shown on the canvas.
 //---------------------------------------------------------
-
 void ZCam::updateViewCamera(double cx, double cy, double height) {
       QVector2D c(cx, cy);
       if (c != _viewCameraCenter || height != _viewCameraHeight) {
@@ -366,7 +382,6 @@ void ZCam::updateViewCamera(double cx, double cy, double height) {
 //---------------------------------------------------------
 //   create
 //---------------------------------------------------------
-
 ZCam* ZCam::create(QQmlEngine*, QJSEngine*) {
       return new ZCam();
       }
@@ -374,7 +389,6 @@ ZCam* ZCam::create(QQmlEngine*, QJSEngine*) {
 //---------------------------------------------------------
 //   defaultMachinesDirectory
 //---------------------------------------------------------
-
 QString ZCam::defaultMachinesDirectory() {
       return QStringLiteral("~/ZCam/machines");
       }
@@ -382,7 +396,6 @@ QString ZCam::defaultMachinesDirectory() {
 //---------------------------------------------------------
 //   defaultRecipesDirectory
 //---------------------------------------------------------
-
 QString ZCam::defaultRecipesDirectory() {
       return QStringLiteral("~/ZCam/recipes");
       }
@@ -390,7 +403,6 @@ QString ZCam::defaultRecipesDirectory() {
 //---------------------------------------------------------
 //   defaultArtworkDirectory
 //---------------------------------------------------------
-
 QString ZCam::defaultArtworkDirectory() {
       return QStringLiteral("~/ZCam/artwork");
       }
@@ -398,7 +410,6 @@ QString ZCam::defaultArtworkDirectory() {
 //---------------------------------------------------------
 //   defaultIconDirectory
 //---------------------------------------------------------
-
 QString ZCam::defaultIconDirectory() {
       return QStringLiteral("~/ZCam/icons");
       }
@@ -408,7 +419,6 @@ QString ZCam::defaultIconDirectory() {
 //    Expand a leading '~' to the user's home directory.
 //    Returns the path unchanged if it does not start with '~'.
 //---------------------------------------------------------
-
 QString ZCam::expandPath(const QString& path) {
       if (path.startsWith('~'))
             return QDir::homePath() + path.mid(1);
@@ -420,7 +430,6 @@ QString ZCam::expandPath(const QString& path) {
 //    Return the configured machines directory, or the default.
 //    A leading '~' is expanded to the user's home directory.
 //---------------------------------------------------------
-
 QString ZCam::machinesDirectory() const {
       if (_config && !_config->machinesDirectory().isEmpty())
             return expandPath(_config->machinesDirectory());
@@ -431,7 +440,6 @@ QString ZCam::machinesDirectory() const {
 //   recipesDirectory
 //    Return the configured recipes directory, or the default.
 //---------------------------------------------------------
-
 QString ZCam::recipesDirectory() const {
       if (_config && !_config->recipesDirectory().isEmpty())
             return expandPath(_config->recipesDirectory());
@@ -444,7 +452,6 @@ QString ZCam::recipesDirectory() const {
 //    then load machines and recipes from their individual
 //    directories.
 //---------------------------------------------------------
-
 void ZCam::loadAssets() {
       // Load config from assets.json (still a single file)
       QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -522,7 +529,6 @@ void ZCam::loadAssets() {
 //    coordinate system of the element's parent, so it can be
 //    assigned to element->pos().
 //---------------------------------------------------------
-
 static QVector3D worldToParentLocal(Element3d* element, const QVector3D& worldPos) {
       QVector3D local = worldPos;
       if (auto* p = qobject_cast<Element3d*>(element->parent())) {
@@ -541,9 +547,8 @@ void ZCam::logPosition(const char* caller) {
       QVector3D origin = el->globalMatrix().map(QVector3D(0, 0, 0));
       Debug("{}: element '{}' pos=({:.3f},{:.3f},{:.3f}) worldOrigin=({:.3f},{:.3f},{:.3f}) "
             "snapRef=({:.3f},{:.3f},{:.3f}) snapCursor=({:.3f},{:.3f},{:.3f})",
-            caller, el->name(), el->pos().x(), el->pos().y(), el->pos().z(),
-            origin.x(), origin.y(), origin.z(),
-            _snapState.refPos.x(), _snapState.refPos.y(), _snapState.refPos.z(),
+            caller, el->name(), el->pos().x(), el->pos().y(), el->pos().z(), origin.x(), origin.y(),
+            origin.z(), _snapState.refPos.x(), _snapState.refPos.y(), _snapState.refPos.z(),
             _snapState.cursorPos.x(), _snapState.cursorPos.y(), _snapState.cursorPos.z());
       }
 
@@ -627,12 +632,12 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
       if (_snapState.lastSnapModifier != curSnap) {
             // Modifier changed — re-anchor cursor to the element's
             // current world position and reset the snap seed.
-            _snapState.cursorPos     = element->globalMatrix().map(QVector3D(0, 0, 0));
-            _snapState.hasCursorPos   = false;
+            _snapState.cursorPos        = element->globalMatrix().map(QVector3D(0, 0, 0));
+            _snapState.hasCursorPos     = false;
             _snapState.lastSnapModifier = curSnap;
             }
-      _snapState.cursorPos += delta;
-      QVector3D newWorldRef = _snapState.cursorPos;
+      _snapState.cursorPos  += delta;
+      QVector3D newWorldRef  = _snapState.cursorPos;
 
       if (snapActive && grid) {
             double spacing = grid->minorSpacing();
@@ -678,7 +683,6 @@ void ZCam::dragged(Element3d* element, const QVector3D& delta, int modifiers) {
 //    cursor position must be re-seeded; otherwise the snap logic
 //    (and the element) would drift away from the cursor.
 //---------------------------------------------------------
-
 void ZCam::updateDragAnchor(Element3d* element, const QVector3D& cursorPos) {
       if (!_snapDragActive || element != _elementDragElement || !element)
             return;
@@ -704,7 +708,6 @@ void ZCam::updateDragAnchor(Element3d* element, const QVector3D& cursorPos) {
 //    Updates the element's rotation property directly (live update).
 //    The undo record is created once at endElementDrag().
 //---------------------------------------------------------
-
 void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modifiers) {
       if (!element || !element->draggable())
             return;
@@ -721,7 +724,6 @@ void ZCam::rotated(Element3d* element, const QVector3D& deltaRotation, int modif
 //    Updates the element's scale property directly (live update).
 //    The undo record is created once at endElementDrag().
 //---------------------------------------------------------
-
 void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers, const QVector3D& pivot) {
       if (!element || !element->draggable())
             return;
@@ -793,7 +795,6 @@ void ZCam::scaled(Element3d* element, const QVector3D& scaleFactor, int modifier
 //    values (pos, rot, scale) so that endElementDrag() can create
 //    a single undo command for the entire drag operation.
 //---------------------------------------------------------
-
 void ZCam::startElementDrag(Element3d* element) {
       if (!element || !element->draggable())
             return;
@@ -823,7 +824,6 @@ void ZCam::startElementDrag(Element3d* element) {
 //    captures all three transform properties (pos, rot, scale) in
 //    one atomic operation.
 //---------------------------------------------------------
-
 void ZCam::endElementDrag() {
       // Helper lambda: apply the pending segment selection if any.
       // Called when no actual drag movement occurred (pure click).
@@ -918,7 +918,6 @@ void ZCam::endElementDrag() {
 //    every drag frame (both snap and non-snap paths in dragged()),
 //    so the QML marker binding stays up to date.
 //---------------------------------------------------------
-
 QVector3D ZCam::snapRefPos() const {
       return _snapState.refPos;
       }
@@ -928,7 +927,6 @@ QVector3D ZCam::snapRefPos() const {
 //    Save config to assets.json and machines/recipes to their
 //    individual directories.
 //---------------------------------------------------------
-
 void ZCam::saveAssets() {
       // Save config to assets.json (still a single file)
       QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -963,7 +961,6 @@ void ZCam::saveAssets() {
 //---------------------------------------------------------
 //   hover
 //---------------------------------------------------------
-
 void ZCam::hover(Element3d* element) {
       Element3d* oldElement = hoverElement();
       set_hoverElement(element);
@@ -989,7 +986,6 @@ void ZCam::hover(Element3d* element) {
 //    bounding box is derived from its single child), the deepest
 //    element — the actual shape — wins over its ancestors.
 //---------------------------------------------------------
-
 static void collectPickCandidates(Element* root, double x, double y, int depth,
                                   std::vector<std::tuple<double, int, Element3d*>>& candidates) {
       if (!root)
@@ -1016,7 +1012,6 @@ static void collectPickCandidates(Element* root, double x, double y, int depth,
 //    cycles to the next-larger candidate (usually its parent
 //    group), wrapping around at the outermost one.
 //---------------------------------------------------------
-
 Element3d* ZCam::pickElement(double x, double y) {
       std::vector<std::tuple<double, int, Element3d*>> candidates;
       collectPickCandidates(_rootElement, x, y, 0, candidates);
@@ -1049,7 +1044,6 @@ Element3d* ZCam::pickElement(double x, double y) {
 //    pick ray, using the slab method.  The hit parameter t
 //    (distance along the ray) is stored with each candidate.
 //---------------------------------------------------------
-
 static void collectRayPickCandidates(Element* root, const QVector3D& origin, const QVector3D& dir, int depth,
                                      std::vector<std::tuple<float, int, Element3d*>>& candidates) {
       if (!root)
@@ -1100,7 +1094,6 @@ static void collectRayPickCandidates(Element* root, const QVector3D& origin, con
 //    which are skipped by the visibility gate, which boxes are
 //    hit and at what ray parameter.
 //---------------------------------------------------------
-
 void ZCam::debugRayPick(const QVector3D& origin, const QVector3D& dir) {
       std::function<void(Element*, int)> walk = [&](Element* e, int depth) {
             if (!e)
@@ -1137,7 +1130,6 @@ void ZCam::debugRayPick(const QVector3D& origin, const QVector3D& dir) {
 //    ray the internal picker would use — including the y-flip
 //    between View3D viewport coordinates and scene coordinates.
 //---------------------------------------------------------
-
 Element3d* ZCam::pickAt(QObject* view3d, QObject* rootNode, double x, double y) {
       auto* view = qobject_cast<QQuick3DViewport*>(view3d);
       auto* root = qobject_cast<QQuick3DNode*>(rootNode);
@@ -1252,7 +1244,6 @@ Element3d* ZCam::pickAt(QObject* view3d, QObject* rootNode, double x, double y) 
 //    behaves like in pickElement(): clicking again on the already
 //    selected element returns the next-farther candidate.
 //---------------------------------------------------------
-
 Element3d* ZCam::pickElementAtRay(const QVector3D& origin, const QVector3D& dir) {
       if (dir.isNull())
             return nullptr;
@@ -1300,7 +1291,6 @@ Element3d* ZCam::pickElementAtRay(const QVector3D& origin, const QVector3D& dir)
 //    which implements selection cycling (clicking again on the same
 //    spot cycles to the parent element).
 //---------------------------------------------------------
-
 Element3d* ZCam::pickDragTarget(double x, double y) {
       // When a lasso multi-selection is active, check if the click
       // falls inside any selected element's bounding box.  If so,
@@ -1360,7 +1350,6 @@ Element3d* ZCam::pickDragTarget(double x, double y) {
 //    point (x, y) lies inside the polygon defined by the given
 //    list of world-space vertices.
 //---------------------------------------------------------
-
 static bool pointInPolygon(double x, double y, const QList<QVector3D>& polygon) {
       int n = polygon.size();
       if (n < 3)
@@ -1383,7 +1372,6 @@ static bool pointInPolygon(double x, double y, const QList<QVector3D>& polygon) 
 //    are considered.  Groups are included as individual candidates
 //    so a lasso can select a whole group at once.
 //---------------------------------------------------------
-
 static void collectLassoCandidates(Element* root, const QList<QVector3D>& polygon,
                                    QList<Element3d*>& candidates) {
       if (!root)
@@ -1410,7 +1398,6 @@ static void collectLassoCandidates(Element* root, const QList<QVector3D>& polygo
 //    world/root coordinates).  The first element becomes the
 //    currentElement.  Clears any previous lasso selection.
 //---------------------------------------------------------
-
 void ZCam::lassoSelect(const QList<QVector3D>& polygon) {
       QList<Element3d*> old = _selectedElements;
       _selectedElements.clear();
@@ -1477,7 +1464,6 @@ void ZCam::lassoSelect(const QList<QVector3D>& polygon) {
 //    everything — both the lasso multi-selection and the
 //    current (primary) element.
 //---------------------------------------------------------
-
 void ZCam::clearSelection() {
       QList<Element3d*> old = _selectedElements;
       _selectedElements.clear();
@@ -1498,7 +1484,6 @@ void ZCam::clearSelection() {
 //    the InspectorModel to clear its data while delegates are still
 //    being torn down, leading to null-access runtime errors.
 //--------------------------------------------------------------------
-
 void ZCam::clearSelectionList() {
       QList<Element3d*> old = _selectedElements;
       _selectedElements.clear();
@@ -1512,7 +1497,6 @@ void ZCam::clearSelectionList() {
 //   isSelected
 //    Returns true if the given element is in the lasso selection.
 //---------------------------------------------------------
-
 bool ZCam::isSelected(const Element3d* el) const {
       for (auto* e : _selectedElements)
             if (e == el)
@@ -1527,7 +1511,6 @@ bool ZCam::isSelected(const Element3d* el) const {
 //    If the element is already in the list, it just becomes current.
 //    Emits selectedElementsChanged and curColorChanged as needed.
 //--------------------------------------------------------------------
-
 void ZCam::addToSelection(Element3d* el) {
       if (!el)
             return;
@@ -1551,7 +1534,6 @@ void ZCam::addToSelection(Element3d* el) {
 //    the current element, the next remaining element (or nullptr)
 //    becomes current.
 //--------------------------------------------------------------------
-
 void ZCam::removeFromSelection(Element3d* el) {
       if (!el)
             return;
@@ -1576,7 +1558,6 @@ void ZCam::removeFromSelection(Element3d* el) {
 //    already selected, it is removed; if it was current, the next
 //    remaining element (or nullptr) becomes current.
 //--------------------------------------------------------------------
-
 void ZCam::toggleSelection(Element3d* el) {
       if (!el)
             return;
@@ -1589,7 +1570,6 @@ void ZCam::toggleSelection(Element3d* el) {
 //---------------------------------------------------------
 //   mousePress
 //---------------------------------------------------------
-
 void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, double y) {
       Debug("{} x: {} y: {}", element ? element->name() : "--", x, y);
       // If the same polygon is already selected, defer segment selection
@@ -1630,7 +1610,6 @@ void ZCam::mousePress(Element3d* element, int buttons, int modifiers, double x, 
 //    Records the original handle position so that endVertexDrag()
 //    can create an undo command with old and new positions.
 //---------------------------------------------------------
-
 void ZCam::startVertexDrag(Element3d* element, int vertexIndex) {
       if (!element || vertexIndex < 0 || vertexIndex >= element->vertexCount())
             return;
@@ -1646,7 +1625,6 @@ void ZCam::startVertexDrag(Element3d* element, int vertexIndex) {
 //    Sets the handle to the given WORLD position by converting
 //    it back to local coordinates via the inverse global matrix.
 //---------------------------------------------------------
-
 void ZCam::dragVertexTo(Element3d* element, int vertexIndex, const QVector3D& worldPos) {
       if (!element || vertexIndex < 0 || vertexIndex >= element->vertexCount())
             return;
@@ -1666,7 +1644,6 @@ void ZCam::dragVertexTo(Element3d* element, int vertexIndex, const QVector3D& wo
 //    Creates and pushes an undo command with the original and final
 //    handle positions.
 //---------------------------------------------------------
-
 void ZCam::endVertexDrag(Element3d* element, int vertexIndex) {
       if (!element || vertexIndex < 0 || vertexIndex >= element->vertexCount())
             return;
@@ -1692,7 +1669,6 @@ void ZCam::endVertexDrag(Element3d* element, int vertexIndex) {
 //    The segment is highlighted in the 3D viewport and only its
 //    endpoint vertices show handles.  Pass -1 to clear.
 //---------------------------------------------------------
-
 void ZCam::selectSegment(Element3d* element, int segmentIndex) {
       if (!element)
             return;
@@ -1705,7 +1681,6 @@ void ZCam::selectSegment(Element3d* element, int segmentIndex) {
 //---------------------------------------------------------
 //   clearSegmentSelection
 //---------------------------------------------------------
-
 void ZCam::clearSegmentSelection(Element3d* element) {
       if (!element)
             return;
@@ -1720,7 +1695,6 @@ void ZCam::clearSegmentSelection(Element3d* element) {
 //    Find and select the segment closest to the given world position.
 //    Returns the selected segment index, or -1 on failure.
 //---------------------------------------------------------
-
 int ZCam::selectNearestSegment(Element3d* element, const QVector3D& worldPos) {
       if (!element)
             return -1;
@@ -1738,7 +1712,6 @@ int ZCam::selectNearestSegment(Element3d* element, const QVector3D& worldPos) {
 //    Recursively traverse the element tree and collect all
 //    Layer element names.
 //---------------------------------------------------------
-
 static void collectLayers(Element* root, QStringList& names) {
       if (!root)
             return;
@@ -1752,7 +1725,6 @@ static void collectLayers(Element* root, QStringList& names) {
 //   layerNames
 //    Collect all Layer element names by traversing the project tree.
 //---------------------------------------------------------
-
 QStringList ZCam::layerNames() const {
       QStringList names;
       collectLayers(rootElement(), names);
@@ -1763,7 +1735,6 @@ QStringList ZCam::layerNames() const {
 //   layerPtr
 //    Return the Layer* for a given name, or nullptr.
 //---------------------------------------------------------
-
 Group* ZCam::layerPtr(const QString& name) const {
       Element* e = Element::byName(name);
       if (!e)
@@ -1775,7 +1746,6 @@ Group* ZCam::layerPtr(const QString& name) const {
 //   laserLayerNames
 //    Collect all LaserLayer element names by traversing the project tree.
 //---------------------------------------------------------
-
 static void collectLaserLayers(Element* root, QStringList& names) {
       if (!root)
             return;
@@ -1795,7 +1765,6 @@ QStringList ZCam::laserLayerNames() const {
 //   laserLayerPtr
 //    Return the LaserLayer* for a given name, or nullptr.
 //---------------------------------------------------------
-
 Recipe* ZCam::laserLayerPtr(const QString& name) const {
       Element* e = Element::byName(name);
       if (!e)
@@ -1807,7 +1776,6 @@ Recipe* ZCam::laserLayerPtr(const QString& name) const {
 //   recipeNames
 //    Return all recipe names from ZCam::recipes.
 //---------------------------------------------------------
-
 QStringList ZCam::recipeNames() const {
       if (!_recipes)
             return {};
@@ -1821,7 +1789,6 @@ QStringList ZCam::recipeNames() const {
 //    return a pointer into that vector.  The pointer is valid
 //    until recipeModelChanged is emitted.
 //---------------------------------------------------------
-
 LaserRecipe* ZCam::recipePtr(const QString& name) const {
       if (!_recipes)
             return nullptr;
@@ -1838,7 +1805,6 @@ LaserRecipe* ZCam::recipePtr(const QString& name) const {
 //    Serialise all config properties to a JSON object using
 //    the propertyjson utility.
 //---------------------------------------------------------
-
 nlohmann::json Config::toJson() const {
       nlohmann::json data     = nlohmann::json::object();
       const QMetaObject* meta = this->metaObject();
@@ -1853,7 +1819,6 @@ nlohmann::json Config::toJson() const {
 //   Config::fromJson
 //    Deserialise config properties from a JSON object.
 //---------------------------------------------------------
-
 bool Config::fromJson(const nlohmann::json& data) {
       const QMetaObject* meta = this->metaObject();
       auto propNames          = propjson::parseAllPropertyNames(_properties);
@@ -1867,7 +1832,6 @@ bool Config::fromJson(const nlohmann::json& data) {
 //    Recursively traverse the element tree to find the first
 //    Layer that is currently visible (show == true).
 //---------------------------------------------------------
-
 Group* ZCam::findFirstVisibleLayer(Element* root) const {
       if (!root)
             return nullptr;
@@ -1901,7 +1865,6 @@ Group* ZCam::findFirstVisibleLayer(Element* root) const {
 //      - the found Layer is not visible (show == false or an
 //        ancestor has show == false)
 //---------------------------------------------------------
-
 Group* ZCam::findCurrentLayer() const {
       if (!_currentElement)
             return nullptr;
@@ -1935,7 +1898,6 @@ Group* ZCam::findCurrentLayer() const {
 //    The operation is routed through the undo stack so it can
 //    be undone/redone.
 //---------------------------------------------------------
-
 Element3d* ZCam::createRectangle(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
@@ -1973,7 +1935,6 @@ Element3d* ZCam::createRectangle(double x, double y) {
 //    suitable layer was found.  The operation is routed through
 //    the undo stack so it can be undone/redone.
 //---------------------------------------------------------
-
 Element3d* ZCam::createPolygon(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
@@ -2008,7 +1969,6 @@ Element3d* ZCam::createPolygon(double x, double y) {
 //    The operation is routed through the undo stack so it can
 //    be undone/redone.
 //---------------------------------------------------------
-
 Element3d* ZCam::createEllipse(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
@@ -2052,7 +2012,6 @@ Element3d* ZCam::createEllipse(double x, double y) {
 //    The operation is routed through the undo stack so it can
 //    be undone/redone.
 //---------------------------------------------------------
-
 Element3d* ZCam::createText(double x, double y) {
       if (!_project || !_project->cad())
             return nullptr;
@@ -2127,7 +2086,6 @@ Element3d* ZCam::createText(double x, double y) {
 //    The same logic applies to scale and rotation, which are
 //    encoded in the matrix and extracted back via decompose().
 //---------------------------------------------------------
-
 void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
       if (!element || !newParent || element == newParent)
             return;
@@ -2281,7 +2239,6 @@ void ZCam::reparentElement(Element3d* element, Element3d* newParent) {
 //   After grouping, the new Group becomes the current element and the
 //   lasso selection is cleared.
 //---------------------------------------------------------
-
 void ZCam::groupSelectedElements() {
       if (!_project || !_project->cad())
             return;
@@ -2521,7 +2478,6 @@ void ZCam::groupSelectedElements() {
 //   After combining, the new Polygon becomes the current element and
 //   the lasso selection is cleared.
 //---------------------------------------------------------
-
 void ZCam::combineSelectedPolygons() {
       if (!_project || !_project->cad())
             return;
@@ -2741,7 +2697,6 @@ void ZCam::combineSelectedPolygons() {
 //    The operation is routed through the undo stack via
 //    Project::removeElement() so it can be undone/redone.
 //---------------------------------------------------------
-
 void ZCam::deleteCurrentElement() {
       if (!_project)
             return;
@@ -2852,7 +2807,6 @@ void ZCam::deleteCurrentElement() {
 //    Persist the current project path in QSettings so it can be
 //    restored on the next application start.
 //---------------------------------------------------------
-
 static void saveLastProjectPath(const QString& path) {
       QSettings settings;
       settings.setValue("project/lastPath", path);
@@ -2866,7 +2820,6 @@ static QString lastProjectPath() {
 //---------------------------------------------------------
 //   newProject
 //---------------------------------------------------------
-
 void ZCam::newProject(bool clearPersistedPath) {
       startNewProject(clearPersistedPath);
       endNewProject();
@@ -2877,7 +2830,6 @@ void ZCam::newProject(bool clearPersistedPath) {
 //    Create a project pre-populated with test geometry (text,
 //    rectangle, polygon, ellipse) for quick experimentation.
 //---------------------------------------------------------
-
 void ZCam::createTestProject() {
       startNewProject();
 
@@ -2937,7 +2889,6 @@ void ZCam::createTestProject() {
 //---------------------------------------------------------
 //   startNewProject
 //---------------------------------------------------------
-
 void ZCam::startNewProject(bool clearPersistedPath) {
       // Caller is responsible for checking unsaved changes via QML dialog
       // before invoking this method.
@@ -3001,7 +2952,6 @@ void ZCam::startNewProject(bool clearPersistedPath) {
 //---------------------------------------------------------
 //   endNewProject
 //---------------------------------------------------------
-
 void ZCam::endNewProject() {
       // Create a CameraElement for new projects before the scene is built.
       if (project())
@@ -3037,7 +2987,6 @@ void ZCam::endNewProject() {
 //   update
 //    updates the tree view and triggers update of 3DCanvas
 //---------------------------------------------------------
-
 void ZCam::update() {
       _treeModel->setRoot(rootElement()); // update project tree view
       set_rootElement(project());         // build and show the scene
@@ -3046,7 +2995,6 @@ void ZCam::update() {
 //---------------------------------------------------------
 //   openProject
 //---------------------------------------------------------
-
 bool ZCam::openProject(const QString& path, bool skipCamUpdate) {
       if (path.isEmpty()) {
             Warning("ZCam::openProject: empty path");
@@ -3070,7 +3018,6 @@ bool ZCam::openProject(const QString& path, bool skipCamUpdate) {
 //---------------------------------------------------------
 //   save
 //---------------------------------------------------------
-
 bool ZCam::save() {
       if (!_project || _project->projectPath().isEmpty())
             return false; // QML should call saveAs with a chosen path
@@ -3085,7 +3032,6 @@ bool ZCam::save() {
 //---------------------------------------------------------
 //   saveAs
 //---------------------------------------------------------
-
 bool ZCam::saveAs(const QString& path) {
       if (path.isEmpty() || !_project)
             return false;
@@ -3101,7 +3047,6 @@ bool ZCam::saveAs(const QString& path) {
 //---------------------------------------------------------
 //   importFile
 //---------------------------------------------------------
-
 bool ZCam::importFile(const QString& path) {
       if (path.isEmpty())
             return false;
@@ -3129,7 +3074,6 @@ bool ZCam::importFile(const QString& path) {
 //   dxfBoundingBox
 //    Compute the bounding box of a DXF/DWG file in millimetres.
 //---------------------------------------------------------
-
 QRectF ZCam::dxfBoundingBox(const QString& path) {
       return DxfImport::boundingBox(this, path);
       }
@@ -3139,7 +3083,6 @@ QRectF ZCam::dxfBoundingBox(const QString& path) {
 //    Import a DXF/DWG file and position it so the bounding
 //    box's bottom-left corner is at (x, y) in scene coordinates.
 //---------------------------------------------------------
-
 bool ZCam::importDxfAt(const QString& path, double x, double y) {
       return DxfImport::importAt(this, path, x, y);
       }
@@ -3150,7 +3093,6 @@ bool ZCam::importDxfAt(const QString& path, double x, double y) {
 //    the bounding box's bottom-left corner is at (x, y) in
 //    scene coordinates.
 //---------------------------------------------------------
-
 bool ZCam::importImageAt(const QString& path, double x, double y) {
       return ImageImport::importAt(this, path, x, y);
       }
@@ -3159,7 +3101,6 @@ bool ZCam::importImageAt(const QString& path, double x, double y) {
 //   imageBoundingBox
 //    Compute the bounding box (in mm) of an image file.
 //---------------------------------------------------------
-
 QRectF ZCam::imageBoundingBox(const QString& path) {
       return ImageImport::boundingBox(this, path);
       }
@@ -3169,7 +3110,6 @@ QRectF ZCam::imageBoundingBox(const QString& path) {
 //    Called at startup to re-open the project that was open when
 //    the application was last closed.
 //---------------------------------------------------------
-
 bool ZCam::restoreLastProject() {
       QString path = lastProjectPath();
       if (path.isEmpty())
@@ -3185,7 +3125,6 @@ bool ZCam::restoreLastProject() {
 //---------------------------------------------------------
 //   writeProjectFile
 //---------------------------------------------------------
-
 bool ZCam::writeProjectFile(const std::string& path) {
       Project* tl = _project;
       if (!tl) {
@@ -3209,7 +3148,6 @@ bool ZCam::writeProjectFile(const std::string& path) {
 //---------------------------------------------------------
 //   readProjectFile
 //---------------------------------------------------------
-
 bool ZCam::readProjectFile(const std::string& path, bool skipCamUpdate) {
       std::ifstream f(path);
       if (!f.is_open()) {

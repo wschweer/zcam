@@ -44,7 +44,6 @@ Q_DECLARE_METATYPE(LockScaleMode)
 //---------------------------------------------------------
 //   Element3d
 //---------------------------------------------------------
-
 class Element3d : public Element
       {
       Q_OBJECT
@@ -149,6 +148,7 @@ class Element3d : public Element
 
     public:
       Element3d(ZCam*, Element* parent = nullptr);
+      ~Element3d();
       virtual json toJson() const override;
       virtual void fromJson(const json& json) override;
       virtual void fixup() override;
@@ -307,15 +307,13 @@ class Element3d : public Element
 //---------------------------------------------------------
 
 Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective = false,
-                                        double projectionHeight = 0.0,
-                                        const QPointF& viewCenter = QPointF());
+                                        double projectionHeight = 0.0, const QPointF& viewCenter = QPointF());
 
 extern void closePath(PathList& _pathList);
 
 //---------------------------------------------------------
 //   RootElement
 //---------------------------------------------------------
-
 class RootElement : public Element3d
       {
       Q_OBJECT

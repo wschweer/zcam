@@ -32,7 +32,6 @@
 //---------------------------------------------------------
 //   Element3d
 //---------------------------------------------------------
-
 Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
       _selectionGeometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_selectionGeometry, QJSEngine::CppOwnership);
@@ -90,12 +89,25 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
       }
 
 //---------------------------------------------------------
+//   ~Element3d
+//    Clear this element from ZCam's tracking pointers (hoverElement,
+//    currentElement, _selectedElements) before destruction completes
+//    so no dangling pointer is left behind.  This prevents crashes
+//    when elements are deleted while still being tracked — e.g. when
+//    MaterialTest::createChildren() recreates its children and a
+//    deleted child was the current hover or selection target.
+//---------------------------------------------------------
+Element3d::~Element3d() {
+      if (zcam)
+            zcam->forgetElement(this);
+      }
+
+//---------------------------------------------------------
 //   writeLayerOrRecipe
 //    Handle Element3d-specific "layer" and "recipe" property types
 //    that require access to the ZCam instance for name resolution.
 //    Returns true if the property was handled.
 //---------------------------------------------------------
-
 static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, const std::string& name,
                                const std::string& type) {
       const QMetaObject* meta = element->metaObject();
@@ -140,7 +152,6 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
 //    that require access to the ZCam instance for pointer resolution.
 //    Returns true if the property was handled.
 //---------------------------------------------------------
-
 static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, const std::string& name,
                               const std::string& type) {
       if (!data.contains(name))
@@ -213,7 +224,6 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
 //    Uses the shared propjson utilities for common types, with
 //    Element3d-specific handling for "layer" and "recipe" types.
 //---------------------------------------------------------
-
 json Element3d::toJson() const {
       nlohmann::json data = Element::toJson();
 
@@ -246,7 +256,6 @@ json Element3d::toJson() const {
 //    propjson utilities, with Element3d-specific handling
 //    for "layer" and "recipe" types.
 //---------------------------------------------------------
-
 void Element3d::fromJson(const json& json) {
       // Process children in their own try-catch block so that an
       // exception in a child does NOT prevent this element's own
@@ -311,7 +320,6 @@ void Element3d::fromJson(const json& json) {
 //    had not yet been created (e.g. laserLayer references from
 //    Cad elements loaded before the Fixture/LaserLayer elements).
 //---------------------------------------------------------
-
 void Element3d::fixup() {
       if (!_pendingRefs.empty()) {
             const QMetaObject* meta = this->metaObject();
@@ -356,7 +364,6 @@ void Element3d::fixup() {
 //    Returns true when every ancestor Element3d has show == true.
 //    The element's own show flag is NOT considered here.
 //---------------------------------------------------------
-
 bool Element3d::ancestorsShow() const {
       Element* p = parent();
       while (p) {
@@ -375,7 +382,6 @@ bool Element3d::ancestorsShow() const {
 //    first non-null laserLayer reference found.  Returns nullptr
 //    if no ancestor (including self) has a laserLayer set.
 //---------------------------------------------------------
-
 Recipe* Element3d::effectiveLaserLayer() const {
       const Element3d* e = this;
       while (e) {
@@ -393,7 +399,6 @@ Recipe* Element3d::effectiveLaserLayer() const {
 //    If the element has no own path data but has children, the
 //    bounding box is computed from the children's bounding boxes.
 //---------------------------------------------------------
-
 QRectF Element3d::boundingBox() const {
       // Prefer the element-specific content box (BREP mesh, DXF
       // import) — a BREP element has no pathList but a cached mesh
@@ -428,7 +433,6 @@ QRectF Element3d::boundingBox() const {
 //    own boundingBox() is transformed through the child's local
 //    matrix() and the results are unioned.
 //---------------------------------------------------------
-
 QRectF Element3d::childrenBoundingBox() const {
       bool hasValidChild = false;
       double minX        = std::numeric_limits<double>::max();
@@ -468,7 +472,6 @@ QRectF Element3d::childrenBoundingBox() const {
 //    coordinates by transforming the local bounding box corners
 //    through globalMatrix() and taking the AABB of the result.
 //---------------------------------------------------------
-
 QRectF Element3d::worldBoundingBox() const {
       QRectF local = boundingBox();
       if (local.isNull() || local.isEmpty())
@@ -498,7 +501,6 @@ QRectF Element3d::worldBoundingBox() const {
 //    the 2D path bounding box with z = 0; elements with real
 //    volume override this.
 //---------------------------------------------------------
-
 void Element3d::boundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
       QRectF bb = boundingBox();
       bMin      = QVector3D(float(bb.left()), float(bb.top()), 0.0f);
@@ -514,7 +516,6 @@ void Element3d::boundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
 //    volumetric elements (BREP) are picked where they are
 //    actually rendered instead of at a z = 0 slice.
 //---------------------------------------------------------
-
 void Element3d::worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
       QVector3D lMin, lMax;
       boundingBox3D(lMin, lMax);
@@ -541,7 +542,6 @@ void Element3d::worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
 //    Returns true if the given world-space point (x, y) lies
 //    inside this element's world bounding box.
 //---------------------------------------------------------
-
 bool Element3d::containsWorldPoint(double x, double y) const {
       QRectF wb = worldBoundingBox();
       if (wb.isNull() || wb.isEmpty())
@@ -555,7 +555,6 @@ bool Element3d::containsWorldPoint(double x, double y) const {
 //    so a QML binding never sees a stale null when the element was
 //    created before its bounding box / pathList data existed.
 //---------------------------------------------------------
-
 TessGeometry* Element3d::selectionGeometry() {
       // Return the pre-built selection geometry without side effects.
       // The content is updated proactively in strokeAndFill() and
@@ -571,7 +570,6 @@ TessGeometry* Element3d::selectionGeometry() {
 //    Rebuild the line rectangle around boundingBox() so the QML
 //    layer can render it when this element is selected.
 //---------------------------------------------------------
-
 void Element3d::updateSelectionGeometry() {
       if (!_selectionGeometry)
             return;
@@ -602,7 +600,6 @@ void Element3d::updateSelectionGeometry() {
 //    Set the grid-snap marker flags and refresh the selection
 //    geometry so the reference-point cross appears/disappears.
 //---------------------------------------------------------
-
 void Element3d::setSnapMarkers(bool snapX, bool snapY) {
       bool wasActive = _snapActiveX || _snapActiveY;
       _snapActiveX   = snapX;
@@ -616,7 +613,6 @@ void Element3d::setSnapMarkers(bool snapX, bool snapY) {
 //    Clear the grid-snap marker flags and refresh the selection
 //    geometry so the reference-point cross disappears.
 //---------------------------------------------------------
-
 void Element3d::clearSnapMarkers() {
       if (_snapActiveX || _snapActiveY) {
             _snapActiveX = false;
@@ -667,7 +663,6 @@ static QColor adjustColorTone(const QColor& c, double tone) {
 //    current-selection state.  Light colours are darkened,
 //    dark colours are lightened so the element stands out.
 //---------------------------------------------------------
-
 QColor Element3d::curColor() const {
       if (zcam->hoverElement() == this) {
             // Light colours → darken, dark colours → lighten
@@ -689,7 +684,6 @@ QColor Element3d::curColor() const {
 //---------------------------------------------------------
 //   setColor
 //---------------------------------------------------------
-
 void Element3d::setColor(const QColor& c) {
       if (_color != c) {
             _color = c;
@@ -707,7 +701,6 @@ void Element3d::setColor(const QColor& c) {
 //               that changed the most drives the others
 //      Square – force x == y == z using the most-changed axis
 //---------------------------------------------------------
-
 void Element3d::set_scaleAR(QVector3D v) {
       if (v == _scale)
             return;
@@ -768,7 +761,6 @@ void Element3d::set_scaleAR(QVector3D v) {
 //    whenever the matrixDirty flag is set (i.e. after any
 //    change to position, rotation or scale).
 //---------------------------------------------------------
-
 const QMatrix4x4& Element3d::matrix() const {
       if (_matrixDirty) {
             _matrix.setToIdentity();
@@ -802,7 +794,6 @@ const QMatrix4x4& Element3d::matrix() const {
 //    the outermost (parent) transform is applied last:
 //       v_root = rootMatrix * ... * parentMatrix * localMatrix * v_local
 //---------------------------------------------------------
-
 QMatrix4x4 Element3d::globalMatrix() const {
       QMatrix4x4 result = matrix();
       Element* p        = parent();
@@ -818,7 +809,6 @@ QMatrix4x4 Element3d::globalMatrix() const {
 //   strokeAndFill
 //    if lineWidth != 0 then stroke _pathList
 //---------------------------------------------------------
-
 void Element3d::strokeAndFill() {
       double lw     = lineWidth();
       bool doStroke = !qFuzzyCompare(lw, 0.0);
@@ -861,7 +851,6 @@ void Element3d::strokeAndFill() {
 //---------------------------------------------------------
 //   closePath
 //---------------------------------------------------------
-
 void closePath(PathList& pl) {
       for (auto& p : pl)
             if (p.size() > 2 && p.front() != p.back())
@@ -872,7 +861,6 @@ void closePath(PathList& pl) {
 //   projectPathListToXY
 //    See declaration in element3d.h for full documentation.
 //---------------------------------------------------------
-
 Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective, double projectionHeight,
                                         const QPointF& viewCenter) {
       Clipper2Lib::PathsD result;
