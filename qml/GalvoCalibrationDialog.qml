@@ -21,12 +21,12 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     width: 988
-    height: 660
+    height: 680
     padding: 16
 
-    // Unified fonts for all labels and text fields
-    readonly property font unifiedFont: Qt.font({ family: "sans-serif", pixelSize: 11 })
-    readonly property font unifiedFontBold: Qt.font({ family: "sans-serif", pixelSize: 11, weight: Font.Bold })
+    // Unified fonts for all labels and text fields (matches app default 13px)
+    readonly property font unifiedFont: Qt.font({ family: "sans-serif", pixelSize: 13 })
+    readonly property font unifiedFontBold: Qt.font({ family: "sans-serif", pixelSize: 13, weight: Font.Bold })
 
     property Machine machine: null
     property double nominalSpacing: machine ? machine.maxTravel.x * 0.5 : 87.5
@@ -129,32 +129,39 @@ Dialog {
                             // outer rectangle
                             ctx.strokeRect(cx - half, cy - half, half * 2, half * 2)
 
-                            // labels at line midpoints (no arrows)
-                            var lines = [
-                                { mx: cx - half * 0.5, my: cy - half * 0.5, id: "x1" },
-                                { mx: cx + half * 0.5, my: cy - half * 0.5, id: "x2" },
-                                { mx: cx - half * 0.5, my: cy,              id: "x3" },
-                                { mx: cx + half * 0.5, my: cy,              id: "x4" },
-                                { mx: cx - half * 0.5, my: cy + half * 0.5, id: "x5" },
-                                { mx: cx + half * 0.5, my: cy + half * 0.5, id: "x6" },
-                                { mx: cx - half * 0.5, my: cy - half * 0.5, id: "y1" },
-                                { mx: cx - half * 0.5, my: cy + half * 0.5, id: "y2" },
-                                { mx: cx,              my: cy - half * 0.5, id: "y3" },
-                                { mx: cx,              my: cy + half * 0.5, id: "y4" },
-                                { mx: cx + half * 0.5, my: cy - half * 0.5, id: "y5" },
-                                { mx: cx + half * 0.5, my: cy + half * 0.5, id: "y6" }
+                            // X labels: on horizontal segments, offset perpendicular (vertical)
+                            // Y labels: on vertical segments, offset perpendicular (horizontal)
+                            // Offset direction: away from grid center to avoid overlap
+                            var xOff = 11   // vertical offset for X labels
+                            var yOff = 14   // horizontal offset for Y labels
+
+                            var labels = [
+                                // X labels (horizontal segments) — offset up for top/middle, down for bottom
+                                { mx: cx - half * 0.5, my: cy - half * 0.5 - xOff, id: "x1" },
+                                { mx: cx + half * 0.5, my: cy - half * 0.5 - xOff, id: "x2" },
+                                { mx: cx - half * 0.5, my: cy - xOff,              id: "x3" },
+                                { mx: cx + half * 0.5, my: cy - xOff,              id: "x4" },
+                                { mx: cx - half * 0.5, my: cy + half * 0.5 + xOff, id: "x5" },
+                                { mx: cx + half * 0.5, my: cy + half * 0.5 + xOff, id: "x6" },
+                                // Y labels (vertical segments) — offset left for left col, right for center/right col
+                                { mx: cx - half * 0.5 - yOff, my: cy - half * 0.5, id: "y1" },
+                                { mx: cx - half * 0.5 - yOff, my: cy + half * 0.5, id: "y2" },
+                                { mx: cx + yOff,              my: cy - half * 0.5, id: "y3" },
+                                { mx: cx + yOff,              my: cy + half * 0.5, id: "y4" },
+                                { mx: cx + half * 0.5 + yOff, my: cy - half * 0.5, id: "y5" },
+                                { mx: cx + half * 0.5 + yOff, my: cy + half * 0.5, id: "y6" }
                             ]
 
                             ctx.fillStyle = "#4fc3f7"
-                            ctx.font = "bold 12px sans-serif"
+                            ctx.font = "bold 13px sans-serif"
                             ctx.textAlign = "center"
                             ctx.textBaseline = "middle"
-                            for (var i = 0; i < lines.length; i++)
-                                ctx.fillText(lines[i].id, lines[i].mx, lines[i].my)
+                            for (var i = 0; i < labels.length; i++)
+                                ctx.fillText(labels[i].id, labels[i].mx, labels[i].my)
 
                             // nominal label
                             ctx.fillStyle = "white"
-                            ctx.font = "10px sans-serif"
+                            ctx.font = "13px sans-serif"
                             ctx.textAlign = "left"
                             ctx.textBaseline = "alphabetic"
                             ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
