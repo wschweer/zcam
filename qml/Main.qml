@@ -229,9 +229,9 @@ Window {
 
     Action {
         id: actionGalvoTest
-        text: qsTr("Galvo Test")
+        text: qsTr("Galvo Test 9")
         onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"),
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 9?"),
             function () { ZCam.createGalvoTest() })
         }
 

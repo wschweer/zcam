@@ -12,6 +12,7 @@
 #include <QTextLine>
 #include <QCoreApplication>
 #include <QSet>
+#include <format>
 #include "materialtest.h"
 #include "zcam.h"
 #include "polygon.h"
@@ -32,8 +33,7 @@
 //---------------------------------------------------------
 //   MaterialTest
 //---------------------------------------------------------
-
-MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
+MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Group(zcam, parent) {
       if (zcam->config())
             setColor(zcam->config()->materialTestColor());
       createChildren();
@@ -81,7 +81,6 @@ MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Element3d(zcam, parent
 //    strip the demo content so the test routines can populate
 //    it with test-specific content.  Returns the new Project*.
 //---------------------------------------------------------
-
 static Project* createFiberLaserProject(ZCam* zcam) {
       // newProject() clears the undo stack, destroys the old tree,
       // creates a fresh RootElement + Project with demo content.
@@ -100,7 +99,6 @@ static Project* createFiberLaserProject(ZCam* zcam) {
 //    populated: update the tree model, resolve the machine,
 //    refresh CAM data, and clear the dirty/cam-dirty flags.
 //---------------------------------------------------------
-
 static void finalizeProject(ZCam* zcam) {
       // Do NOT call setRoot(zcam->rootElement()) directly because
       // rootElement() returns Project (a child of RootElement) while
@@ -128,7 +126,6 @@ static void finalizeProject(ZCam* zcam) {
 //---------------------------------------------------------
 //   createMaterialTest
 //---------------------------------------------------------
-
 void ZCam::createMaterialTest() {
       // Preserve the machine from the current project before
       // creating a new one.  The Machine* is owned by the
@@ -195,7 +192,6 @@ void ZCam::createMaterialTest() {
 //---------------------------------------------------------
 //   genRowText
 //---------------------------------------------------------
-
 QString MaterialTest::genRowText(int row) const {
       QString s;
       double v = rowValue(row);
@@ -214,7 +210,6 @@ QString MaterialTest::genRowText(int row) const {
 //---------------------------------------------------------
 //   genColText
 //---------------------------------------------------------
-
 QString MaterialTest::genColText(int col) const {
       QString s;
       double v = columnValue(col);
@@ -244,21 +239,8 @@ static QString label(ParameterType t) {
       }
 
 //---------------------------------------------------------
-//   updateChildren
-//---------------------------------------------------------
-
-void MaterialTest::updateChildren() {
-#if 0
-      zcam->project()->beginReset();
-      createChildren();
-      wcam->projectTreeModel()->endReset();
-#endif
-      }
-
-//---------------------------------------------------------
 //   createChildren
 //---------------------------------------------------------
-
 void MaterialTest::createChildren() {
       // Delete the fixture LaserLayers (Recipe elements) that were created
       // by the previous createChildren() call.  These are identified by
@@ -267,12 +249,8 @@ void MaterialTest::createChildren() {
       // in the Fixture.  External LaserLayers (e.g. LL-Pattern whose
       // laserLayer is set on the parent Pattern layer) are preserved.
       Fixture* fixture = zcam->project()->fixture();
-      if (!fixture) {
-            Critical("no fixture");
+      if (!fixture)
             return;
-            }
-      else
-            Debug("=================fixture ok");
 
       // Collect the set of LaserLayer (Recipe*) pointers that are set as
       // the laserLayer property on direct child Groups of this MaterialTest.
@@ -546,7 +524,6 @@ void MaterialTest::createChildren() {
 //---------------------------------------------------------
 //   addText
 //---------------------------------------------------------
-
 void MaterialTest::addText(double x, double y, const QString& s, Group* layer, double pt, double rot) {
       auto r = new Text(zcam, layer);
       r->setName("text");
@@ -563,7 +540,6 @@ void MaterialTest::addText(double x, double y, const QString& s, Group* layer, d
 //---------------------------------------------------------
 //   rowValue
 //---------------------------------------------------------
-
 double MaterialTest::rowValue(int row) const {
       switch (ParameterType(rowParameter())) {
             case ParameterType::Pulse: {
@@ -589,7 +565,6 @@ double MaterialTest::rowValue(int row) const {
 //---------------------------------------------------------
 //   columnValue
 //---------------------------------------------------------
-
 double MaterialTest::columnValue(int col) const {
       switch (ParameterType(columnParameter())) {
             case ParameterType::Pulse: {
@@ -615,11 +590,11 @@ double MaterialTest::columnValue(int col) const {
 //---------------------------------------------------------
 //   createGalvoTest
 //    Create a new project with a galvo calibration test pattern.
-//    The pattern consists of a crosshair of horizontal and vertical
-//    lines, a border rectangle, and a set of concentric squares
-//    to verify galvo alignment and linearity.
+//    The pattern consists of a single square the size of the
+//    laser work area, with a crosshair (horizontal + vertical
+//    lines) and two diagonal lines extending a few millimeters
+//    beyond the work area for alignment verification.
 //---------------------------------------------------------
-
 void ZCam::createGalvoTest() {
       // Preserve the machine from the current project before
       // creating a new one.  The Machine* is owned by the
@@ -633,7 +608,7 @@ void ZCam::createGalvoTest() {
       if (savedMachine)
             project()->set_machine(savedMachine);
 
-      project()->setName("Galvo-Test");
+      project()->setName("Galvo-Test 9");
 
       // Create a Grid covering the machine work area
       auto grid = new Grid(this, project());
@@ -649,7 +624,7 @@ void ZCam::createGalvoTest() {
 
       // Create a single layer for the galvo test pattern
       auto layer = new Group(this, cad);
-      layer->setName("GalvoPattern");
+      layer->setName("GalvoPattern9");
       layer->setExpanded(true);
       cad->addChild(layer);
 
@@ -657,39 +632,44 @@ void ZCam::createGalvoTest() {
       double h         = project()->machine()->maxTravel().y();
       QVector3D center = QVector3D(w * .5, h * .5, 0.0);
 
-      // Concentric squares for linearity check
-      const double squares[] = {w, w * .8, w * .6, w * .4, w * .2};
-      for (double sz : squares) {
-            auto sq = new Rectangle(this, layer);
-            sq->setName(format("square-{}", int(sz)).c_str());
-            sq->set_size(QVector2D(sz, sz));
-            sq->set_pos(center);
-            sq->set_fill(false);
-            sq->set_lineWidth(0.0);
-            sq->setColor(QColor("black"));
-            sq->update();
-            layer->addChild(sq);
-            }
+      // Extension beyond the work area for crosshair and diagonals
+      const double ext = 5.0; // mm
 
-      // lines
-      auto diag1 = new Polygon(this, layer);
-      diag1->setName("lines");
-      diag1->moveTo({0.0, h});
-      diag1->lineTo({w, 0.0});
-      diag1->moveTo({w, h});
-      diag1->lineTo({0.0, 0.0});
-      diag1->moveTo({0, h * .5});
-      diag1->lineTo({w, h * .5});
-      diag1->moveTo({w * .5, h});
-      diag1->lineTo({w * .5, 0.0});
-      diag1->setColor(QColor("black"));
-      diag1->update();
-      layer->addChild(diag1);
+      // One square the size of the laser work area
+      auto sq = new Rectangle(this, layer);
+      sq->setName("workArea");
+      sq->set_size(QVector2D(w, h));
+      sq->set_pos(center);
+      sq->set_fill(false);
+      sq->set_lineWidth(0.0);
+      sq->setColor(QColor("black"));
+      sq->update();
+      layer->addChild(sq);
+
+      // Crosshair (horizontal + vertical) and diagonals
+      // extending a few millimeters beyond the work area
+      auto lines = new Polygon(this, layer);
+      lines->setName("lines");
+      // Horizontal line
+      lines->moveTo({-ext, h * .5});
+      lines->lineTo({w + ext, h * .5});
+      // Vertical line
+      lines->moveTo({w * .5, -ext});
+      lines->lineTo({w * .5, h + ext});
+      // Diagonal: top-left to bottom-right
+      lines->moveTo({-ext, h + ext});
+      lines->lineTo({w + ext, -ext});
+      // Diagonal: bottom-left to top-right
+      lines->moveTo({-ext, -ext});
+      lines->lineTo({w + ext, h + ext});
+      lines->setColor(QColor("black"));
+      lines->update();
+      layer->addChild(lines);
 
       // Label text
       auto label = new Text(this, layer);
       label->setName("label");
-      label->set_text("Galvo Test");
+      label->set_text("Galvo Test 9");
       label->set_pointSize(8.0);
       label->set_fontFamily("Noto Sans");
       label->set_pos(QVector3D(50.0, 25.0, 0.0));
@@ -699,7 +679,7 @@ void ZCam::createGalvoTest() {
 
       // Create a LaserLayer linked to the galvo pattern layer
       auto ll = new Recipe(this, fixture);
-      ll->setName("LL-GalvoPattern");
+      ll->setName("LL-GalvoPattern9");
       layer->set_laserLayer(ll);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
@@ -713,7 +693,6 @@ void ZCam::createGalvoTest() {
 //   fixup
 //    this is called after loading the project
 //---------------------------------------------------------
-
 void MaterialTest::fixup() {
       Element3d::fixup();
       createChildren();
