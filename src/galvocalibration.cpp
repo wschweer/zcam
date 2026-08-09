@@ -67,9 +67,11 @@ double distortedCoord(int gx, int gy, double fieldHalf, double bulge, double bul
 // Simulated length of one measured line pair.  The current bulge
 // coefficients describe the correction written to the table; the
 // simulated physical measurement uses the inverse distortion.
+// gxPos/gyPos are the grid coordinates of the line (positive endpoint
+// along the measured axis);  isX selects which axis the length is
+// measured along (horizontal pair -> bulgeX, vertical pair -> bulgeY).
 double simulatedLength(int gxPos, int gyPos, double fieldHalf, double bulgeX, double bulge4X, double bulgeY,
-                        double bulge4Y) {
-      const bool isX = gyPos != 0;
+                        double bulge4Y, bool isX) {
       if (isX) {
             return distortedCoord( gxPos, gyPos, fieldHalf, bulgeX, bulge4X, true) -
                    distortedCoord(-gxPos, gyPos, fieldHalf, bulgeX, bulge4X, true);
@@ -258,7 +260,7 @@ double rmsResidual(const Sample pairSamples[6], const double diagonals[4], doubl
       double sumSq = 0.0;
       for (int i = 0; i < 6; ++i) {
             const double simulated = simulatedLength(pairSamples[i].gx, pairSamples[i].gy, fieldHalf, bulgeX, bulge4X,
-                                                     bulgeY, bulge4Y);
+                                                     bulgeY, bulge4Y, pairSamples[i].isX);
             const double err       = pairSamples[i].value - simulated;
             sumSq                 += err * err;
             }
@@ -382,7 +384,6 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       _bulge  = QVector2D(bulgeX, bulgeY);
       _bulge4 = QVector2D(bulge4, bulge4);   // shared radial r⁴ (model constraint)
 
-      //--- RMS error after correction (simulated correction table) ---
       const Sample allSamples[6] = {
             {(xPairs[0].leftX + xPairs[0].rightX) * 0.5, xPairs[0].g1, xPairs[0].g2, true},
             {(xPairs[1].leftX + xPairs[1].rightX) * 0.5, xPairs[1].g1, xPairs[1].g2, true},
