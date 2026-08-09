@@ -43,28 +43,28 @@ double tableToMm(double table, double fieldHalf) {
       return table * fieldHalf / (CORRECTION_GRID_HALF * CORRECTION_SCALE);
       }
 
-// Position on the measured axis after applying the correction table.
-// For an X measurement we return the corrected x coordinate (mm),
-// for a Y measurement the corrected y coordinate.  The coordinate on
-// the cross axis does not influence the measured length.
-double correctedCoord(int gx, int gy, double fieldHalf, double bulge, bool isX) {
-      const double r2         = double(gx * gx + gy * gy);
-      const double nominal    = (isX ? gx : gy) * CORRECTION_SCALE;
-      const double correction = bulge * r2 * (isX ? gx : gy);
-      return tableToMm(nominal + correction, fieldHalf);
+// Position on the measured axis after applying the physical lens
+// distortion that the correction table compensates.  'bulge' is the
+// coefficient stored in the machine and sent to the controller; the
+// correction table adds  +bulge * r² * g  to the nominal position, so
+// the uncompensated physical error has the opposite sign  -bulge * r² * g .
+double distortedCoord(int gx, int gy, double fieldHalf, double bulge, bool isX) {
+      const double r2          = double(gx * gx + gy * gy);
+      const double nominal     = (isX ? gx : gy) * CORRECTION_SCALE;
+      const double distortion  = -bulge * r2 * (isX ? gx : gy);
+      return tableToMm(nominal + distortion, fieldHalf);
       }
 
-// Simulated length of one measured line pair after applying the
-// correction table model.  For an X measurement the line runs from
-// (-16, gy) to (+16, gy); for a Y measurement from (gx, -16) to
-// (gx, +16).
+// Simulated length of one measured line pair.  The current bulge
+// coefficients describe the correction written to the table; the
+// simulated physical measurement uses the inverse distortion.
 double simulatedLength(int crossGrid, bool isX, double fieldHalf, double bulgeX, double bulgeY) {
       if (isX) {
-            return correctedCoord(16, crossGrid, fieldHalf, bulgeX, true) -
-                   correctedCoord(-16, crossGrid, fieldHalf, bulgeX, true);
+            return distortedCoord(16, crossGrid, fieldHalf, bulgeX, true) -
+                   distortedCoord(-16, crossGrid, fieldHalf, bulgeX, true);
             }
-      return correctedCoord(crossGrid, 16, fieldHalf, bulgeY, false) -
-             correctedCoord(crossGrid, -16, fieldHalf, bulgeY, false);
+      return distortedCoord(crossGrid, 16, fieldHalf, bulgeY, false) -
+             distortedCoord(crossGrid, -16, fieldHalf, bulgeY, false);
       }
 
 // One measurement sample used for fitting and for RMS evaluation.
@@ -74,12 +74,12 @@ struct Sample {
       bool isX;      // true -> X-axis measurement
       };
 
-// Fit a single bulge coefficient from the three samples of one axis.
-// The measured length error equals
-//     2 * bulge * r² * h          (h = 16, r² = h² + crossGrid²)
-// because the correction moves both ends of the line by the same
-// amount in opposite directions.  We use a least-squares fit over
-// the three samples with their actual r² values.
+// Fit a single correction-table bulge coefficient from the three
+// samples of one axis.  The measured length error equals the physical
+// distortion 2 * (-bulge) * r² * h (h = 16, r² = h² + crossGrid²),
+// because the correction stored in the table has the opposite sign.
+// We return the coefficient that must be stored in the machine and
+// written to the controller.
 double fitBulge(const Sample samples[3], double nominal, double fieldHalf) {
       double num = 0.0;
       double den = 0.0;
@@ -91,7 +91,7 @@ double fitBulge(const Sample samples[3], double nominal, double fieldHalf) {
             num                   += errTable * factor;
             den                   += factor * factor;
             }
-      return den == 0.0 ? 0.0 : num / den;
+      return den == 0.0 ? 0.0 : -num / den;
       }
 
 // RMS residual after applying the correction table model to all six
@@ -130,17 +130,24 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    For grid coordinate g the nominal table entry is g*1024 and the
 //    lens-distortion correction is
 //        corr = bulge * r² * g
-//    where r² = gx² + gy².
+//    where r² = gx² + gy².  The table entry is an offset that is
+//    added to the nominal position, so the bulge coefficient stored
+//    in the machine has the opposite sign of the measured physical
+//    distortion.
 //
 //    scale: The centre measurement (xMiddle / yCenter) is least affected
 //    by distortion and is used as the pure linear scale.
 //    galvoScale is stored in percent: 100 = factor 1.0.
 //
 //    bulge: The six measured pairs are averaged to cancel translation.
-//    For each axis we fit a single bulge coefficient to the three averaged
-//    lengths using the actual r² of each sample and the factor 2 that
-//    comes from moving both line ends.
+//    For each axis we fit the physical distortion coefficient from the
+//    three averaged lengths using the actual r² of each sample and the
+//    factor 2 that comes from moving both line ends.  The value stored
+//    in the machine and sent to the controller is the negative of that
+//    coefficient, because the correction table adds an offset with the
+//    opposite sign of the measured error.
 //---------------------------------------------------------
+
 bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
                                double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
                                double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
