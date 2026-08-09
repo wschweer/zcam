@@ -31,6 +31,7 @@ namespace {
 constexpr double CORRECTION_GRID_HALF = 32.0;
 constexpr double CORRECTION_SCALE     = 65536.0 / 64.0; // = 1024 table units / grid unit
 constexpr double MEASUREMENT_GRID     = 16.0;           // "9 point" cross is at +/- half field
+constexpr double CORNER_GRID          = 32.0;           // diagonals end at the outer corners (+/- 32)
 // The fourth-order radial term is scaled by Laser::bulge4Scale so the
 // stored galvoBulge4 values stay in a comfortable numerical range.
 // The same factor is used in the calibration fit and in the controller
@@ -95,55 +96,158 @@ struct Sample {
       bool isX;     // true -> X-axis measurement
       };
 
-// Solve a 2x2 linear system by Cramer's rule.
-bool solve2x2(double a11, double a12, double a21, double a22, double b1, double b2, double& x1, double& x2) {
-      const double det = a11 * a22 - a12 * a21;
-      if (std::abs(det) < 1e-18)
-            return false;
-      x1 = (b1 * a22 - b2 * a12) / det;
-      x2 = (a11 * b2 - a21 * b1) / det;
+// Fit the correction-table coefficients (axis-specific r², shared r⁴).
+//
+// Model: the correction table adds
+//     corrX = (k2x*r² + k4*s*r⁴) * gx ,  corrY = (k2y*r² + k4*s*r⁴) * gy
+// to the nominal position (LaserBJJCZ::writeCorrectionTable()).  The
+// galvo/lens distortion this compensates shifts the physical spot by the
+// opposite amount, so a measured target error equals +corr.
+//
+// Per-axis pair measurements constrain (k2x, k4) resp. (k2y, k4) through
+// the coordinate offsets at their radius.  A diagonal from the centre to a
+// corner measures only the *length*; with per-axis coefficients this would
+// make the 4-parameter (k2x, k2y, k4x, k4y) system singular, so the r⁴ term
+// is modelled as a single shared radial coefficient k4 — physically the r⁴
+// error is dominated by the f-theta lens, which is rotationally symmetric.
+//
+// All equations use err(h) units (h = MEASUREMENT_GRID = 16) with the basis
+// [r²/R_MAX, (r²/R_MAX)²], R_MAX = corner r² = 2048:
+//   - line pair at +/-h (both ends move equally):
+//       y = (nominal - avg) * tpm * 0.5          [avg = (left+right)/2]
+//   - diagonal centre->corner: magnitude of the single corner point at g=32.
+//     The length measurement loses the corner quadrant (sqrt); within the
+//     calibrated range (corner displacement < nominal, i.e. the corner does
+//     not flip across the field centre)
+//         |corner| - nominal = -err(32) = -lensErr(32)
+//     so the err(16) basis value is -(|corner|-nominal)*tpm*(16/32).
+//     The two 'same-sign' corners and the two 'cross' corners are averaged
+//     separately so no quadrant is weighted stronger than the others.  Past
+//     the flip point the relation degrades gracefully (fit stays finite
+//     thanks to the bulge4 clamp) — but such a lens would be unusable in
+//     practice anyway, so the approximation is acceptable.
+// The single least-squares system (10 equations: 3 pairs per axis + 2
+// averaged diagonal equations, 3 unknowns) is well conditioned because the
+// measurements span three distinct radii.
+struct PairSample {
+      double leftX;    // measured length of the left/top line segment (mm)
+      double rightX;   // measured length of the right/bottom line segment (mm)
+      int g1;          // grid coordinate on the measured axis of the + endpoint
+      int g2;          // grid coordinate on the cross axis
+      };
+
+struct DiagSample {
+      double len;      // measured diagonal length centre -> corner (mm)
+      int gxCorner;    // grid x coordinate of the corner (+/- 32)
+      int gyCorner;    // grid y coordinate of the corner (+/- 32)
+      };
+
+// Solve the 3x3 normal system by Gaussian elimination with partial pivoting.
+bool solve3(double m[3][3], double b[3], double x[3]) {
+      for (int col = 0; col < 3; ++col) {
+            int piv = col;
+            for (int r = col + 1; r < 3; ++r)
+                  if (std::abs(m[r][col]) > std::abs(m[piv][col]))
+                        piv = r;
+            if (std::abs(m[piv][col]) < 1.0e-12)
+                  return false;
+            if (piv != col) {
+                  for (int k = col; k < 3; ++k)
+                        std::swap(m[piv][k], m[col][k]);
+                  std::swap(b[piv], b[col]);
+                  }
+            for (int r = col + 1; r < 3; ++r) {
+                  const double f = m[r][col] / m[col][col];
+                  for (int k = col; k < 3; ++k)
+                        m[r][k] -= f * m[col][k];
+                  b[r] -= f * b[col];
+                  }
+            }
+      for (int r = 2; r >= 0; --r) {
+            double s = b[r];
+            for (int k = r + 1; k < 3; ++k)
+                  s -= m[r][k] * x[k];
+            x[r] = s / m[r][r];
+            }
       return true;
       }
 
-// Fit bulge (r²) and bulge4 (r⁴) correction-table coefficients for one axis
-// from the three averaged pair samples.  The measured length error in table
-// units is (value - nominal) * mmToTable(1.0, fieldHalf); it equals
-//     2*h*(bulge*r² + bulge4*Laser::bulge4Scale*r⁴)
-// with h = MEASUREMENT_GRID.  We fit both coefficients simultaneously with a
-// linear least-squares solve over the three samples.  This gives independent
-// bulge4 values for X and Y, which is more accurate than forcing a shared
-// rotationally-symmetric coefficient when the two galvo axes are not perfectly
-// identical.
-bool fitBulgePair(const Sample samples[3], double nominal, double fieldHalf, double& bulge, double& bulge4) {
-      bulge  = 0.0;
-      bulge4 = 0.0;
+// Fit k2x, k2y (axis-specific r²) and shared k4 (radial r⁴) in one
+// least-squares system over all measurements of both axes (10 equations,
+// 3 unknowns).  Returns bulge as (k2x, k2y) and the shared k4 in bulge4.
+bool fitCalibration(const PairSample xPairs[3], const PairSample yPairs[3], const DiagSample diagonals[4],
+                    double nominal, double fieldHalf, double& k2xOut, double& k2yOut, double& k4Out) {
+      k2xOut = 0.0;
+      k2yOut = 0.0;
+      k4Out  = 0.0;
 
+      constexpr double R_MAX = 2.0 * CORNER_GRID * CORNER_GRID;   // 2048
       const double tablePerMm = mmToTable(1.0, fieldHalf);
-      double s11 = 0.0, s12 = 0.0, s22 = 0.0, sy1 = 0.0, sy2 = 0.0;
-      for (int i = 0; i < 3; ++i) {
-            const double r2    = double(samples[i].gx * samples[i].gx + samples[i].gy * samples[i].gy);
-            const double r4    = r2 * r2;
-            const double r4s   = r4 * Laser::bulge4Scale;
-            const double err   = (samples[i].value - nominal) * tablePerMm;
-            const double y     = err / (2.0 * MEASUREMENT_GRID);
-            s11               += r2 * r2;
-            s12               += r2 * r4s;
-            s22               += r4s * r4s;
-            sy1               += r2 * y;
-            sy2               += r4s * y;
-            }
-      // Cramer's rule for the 2x2 normal matrix [[s11,s12],[s12,s22]].
-      const double det = s11 * s22 - s12 * s12;
-      if (std::abs(det) < 1e-24)
-            return false;
-      bulge  = (sy1 * s22 - sy2 * s12) / det;
-      bulge4 = (s11 * sy2 - s12 * sy1) / det;
+      // normal matrix accumulation: columns [r² term x, r² term y, r⁴ term]
+      double n_[3][3] = {};
+      double ns_[3]   = {};
+      auto accumulate = [&](double ax, double ay, double a4, double y) {
+            const double m[3] = {ax, ay, a4};
+            for (int r = 0; r < 3; ++r) {
+                  ns_[r] += m[r] * y;
+                  for (int c = 0; c < 3; ++c)
+                        n_[r][c] += m[r] * m[c];
+                  }
+            };
 
-      // Clamp bulge4 to a sane range to avoid numerical runaway with
-      // inconsistent input data.  bulge is much smaller numerically and
-      // does not need the same guard.
+      // line pairs: y = (nominal - avg)*tpm*0.5 = err(h)
+      for (int i = 0; i < 3; ++i) {
+            const double avg = (xPairs[i].leftX + xPairs[i].rightX) * 0.5;
+            const double r2  = double(xPairs[i].g1 * xPairs[i].g1 + xPairs[i].g2 * xPairs[i].g2);
+            const double rr  = r2 / R_MAX;
+            accumulate(rr, 0.0, rr * rr, (nominal - avg) * tablePerMm * 0.5);
+            }
+      for (int i = 0; i < 3; ++i) {
+            const double avg = (yPairs[i].leftX + yPairs[i].rightX) * 0.5;
+            const double r2  = double(yPairs[i].g1 * yPairs[i].g1 + yPairs[i].g2 * yPairs[i].g2);
+            const double rr  = r2 / R_MAX;
+            accumulate(0.0, rr, rr * rr, (nominal - avg) * tablePerMm * 0.5);
+            }
+
+      // Diagonals: the measured centre->corner length only yields the corner
+      // magnitude  len/sqrt(2) = sqrt(px²+py²)/sqrt(2),  where (px, py) is the
+      // physical corner position.  The pair equations measure single
+      // coordinates (at g = h = 16), the diagonal the corner point (g = 32).
+      // A line pair at +/-h measures 2*err(h), a diagonal 1*err(32); in the
+      // err(16) basis this gives (|corner| - nominal)*tpm*(16/32), negated
+      // because the corner displacement points opposite to the pair error.
+      const double diagScale = MEASUREMENT_GRID / CORNER_GRID;
+      const double w         = 0.5;                                  // per-axis weight
+      const double invSqrt2  = 0.7071067811865475244;
+      double diagErrSame  = 0.0;
+      double diagErrCross = 0.0;
+      for (int i = 0; i < 4; ++i) {
+            const double coord = diagonals[i].len * invSqrt2;   // |corner| in mm
+            const double e     = coord - nominal;
+            if (diagonals[i].gxCorner == diagonals[i].gyCorner)
+                  diagErrSame += e;
+            else
+                  diagErrCross += e;
+            }
+      const double yS = -(diagErrSame * 0.5) * tablePerMm * diagScale;
+      const double yC = -(diagErrCross * 0.5) * tablePerMm * diagScale;
+      accumulate(w, w, 1.0, yS);
+      accumulate(w, w, 1.0, yC);
+
+      double x[3];
+      double m[3][3];
+      for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                  m[r][c] = n_[r][c];
+      double b[3] = {ns_[0], ns_[1], ns_[2]};
+      if (!solve3(m, b, x))
+            return false;
+      // coefficients of err(h) basis: err(h) = x0*rr + x1*rr (axis) + x2*rr² (shared r⁴)
+      k2xOut = x[0] / (MEASUREMENT_GRID * R_MAX);
+      k2yOut = x[1] / (MEASUREMENT_GRID * R_MAX);
+      k4Out  = x[2] / (MEASUREMENT_GRID * Laser::bulge4Scale * R_MAX * R_MAX);
       constexpr double maxBulge4 = 5.0;
-      bulge4                       = std::clamp(bulge4, -maxBulge4, maxBulge4);
+      k4Out  = std::clamp(k4Out, -maxBulge4, maxBulge4);
       return true;
       }
 
@@ -208,17 +312,22 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    from the three averaged pair lengths using the actual r² of each
 //    sample and the factor 2 that comes from moving both line ends.
 //
-//    bulge/bulge4: A linear least-squares fit over the three averaged pair
-//    lengths per axis estimates both the r² and the r⁴ correction coefficients
-//    for that axis.  Because the two galvo axes can have slightly different
-//    higher-order distortion, X and Y are fitted independently.  The r⁴ term
-//    removes the S-shaped (mustache) distortion visible along the diagonals
-//    of the field.  The table entry is an offset that is added to the nominal
-//    position, so the coefficients stored in the machine have the opposite sign
-//    of the measured physical distortion.
+//    bulge/bulge4: A single least-squares fit over all measurements of
+//    both axes estimates the axis-specific r² coefficients (k2x, k2y) and a
+//    shared radial r⁴ coefficient.  Each axis contributes three line pairs
+//    (endpoint radii r² = 256 and 512) and the four corner diagonals
+//    contribute two symmetric equations at r² = 2048.  The three distinct
+//    radii decouple the r² and r⁴ terms (with pairs alone, r⁴ was exactly
+//    2.048 * r² and the fit was ill conditioned).  The r⁴ term removes the
+//    S-shaped (mustache) distortion visible along the diagonals of the
+//    field.  It is modelled as a shared, rotationally-symmetric coefficient
+//    because the diagonal only measures corner length; fitting independent
+//    k4x/k4y from it would be singular.  The correction-table entry is an
+//    offset added to the nominal position, so the computed coefficients are
+//    stored with the sign convention of LaserBJJCZ::writeCorrectionTable().
 //
 //    The values stored in the machine and sent to the controller are the
-    //    negatives of the physical distortion coefficients.
+//    negatives of the physical distortion coefficients.
 
 //---------------------------------------------------------
 
@@ -239,43 +348,56 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
             }
       nominal = fieldHalf;
 
-      //--- average each pair (cancels translation offset) ---
-      const Sample xSamples[3] = {
-            {(xTopLeft + xTopRight) * 0.5,       16, 16, true},
-            {(xMiddleLeft + xMiddleRight) * 0.5, 16,  0, true},
-            {(xBottomLeft + xBottomRight) * 0.5, 16, -16, true}
+      //--- raw pair measurements (kept separate; averaging happens per equation) ---
+      const PairSample xPairs[3] = {
+            {xTopLeft, xTopRight,       16, 16},
+            {xMiddleLeft, xMiddleRight, 16,  0},
+            {xBottomLeft, xBottomRight, 16, -16}
             };
-      const Sample ySamples[3] = {
-            {(yLeftTop + yLeftBottom) * 0.5,       -16, 16, false},
-            {(yCenterTop + yCenterBottom) * 0.5,    0, 16, false},
-            {(yRightTop + yRightBottom) * 0.5,      16, 16, false}
+      const PairSample yPairs[3] = {
+            {yLeftTop, yLeftBottom,     -16, 16},
+            {yCenterTop, yCenterBottom,   0, 16},
+            {yRightTop, yRightBottom,    16, 16}
+            };
+      // diagonals run from the centre (0,0) to the four outer corners (+/- 32, +/- 32)
+      const DiagSample diagonalsIn[4] = {
+            {dTopLeft, -32, -32},
+            {dTopRight, 32, -32},
+            {dBottomLeft, -32, 32},
+            {dBottomRight, 32, 32}
             };
 
       //--- scale: use center measurement only ---
-      const double sx = nominal / xSamples[1].value;
-      const double sy = nominal / ySamples[1].value;
+      const double sx = nominal / ((xPairs[1].leftX + xPairs[1].rightX) * 0.5);
+      const double sy = nominal / ((yPairs[1].leftX + yPairs[1].rightX) * 0.5);
 
-      //--- bulge/bulge4: least-squares fit per axis ---
-      double bulgeX, bulgeY, bulge4X, bulge4Y;
-      if (!fitBulgePair(xSamples, nominal, fieldHalf, bulgeX, bulge4X) ||
-          !fitBulgePair(ySamples, nominal, fieldHalf, bulgeY, bulge4Y)) {
+      //--- bulge/bulge4: single least-squares fit over both axes ---
+      double bulgeX, bulgeY, bulge4;
+      if (!fitCalibration(xPairs, yPairs, diagonalsIn, nominal, fieldHalf, bulgeX, bulgeY, bulge4)) {
             Critical("GalvoCalibration::compute: unable to fit bulge coefficients");
             return false;
             }
 
       _scale  = QVector2D(sx * 100.0, sy * 100.0);
       _bulge  = QVector2D(bulgeX, bulgeY);
-      _bulge4 = QVector2D(bulge4X, bulge4Y);
+      _bulge4 = QVector2D(bulge4, bulge4);   // shared radial r⁴ (model constraint)
 
       //--- RMS error after correction (simulated correction table) ---
-      const Sample allSamples[6] = {xSamples[0], xSamples[1], xSamples[2],
-                                    ySamples[0], ySamples[1], ySamples[2]};
-      const double diagonalsIn[4]  = {dTopLeft, dTopRight, dBottomLeft, dBottomRight};
-      _rmsError                    = rmsResidual(allSamples, diagonalsIn, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
+      const Sample allSamples[6] = {
+            {(xPairs[0].leftX + xPairs[0].rightX) * 0.5, xPairs[0].g1, xPairs[0].g2, true},
+            {(xPairs[1].leftX + xPairs[1].rightX) * 0.5, xPairs[1].g1, xPairs[1].g2, true},
+            {(xPairs[2].leftX + xPairs[2].rightX) * 0.5, xPairs[2].g1, xPairs[2].g2, true},
+            {(yPairs[0].leftX + yPairs[0].rightX) * 0.5, yPairs[0].g1, yPairs[0].g2, false},
+            {(yPairs[1].leftX + yPairs[1].rightX) * 0.5, yPairs[1].g1, yPairs[1].g2, false},
+            {(yPairs[2].leftX + yPairs[2].rightX) * 0.5, yPairs[2].g1, yPairs[2].g2, false}
+            };
+      const double diagonalsValues[4] = {dTopLeft, dTopRight, dBottomLeft, dBottomRight};
+      _rmsError                       = rmsResidual(allSamples, diagonalsValues, fieldHalf, bulgeX, bulge4, bulgeY,
+                                                    bulge4);
 
       _valid = true;
-      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) bulge4=({:.6e},{:.6e}) rms={:.4f} mm",
-           _scale.x(), _scale.y(), bulgeX, bulgeY, bulge4X, bulge4Y, _rmsError);
+      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) bulge4={:.6e} rms={:.4f} mm",
+           _scale.x(), _scale.y(), bulgeX, bulgeY, bulge4, _rmsError);
       emit resultsChanged();
       return true;
       }
