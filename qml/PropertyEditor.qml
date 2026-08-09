@@ -511,7 +511,7 @@ Item {
                 property string rowLabel
                 property var setModelValue: function(v) {}
 
-                Text {
+                Label {
                     id: lineLabel
                     text: parent.rowLabel
                     font.bold: true
@@ -923,7 +923,7 @@ Item {
                 property string rowLabel
                 property var setModelValue: function(v) {}
 
-                Text {
+                Label {
                     id: colLineLabel
                     text: parent.rowLabel
                     font.bold: true
