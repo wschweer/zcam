@@ -27,8 +27,10 @@ Dialog {
     // Use the configured font from ZCam → Config
     readonly property string cfgFontFamily: ZCam.config ? ZCam.config.font : "NotoSans"
     readonly property int cfgFontSize: ZCam.config ? ZCam.config.fontSize : 12
-    // Canvas font uses px, QML font uses pt — convert: 1pt ≈ 1.333px at 96dpi
-    readonly property int cfgFontPx: Math.round(cfgFontSize * 4 / 3)
+    // Canvas font: use px directly (QML Canvas ctx.font accepts px)
+    // Scale up from pt: 1pt = 1.333px at 96dpi, but Canvas seems to need
+    // a larger explicit px value to match visual size of QML labels
+    readonly property int cfgFontPx: Math.round(cfgFontSize * 2.0)
     readonly property font unifiedFont: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize })
     readonly property font unifiedFontBold: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize, weight: Font.Bold })
 
@@ -140,7 +142,7 @@ Dialog {
                             // 6 X measurements: left and right half of each of the 3 horizontal lines
                             // Label floats slightly above the line
                             ctx.fillStyle = "#4fc3f7"
-                            ctx.font = "bold " + galvoCalDialog.cfgFontPx + "px " + galvoCalDialog.cfgFontFamily
+                            ctx.font = "bold " + galvoCalDialog.cfgFontPx + "px sans-serif"
                             ctx.textAlign = "center"
                             ctx.textBaseline = "bottom"
                             var xLift = 3   // px above the line
@@ -175,7 +177,7 @@ Dialog {
 
                             // nominal label
                             ctx.fillStyle = "white"
-                            ctx.font = galvoCalDialog.cfgFontPx + "px " + galvoCalDialog.cfgFontFamily
+                            ctx.font = galvoCalDialog.cfgFontPx + "px sans-serif"
                             ctx.textAlign = "left"
                             ctx.textBaseline = "alphabetic"
                             ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
