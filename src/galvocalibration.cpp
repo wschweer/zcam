@@ -16,7 +16,14 @@
 #include "logger.h"
 #include "machines.h"
 
+#include <nlohmann/json.hpp>
+
+#include <QFile>
+#include <QTextStream>
+#include <QVariantMap>
 #include <cmath>
+
+using json = nlohmann::json;
 namespace {
 // Correction table geometry used by LaserBJJCZ::writeCorrectionTable().
 // The table spans grid coordinates [-32, 32] in both axes.
@@ -183,6 +190,84 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
            _scale.y(), bulgeX, bulgeY, _rmsError);
       emit resultsChanged();
       return true;
+      }
+
+//---------------------------------------------------------
+//   saveParameters
+//    Persist the 12 raw measurement values (mm) as JSON.
+//---------------------------------------------------------
+bool GalvoCalibration::saveParameters(const QString& filePath, double xTopLeft, double xTopRight,
+                                      double xMiddleLeft, double xMiddleRight, double xBottomLeft,
+                                      double xBottomRight, double yLeftTop, double yLeftBottom,
+                                      double yCenterTop, double yCenterBottom, double yRightTop,
+                                      double yRightBottom) {
+      json j;
+      j["version"]            = 1;
+      j["type"]               = "GalvoCalibration9";
+      j["xTopLeft"]           = xTopLeft;
+      j["xTopRight"]          = xTopRight;
+      j["xMiddleLeft"]        = xMiddleLeft;
+      j["xMiddleRight"]       = xMiddleRight;
+      j["xBottomLeft"]        = xBottomLeft;
+      j["xBottomRight"]       = xBottomRight;
+      j["yLeftTop"]           = yLeftTop;
+      j["yLeftBottom"]        = yLeftBottom;
+      j["yCenterTop"]         = yCenterTop;
+      j["yCenterBottom"]      = yCenterBottom;
+      j["yRightTop"]          = yRightTop;
+      j["yRightBottom"]       = yRightBottom;
+
+      QFile file(filePath);
+      if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            Warning("GalvoCalibration::saveParameters: cannot open {} for writing", filePath.toStdString());
+            return false;
+            }
+      QTextStream out(&file);
+      out << QString::fromStdString(j.dump(2));
+      Info("GalvoCalibration: saved parameters to '{}'", filePath.toStdString());
+      return true;
+      }
+
+//---------------------------------------------------------
+//   loadParameters
+//    Read a JSON parameter set and return the 12 values.
+//---------------------------------------------------------
+QVariantMap GalvoCalibration::loadParameters(const QString& filePath) {
+      QVariantMap rv;
+      QFile file(filePath);
+      if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            Warning("GalvoCalibration::loadParameters: cannot open {}", filePath.toStdString());
+            return rv;
+            }
+      const QByteArray data = file.readAll();
+      try {
+            json j = json::parse(data.constData(), data.constData() + data.size());
+            if (!j.contains("type") || j["type"] != "GalvoCalibration9") {
+                  Warning("GalvoCalibration::loadParameters: unknown file type in {}", filePath.toStdString());
+                  return rv;
+                  }
+            auto get = [&](const char* name) {
+                  return j.value(name, 0.0);
+                  };
+            rv["xTopLeft"]      = get("xTopLeft");
+            rv["xTopRight"]     = get("xTopRight");
+            rv["xMiddleLeft"]   = get("xMiddleLeft");
+            rv["xMiddleRight"]  = get("xMiddleRight");
+            rv["xBottomLeft"]   = get("xBottomLeft");
+            rv["xBottomRight"]  = get("xBottomRight");
+            rv["yLeftTop"]      = get("yLeftTop");
+            rv["yLeftBottom"]   = get("yLeftBottom");
+            rv["yCenterTop"]    = get("yCenterTop");
+            rv["yCenterBottom"] = get("yCenterBottom");
+            rv["yRightTop"]     = get("yRightTop");
+            rv["yRightBottom"]  = get("yRightBottom");
+            Info("GalvoCalibration: loaded parameters from '{}'", filePath.toStdString());
+            }
+      catch (const std::exception& e) {
+            Warning("GalvoCalibration::loadParameters: parse error in {}: {}", filePath.toStdString(), e.what());
+            rv.clear();
+            }
+      return rv;
       }
 
 //---------------------------------------------------------

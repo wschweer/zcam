@@ -79,6 +79,18 @@ class GalvoCalibration : public QObject
       /// persist the machine configuration to disk.
       Q_INVOKABLE bool applyToMachine(Machine* machine);
 
+      /// Save the 12 raw measurement values (mm) to a JSON file.
+      /// Returns true on success.
+      Q_INVOKABLE bool saveParameters(const QString& filePath, double xTopLeft, double xTopRight,
+                                      double xMiddleLeft, double xMiddleRight, double xBottomLeft,
+                                      double xBottomRight, double yLeftTop, double yLeftBottom,
+                                      double yCenterTop, double yCenterBottom, double yRightTop,
+                                      double yRightBottom);
+
+      /// Load a previously saved parameter set from a JSON file.
+      /// Returns a map with the 12 values (or an empty map on error).
+      Q_INVOKABLE QVariantMap loadParameters(const QString& filePath);
+
       Q_PROPERTY(QVector2D scale READ scale NOTIFY resultsChanged)
       QVector2D scale() const { return _scale; }
 

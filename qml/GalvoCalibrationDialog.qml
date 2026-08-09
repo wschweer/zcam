@@ -13,6 +13,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import ZCam
 
 Dialog {
@@ -376,6 +377,18 @@ Dialog {
             Layout.fillWidth: true
             spacing: 12
 
+            Button {
+                text: qsTr("Load…")
+                font: unifiedFont
+                onClicked: loadParamsDialog.open()
+            }
+
+            Button {
+                text: qsTr("Save…")
+                font: unifiedFont
+                onClicked: saveParamsDialog.open()
+            }
+
             Item { Layout.fillWidth: true }
 
             Button {
@@ -409,6 +422,58 @@ Dialog {
                 font: unifiedFont
                 onClicked: galvoCalDialog.reject()
             }
+        }
+    }
+
+    FileDialog {
+        id: saveParamsDialog
+        title: qsTr("Save Galvo Calibration Parameters")
+        nameFilters: [qsTr("Galvo calibration parameters (*.galvocal)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "galvocal"
+        onAccepted: {
+            var path = selectedFile.toString().replace("file://", "")
+            calib.saveParameters(path,
+                xTopLeft, xTopRight,
+                xMiddleLeft, xMiddleRight,
+                xBottomLeft, xBottomRight,
+                yLeftTop, yLeftBottom,
+                yCenterTop, yCenterBottom,
+                yRightTop, yRightBottom)
+        }
+    }
+
+    FileDialog {
+        id: loadParamsDialog
+        title: qsTr("Load Galvo Calibration Parameters")
+        nameFilters: [qsTr("Galvo calibration parameters (*.galvocal)"), qsTr("All files (*)")]
+        fileMode: FileDialog.OpenFile
+        onAccepted: {
+            var path = selectedFile.toString().replace("file://", "")
+            var values = calib.loadParameters(path)
+            if (Object.keys(values).length === 0)
+                return
+            xTopLeft      = values.xTopLeft
+            xTopRight     = values.xTopRight
+            xMiddleLeft   = values.xMiddleLeft
+            xMiddleRight  = values.xMiddleRight
+            xBottomLeft   = values.xBottomLeft
+            xBottomRight  = values.xBottomRight
+            yLeftTop      = values.yLeftTop
+            yLeftBottom   = values.yLeftBottom
+            yCenterTop    = values.yCenterTop
+            yCenterBottom = values.yCenterBottom
+            yRightTop     = values.yRightTop
+            yRightBottom  = values.yRightBottom
+            // Recompute if a machine is available.
+            if (machine)
+                calib.compute(machine,
+                    xTopLeft, xTopRight,
+                    xMiddleLeft, xMiddleRight,
+                    xBottomLeft, xBottomRight,
+                    yLeftTop, yLeftBottom,
+                    yCenterTop, yCenterBottom,
+                    yRightTop, yRightBottom)
         }
     }
 }
