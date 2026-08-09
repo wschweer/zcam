@@ -55,11 +55,11 @@ double tableToMm(double table, double fieldHalf) {
 // to the nominal position, so the uncompensated physical error has
 // the opposite sign.
 double distortedCoord(int gx, int gy, double fieldHalf, double bulge, double bulge4, bool isX) {
-      const double r2          = double(gx * gx + gy * gy);
-      const double r4          = r2 * r2;
-      const double nominal     = (isX ? gx : gy) * CORRECTION_SCALE;
-      const double g           = isX ? gx : gy;
-      const double distortion  = -(bulge * r2 + bulge4 * r4 * Laser::bulge4Scale) * g;
+      const double r2         = double(gx * gx + gy * gy);
+      const double r4         = r2 * r2;
+      const double nominal    = (isX ? gx : gy) * CORRECTION_SCALE;
+      const double g          = isX ? gx : gy;
+      const double distortion = -(bulge * r2 + bulge4 * r4 * Laser::bulge4Scale) * g;
       return tableToMm(nominal + distortion, fieldHalf);
       }
 
@@ -93,30 +93,27 @@ bool solve2x2(double a11, double a12, double a21, double a22, double b1, double 
       return true;
       }
 
-// Fit bulge (r²) and bulge4 (r⁴) correction-table coefficients from the
-// three samples of one axis.  The measured length error in table units
-// equals -2*h*(b2*r² + b4*r⁴) (h = 16).  We return the coefficients that
-// must be stored in the machine and written to the controller.
-bool fitBulgePair(const Sample samples[3], double nominal, double fieldHalf, double& bulge, double& bulge4) {
-      bulge  = 0.0;
-      bulge4 = 0.0;
+// Fit bulge (r²) correction-table coefficient from the three samples of one
+// axis with bulge4 forced to zero.  The measured length error in table units
+// equals -2*h*b2*r² (h = 16).  We return the coefficient that must be stored
+// in the machine and written to the controller.
+bool fitBulge(const Sample samples[3], double nominal, double fieldHalf, double& bulge) {
+      bulge = 0.0;
       // Least-squares: for each sample i we have
-      //    -err_i / (2*h) = b2 * r2_i + b4 * r4_i
-      double s11 = 0.0, s12 = 0.0, s22 = 0.0, sy1 = 0.0, sy2 = 0.0;
+      //    -err_i / (2*h) = b2 * r2_i
+      double s11 = 0.0, sy1 = 0.0;
       for (int i = 0; i < 3; ++i) {
             const double r2 =
                 MEASUREMENT_GRID * MEASUREMENT_GRID + double(samples[i].crossGrid * samples[i].crossGrid);
-            const double r4        = r2 * r2;
-            const double r4s       = r4 * Laser::bulge4Scale;
             const double errTable  = (samples[i].value - nominal) * mmToTable(1.0, fieldHalf);
             const double y         = -errTable / (2.0 * MEASUREMENT_GRID);
             s11                   += r2 * r2;
-            s12                   += r2 * r4s;
-            s22                   += r4s * r4s;
             sy1                   += r2 * y;
-            sy2                   += r4s * y;
             }
-      return solve2x2(s11, s12, s12, s22, sy1, sy2, bulge, bulge4);
+      if (std::abs(s11) < 1e-18)
+            return false;
+      bulge = sy1 / s11;
+      return true;
       }
 
 // RMS residual after applying the correction table model to all six
@@ -125,10 +122,10 @@ double rmsResidual(const Sample samples[6], double fieldHalf, double bulgeX, dou
                    double bulge4Y) {
       double sumSq = 0.0;
       for (int i = 0; i < 6; ++i) {
-            const double simulated =
-                simulatedLength(samples[i].crossGrid, samples[i].isX, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
-            const double err  = samples[i].value - simulated;
-            sumSq            += err * err;
+            const double simulated  = simulatedLength(samples[i].crossGrid, samples[i].isX, fieldHalf, bulgeX,
+                                                      bulge4X, bulgeY, bulge4Y);
+            const double err        = samples[i].value - simulated;
+            sumSq                  += err * err;
             }
       return std::sqrt(sumSq / 6.0);
       }
@@ -166,13 +163,16 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    by distortion and is used as the pure linear scale.
 //    galvoScale is stored in percent: 100 = factor 1.0.
 //
-//    bulge/bulge4: The six measured pairs are averaged to cancel
-//    translation.  For each axis we fit the two distortion coefficients
-//    from the three averaged lengths using the actual r²/r⁴ of each
-//    sample and the factor 2 that comes from moving both line ends.
+//    bulge: The six measured pairs are averaged to cancel
+//    translation.  For each axis we fit the r² distortion coefficient
+//    from the three averaged lengths using the actual r² of each sample
+//    and the factor 2 that comes from moving both line ends.  bulge4 is
+//    not fitted because the 9-point pattern provides only two distinct
+//    radii, so the r⁴ coefficient would be ill-conditioned.  It can still
+//    be set manually if a future measurement pattern provides enough
+//    distinct radii.
 //    The values stored in the machine and sent to the controller are the
 //    negatives of the physical distortion coefficients.
-
 //---------------------------------------------------------
 
 bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
@@ -208,25 +208,25 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double sy = nominal / ySamples[1].value;
 
       //--- bulge/bulge4: least-squares fit per axis ---
-      double bulgeX, bulge4X, bulgeY, bulge4Y;
-      if (!fitBulgePair(xSamples, nominal, fieldHalf, bulgeX, bulge4X) ||
-          !fitBulgePair(ySamples, nominal, fieldHalf, bulgeY, bulge4Y)) {
+      double bulgeX, bulgeY;
+      if (!fitBulge(xSamples, nominal, fieldHalf, bulgeX) ||
+          !fitBulge(ySamples, nominal, fieldHalf, bulgeY)) {
             Critical("GalvoCalibration::compute: unable to fit bulge coefficients");
             return false;
             }
 
       _scale  = QVector2D(sx * 100.0, sy * 100.0);
       _bulge  = QVector2D(bulgeX, bulgeY);
-      _bulge4 = QVector2D(bulge4X, bulge4Y);
+      _bulge4 = QVector2D(0.0, 0.0);
 
       //--- RMS error after correction (simulated correction table) ---
       const Sample allSamples[6] = {xSamples[0], xSamples[1], xSamples[2],
                                     ySamples[0], ySamples[1], ySamples[2]};
-      _rmsError                  = rmsResidual(allSamples, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
+      _rmsError                  = rmsResidual(allSamples, fieldHalf, bulgeX, 0.0, bulgeY, 0.0);
 
       _valid = true;
-      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) bulge4=({:.6e},{:.6e}) rms={:.4f} mm",
-           _scale.x(), _scale.y(), bulgeX, bulgeY, bulge4X, bulge4Y, _rmsError);
+      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) bulge4=(0,0) rms={:.4f} mm",
+           _scale.x(), _scale.y(), bulgeX, bulgeY, _rmsError);
       emit resultsChanged();
       return true;
       }
@@ -241,20 +241,20 @@ bool GalvoCalibration::saveParameters(const QString& filePath, double xTopLeft, 
                                       double yCenterTop, double yCenterBottom, double yRightTop,
                                       double yRightBottom) {
       json j;
-      j["version"]            = 1;
-      j["type"]               = "GalvoCalibration9";
-      j["xTopLeft"]           = xTopLeft;
-      j["xTopRight"]          = xTopRight;
-      j["xMiddleLeft"]        = xMiddleLeft;
-      j["xMiddleRight"]       = xMiddleRight;
-      j["xBottomLeft"]        = xBottomLeft;
-      j["xBottomRight"]       = xBottomRight;
-      j["yLeftTop"]           = yLeftTop;
-      j["yLeftBottom"]        = yLeftBottom;
-      j["yCenterTop"]         = yCenterTop;
-      j["yCenterBottom"]      = yCenterBottom;
-      j["yRightTop"]          = yRightTop;
-      j["yRightBottom"]       = yRightBottom;
+      j["version"]       = 1;
+      j["type"]          = "GalvoCalibration9";
+      j["xTopLeft"]      = xTopLeft;
+      j["xTopRight"]     = xTopRight;
+      j["xMiddleLeft"]   = xMiddleLeft;
+      j["xMiddleRight"]  = xMiddleRight;
+      j["xBottomLeft"]   = xBottomLeft;
+      j["xBottomRight"]  = xBottomRight;
+      j["yLeftTop"]      = yLeftTop;
+      j["yLeftBottom"]   = yLeftBottom;
+      j["yCenterTop"]    = yCenterTop;
+      j["yCenterBottom"] = yCenterBottom;
+      j["yRightTop"]     = yRightTop;
+      j["yRightBottom"]  = yRightBottom;
 
       QFile file(filePath);
       if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -282,12 +282,11 @@ QVariantMap GalvoCalibration::loadParameters(const QString& filePath) {
       try {
             json j = json::parse(data.constData(), data.constData() + data.size());
             if (!j.contains("type") || j["type"] != "GalvoCalibration9") {
-                  Warning("GalvoCalibration::loadParameters: unknown file type in {}", filePath.toStdString());
+                  Warning("GalvoCalibration::loadParameters: unknown file type in {}",
+                          filePath.toStdString());
                   return rv;
                   }
-            auto get = [&](const char* name) {
-                  return j.value(name, 0.0);
-                  };
+            auto get            = [&](const char* name) { return j.value(name, 0.0); };
             rv["xTopLeft"]      = get("xTopLeft");
             rv["xTopRight"]     = get("xTopRight");
             rv["xMiddleLeft"]   = get("xMiddleLeft");
@@ -303,7 +302,8 @@ QVariantMap GalvoCalibration::loadParameters(const QString& filePath) {
             Info("GalvoCalibration: loaded parameters from '{}'", filePath.toStdString());
             }
       catch (const std::exception& e) {
-            Warning("GalvoCalibration::loadParameters: parse error in {}: {}", filePath.toStdString(), e.what());
+            Warning("GalvoCalibration::loadParameters: parse error in {}: {}", filePath.toStdString(),
+                    e.what());
             rv.clear();
             }
       return rv;
