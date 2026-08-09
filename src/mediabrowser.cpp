@@ -24,6 +24,7 @@
 #include <QFile>
 #include <QSettings>
 #include <QRectF>
+#include <QCryptographicHash>
 #include <numbers>
 #include <cmath>
 #include <limits>
@@ -1240,11 +1241,19 @@ QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale,
       // folder is unreliable because artwork directories may be read-only or
       // on read-only media. A deterministic filename lets QML reload the
       // preview whenever the DXF file changes.
+      //
+      // The filename is derived from a SHA-256 hash of the absolute file
+      // path (truncated to 16 hex chars) plus the last-modification
+      // timestamp.  This keeps the temp filename short enough to stay within
+      // the 255-byte filesystem limit even when the source path contains
+      // long Unicode directory names.
       QFileInfo fi(filePath);
+      const QByteArray hash = QCryptographicHash::hash(
+          fi.absoluteFilePath().toUtf8(), QCryptographicHash::Sha256);
+      const QString hashHex = QString::fromLatin1(hash.left(8).toHex());
       const QString base =
-          QStringLiteral("%1_%2_dxfpreview.svg")
-              .arg(QString::fromUtf8(
-                  fi.absoluteFilePath().toUtf8().toBase64().replace('/', '_').replace('+', '-').constData()))
+          QStringLiteral("zcam_%1_%2_dxfpreview.svg")
+              .arg(hashHex)
               .arg(fi.lastModified().toMSecsSinceEpoch());
       QString tempPath = QDir::tempPath() + "/" + base;
       if (!QFile::remove(tempPath)) {
