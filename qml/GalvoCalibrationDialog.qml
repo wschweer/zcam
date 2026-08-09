@@ -131,21 +131,43 @@ Dialog {
                             // outer rectangle
                             ctx.strokeRect(cx - half, cy - half, half * 2, half * 2)
 
-                            // X labels sit on horizontal segments — nudge up a few px
-                            // Y labels sit on vertical segments — nudge sideways a few px
-                            // Small offsets so labels are close to their lines but don't
-                            // overlap labels from the perpendicular axis at grid crossings.
-                            var nud = 5   // small perpendicular nudge in px
+                            // --- draw measurement lines (thin, colored) ---
+                            // X measurements: horizontal half-segments at y = cy - h/2, cy, cy + h/2
+                            // Y measurements: vertical half-segments at x = cx - h/2, cx, cx + h/2
+                            ctx.strokeStyle = "#4fc3f7"
+                            ctx.lineWidth = 0.8
+                            ctx.beginPath()
+                            // X horizontal segments
+                            ctx.moveTo(cx - half, cy - half * 0.5); ctx.lineTo(cx, cy - half * 0.5)
+                            ctx.moveTo(cx,        cy - half * 0.5); ctx.lineTo(cx + half, cy - half * 0.5)
+                            ctx.moveTo(cx - half, cy);              ctx.lineTo(cx, cy)
+                            ctx.moveTo(cx,        cy);              ctx.lineTo(cx + half, cy)
+                            ctx.moveTo(cx - half, cy + half * 0.5); ctx.lineTo(cx, cy + half * 0.5)
+                            ctx.moveTo(cx,        cy + half * 0.5); ctx.lineTo(cx + half, cy + half * 0.5)
+                            // Y vertical segments
+                            ctx.moveTo(cx - half * 0.5, cy - half); ctx.lineTo(cx - half * 0.5, cy)
+                            ctx.moveTo(cx - half * 0.5, cy);        ctx.lineTo(cx - half * 0.5, cy + half)
+                            ctx.moveTo(cx,              cy - half); ctx.lineTo(cx, cy)
+                            ctx.moveTo(cx,              cy);        ctx.lineTo(cx, cy + half)
+                            ctx.moveTo(cx + half * 0.5, cy - half); ctx.lineTo(cx + half * 0.5, cy)
+                            ctx.moveTo(cx + half * 0.5, cy);        ctx.lineTo(cx + half * 0.5, cy + half)
+                            ctx.stroke()
+
+                            // --- labels at segment midpoints ---
+                            // X labels: on horizontal segments, nudge perpendicular (up for top/middle, down for bottom)
+                            // Y labels: on vertical segments, nudge perpendicular (left for left col, right for center/right col)
+                            // This avoids overlap at the 4 crossing points where X and Y segments intersect.
+                            var nud = 7
 
                             var labels = [
-                                // X labels (horizontal segments) — nudge up
+                                // X labels — on horizontal lines, nudge up (top & middle rows) or down (bottom row)
                                 { mx: cx - half * 0.5, my: cy - half * 0.5 - nud, id: "x1" },
                                 { mx: cx + half * 0.5, my: cy - half * 0.5 - nud, id: "x2" },
                                 { mx: cx - half * 0.5, my: cy - nud,              id: "x3" },
                                 { mx: cx + half * 0.5, my: cy - nud,              id: "x4" },
-                                { mx: cx - half * 0.5, my: cy + half * 0.5 - nud, id: "x5" },
-                                { mx: cx + half * 0.5, my: cy + half * 0.5 - nud, id: "x6" },
-                                // Y labels (vertical segments) — nudge sideways away from center
+                                { mx: cx - half * 0.5, my: cy + half * 0.5 + nud, id: "x5" },
+                                { mx: cx + half * 0.5, my: cy + half * 0.5 + nud, id: "x6" },
+                                // Y labels — on vertical lines, nudge left (left col) or right (center & right cols)
                                 { mx: cx - half * 0.5 - nud, my: cy - half * 0.5, id: "y1" },
                                 { mx: cx - half * 0.5 - nud, my: cy + half * 0.5, id: "y2" },
                                 { mx: cx + nud,              my: cy - half * 0.5, id: "y3" },
