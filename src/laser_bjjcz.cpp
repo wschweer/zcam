@@ -1218,6 +1218,19 @@ static constexpr std::string_view _propertiesMOPA =
                         ]
                       },
                       {
+                        "label": "Bulge4",
+                        "cells": [
+                          {
+                            "name": "galvoBulge4",
+                            "type": "vector2d",
+                            "min": -5.0,
+                            "max": 5.0,
+                            "default": 0.0,
+                            "precision": 6
+                          }
+                        ]
+                      },
+                      {
                         "name": "galvoScale",
                         "label": "Scale",
                         "type": "vector2d",
