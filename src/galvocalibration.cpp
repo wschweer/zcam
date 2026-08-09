@@ -44,27 +44,32 @@ double tableToMm(double table, double fieldHalf) {
       }
 
 // Position on the measured axis after applying the physical lens
-// distortion that the correction table compensates.  'bulge' is the
-// coefficient stored in the machine and sent to the controller; the
-// correction table adds  +bulge * r² * g  to the nominal position, so
-// the uncompensated physical error has the opposite sign  -bulge * r² * g .
-double distortedCoord(int gx, int gy, double fieldHalf, double bulge, bool isX) {
+// distortion that the correction table compensates.  'bulge' and
+// 'bulge4' are the values stored in the machine and sent to the
+// controller; the correction table adds
+//     (bulge*r² + bulge4*r⁴) * g
+// to the nominal position, so the uncompensated physical error has
+// the opposite sign.
+double distortedCoord(int gx, int gy, double fieldHalf, double bulge, double bulge4, bool isX) {
       const double r2          = double(gx * gx + gy * gy);
+      const double r4          = r2 * r2;
       const double nominal     = (isX ? gx : gy) * CORRECTION_SCALE;
-      const double distortion  = -bulge * r2 * (isX ? gx : gy);
+      const double g           = isX ? gx : gy;
+      const double distortion  = -(bulge * r2 + bulge4 * r4) * g;
       return tableToMm(nominal + distortion, fieldHalf);
       }
 
 // Simulated length of one measured line pair.  The current bulge
 // coefficients describe the correction written to the table; the
 // simulated physical measurement uses the inverse distortion.
-double simulatedLength(int crossGrid, bool isX, double fieldHalf, double bulgeX, double bulgeY) {
+double simulatedLength(int crossGrid, bool isX, double fieldHalf, double bulgeX, double bulge4X,
+                       double bulgeY, double bulge4Y) {
       if (isX) {
-            return distortedCoord(16, crossGrid, fieldHalf, bulgeX, true) -
-                   distortedCoord(-16, crossGrid, fieldHalf, bulgeX, true);
+            return distortedCoord(16, crossGrid, fieldHalf, bulgeX, bulge4X, true) -
+                   distortedCoord(-16, crossGrid, fieldHalf, bulgeX, bulge4X, true);
             }
-      return distortedCoord(crossGrid, 16, fieldHalf, bulgeY, false) -
-             distortedCoord(crossGrid, -16, fieldHalf, bulgeY, false);
+      return distortedCoord(crossGrid, 16, fieldHalf, bulgeY, bulge4Y, false) -
+             distortedCoord(crossGrid, -16, fieldHalf, bulgeY, bulge4Y, false);
       }
 
 // One measurement sample used for fitting and for RMS evaluation.
@@ -74,33 +79,49 @@ struct Sample {
       bool isX;      // true -> X-axis measurement
       };
 
-// Fit a single correction-table bulge coefficient from the three
-// samples of one axis.  The measured length error equals the physical
-// distortion 2 * (-bulge) * r² * h (h = 16, r² = h² + crossGrid²),
-// because the correction stored in the table has the opposite sign.
-// We return the coefficient that must be stored in the machine and
-// written to the controller.
-double fitBulge(const Sample samples[3], double nominal, double fieldHalf) {
-      double num = 0.0;
-      double den = 0.0;
+// Solve a 2x2 linear system by Cramer's rule.
+bool solve2x2(double a11, double a12, double a21, double a22, double b1, double b2, double& x1, double& x2) {
+      const double det = a11 * a22 - a12 * a21;
+      if (std::abs(det) < 1e-18)
+            return false;
+      x1 = (b1 * a22 - b2 * a12) / det;
+      x2 = (a11 * b2 - a21 * b1) / det;
+      return true;
+      }
+
+// Fit bulge (r²) and bulge4 (r⁴) correction-table coefficients from the
+// three samples of one axis.  The measured length error in table units
+// equals -2*h*(b2*r² + b4*r⁴) (h = 16).  We return the coefficients that
+// must be stored in the machine and written to the controller.
+bool fitBulgePair(const Sample samples[3], double nominal, double fieldHalf, double& bulge, double& bulge4) {
+      bulge  = 0.0;
+      bulge4 = 0.0;
+      // Least-squares: for each sample i we have
+      //    -err_i / (2*h) = b2 * r2_i + b4 * r4_i
+      double s11 = 0.0, s12 = 0.0, s22 = 0.0, sy1 = 0.0, sy2 = 0.0;
       for (int i = 0; i < 3; ++i) {
             const double r2 =
                 MEASUREMENT_GRID * MEASUREMENT_GRID + double(samples[i].crossGrid * samples[i].crossGrid);
+            const double r4        = r2 * r2;
             const double errTable  = (samples[i].value - nominal) * mmToTable(1.0, fieldHalf);
-            const double factor    = 2.0 * MEASUREMENT_GRID * r2;
-            num                   += errTable * factor;
-            den                   += factor * factor;
+            const double y         = -errTable / (2.0 * MEASUREMENT_GRID);
+            s11                   += r2 * r2;
+            s12                   += r2 * r4;
+            s22                   += r4 * r4;
+            sy1                   += r2 * y;
+            sy2                   += r4 * y;
             }
-      return den == 0.0 ? 0.0 : -num / den;
+      return solve2x2(s11, s12, s12, s22, sy1, sy2, bulge, bulge4);
       }
 
 // RMS residual after applying the correction table model to all six
 // averaged samples.
-double rmsResidual(const Sample samples[6], double fieldHalf, double bulgeX, double bulgeY) {
+double rmsResidual(const Sample samples[6], double fieldHalf, double bulgeX, double bulge4X, double bulgeY,
+                   double bulge4Y) {
       double sumSq = 0.0;
       for (int i = 0; i < 6; ++i) {
             const double simulated =
-                simulatedLength(samples[i].crossGrid, samples[i].isX, fieldHalf, bulgeX, bulgeY);
+                simulatedLength(samples[i].crossGrid, samples[i].isX, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
             const double err  = samples[i].value - simulated;
             sumSq            += err * err;
             }
@@ -129,23 +150,24 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    offsets in units of CORRECTION_SCALE = 0x10000/64 = 1024.
 //    For grid coordinate g the nominal table entry is g*1024 and the
 //    lens-distortion correction is
-//        corr = bulge * r² * g
-//    where r² = gx² + gy².  The table entry is an offset that is
-//    added to the nominal position, so the bulge coefficient stored
-//    in the machine has the opposite sign of the measured physical
-//    distortion.
+//        corr = (bulge * r² + bulge4 * r⁴) * g
+//    where r² = gx² + gy² and r⁴ = r² * r².  The r⁴ term removes the
+//    S-shaped (mustache) distortion visible along the diagonals of the
+//    field.  The table entry is an offset that is added to the nominal
+//    position, so the coefficients stored in the machine have the
+//    opposite sign of the measured physical distortion.
 //
 //    scale: The centre measurement (xMiddle / yCenter) is least affected
 //    by distortion and is used as the pure linear scale.
 //    galvoScale is stored in percent: 100 = factor 1.0.
 //
-//    bulge: The six measured pairs are averaged to cancel translation.
-//    For each axis we fit the physical distortion coefficient from the
-//    three averaged lengths using the actual r² of each sample and the
-//    factor 2 that comes from moving both line ends.  The value stored
-//    in the machine and sent to the controller is the negative of that
-//    coefficient, because the correction table adds an offset with the
-//    opposite sign of the measured error.
+//    bulge/bulge4: The six measured pairs are averaged to cancel
+//    translation.  For each axis we fit the two distortion coefficients
+//    from the three averaged lengths using the actual r²/r⁴ of each
+//    sample and the factor 2 that comes from moving both line ends.
+//    The values stored in the machine and sent to the controller are the
+//    negatives of the physical distortion coefficients.
+
 //---------------------------------------------------------
 
 bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
@@ -180,21 +202,26 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double sx = nominal / xSamples[1].value;
       const double sy = nominal / ySamples[1].value;
 
-      //--- bulge: least-squares fit per axis ---
-      const double bulgeX = fitBulge(xSamples, nominal, fieldHalf);
-      const double bulgeY = fitBulge(ySamples, nominal, fieldHalf);
+      //--- bulge/bulge4: least-squares fit per axis ---
+      double bulgeX, bulge4X, bulgeY, bulge4Y;
+      if (!fitBulgePair(xSamples, nominal, fieldHalf, bulgeX, bulge4X) ||
+          !fitBulgePair(ySamples, nominal, fieldHalf, bulgeY, bulge4Y)) {
+            Critical("GalvoCalibration::compute: unable to fit bulge coefficients");
+            return false;
+            }
 
-      _scale = QVector2D(sx * 100.0, sy * 100.0);
-      _bulge = QVector2D(bulgeX, bulgeY);
+      _scale  = QVector2D(sx * 100.0, sy * 100.0);
+      _bulge  = QVector2D(bulgeX, bulgeY);
+      _bulge4 = QVector2D(bulge4X, bulge4Y);
 
       //--- RMS error after correction (simulated correction table) ---
       const Sample allSamples[6] = {xSamples[0], xSamples[1], xSamples[2],
                                     ySamples[0], ySamples[1], ySamples[2]};
-      _rmsError                  = rmsResidual(allSamples, fieldHalf, bulgeX, bulgeY);
+      _rmsError                  = rmsResidual(allSamples, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
 
       _valid = true;
-      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) rms={:.4f} mm", _scale.x(),
-           _scale.y(), bulgeX, bulgeY, _rmsError);
+      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) bulge4=({:.6e},{:.6e}) rms={:.4f} mm",
+           _scale.x(), _scale.y(), bulgeX, bulgeY, bulge4X, bulge4Y, _rmsError);
       emit resultsChanged();
       return true;
       }
@@ -286,6 +313,7 @@ void GalvoCalibration::clear() {
       _valid    = false;
       _scale    = QVector2D(1.0, 1.0);
       _bulge    = QVector2D(0.0, 0.0);
+      _bulge4   = QVector2D(0.0, 0.0);
       _rmsError = 0.0;
       nominal   = 0.0;
       emit resultsChanged();
@@ -309,6 +337,7 @@ bool GalvoCalibration::applyToMachine(Machine* machine) {
 
       laser->set_galvoScale(_scale);
       laser->set_galvoBulge(_bulge);
+      laser->set_galvoBulge4(_bulge4);
 
       // Persist all assets (config, machines, recipes) — also gives
       // user feedback in the status bar via the assetsSaved signal.

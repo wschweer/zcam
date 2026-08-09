@@ -39,7 +39,8 @@ class Machine;
 //
 //    If all values equal the nominal grid spacing
 //    (field width * 0.5), the galvo is perfectly calibrated:
-//      galvoScale = (1, 1) and galvoBulge = (0, 0).
+//      galvoScale = (1, 1), galvoBulge = (0, 0), galvoBulge4 = (0, 0).
+
 //---------------------------------------------------------
 class GalvoCalibration : public QObject
       {
@@ -55,6 +56,7 @@ class GalvoCalibration : public QObject
       // computed results
       QVector2D _scale {1.0, 1.0};
       QVector2D _bulge {0.0, 0.0};
+      QVector2D _bulge4 {0.0, 0.0};
       double _rmsError {0.0};
       bool _valid {false};
 
@@ -64,7 +66,7 @@ class GalvoCalibration : public QObject
     public:
       explicit GalvoCalibration(ZCam* zc, QObject* parent = nullptr);
 
-      /// Compute galvoScale and galvoBulge from 12 measured line
+      /// Compute galvoScale, galvoBulge and galvoBulge4 from 12 measured line
       /// lengths (in mm).  The machine supplies the field size.
       /// Returns true on success.
       Q_INVOKABLE bool compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
@@ -96,6 +98,9 @@ class GalvoCalibration : public QObject
 
       Q_PROPERTY(QVector2D bulge READ bulge NOTIFY resultsChanged)
       QVector2D bulge() const { return _bulge; }
+
+      Q_PROPERTY(QVector2D bulge4 READ bulge4 NOTIFY resultsChanged)
+      QVector2D bulge4() const { return _bulge4; }
 
       Q_PROPERTY(double rmsError READ rmsError NOTIFY resultsChanged)
       double rmsError() const { return _rmsError; }

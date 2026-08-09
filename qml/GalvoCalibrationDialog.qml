@@ -217,6 +217,18 @@ Dialog {
                                 : "—")
                     }
                     Label {
+                        text: qsTr("Bulge4:")
+                        font: unifiedFontBold
+                    }
+                    Label {
+                        font: unifiedFont
+                        text: calib.valid
+                            ? "%1,  %2".arg(calib.bulge4.x.toFixed(6)).arg(calib.bulge4.y.toFixed(6))
+                            : (galvoCalDialog.machine
+                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge4.x.toFixed(6)).arg(galvoCalDialog.machine.galvoBulge4.y.toFixed(6))
+                                : "—")
+                    }
+                    Label {
                         text: qsTr("RMS error:")
                         font: unifiedFontBold
                     }

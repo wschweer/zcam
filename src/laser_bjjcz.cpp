@@ -797,259 +797,285 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
 
 static constexpr std::string_view _propertiesQ = // Q-switched Laser
         R"json(
-              {
-                "class": "Machine",
-                "rows": [
-                  {
-                    "label": " ",
-                    "cells": [
-                      {
-                        "type": "string",
-                        "name": "name",
-                        "sublabel": "Name"
-                      },
-                      {
-                        "type": "machineType",
-                        "name": "type",
-                        "sublabel": "Type"
-                      },
-                      {
-                        "type": "boardType",
-                        "name": "boardType",
-                        "sublabel": "Board"
-                      }
-                    ]
-                  },
-                  {
-                    "label": "Description",
-                    "cells": [
-                      {
-                        "name": "description",
-                        "type": "multiline"
-                      }
-                    ]
-                  },
-                  {
-                    "cells": [
-                      {
-                        "name": "line",
-                        "type": "line"
-                      }
-                    ]
-                  },
-                  {
-                    "columns": 2,
-                    "cells": [
-                      {
-                        "name": "maxTravel",
-                        "label": "Travel",
-                        "type": "vector3d",
-                        "unit": "mm",
-                        "default": [
-                          100.0,
-                          100.0,
-                          100.0
-                        ]
-                      },
-                      {
-                        "name": "travelSpeed",
-                        "label": "Travel Speed",
-                        "type": "float",
-                        "unit": "mm/s",
-                        "min": 0.0,
-                        "max": 100000.0,
-                        "default": 0.0
-                      },
-                      {
-                        "name": "framingSpeed",
-                        "label": "Framing Speed",
-                        "type": "float",
-                        "unit": "mm/s",
-                        "min": 0.0,
-                        "max": 100000.0,
-                        "default": 0.0
-                      },
-                      {
-                        "name": "maxFeed",
-                        "label": "Max Feed",
-                        "type": "vector3d",
-                        "unit": "mm/s",
-                        "default": [
-                          0.0,
-                          0.0,
-                          0.0
-                        ]
-                      },
-                      {
-                        "name": "maxAcceleration",
-                        "label": "Max Accel",
-                        "type": "vector3d",
-                        "unit": "mm/s²",
-                        "default": [
-                          0.0,
-                          0.0,
-                          0.0
-                        ]
-                      },
-                      {
-                        "name": "line",
-                        "type": "line",
-                        "colSpan": 2
-                      },
-                      {
-                        "label": "Precision",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "unit": "mm",
-                            "min": 0.001,
-                            "max": 10.0,
-                            "precision": 3,
-                            "default": 0.001,
-                            "name": "precision",
-                            "sublabel": "Prec"
-                          },
-                          {
-                            "type": "float",
-                            "unit": "mm",
-                            "min": 0.001,
-                            "max": 10.0,
-                            "precision": 3,
-                            "default": 0.001,
-                            "name": "ncPrecision",
-                            "sublabel": "NC Prec"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "circlePrecision",
-                        "label": "Circle Prec",
-                        "type": "float",
-                        "unit": "mm",
-                        "min": 0.001,
-                        "max": 10.0,
-                        "precision": 3,
-                        "default": 0.001
-                      },
-                      {
-                        "name": "line",
-                        "type": "line",
-                        "colSpan": 2
-                      },
-                      {
-                        "label": "Galvo",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "min": 0.0,
-                            "max": 10.0,
-                            "default": 0.0,
-                            "precision": 4,
-                            "name": "galvoP1",
-                            "sublabel": "P1"
-                          },
-                          {
-                            "type": "float",
-                            "min": 0.0,
-                            "max": 10.0,
-                            "precision": 4,
-                            "default": 0.0,
-                            "name": "galvoP2",
-                            "sublabel": "P2"
-                          },
-                          {
-                            "type": "float",
-                            "min": 0.0,
-                            "max": 10.0,
-                            "precision": 4,
-                            "default": 0.0,
-                            "name": "galvoP3",
-                            "sublabel": "P3"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "galvoScale",
-                        "label": "Galvo Scale",
-                        "type": "vector2d",
-                        "default": [
-                          100.0,
-                          100.0
-                        ]
-                      },
-                      {
-                        "label": " ",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoShearX",
-                            "sublabel": "Shear X"
-                          },
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoShearY",
-                            "sublabel": "Shear Y"
-                          }
-                        ]
-                      },
-                      {
-                        "label": "Trapezoid",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoTrapezoidX",
-                            "sublabel": "X"
-                          },
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoTrapezoidY",
-                            "sublabel": "Y"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "galvoRotate",
-                        "label": "Galvo Rotate",
-                        "type": "float",
-                        "unit": "°",
-                        "min": 0.0,
-                        "max": 360.0,
-                        "default": 0.0,
-                        "precision": 3
-                      },
-                      {
-                        "name": "galvoSwapxy",
-                        "label": "Galvo Swap XY",
-                        "type": "bool",
-                        "default": false
-                      },
-                      {
-                        "name": "ethDevice",
-                        "label": "Ethernet Device",
-                        "type": "ethDevice",
-                        "default": ""
-                      }
-                    ]
-                  }
-                ]
-              }
-                  )json";
+{
+  "class": "Machine",
+  "rows": [
+    {
+      "label": " ",
+      "cells": [
+        {
+          "type": "string",
+          "name": "name",
+          "sublabel": "Name"
+        },
+        {
+          "type": "machineType",
+          "name": "type",
+          "sublabel": "Type"
+        },
+        {
+          "type": "boardType",
+          "name": "boardType",
+          "sublabel": "Board"
+        }
+      ]
+    },
+    {
+      "label": "Description",
+      "cells": [
+        {
+          "name": "description",
+          "type": "multiline"
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "name": "line",
+          "type": "line"
+        }
+      ]
+    },
+    {
+      "columns": 2,
+      "cells": [
+        {
+          "name": "maxTravel",
+          "label": "Travel",
+          "type": "vector3d",
+          "unit": "mm",
+          "default": [
+            100.0,
+            100.0,
+            100.0
+          ]
+        },
+        {
+          "name": "travelSpeed",
+          "label": "Travel Speed",
+          "type": "float",
+          "unit": "mm/s",
+          "min": 0.0,
+          "max": 100000.0,
+          "default": 0.0
+        },
+        {
+          "name": "framingSpeed",
+          "label": "Framing Speed",
+          "type": "float",
+          "unit": "mm/s",
+          "min": 0.0,
+          "max": 100000.0,
+          "default": 0.0
+        },
+        {
+          "name": "maxFeed",
+          "label": "Max Feed",
+          "type": "vector3d",
+          "unit": "mm/s",
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "name": "maxAcceleration",
+          "label": "Max Accel",
+          "type": "vector3d",
+          "unit": "mm/s²",
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "name": "line",
+          "type": "line",
+          "colSpan": 2
+        },
+        {
+          "label": "Precision",
+          "cells": [
+            {
+              "type": "float",
+              "unit": "mm",
+              "min": 0.001,
+              "max": 10.0,
+              "precision": 3,
+              "default": 0.001,
+              "name": "precision",
+              "sublabel": "Prec"
+            },
+            {
+              "type": "float",
+              "unit": "mm",
+              "min": 0.001,
+              "max": 10.0,
+              "precision": 3,
+              "default": 0.001,
+              "name": "ncPrecision",
+              "sublabel": "NC Prec"
+            }
+          ]
+        },
+        {
+          "name": "circlePrecision",
+          "label": "Circle Prec",
+          "type": "float",
+          "unit": "mm",
+          "min": 0.001,
+          "max": 10.0,
+          "precision": 3,
+          "default": 0.001
+        },
+        {
+          "name": "line",
+          "type": "line",
+          "colSpan": 2
+        },
+        {
+          "label": "Galvo",
+          "cells": [
+            {
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "default": 0.0,
+              "precision": 4,
+              "name": "galvoP1",
+              "sublabel": "P1"
+            },
+            {
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "precision": 4,
+              "default": 0.0,
+              "name": "galvoP2",
+              "sublabel": "P2"
+            },
+            {
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "precision": 4,
+              "default": 0.0,
+              "name": "galvoP3",
+              "sublabel": "P3"
+            }
+          ]
+        },
+        {
+          "label": "Bulge",
+          "cells": [
+            {
+              "name": "galvoBulge",
+              "type": "vector2d",
+              "min": -5.0,
+              "max": 5.0,
+              "default": 0.0,
+              "precision": 4
+            }
+          ]
+        },
+        {
+          "label": "Bulge4",
+          "cells": [
+            {
+              "name": "galvoBulge4",
+              "type": "vector2d",
+              "min": -5.0,
+              "max": 5.0,
+              "default": 0.0,
+              "precision": 6
+            }
+          ]
+        },
+        {
+          "name": "galvoScale",
+          "label": "Galvo Scale",
+          "type": "vector2d",
+          "default": [
+            100.0,
+            100.0
+          ]
+        },
+        {
+          "label": " ",
+          "cells": [
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoShearX",
+              "sublabel": "Shear X"
+            },
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoShearY",
+              "sublabel": "Shear Y"
+            }
+          ]
+        },
+        {
+          "label": "Trapezoid",
+          "cells": [
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoTrapezoidX",
+              "sublabel": "X"
+            },
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoTrapezoidY",
+              "sublabel": "Y"
+            }
+          ]
+        },
+        {
+          "name": "galvoRotate",
+          "label": "Galvo Rotate",
+          "type": "float",
+          "unit": "°",
+          "min": 0.0,
+          "max": 360.0,
+          "default": 0.0,
+          "precision": 3
+        },
+        {
+          "name": "galvoSwapxy",
+          "label": "Galvo Swap XY",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "ethDevice",
+          "label": "Ethernet Device",
+          "type": "ethDevice",
+          "default": ""
+        }
+      ]
+    }
+  ]
+}
+)json";
 
 // MOPA Laser
 static constexpr std::string_view _propertiesMOPA =
@@ -1416,330 +1442,356 @@ static constexpr std::string_view _propertiesMOPA =
 // UVLaser
 static constexpr std::string_view _propertiesUV =
         R"json(
-              {
-                "class": "Machine",
-                "rows": [
-                  {
-                    "label": " ",
-                    "cells": [
-                      {
-                        "type": "string",
-                        "name": "name",
-                        "sublabel": "Name"
-                      },
-                      {
-                        "type": "machineType",
-                        "name": "type",
-                        "sublabel": "Type"
-                      },
-                      {
-                        "type": "boardType",
-                        "name": "boardType",
-                        "sublabel": "Board"
-                      }
-                    ]
-                  },
-                  {
-                    "label": "Description",
-                    "cells": [
-                      {
-                        "name": "description",
-                        "type": "multiline"
-                      }
-                    ]
-                  },
-                  {
-                    "cells": [
-                      {
-                        "name": "line",
-                        "type": "line"
-                      }
-                    ]
-                  },
-                  {
-                    "columns": 2,
-                    "cells": [
-                      {
-                        "name": "maxTravel",
-                        "label": "Travel",
-                        "type": "vector3d",
-                        "unit": "mm",
-                        "default": [
-                          100.0,
-                          100.0,
-                          100.0
-                        ]
-                      },
-                      {
-                        "label": "Speed",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "unit": "mm/s",
-                            "min": 0.0,
-                            "max": 100000.0,
-                            "default": 0.0,
-                            "name": "travelSpeed",
-                            "sublabel": "Travel"
-                          },
-                          {
-                            "type": "float",
-                            "unit": "mm/s",
-                            "min": 0.0,
-                            "max": 100000.0,
-                            "default": 0.0,
-                            "name": "framingSpeed",
-                            "sublabel": "Framing"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "line",
-                        "type": "line",
-                        "colSpan": 2
-                      },
-                      {
-                        "label": "Precision",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "unit": "mm",
-                            "min": 0.001,
-                            "max": 10.0,
-                            "precision": 3,
-                            "default": 0.001,
-                            "name": "precision",
-                            "sublabel": "Prec"
-                          },
-                          {
-                            "type": "float",
-                            "unit": "mm",
-                            "min": 0.001,
-                            "max": 10.0,
-                            "precision": 3,
-                            "default": 0.001,
-                            "name": "ncPrecision",
-                            "sublabel": "NC Prec"
-                          },
-                          {
-                            "type": "float",
-                            "unit": "mm",
-                            "min": 0.001,
-                            "max": 10.0,
-                            "precision": 3,
-                            "default": 0.001,
-                            "name": "circlePrecision",
-                            "sublabel": "Circle Prec"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "line",
-                        "type": "line",
-                        "colSpan": 2
-                      },
-                      {
-                        "label": "Galvo",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "min": 0.0,
-                            "max": 10.0,
-                            "default": 0.0,
-                            "precision": 4,
-                            "name": "galvoP1",
-                            "sublabel": "P1"
-                          },
-                          {
-                            "type": "float",
-                            "min": 0.0,
-                            "max": 10.0,
-                            "precision": 4,
-                            "default": 0.0,
-                            "name": "galvoP2",
-                            "sublabel": "P2"
-                          },
-                          {
-                            "type": "float",
-                            "min": 0.0,
-                            "max": 10.0,
-                            "precision": 4,
-                            "default": 0.0,
-                            "name": "galvoP3",
-                            "sublabel": "P3"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "galvoScale",
-                        "label": "Galvo Scale",
-                        "type": "vector2d",
-                        "default": [
-                          100.0,
-                          100.0
-                        ]
-                      },
-                      {
-                        "label": " ",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoShearX",
-                            "sublabel": "Shear X"
-                          },
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoShearY",
-                            "sublabel": "Shear Y"
-                          }
-                        ]
-                      },
-                      {
-                        "label": "Trapezoid",
-                        "cells": [
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoTrapezoidX",
-                            "sublabel": "X"
-                          },
-                          {
-                            "type": "float",
-                            "min": -100.0,
-                            "max": 100.0,
-                            "precision": 3,
-                            "default": 0.0,
-                            "name": "galvoTrapezoidY",
-                            "sublabel": "Y"
-                          }
-                        ]
-                      },
-                      {
-                        "name": "galvoRotate",
-                        "label": "Rotate",
-                        "type": "float",
-                        "unit": "°",
-                        "min": 0.0,
-                        "max": 360.0,
-                        "default": 0.0,
-                        "precision": 3
-                      },
-                      {
-                        "name": "galvoSwapxy",
-                        "label": "Swap XY",
-                        "type": "bool",
-                        "default": false
-                      },
-                      {
-                        "name": "line",
-                        "type": "line",
-                        "colSpan": 2
-                      },
-                      {
-                        "label": "Frequency",
-                        "cells": [
-                          {
-                            "name": "minFreq",
-                            "sublabel": "min",
-                            "type": "float",
-                            "unit": "kHz",
-                            "default": "1.000"
-                          },
-                          {
-                            "name": "maxFreq",
-                            "sublabel": "max",
-                            "type": "float",
-                            "unit": "kHz",
-                            "default": "4000.000"
-                          }
-                        ]
-                      },
-                      {
-                        "label": "Tickle",
-                        "cells": [
-                          {
-                            "name": "ticklePulse",
-                            "sublabel": "pulse",
-                            "type": "float",
-                            "default": "1.0",
-                            "unit": "µsec"
-                          },
-                          {
-                            "name": "tickleFreq",
-                            "sublabel": "freq.",
-                            "type": "float",
-                            "default": "5.0",
-                            "unit": "kHz"
-                          }
-                        ]
-                      },
-                      {
-                        "label": "FPK",
-                        "cells": [
-                          {
-                            "type": "bool",
-                            "default": false,
-                            "name": "enableFPK",
-                            "sublabel": "enable"
-                          },
-                          {
-                            "type": "float",
-                            "precision": 2,
-                            "default": 10.0,
-                            "name": "fpkStartPower",
-                            "sublabel": "start"
-                          },
-                          {
-                            "type": "float",
-                            "precision": 2,
-                            "default": 10.0,
-                            "name": "fpkIncrement",
-                            "sublabel": "inc."
-                          }
-                        ]
-                      },
-                      {
-                        "name": "line",
-                        "type": "line",
-                        "colSpan": 2
-                      },
-                      {
-                        "label": "Gpio",
-                        "cells": [
-                          {
-                            "type": "int",
-                            "sublabel": "RedLight",
-                            "name": "lightPin",
-                            "min": -1,
-                            "max": 15,
-                            "default": 8
-                          },
-                          {
-                            "type": "int",
-                            "sublabel": "FootPedal",
-                            "name": "footPin",
-                            "min": -1,
-                            "max": 15,
-                            "default": 15
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-                  )json";
+{
+  "class": "Machine",
+  "rows": [
+    {
+      "label": " ",
+      "cells": [
+        {
+          "type": "string",
+          "name": "name",
+          "sublabel": "Name"
+        },
+        {
+          "type": "machineType",
+          "name": "type",
+          "sublabel": "Type"
+        },
+        {
+          "type": "boardType",
+          "name": "boardType",
+          "sublabel": "Board"
+        }
+      ]
+    },
+    {
+      "label": "Description",
+      "cells": [
+        {
+          "name": "description",
+          "type": "multiline"
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "name": "line",
+          "type": "line"
+        }
+      ]
+    },
+    {
+      "columns": 2,
+      "cells": [
+        {
+          "name": "maxTravel",
+          "label": "Travel",
+          "type": "vector3d",
+          "unit": "mm",
+          "default": [
+            100.0,
+            100.0,
+            100.0
+          ]
+        },
+        {
+          "label": "Speed",
+          "cells": [
+            {
+              "type": "float",
+              "unit": "mm/s",
+              "min": 0.0,
+              "max": 100000.0,
+              "default": 0.0,
+              "name": "travelSpeed",
+              "sublabel": "Travel"
+            },
+            {
+              "type": "float",
+              "unit": "mm/s",
+              "min": 0.0,
+              "max": 100000.0,
+              "default": 0.0,
+              "name": "framingSpeed",
+              "sublabel": "Framing"
+            }
+          ]
+        },
+        {
+          "name": "line",
+          "type": "line",
+          "colSpan": 2
+        },
+        {
+          "label": "Precision",
+          "cells": [
+            {
+              "type": "float",
+              "unit": "mm",
+              "min": 0.001,
+              "max": 10.0,
+              "precision": 3,
+              "default": 0.001,
+              "name": "precision",
+              "sublabel": "Prec"
+            },
+            {
+              "type": "float",
+              "unit": "mm",
+              "min": 0.001,
+              "max": 10.0,
+              "precision": 3,
+              "default": 0.001,
+              "name": "ncPrecision",
+              "sublabel": "NC Prec"
+            },
+            {
+              "type": "float",
+              "unit": "mm",
+              "min": 0.001,
+              "max": 10.0,
+              "precision": 3,
+              "default": 0.001,
+              "name": "circlePrecision",
+              "sublabel": "Circle Prec"
+            }
+          ]
+        },
+        {
+          "name": "line",
+          "type": "line",
+          "colSpan": 2
+        },
+        {
+          "label": "Galvo",
+          "cells": [
+            {
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "default": 0.0,
+              "precision": 4,
+              "name": "galvoP1",
+              "sublabel": "P1"
+            },
+            {
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "precision": 4,
+              "default": 0.0,
+              "name": "galvoP2",
+              "sublabel": "P2"
+            },
+            {
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "precision": 4,
+              "default": 0.0,
+              "name": "galvoP3",
+              "sublabel": "P3"
+            }
+          ]
+        },
+        {
+          "label": "Bulge",
+          "cells": [
+            {
+              "name": "galvoBulge",
+              "type": "vector2d",
+              "min": -5.0,
+              "max": 5.0,
+              "default": 0.0,
+              "precision": 4
+            }
+          ]
+        },
+        {
+          "label": "Bulge4",
+          "cells": [
+            {
+              "name": "galvoBulge4",
+              "type": "vector2d",
+              "min": -5.0,
+              "max": 5.0,
+              "default": 0.0,
+              "precision": 6
+            }
+          ]
+        },
+        {
+          "name": "galvoScale",
+          "label": "Galvo Scale",
+          "type": "vector2d",
+          "default": [
+            100.0,
+            100.0
+          ]
+        },
+        {
+          "label": " ",
+          "cells": [
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoShearX",
+              "sublabel": "Shear X"
+            },
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoShearY",
+              "sublabel": "Shear Y"
+            }
+          ]
+        },
+        {
+          "label": "Trapezoid",
+          "cells": [
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoTrapezoidX",
+              "sublabel": "X"
+            },
+            {
+              "type": "float",
+              "min": -100.0,
+              "max": 100.0,
+              "precision": 3,
+              "default": 0.0,
+              "name": "galvoTrapezoidY",
+              "sublabel": "Y"
+            }
+          ]
+        },
+        {
+          "name": "galvoRotate",
+          "label": "Rotate",
+          "type": "float",
+          "unit": "°",
+          "min": 0.0,
+          "max": 360.0,
+          "default": 0.0,
+          "precision": 3
+        },
+        {
+          "name": "galvoSwapxy",
+          "label": "Swap XY",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "line",
+          "type": "line",
+          "colSpan": 2
+        },
+        {
+          "label": "Frequency",
+          "cells": [
+            {
+              "name": "minFreq",
+              "sublabel": "min",
+              "type": "float",
+              "unit": "kHz",
+              "default": "1.000"
+            },
+            {
+              "name": "maxFreq",
+              "sublabel": "max",
+              "type": "float",
+              "unit": "kHz",
+              "default": "4000.000"
+            }
+          ]
+        },
+        {
+          "label": "Tickle",
+          "cells": [
+            {
+              "name": "ticklePulse",
+              "sublabel": "pulse",
+              "type": "float",
+              "default": "1.0",
+              "unit": "µsec"
+            },
+            {
+              "name": "tickleFreq",
+              "sublabel": "freq.",
+              "type": "float",
+              "default": "5.0",
+              "unit": "kHz"
+            }
+          ]
+        },
+        {
+          "label": "FPK",
+          "cells": [
+            {
+              "type": "bool",
+              "default": false,
+              "name": "enableFPK",
+              "sublabel": "enable"
+            },
+            {
+              "type": "float",
+              "precision": 2,
+              "default": 10.0,
+              "name": "fpkStartPower",
+              "sublabel": "start"
+            },
+            {
+              "type": "float",
+              "precision": 2,
+              "default": 10.0,
+              "name": "fpkIncrement",
+              "sublabel": "inc."
+            }
+          ]
+        },
+        {
+          "name": "line",
+          "type": "line",
+          "colSpan": 2
+        },
+        {
+          "label": "Gpio",
+          "cells": [
+            {
+              "type": "int",
+              "sublabel": "RedLight",
+              "name": "lightPin",
+              "min": -1,
+              "max": 15,
+              "default": 8
+            },
+            {
+              "type": "int",
+              "sublabel": "FootPedal",
+              "name": "footPin",
+              "min": -1,
+              "max": 15,
+              "default": 15
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)json";
 
 //---------------------------------------------------------
 //   properties
@@ -1997,19 +2049,29 @@ void LaserBJJCZ::writeCorrectionTable() {
 
             // < 0 Kissen
             // > 0 barrel distortion
-            double kx = galvoBulge().x();
-            double ky = galvoBulge().y();
+            const double k2x = galvoBulge().x();
+            const double k2y = galvoBulge().y();
+            const double k4x = galvoBulge4().x();
+            const double k4y = galvoBulge4().y();
 
-            if (galvoSwapxy())
+            double kx = k2x;
+            double ky = k2y;
+            double k4xlocal = k4x;
+            double k4ylocal = k4y;
+
+            if (galvoSwapxy()) {
                   std::swap(kx, ky);
+                  std::swap(k4xlocal, k4ylocal);
+                  }
 
             int scale = 0x10000 / 64;
 
             for (double y = -32; y <= 32; ++y) {
                   for (double x = -32; x <= 32; ++x) {
-                        double r  = x * x + y * y;
-                        int corrX = kx * r * x;
-                        int corrY = ky * r * y;
+                        const double r2 = x * x + y * y;
+                        const double r4 = r2 * r2;
+                        int corrX = int((kx * r2 + k4xlocal * r4) * x);
+                        int corrY = int((ky * r2 + k4ylocal * r4) * y);
 
                         // clamp so that (nominal position + correction)
                         // stays within the signed 16-bit range [-32767, 32767]
@@ -2017,10 +2079,6 @@ void LaserBJJCZ::writeCorrectionTable() {
                         int nominalY = int(y * scale);
                         int cX       = std::clamp(corrX, -32767 - nominalX, 32767 - nominalX);
                         int cY       = std::clamp(corrY, -32767 - nominalY, 32767 - nominalY);
-                        //                        if (cX != corrX)
-                        //                              Debug("{}:{} x-overflow {:x}", x, y, cX);
-                        //                        if (cY != corrY)
-                        //                              Debug("{}:{} y-overflow {:x}", x, y, cY);
                         corData.setValue(x, y, {cX, cY});
                         }
                   }
