@@ -27,6 +27,8 @@ Dialog {
     // Use the configured font from ZCam → Config
     readonly property string cfgFontFamily: ZCam.config ? ZCam.config.font : "NotoSans"
     readonly property int cfgFontSize: ZCam.config ? ZCam.config.fontSize : 12
+    // Canvas font uses px, QML font uses pt — convert: 1pt ≈ 1.333px at 96dpi
+    readonly property int cfgFontPx: Math.round(cfgFontSize * 4 / 3)
     readonly property font unifiedFont: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize })
     readonly property font unifiedFontBold: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize, weight: Font.Bold })
 
@@ -134,21 +136,22 @@ Dialog {
                             }
                             ctx.stroke()
 
-                            // --- X labels: on horizontal lines at horizontal midpoint ---
+                            // --- X labels: above horizontal lines at horizontal midpoint ---
                             // 6 X measurements: left and right half of each of the 3 horizontal lines
-                            // Label sits directly on the line at the segment midpoint
+                            // Label floats slightly above the line
                             ctx.fillStyle = "#4fc3f7"
-                            ctx.font = "bold " + galvoCalDialog.cfgFontSize + "pt " + galvoCalDialog.cfgFontFamily
+                            ctx.font = "bold " + galvoCalDialog.cfgFontPx + "px " + galvoCalDialog.cfgFontFamily
                             ctx.textAlign = "center"
-                            ctx.textBaseline = "middle"
+                            ctx.textBaseline = "bottom"
+                            var xLift = 3   // px above the line
 
                             var xLabels = [
-                                { mx: cx - half * 0.5, my: ys[0], id: "x1" },
-                                { mx: cx + half * 0.5, my: ys[0], id: "x2" },
-                                { mx: cx - half * 0.5, my: ys[1], id: "x3" },
-                                { mx: cx + half * 0.5, my: ys[1], id: "x4" },
-                                { mx: cx - half * 0.5, my: ys[2], id: "x5" },
-                                { mx: cx + half * 0.5, my: ys[2], id: "x6" }
+                                { mx: cx - half * 0.5, my: ys[0] - xLift, id: "x1" },
+                                { mx: cx + half * 0.5, my: ys[0] - xLift, id: "x2" },
+                                { mx: cx - half * 0.5, my: ys[1] - xLift, id: "x3" },
+                                { mx: cx + half * 0.5, my: ys[1] - xLift, id: "x4" },
+                                { mx: cx - half * 0.5, my: ys[2] - xLift, id: "x5" },
+                                { mx: cx + half * 0.5, my: ys[2] - xLift, id: "x6" }
                             ]
                             for (var i = 0; i < xLabels.length; i++)
                                 ctx.fillText(xLabels[i].id, xLabels[i].mx, xLabels[i].my)
@@ -157,6 +160,7 @@ Dialog {
                             // 6 Y measurements: top and bottom half of each of the 3 vertical lines
                             // Label is placed to the right of the line at the segment midpoint
                             ctx.textAlign = "left"
+                            ctx.textBaseline = "middle"
                             var yOff = 4
                             var yLabels = [
                                 { mx: xs[0] + yOff, my: cy - half * 0.5, id: "y1" },
@@ -171,7 +175,7 @@ Dialog {
 
                             // nominal label
                             ctx.fillStyle = "white"
-                            ctx.font = galvoCalDialog.cfgFontSize + "pt " + galvoCalDialog.cfgFontFamily
+                            ctx.font = galvoCalDialog.cfgFontPx + "px " + galvoCalDialog.cfgFontFamily
                             ctx.textAlign = "left"
                             ctx.textBaseline = "alphabetic"
                             ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
