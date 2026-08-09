@@ -31,6 +31,7 @@
 class Project;
 class Element3d;
 class TreeModel;
+class GalvoCalibration;
 
 //---------------------------------------------------------
 //   Config
@@ -512,6 +513,7 @@ class ZCam : public QObject
       PROPV(Machines*, machines, nullptr)
       PROPV(LaserReceipes*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
+      PROPV(GalvoCalibration*, galvoCalibration, nullptr)
 
       void loadAssets();
 

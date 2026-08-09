@@ -14,6 +14,7 @@
 #include <QtQuick3D/private/qquick3dcamera_p.h>
 #include <QtQuick3D/private/qquick3dnode_p.h>
 #include <QtQuick3D/private/qquick3dviewport_p.h>
+#include "galvocalibration.h"
 #include "project.h"
 #include "cad.h"
 #include "cameraelement.h"
@@ -73,6 +74,8 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
 
       _machines = new Machines(this);
       _recipes  = new LaserReceipes(this);
+
+      _galvoCalibration = new GalvoCalibration(this, this);
 
       loadAssets();
 

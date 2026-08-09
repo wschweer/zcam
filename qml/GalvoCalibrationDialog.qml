@@ -26,6 +26,10 @@ Dialog {
     property Machine machine: null
     property double nominalSpacing: machine ? machine.maxTravel.x * 0.5 : 75.0
 
+    // The GalvoCalibration instance is owned by ZCam and exposed
+    // via the galvoCalibration property.
+    property GalvoCalibration calib: ZCam.galvoCalibration
+
     // 12 measurement values (defaults = nominal)
     property double xTopLeft: nominalSpacing
     property double xTopRight: nominalSpacing
@@ -39,10 +43,6 @@ Dialog {
     property double yCenterBottom: nominalSpacing
     property double yRightTop: nominalSpacing
     property double yRightBottom: nominalSpacing
-
-    GalvoCalibration {
-        id: calib
-    }
 
     onOpened: {
         machine = ZCam.project ? ZCam.project.machine : null
