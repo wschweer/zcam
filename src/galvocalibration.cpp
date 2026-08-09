@@ -105,30 +105,46 @@ bool solve2x2(double a11, double a12, double a21, double a22, double b1, double 
       return true;
       }
 
-// Fit bulge (r²) and bulge4 (r⁴) correction-table coefficients from the
-// three averaged pair samples and one averaged diagonal sample of a single
-// axis.  The diagonal value has already been projected onto the axis by the
-// caller (divided by sqrt(2)).  All samples represent a nominal half-field
-// length, so the model equation in table units is
-//     -err / (2 * MEASUREMENT_GRID) = bulge * r² + bulge4 * scale * r⁴
-// where err = (measured - nominal) converted to correction-table units.
-bool fitBulgePair(const Sample samples[4], double nominal, double fieldHalf, double& bulge, double& bulge4) {
+// Fit bulge (r²) and bulge4 (r⁴) correction-table coefficients for one axis
+// from the three averaged pair samples.  The measured length error in table
+// units is (value - nominal) * mmToTable(1.0, fieldHalf); it equals
+//     2*h*(bulge*r² + bulge4*Laser::bulge4Scale*r⁴)
+// with h = MEASUREMENT_GRID.  We fit both coefficients simultaneously with a
+// linear least-squares solve over the three samples.  This gives independent
+// bulge4 values for X and Y, which is more accurate than forcing a shared
+// rotationally-symmetric coefficient when the two galvo axes are not perfectly
+// identical.
+bool fitBulgePair(const Sample samples[3], double nominal, double fieldHalf, double& bulge, double& bulge4) {
       bulge  = 0.0;
       bulge4 = 0.0;
+
+      const double tablePerMm = mmToTable(1.0, fieldHalf);
       double s11 = 0.0, s12 = 0.0, s22 = 0.0, sy1 = 0.0, sy2 = 0.0;
-      for (int i = 0; i < 4; ++i) {
-            const double r2        = double(samples[i].gx * samples[i].gx + samples[i].gy * samples[i].gy);
-            const double r4        = r2 * r2;
-            const double r4s       = r4 * Laser::bulge4Scale;
-            const double errTable  = (samples[i].value - nominal) * mmToTable(1.0, fieldHalf);
-            const double y         = -errTable / (2.0 * MEASUREMENT_GRID);
-            s11                   += r2 * r2;
-            s12                   += r2 * r4s;
-            s22                   += r4s * r4s;
-            sy1                   += r2 * y;
-            sy2                   += r4s * y;
+      for (int i = 0; i < 3; ++i) {
+            const double r2    = double(samples[i].gx * samples[i].gx + samples[i].gy * samples[i].gy);
+            const double r4    = r2 * r2;
+            const double r4s   = r4 * Laser::bulge4Scale;
+            const double err   = (samples[i].value - nominal) * tablePerMm;
+            const double y     = err / (2.0 * MEASUREMENT_GRID);
+            s11               += r2 * r2;
+            s12               += r2 * r4s;
+            s22               += r4s * r4s;
+            sy1               += r2 * y;
+            sy2               += r4s * y;
             }
-      return solve2x2(s11, s12, s12, s22, sy1, sy2, bulge, bulge4);
+      // Cramer's rule for the 2x2 normal matrix [[s11,s12],[s12,s22]].
+      const double det = s11 * s22 - s12 * s12;
+      if (std::abs(det) < 1e-24)
+            return false;
+      bulge  = (sy1 * s22 - sy2 * s12) / det;
+      bulge4 = (s11 * sy2 - s12 * sy1) / det;
+
+      // Clamp bulge4 to a sane range to avoid numerical runaway with
+      // inconsistent input data.  bulge is much smaller numerically and
+      // does not need the same guard.
+      constexpr double maxBulge4 = 5.0;
+      bulge4                       = std::clamp(bulge4, -maxBulge4, maxBulge4);
+      return true;
       }
 
 // RMS residual after applying the correction table model to all six
@@ -187,73 +203,75 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    by distortion and is used as the pure linear scale.
 //    galvoScale is stored in percent: 100 = factor 1.0.
 //
-//    bulge/bulge4: The six measured pairs are averaged to cancel
-//    translation.  For each axis we fit the r² and r⁴ distortion
-//    coefficients from the three averaged pair lengths plus the average
-//    of the four diagonals projected onto that axis (divided by sqrt(2)).
-//    The diagonals end at grid coordinates (±32, ±32) and therefore add
-//    the third distinct radius (r² = 2048) that makes bulge4 numerically
-//    stable.
+//    bulge: The six measured pairs are averaged to cancel
+//    translation.  For each axis we fit the r² distortion coefficient
+//    from the three averaged pair lengths using the actual r² of each
+//    sample and the factor 2 that comes from moving both line ends.
+//
+//    bulge/bulge4: A linear least-squares fit over the three averaged pair
+//    lengths per axis estimates both the r² and the r⁴ correction coefficients
+//    for that axis.  Because the two galvo axes can have slightly different
+//    higher-order distortion, X and Y are fitted independently.  The r⁴ term
+//    removes the S-shaped (mustache) distortion visible along the diagonals
+//    of the field.  The table entry is an offset that is added to the nominal
+//    position, so the coefficients stored in the machine have the opposite sign
+//    of the measured physical distortion.
+//
 //    The values stored in the machine and sent to the controller are the
-//    negatives of the physical distortion coefficients.
+    //    negatives of the physical distortion coefficients.
+
 //---------------------------------------------------------
 
 bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
                                 double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
-double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
-double yRightBottom, double dTopLeft, double dTopRight, double dBottomLeft,
-double dBottomRight) {
-if (!machine) {
-Critical("GalvoCalibration::compute: no machine");
-return false;
-}
-
-const double fieldHalf = machine->maxTravel().x() * 0.5;
-if (fieldHalf <= 0.0) {
-Critical("GalvoCalibration::compute: invalid field size {}", fieldHalf);
-return false;
-}
-nominal = fieldHalf;
-
-//--- average each pair (cancels translation offset) ---
-const Sample xSamples[3] = {
-{(xTopLeft + xTopRight) * 0.5,       16, 16, true},
-{(xMiddleLeft + xMiddleRight) * 0.5, 16,  0, true},
-{(xBottomLeft + xBottomRight) * 0.5, 16, -16, true}
-};
-const Sample ySamples[3] = {
-{(yLeftTop + yLeftBottom) * 0.5,       -16, 16, false},
-{(yCenterTop + yCenterBottom) * 0.5,    0, 16, false},
-{(yRightTop + yRightBottom) * 0.5,      16, 16, false}
-};
-
-//--- average the four diagonals (centre to outer corner) ---
-const double dAvg       = (dTopLeft + dTopRight + dBottomLeft + dBottomRight) * 0.25;
-const double dProjected = dAvg / std::sqrt(2.0); // projected length on each axis
-
-//--- scale: use center measurement only ---
-const double sx = nominal / xSamples[1].value;
-const double sy = nominal / ySamples[1].value;
-
-//--- bulge/bulge4: least-squares fit per axis ---
-double bulgeX, bulge4X, bulgeY, bulge4Y;
-const Sample xFit[4] = {xSamples[0], xSamples[1], xSamples[2], {dProjected, 32, 32, true}};
-      const Sample yFit[4] = {ySamples[0], ySamples[1], ySamples[2], {dProjected, 32, 32, false}};
-if (!fitBulgePair(xFit, nominal, fieldHalf, bulgeX, bulge4X) ||
-    !fitBulgePair(yFit, nominal, fieldHalf, bulgeY, bulge4Y)) {
-      Critical("GalvoCalibration::compute: unable to fit bulge coefficients");
+                                double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
+                                double yRightBottom, double dTopLeft, double dTopRight, double dBottomLeft,
+                                double dBottomRight) {
+      if (!machine) {
+            Critical("GalvoCalibration::compute: no machine");
             return false;
-      }
+            }
 
-_scale  = QVector2D(sx * 100.0, sy * 100.0);
-_bulge  = QVector2D(bulgeX, bulgeY);
+      const double fieldHalf = machine->maxTravel().x() * 0.5;
+      if (fieldHalf <= 0.0) {
+            Critical("GalvoCalibration::compute: invalid field size {}", fieldHalf);
+            return false;
+            }
+      nominal = fieldHalf;
+
+      //--- average each pair (cancels translation offset) ---
+      const Sample xSamples[3] = {
+            {(xTopLeft + xTopRight) * 0.5,       16, 16, true},
+            {(xMiddleLeft + xMiddleRight) * 0.5, 16,  0, true},
+            {(xBottomLeft + xBottomRight) * 0.5, 16, -16, true}
+            };
+      const Sample ySamples[3] = {
+            {(yLeftTop + yLeftBottom) * 0.5,       -16, 16, false},
+            {(yCenterTop + yCenterBottom) * 0.5,    0, 16, false},
+            {(yRightTop + yRightBottom) * 0.5,      16, 16, false}
+            };
+
+      //--- scale: use center measurement only ---
+      const double sx = nominal / xSamples[1].value;
+      const double sy = nominal / ySamples[1].value;
+
+      //--- bulge/bulge4: least-squares fit per axis ---
+      double bulgeX, bulgeY, bulge4X, bulge4Y;
+      if (!fitBulgePair(xSamples, nominal, fieldHalf, bulgeX, bulge4X) ||
+          !fitBulgePair(ySamples, nominal, fieldHalf, bulgeY, bulge4Y)) {
+            Critical("GalvoCalibration::compute: unable to fit bulge coefficients");
+            return false;
+            }
+
+      _scale  = QVector2D(sx * 100.0, sy * 100.0);
+      _bulge  = QVector2D(bulgeX, bulgeY);
       _bulge4 = QVector2D(bulge4X, bulge4Y);
 
-//--- RMS error after correction (simulated correction table) ---
-const Sample allSamples[6] = {xSamples[0], xSamples[1], xSamples[2],
-                              ySamples[0], ySamples[1], ySamples[2]};
-const double diagonals[4]  = {dTopLeft, dTopRight, dBottomLeft, dBottomRight};
-_rmsError                  = rmsResidual(allSamples, diagonals, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
+      //--- RMS error after correction (simulated correction table) ---
+      const Sample allSamples[6] = {xSamples[0], xSamples[1], xSamples[2],
+                                    ySamples[0], ySamples[1], ySamples[2]};
+      const double diagonalsIn[4]  = {dTopLeft, dTopRight, dBottomLeft, dBottomRight};
+      _rmsError                    = rmsResidual(allSamples, diagonalsIn, fieldHalf, bulgeX, bulge4X, bulgeY, bulge4Y);
 
       _valid = true;
       Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) bulge4=({:.6e},{:.6e}) rms={:.4f} mm",
@@ -261,8 +279,6 @@ _rmsError                  = rmsResidual(allSamples, diagonals, fieldHalf, bulge
       emit resultsChanged();
       return true;
       }
-
-
 //---------------------------------------------------------
 //   saveParameters
 //    Persist the 16 raw measurement values (mm) as JSON.

@@ -10,6 +10,7 @@
 //=============================================================================
 
 #include <algorithm>
+#include <cmath>
 #include <unistd.h>
 #include "usb.h"
 #include "group.h"
@@ -2083,8 +2084,14 @@ void LaserBJJCZ::writeCorrectionTable() {
                   for (double x = -32; x <= 32; ++x) {
                         const double r2 = x * x + y * y;
                         const double r4 = r2 * r2;
-                        int corrX = int((kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x);
-                        int corrY = int((ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y);
+                        int corrX = int(std::lround((kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x));
+                        int corrY = int(std::lround((ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y));
+
+                        // Avoid 16-bit signed overflow in the packed correction value.
+                        constexpr int corrMin = -0x7FFF;
+                        constexpr int corrMax =  0x7FFF;
+                        corrX = std::clamp(corrX, corrMin, corrMax);
+                        corrY = std::clamp(corrY, corrMin, corrMax);
 
                         // clamp so that (nominal position + correction)
                         // stays within the signed 16-bit range [-32767, 32767]
