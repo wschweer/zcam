@@ -80,13 +80,16 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double yCenter = (yCenterTop + yCenterBottom) * 0.5;
       const double yRight  = (yRightTop + yRightBottom) * 0.5;
 
-      //--- scale: mean of all six measurements ---
+      //--- scale: use center measurement only ---
+      // The center measurement (xMiddle / yCenter) is least
+      // affected by pincushion/barrel distortion and best
+      // represents the pure linear scale.  Using the mean of
+      // all three measurements would incorrectly fold the
+      // bulge distortion into the scale factor.
       // galvoScale is stored in percent: 100 = factor 1.0 (see
       // LaserBJJCZ::initEngine/mapToGalvo, which divide by 100).
-      const double meanX = (xTop + xMiddle + xBottom) / 3.0;
-      const double meanY = (yLeft + yCenter + yRight) / 3.0;
-      const double sx    = nominal / meanX;
-      const double sy    = nominal / meanY;
+      const double sx = nominal / xMiddle;
+      const double sy = nominal / yCenter;
 
       //--- bulge: least-squares fit of deviations ---
       // Convert each mean to galvo-unit error:
