@@ -31,6 +31,13 @@ namespace {
 constexpr double CORRECTION_GRID_HALF = 32.0;
 constexpr double CORRECTION_SCALE     = 65536.0 / 64.0; // = 1024 table units / grid unit
 constexpr double MEASUREMENT_GRID     = 16.0;           // "9 point" cross is at +/- half field
+// Empirical scale factor for the fourth-order radial term.  The 9-point pattern provides
+// only two distinct radii, so the fitted bulge4 coefficient is ill-conditioned and was
+// observed to be about an order of magnitude too large compared with manual board tuning.
+// Multiplying the r^4 term by this constant (in both the calibration fit and the controller
+// table) reduces the stored coefficient by the same factor while preserving the physical
+// correction.
+constexpr double BULGE4_SCALE         = 10.0;
 // Convert a physical offset in mm to correction-table units.
 // fieldHalf mm maps to CORRECTION_GRID_HALF grid units, i.e.
 // CORRECTION_GRID_HALF * CORRECTION_SCALE table units.
@@ -55,7 +62,7 @@ double distortedCoord(int gx, int gy, double fieldHalf, double bulge, double bul
       const double r4          = r2 * r2;
       const double nominal     = (isX ? gx : gy) * CORRECTION_SCALE;
       const double g           = isX ? gx : gy;
-      const double distortion  = -(bulge * r2 + bulge4 * r4) * g;
+      const double distortion  = -(bulge * r2 + bulge4 * r4 * BULGE4_SCALE) * g;
       return tableToMm(nominal + distortion, fieldHalf);
       }
 
@@ -103,13 +110,14 @@ bool fitBulgePair(const Sample samples[3], double nominal, double fieldHalf, dou
             const double r2 =
                 MEASUREMENT_GRID * MEASUREMENT_GRID + double(samples[i].crossGrid * samples[i].crossGrid);
             const double r4        = r2 * r2;
+            const double r4s       = r4 * BULGE4_SCALE;
             const double errTable  = (samples[i].value - nominal) * mmToTable(1.0, fieldHalf);
             const double y         = -errTable / (2.0 * MEASUREMENT_GRID);
             s11                   += r2 * r2;
-            s12                   += r2 * r4;
-            s22                   += r4 * r4;
+            s12                   += r2 * r4s;
+            s22                   += r4s * r4s;
             sy1                   += r2 * y;
-            sy2                   += r4 * y;
+            sy2                   += r4s * y;
             }
       return solve2x2(s11, s12, s12, s22, sy1, sy2, bulge, bulge4);
       }
@@ -150,7 +158,7 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    offsets in units of CORRECTION_SCALE = 0x10000/64 = 1024.
 //    For grid coordinate g the nominal table entry is g*1024 and the
 //    lens-distortion correction is
-//        corr = (bulge * r² + bulge4 * r⁴) * g
+//        corr = (bulge * r² + bulge4 * BULGE4_SCALE * r⁴) * g
 //    where r² = gx² + gy² and r⁴ = r² * r².  The r⁴ term removes the
 //    S-shaped (mustache) distortion visible along the diagonals of the
 //    field.  The table entry is an offset that is added to the nominal
