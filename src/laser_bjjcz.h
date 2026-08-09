@@ -46,7 +46,6 @@ enum class BjjczStatus : int {
 //---------------------------------------------------------
 //   Status
 //---------------------------------------------------------
-
 class LaserStatusFlags
       {
       uint16_t flags {0};
@@ -64,7 +63,6 @@ class LaserStatusFlags
 //---------------------------------------------------------
 //   formatter LaserStatusFlags
 //---------------------------------------------------------
-
 template <> struct std::formatter<LaserStatusFlags> {
       constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
       auto format(const LaserStatusFlags& f, auto& ctx) const {
@@ -80,65 +78,8 @@ template <> struct std::formatter<LaserStatusFlags> {
       };
 
 //---------------------------------------------------------
-//   FiberLaserState
-//---------------------------------------------------------
-
-class FiberLaserState
-      {
-      LaserBJJCZ* laser;
-      double _frequency;
-      double power;
-      double jumpSpeed;
-      double delay_jump;
-      double delayOn;
-      double delayOff;
-      double delayPolygon;
-      double pulseWidth;
-      int x;
-      int y;
-      double lastDir;
-      bool dirValid;
-      double markSpeed;
-
-    public:
-      FiberLaserState(LaserBJJCZ* l) : laser(l) { clear(); }
-      void clear() {
-            power        = 0.0;
-            markSpeed    = 0.0;
-            jumpSpeed    = 0.0;
-            _frequency   = 0.0;
-            delay_jump   = 0.0;
-            delayOn      = 0.0;
-            delayOff     = 0.0;
-            delayPolygon = 0.0;
-            pulseWidth   = 0.0;
-            x            = 0x8000;
-            y            = 0x8000;
-            lastDir      = 0.0;
-            dirValid     = false;
-            }
-      bool setPower(double v) {
-            auto rv = v != power;
-            power   = v;
-            return rv;
-            }
-      double frequency() const { return _frequency; }
-      void setFrequency(double);
-      void move(int x,       // galvo range    -32767 -> 32767
-      // aktually used: -25800 -> 25800 ( 175mmx175mm for 250mm Lens)
-int y);
-      void mark(int x, int y);
-      int distance(int x, int y);
-      void setPosition(uint16_t newX, uint16_t newY) {
-            x = newX;
-            y = newY;
-            }
-      };
-
-//---------------------------------------------------------
 //   Command
 //---------------------------------------------------------
-
 enum Command : uint16_t {
       listJumpTo        = 0x8001,
       listEndOfList     = 0x8002,
@@ -242,7 +183,6 @@ enum Command : uint16_t {
 //---------------------------------------------------------
 //   Packet4
 //---------------------------------------------------------
-
 class Packet4 : public std::array<uint16_t, 4>
       {
     public:
@@ -251,7 +191,6 @@ class Packet4 : public std::array<uint16_t, 4>
 //---------------------------------------------------------
 //   Packet6
 //---------------------------------------------------------
-
 class Packet6 : public std::array<uint16_t, 6>
       {
     public:
@@ -288,13 +227,11 @@ class CmdList : public std::array<Packet6, LIST_SIZE>
       void end(int param = 0);
       };
 
-
 //---------------------------------------------------------
 //   LaserBJJCZ
 //    Concrete Laser implementation for the BJJCZ controller board.
 //    Communication is via USB (libusb).
 //---------------------------------------------------------
-
 class LaserBJJCZ : public Laser
       {
       Q_OBJECT
@@ -331,6 +268,14 @@ class LaserBJJCZ : public Laser
       void list_jump_speed(uint16_t speed);
       void list_jump(int x, int y, int angle = 0);
       void list_mark(uint16_t x, uint16_t y, uint16_t angle = 0);
+      //--------------------------------------------------------------------
+      //     computeJumpDelay
+      //     Compute a distance-dependent jump delay based on the EzCAD
+      //     formula:  total = base + (distance * distanceTC)
+      //     The result is clamped to [minJumpDelay, maxJumpDelay].
+      //     Uses the current LaserParameterSet values.
+      //--------------------------------------------------------------------
+      double computeJumpDelay(int galvoDistance) const;
       void list_jump_delay(double delay) {
             list.write({listJumpDelay, uint16_t(fabs(delay)), uint16_t(delay > 0.0 ? 0 : 0x8000)});
             }
@@ -478,7 +423,6 @@ class LaserBJJCZ : public Laser
       void initPosition();
 
       void setLight(bool on);
-
       bool gpioValue(int bit) { return _outputPort & (1 << bit); }
       void gpioListWrite();
       void gpioInit() {
@@ -509,7 +453,6 @@ class LaserBJJCZ : public Laser
       virtual ~LaserBJJCZ();
 
       friend class CmdList;
-      friend class FiberLaserState;
 
       // ── LaserEngine interface overrides ───────────────────────
       virtual bool initEngine(bool dryRun) override;
@@ -529,7 +472,6 @@ class LaserBJJCZ : public Laser
       virtual LaserPosition mapToGalvo(double, double) override;
       virtual const std::string_view properties() const override;
       void setLaserValuesValid(bool v) { _laserValuesValid = v; }
-
       Q_INVOKABLE virtual void toggleOutputBit(int bit) override { gpioToggle(bit); }
       };
 

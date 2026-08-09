@@ -60,7 +60,6 @@ struct LaserPathElement {
 //    This is a list of points representing a path the
 //    laser has to travel along.
 //---------------------------------------------------------
-
 class LaserPath : public std::vector<LaserPathElement>
       {
     public:
@@ -82,7 +81,6 @@ class LaserPath : public std::vector<LaserPathElement>
 //---------------------------------------------------------
 //   LineSegment
 //---------------------------------------------------------
-
 struct LineSegment {
       Vec2d p1; // start position of Line
       Vec2d p2; // end position of Line
@@ -91,7 +89,6 @@ struct LineSegment {
 //---------------------------------------------------------
 //   LineSegments
 //---------------------------------------------------------
-
 class LineSegments : public std::vector<LineSegment>
       {
     public:
@@ -101,7 +98,6 @@ class LineSegments : public std::vector<LineSegment>
 //---------------------------------------------------------
 //   LaserPosition
 //---------------------------------------------------------
-
 struct LaserPosition {
       uint16_t x;
       uint16_t y;
@@ -116,7 +112,6 @@ enum class ParameterType : int { None, Speed, Power, Interval, Frequency, Count,
 //---------------------------------------------------------
 //   LaserParameterSet
 //---------------------------------------------------------
-
 struct LaserParameterSet {
       double power;
       double speed;
@@ -139,7 +134,6 @@ struct LaserParameterSet {
 //---------------------------------------------------------
 //   Pulse
 //---------------------------------------------------------
-
 struct Pulse33 {
       int pulseWidth;      // ns
       int cutOffFrequency; // above this the laser will have expected output power
@@ -164,7 +158,6 @@ enum class LaserState {
 //    and integrates the LaserEngine interface (framing/marking
 //    state machine, background threads, board communication).
 //---------------------------------------------------------
-
 class Laser : public Machine
       {
       Q_OBJECT
@@ -182,8 +175,8 @@ class Laser : public Machine
 
       PROPV(double, onDelay, 100.0)
       PROPV(double, offDelay, 100.0)
-      PROPV(double, endDelay, 100.0)
-      PROPV(double, polygonDelay, 100.0)
+      PROPV(double, endDelay, 200.0)
+      PROPV(double, polygonDelay, 150.0)
 
       PROPV(double, jumpSpeed, 6000.0)
       PROPV(double, minJumpDelay, 200.0)
@@ -306,7 +299,6 @@ class Laser : public Machine
       //     (LaserBJJCZ, LaserRKQ) implement the actual hardware I/O.
       //     The base class provides safe no-op defaults.
       //--------------------------------------------------------------------
-
       virtual int readInputPort() { return 0; }
       //--------------------------------------------------------------------
       //     toggleOutputBit

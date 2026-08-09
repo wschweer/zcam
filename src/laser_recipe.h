@@ -21,7 +21,6 @@ using json = nlohmann::json;
 //---------------------------------------------------------
 //   LaserPass
 //---------------------------------------------------------
-
 class LaserPass
       {
       Q_GADGET
@@ -46,8 +45,8 @@ class LaserPass
       PROPV_GADGET(bool, overrideTimings, false)
       PROPV_GADGET(double, onDelay, 100.0)
       PROPV_GADGET(double, offDelay, 100.0)
-      PROPV_GADGET(double, endDelay, 1000.0)
-      PROPV_GADGET(double, polygonDelay, 100.0)
+      PROPV_GADGET(double, endDelay, 200.0)
+      PROPV_GADGET(double, polygonDelay, 150.0)
       PROPV_GADGET(double, jumpSpeed, 6000.0)
       PROPV_GADGET(double, minJumpDelay, 200.0)
       PROPV_GADGET(double, maxJumpDelay, 400.0)
@@ -55,7 +54,6 @@ class LaserPass
 
       Q_PROPERTY(double intervalLpi READ intervalLpi WRITE setIntervalLpi NOTIFY intervalChanged)
       Q_PROPERTY(double intervalLpmm READ intervalLpmm WRITE setIntervalLpmm NOTIFY intervalChanged)
-
 
       inline static constexpr std::string_view _properties {R"({
     "class": "Layer Setting",
@@ -355,7 +353,7 @@ class LaserPass
             ]
         }
     ]
-                              })"};
+                                    })"};
 
       //      PROPV_GADGET(double, onDelay, 100.0)
       //      PROPV_GADGET(double, offDelay, 100.0)
@@ -367,7 +365,6 @@ class LaserPass
       json toJson() const;
       void fromJson(const json&);
       const std::string_view properties() const { return _properties; }
-
       double intervalLpi() const { return 25.4 / interval(); }
       double intervalLpmm() const { return 1.0 / interval(); }
       void setIntervalLpi(double v) { set_interval(25.4 / v); }
@@ -377,7 +374,6 @@ class LaserPass
 //---------------------------------------------------------
 //   LaserPasses
 //---------------------------------------------------------
-
 class LaserPasses : public std::vector<LaserPass>
       {
       Q_GADGET
@@ -390,7 +386,6 @@ class LaserPasses : public std::vector<LaserPass>
 //---------------------------------------------------------
 //   LaserRecipe
 //---------------------------------------------------------
-
 class LaserRecipe
       {
       Q_GADGET
@@ -411,13 +406,10 @@ class LaserRecipe
       LaserRecipe() {}
       json toJson() const;
       void fromJson(const json&);
-
       const LaserPasses& passes() const { return _passes; }
       LaserPasses& passes() { return _passes; }
-
       const LaserPass& pass(int idx) const { return _passes.at(idx); }
       LaserPass& pass(int idx) { return _passes.at(idx); }
-
       QString relativeFilePath() const { return _relativeFilePath; }
       void setRelativeFilePath(const QString& p) { _relativeFilePath = p; }
       };
@@ -429,7 +421,6 @@ class LaserRecipe
 //    files are leaf nodes.  Each leaf carries a recipeIdx that
 //    indexes into LaserReceipes::recipes.
 //=========================================================
-
 class RecipeTreeModel : public QAbstractItemModel
       {
       Q_OBJECT
@@ -478,7 +469,6 @@ class RecipeTreeModel : public QAbstractItemModel
 //---------------------------------------------------------
 //   Recipes
 //---------------------------------------------------------
-
 class LaserReceipes : public QObject
       {
       Q_OBJECT
@@ -563,7 +553,6 @@ class LaserReceipes : public QObject
 
       /// Remove a folder and all recipes inside it.
       Q_INVOKABLE bool removeFolder(const QString& relDir);
-
       };
 
 Q_DECLARE_METATYPE(LaserPass)

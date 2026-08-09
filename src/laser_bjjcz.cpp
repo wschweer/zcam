@@ -26,7 +26,6 @@ static const int PRODUCT = 0x9899;
 //---------------------------------------------------------
 //   LaserParameterSet
 //---------------------------------------------------------
-
 LaserParameterSet::LaserParameterSet(const LaserPass* s, const Laser* laser) {
       power      = s->power();
       speed      = s->speed();
@@ -57,7 +56,6 @@ LaserParameterSet::LaserParameterSet(const LaserPass* s, const Laser* laser) {
 //---------------------------------------------------------
 //   setOverride
 //---------------------------------------------------------
-
 void LaserParameterSet::setOverride(ParameterType t, double val) {
       switch (t) {
             case ParameterType::None:
@@ -73,7 +71,6 @@ void LaserParameterSet::setOverride(ParameterType t, double val) {
 //---------------------------------------------------------
 //   LaserCmd
 //---------------------------------------------------------
-
 struct LaserCmd {
       uint16_t cmd;
       const std::string_view name;
@@ -175,7 +172,6 @@ static const LaserCmdList commandLookup {
 //---------------------------------------------------------
 //   cmdName
 //---------------------------------------------------------
-
 static string cmdName(uint16_t cmd) {
       std::string name = std::format("??{:04x}", cmd);
       for (const auto& c : commandLookup) {
@@ -190,7 +186,6 @@ static string cmdName(uint16_t cmd) {
 //---------------------------------------------------------
 //   dump
 //---------------------------------------------------------
-
 void dump(const Packet6& data) {
       string line = format("{:20s} ", cmdName(data[0]));
       int n       = data[5] ? 6 : 5;
@@ -225,7 +220,6 @@ void dump(Packet6* p, bool single) {
 //---------------------------------------------------------
 //   LaserBJJCZ
 //---------------------------------------------------------
-
 LaserBJJCZ::LaserBJJCZ(ZCam* w, QObject* parent) : Laser(w, parent), list(this) {
       usb               = new Usb();
       _laserValuesValid = false;
@@ -242,7 +236,6 @@ LaserBJJCZ::~LaserBJJCZ() {
 //---------------------------------------------------------
 //   mapToGalvo
 //---------------------------------------------------------
-
 LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
       double xScale = galvoScale().x() / 100.0;
       double yScale = galvoScale().y() / 100.0;
@@ -276,7 +269,6 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
 //---------------------------------------------------------
 //   initEngine
 //---------------------------------------------------------
-
 bool LaserBJJCZ::initEngine(bool _dryRun) {
       set_dryRun(_dryRun);
       Assert(zcam);
@@ -371,7 +363,6 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
 //---------------------------------------------------------
 //   initPosition
 //---------------------------------------------------------
-
 void LaserBJJCZ::initPosition() {
       auto d = get_position_xy();
       gotoXY(d[1] + 1, d[2] + 1);
@@ -382,7 +373,6 @@ void LaserBJJCZ::initPosition() {
 //    send command  in command mode. Every command is a Packet6 and gets
 //    a Packet4 answer. Every answer contains the LaserStatusFlags
 //-----------------------------------------------------------------------------
-
 Packet4 LaserBJJCZ::command(Packet6 data) const {
       Packet4 rv {0xffff, 0xffff, 0xffff, 0xffff};
       if (!send(data)) {
@@ -399,7 +389,6 @@ Packet4 LaserBJJCZ::command(Packet6 data) const {
 //---------------------------------------------------------
 //   send
 //---------------------------------------------------------
-
 bool LaserBJJCZ::send(const CmdList& data) const {
       if (!waitReady())
             return false;
@@ -425,7 +414,6 @@ bool LaserBJJCZ::send(const Packet6& data) const {
 //---------------------------------------------------------
 //   wait_finished
 //---------------------------------------------------------
-
 void LaserBJJCZ::wait_finished() const {
       for (int i = 1;; ++i) {
             if (stopMarking)
@@ -440,7 +428,6 @@ void LaserBJJCZ::wait_finished() const {
 //---------------------------------------------------------
 //   wait_axis
 //---------------------------------------------------------
-
 void LaserBJJCZ::wait_axis() const {
       for (int i = 1; is_axis(); ++i) {
             usleep(1000 * 10);
@@ -458,7 +445,6 @@ void LaserBJJCZ::wait_axis() const {
 //    return false if interrupted by stopFraming or stopMarking
 //    or timeout
 //---------------------------------------------------------
-
 bool LaserBJJCZ::waitReady() const {
       if (_status.isReady()) // status from last command
             return true;
@@ -479,7 +465,6 @@ bool LaserBJJCZ::waitReady() const {
 //---------------------------------------------------------
 //   wait_idle
 //---------------------------------------------------------
-
 void LaserBJJCZ::wait_idle() const {
       for (int i = 1; is_busy(); ++i) {
             usleep(1000 * 10); // 10 ms
@@ -497,7 +482,6 @@ void LaserBJJCZ::wait_idle() const {
 //---------------------------------------------------------
 //   exitEngine
 //---------------------------------------------------------
-
 void LaserBJJCZ::exitEngine() {
       stop_execute();
       stop_list();
@@ -511,7 +495,6 @@ void LaserBJJCZ::exitEngine() {
 //---------------------------------------------------------
 //   mark
 //---------------------------------------------------------
-
 void LaserBJJCZ::mark(double x, double y) {
       LaserPosition pos = mapToGalvo(x, y);
       mark(pos.x, pos.y);
@@ -520,7 +503,6 @@ void LaserBJJCZ::mark(double x, double y) {
 //---------------------------------------------------------
 //   move
 //---------------------------------------------------------
-
 void LaserBJJCZ::move(double x, double y) {
       LaserPosition pos = mapToGalvo(x, y);
       move(pos.x, pos.y);
@@ -529,7 +511,6 @@ void LaserBJJCZ::move(double x, double y) {
 //---------------------------------------------------------
 //   markLines
 //---------------------------------------------------------
-
 void LaserBJJCZ::markLines(PathsD& pl, bool reverse) {
       if (pl.empty())
             return;
@@ -544,14 +525,13 @@ void LaserBJJCZ::markLines(PathsD& pl, bool reverse) {
             mark(p2.x, p2.y);
 
             current = p2;
-            list_delay_time(10);
+            list_delay_time(laserValues.endDelay);
             }
       }
 
 //---------------------------------------------------------
 //   dotCorrection
 //---------------------------------------------------------
-
 PathsD dotCorrection(const PathsD& paths, double offset) {
       if (offset)
             return InflatePaths(paths, offset, JoinType::Miter, EndType::Polygon, 2, 3);
@@ -561,7 +541,6 @@ PathsD dotCorrection(const PathsD& paths, double offset) {
 //---------------------------------------------------------
 //   mark
 //---------------------------------------------------------
-
 void LaserBJJCZ::mark(const PathD& p) {
       bool first     = true;
       bool firstMove = true;
@@ -587,7 +566,6 @@ void LaserBJJCZ::mark(const PathD& p) {
 //---------------------------------------------------------
 //   setLaser
 //---------------------------------------------------------
-
 void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
       Debug("===");
       if (!_laserValuesValid || l.speed != laserValues.speed)
@@ -600,6 +578,8 @@ void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
             list_laser_off_delay(l.offDelay);
       if (!_laserValuesValid || l.polygonDelay != laserValues.polygonDelay)
             list_polygon_delay(l.polygonDelay);
+      if (!_laserValuesValid || l.endDelay != laserValues.endDelay)
+            list_delay_time(l.endDelay);
       if (isUVLaser()) {
             //            list_qswitch_period(uint16_t(round(20000.0 / l.frequency)) & 0xffff);
             //            list_mark_frequency(100);
@@ -623,14 +603,12 @@ void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
       laserValues       = l;
       _laserValuesValid = true;
 
-      list_jump_delay(40);
-      //      list_delay_time(800); // 100 - 800
+      list_jump_delay(l.minJumpDelay);
       }
 
 //---------------------------------------------------------
 //   startFramingEngine
 //---------------------------------------------------------
-
 bool LaserBJJCZ::startFramingEngine() {
       try {
             aborting = false;
@@ -649,7 +627,7 @@ bool LaserBJJCZ::startFramingEngine() {
             list.write({listLaserOnDelay, 0});
             list.write({listLaserOffDelay, 0});
             list.write({listPolygonDelay, 0});
-            list.write({listJumpDelay, 0});
+            list.write({listJumpDelay, uint16_t(minJumpDelay())});
             }
       catch (const std::string s) {
             Debug("failed: {}", s);
@@ -661,7 +639,6 @@ bool LaserBJJCZ::startFramingEngine() {
 //---------------------------------------------------------
 //   stopFramingEngine
 //---------------------------------------------------------
-
 void LaserBJJCZ::stopFramingEngine() {
       stopFraming = false;
       stop_execute();
@@ -678,7 +655,7 @@ void LaserBJJCZ::stopFramingEngine() {
 
       list.start();
       list.write({listJumpSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
-      list.write({listJumpDelay, 32});
+      list.write({listJumpDelay, uint16_t(minJumpDelay())});
       list.end(1);
       set_control_mode(1);
 
@@ -695,7 +672,6 @@ void LaserBJJCZ::stopFramingEngine() {
 //---------------------------------------------------------
 //   stopMarkingEngine
 //---------------------------------------------------------
-
 void LaserBJJCZ::stopMarkingEngine() const {
       stop_execute();
       }
@@ -703,7 +679,6 @@ void LaserBJJCZ::stopMarkingEngine() const {
 //---------------------------------------------------------
 //   startMarkingEngine
 //---------------------------------------------------------
-
 void LaserBJJCZ::startMarkingEngine() {
       aborting          = false;
       _laserValuesValid = false;
@@ -733,7 +708,6 @@ void LaserBJJCZ::startMarkingEngine() {
 //   endMarkingEngine
 //    called at the end of the marking thread
 //---------------------------------------------------------
-
 void LaserBJJCZ::endMarkingEngine() {
       list.end();
       wait_finished();
@@ -744,7 +718,6 @@ void LaserBJJCZ::endMarkingEngine() {
 //---------------------------------------------------------
 //   list_delay_time
 //---------------------------------------------------------
-
 void LaserBJJCZ::list_delay_time(double time) {
       list.write({listDelayTime, uint16_t(time)});
       }
@@ -752,7 +725,6 @@ void LaserBJJCZ::list_delay_time(double time) {
 //---------------------------------------------------------
 //   markLayer
 //---------------------------------------------------------
-
 void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
       setLaser(sl);
 
@@ -770,7 +742,7 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
                   }
             else {
                   if (moving) {
-                        list_delay_time(10);
+                        list_delay_time(sl.endDelay);
                         // list_laser_on_point(10);
                         }
                   mark(p.x(), p.y());
@@ -1214,7 +1186,7 @@ static constexpr std::string_view _propertiesMOPA =
                          "unit": "mm/s"
                        },
                        {
-                         "name": "jumpDistanceLimi",
+                         "name": "jumpDistanceLimit",
                          "sublabel": "limit",
                          "type": "float",
                          "unit": "mm"
@@ -1228,13 +1200,13 @@ static constexpr std::string_view _propertiesMOPA =
                          "name": "minJumpDelay",
                          "sublabel": "min",
                          "type": "float",
-                         "unit": "mm/s"
+                         "unit": "µs"
                        },
                        {
                          "name": "maxJumpDelay",
                          "sublabel": "max",
                          "type": "float",
-                         "unit": "mm/s"
+                         "unit": "µs"
                        }
                      ]
                    },
@@ -1656,7 +1628,6 @@ static constexpr std::string_view _propertiesUV =
 //---------------------------------------------------------
 //   properties
 //---------------------------------------------------------
-
 const std::string_view LaserBJJCZ::properties() const {
       if (type() == machineTypes[0]) // Q
             return _propertiesQ;
@@ -1670,7 +1641,6 @@ const std::string_view LaserBJJCZ::properties() const {
 //---------------------------------------------------------
 //   listWrite
 //---------------------------------------------------------
-
 void LaserBJJCZ::gpioListWrite() {
       list_write_port(_outputPort);
       }
@@ -1679,7 +1649,6 @@ void LaserBJJCZ::gpioListWrite() {
 //   on
 //    sets gpio pin "bit" to on
 //---------------------------------------------------------
-
 void LaserBJJCZ::gpioOn(int bit) {
       _outputPort |= (1 << bit);
       gpioWrite();
@@ -1689,7 +1658,6 @@ void LaserBJJCZ::gpioOn(int bit) {
 //   off
 //    sets gpio pin "bit" to off
 //---------------------------------------------------------
-
 void LaserBJJCZ::gpioOff(int bit) {
       _outputPort &= ~(1 << bit);
       gpioWrite();
@@ -1699,7 +1667,6 @@ void LaserBJJCZ::gpioOff(int bit) {
 //   toggle
 //    toggle gpio pin "bit"
 //---------------------------------------------------------
-
 void LaserBJJCZ::gpioToggle(int bit) {
       _outputPort ^= (1 << bit);
       Debug("{} = {:04x}", bit, _outputPort);
@@ -1709,7 +1676,6 @@ void LaserBJJCZ::gpioToggle(int bit) {
 //---------------------------------------------------------
 //   set
 //---------------------------------------------------------
-
 void LaserBJJCZ::gpioSet(int bit, bool on) {
       bit         = 1 << bit;
       _outputPort = on ? _outputPort | bit : _outputPort & (~bit);
@@ -1719,7 +1685,6 @@ void LaserBJJCZ::gpioSet(int bit, bool on) {
 //---------------------------------------------------------
 //   write
 //---------------------------------------------------------
-
 void LaserBJJCZ::gpioWrite() {
       write_port(_outputPort);
       // emit outputPortChanged() may be called from a background
@@ -1737,7 +1702,6 @@ void LaserBJJCZ::gpioWrite(int data) {
 //---------------------------------------------------------
 //   setLight
 //---------------------------------------------------------
-
 void LaserBJJCZ::setLight(bool on) {
       if (lightPin() < 0) // is the pin configured?
             return;
@@ -1749,7 +1713,6 @@ void LaserBJJCZ::setLight(bool on) {
 //---------------------------------------------------------
 //   statusFlags
 //---------------------------------------------------------
-
 LaserStatusFlags LaserBJJCZ::statusFlags() const {
       if (!send(GetStatus)) {
             Critical("failed");
@@ -1766,7 +1729,6 @@ LaserStatusFlags LaserBJJCZ::statusFlags() const {
 //   start
 //    starts pipeline command processing
 //---------------------------------------------------------
-
 void CmdList::start() {
       laser->reset_list();
       index       = 0;
@@ -1781,7 +1743,6 @@ void CmdList::start() {
 //      0 (default)
 //      1 at end of program
 //---------------------------------------------------------
-
 void CmdList::end(int param) {
       write(listEndOfList);
       if (!empty()) {
@@ -1800,7 +1761,6 @@ void CmdList::end(int param) {
 //---------------------------------------------------------
 //   CmdList::write
 //---------------------------------------------------------
-
 void CmdList::write(const Packet6& p) {
       if (index >= LIST_SIZE) {
             laser->send(*this);
@@ -1821,7 +1781,6 @@ void CmdList::write(const Packet6& p) {
 //---------------------------------------------------------
 //   distance
 //---------------------------------------------------------
-
 int LaserBJJCZ::distance(int x, int y) {
       double dx = x - currentX;
       double dy = y - currentY;
@@ -1835,11 +1794,35 @@ int LaserBJJCZ::distance(int x, int y) {
       }
 
 //---------------------------------------------------------
+//   computeJumpDelay
+//    Compute a distance-dependent jump delay using the EzCAD
+//    formula:  total = minJumpDelay + (distance/galvos * jumpDistanceTC)
+//    where jumpDistanceTC = (maxJumpDelay - minJumpDelay) / jumpDistanceLimit
+//    The result is clamped to [minJumpDelay, maxJumpDelay].
+//    galvoDistance is in raw galvo units (0-65535).
+//---------------------------------------------------------
+double LaserBJJCZ::computeJumpDelay(int galvoDistance) const {
+      double base     = laserValues.minJumpDelay;
+      double maxDelay = laserValues.maxJumpDelay;
+      double limit    = laserValues.jumpDistanceLimit;
+      if (limit <= 0.0 || maxDelay <= base)
+            return base;
+      // Convert galvo distance to mm using galvos scale factor
+      double distanceMm = galvoDistance / abs(galvos);
+      if (distanceMm <= 0.0)
+            return base;
+      // Linear interpolation: delay increases with distance up to jumpDistanceLimit
+      double tc    = (maxDelay - base) / limit;
+      double delay = base + distanceMm * tc;
+      return std::clamp(delay, base, maxDelay);
+      }
+
+//---------------------------------------------------------
 //   move
 //---------------------------------------------------------
-
 void LaserBJJCZ::move(uint16_t x, uint16_t y) {
       uint16_t d = distance(x, y);
+      list_jump_delay(computeJumpDelay(d));
       list.write({listJumpTo, x, y, 0, d});
       currentX = x;
       currentY = y;
@@ -1849,7 +1832,6 @@ void LaserBJJCZ::move(uint16_t x, uint16_t y) {
 //---------------------------------------------------------
 //   mark
 //---------------------------------------------------------
-
 void LaserBJJCZ::mark(uint16_t x, uint16_t y) {
       double dx  = x - currentX;
       double dy  = y - currentY;
@@ -1874,7 +1856,6 @@ void LaserBJJCZ::mark(uint16_t x, uint16_t y) {
 //---------------------------------------------------------
 //   writeCorrectionTable
 //---------------------------------------------------------
-
 void LaserBJJCZ::writeCorrectionTable() {
       CalData corData(zcam);
 
