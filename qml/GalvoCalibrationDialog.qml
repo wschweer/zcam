@@ -177,7 +177,7 @@ Dialog {
 
                             // nominal label
                             ctx.fillStyle = "white"
-                            ctx.font = galvoCalDialog.cfgFontPx + "px sans-serif"
+                            ctx.font = galvoCalDialog.cfgFontSize + "px sans-serif"
                             ctx.textAlign = "left"
                             ctx.textBaseline = "alphabetic"
                             ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
