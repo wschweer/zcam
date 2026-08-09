@@ -210,9 +210,9 @@ Dialog {
                     Label {
                         font: unifiedFont
                         text: calib.valid
-                            ? "%1,  %2".arg(calib.bulge.x.toExponential(3)).arg(calib.bulge.y.toExponential(3))
+                            ? "%1,  %2".arg(calib.bulge.x.toFixed(4)).arg(calib.bulge.y.toFixed(4))
                             : (galvoCalDialog.machine
-                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toExponential(3)).arg(galvoCalDialog.machine.galvoBulge.y.toExponential(3))
+                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toFixed(4)).arg(galvoCalDialog.machine.galvoBulge.y.toFixed(4))
                                 : "—")
                     }
                     Label {
