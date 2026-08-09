@@ -307,7 +307,7 @@ Item {
     // ── ValueBox ─────────────────────────────────────────────────────────────
     component ValueBox : Rectangle {
         id: vbox
-        color: vbox.enabled ? "#a9a9a9" : "#5a5a5a"
+        color: vbox.enabled ? (hoverArea.containsMouse ? "#c2c2c2" : "#a9a9a9") : "#5a5a5a"
         radius: 4
         implicitHeight: 28
         opacity: vbox.enabled ? 1.0 : 0.5
@@ -317,6 +317,13 @@ Item {
         property bool subLabelAlignRight: false
 
         default property alias contentChildren: contentColumn.data
+
+        MouseArea {
+            id: hoverArea
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+            }
 
         Item {
             id: contentColumn

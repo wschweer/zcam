@@ -1856,6 +1856,7 @@ void LaserBJJCZ::mark(uint16_t x, uint16_t y) {
 //---------------------------------------------------------
 //   writeCorrectionTable
 //---------------------------------------------------------
+
 void LaserBJJCZ::writeCorrectionTable() {
       CalData corData(zcam);
 
@@ -1882,6 +1883,9 @@ void LaserBJJCZ::writeCorrectionTable() {
             // > 0 barrel distortion
             double kx = galvoBulge().x();
             double ky = galvoBulge().y();
+
+            if (galvoSwapxy())
+                  std::swap(kx, ky);
 
             int scale = 0x10000 / 64;
 
