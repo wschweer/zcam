@@ -206,10 +206,12 @@ Item {
             readOnly: !_sb.editable
             validator: _sb.validator
             inputMethodHints: Qt.ImhFormattedNumbersOnly
-        }
+            }
 
         MouseArea {
+            id: sbHover
             anchors.fill: parent
+            hoverEnabled: true
             acceptedButtons: Qt.LeftButton
             z: 1000
 
@@ -237,6 +239,24 @@ Item {
             }
 
         property int resetValue: 0
+
+        // The surrounding ValueBox provides hover feedback, but its MouseArea
+        // sits below this SpinBox's own MouseArea.  Bind the ValueBox's hover
+        // state to this SpinBox's MouseArea so the highlight works uniformly.
+        property Item valueBox: {
+            let p = parent
+            while (p) {
+                if (p.toString().indexOf("ValueBox") === 0)
+                    return p
+                p = p.parent
+                }
+            return null
+            }
+
+        Component.onCompleted: {
+            if (valueBox)
+                valueBox.hovered = Qt.binding(() => sbHover.containsMouse)
+            }
         }
 
     // ── Reusable borderless DoubleSpinBox ────────────────────────────────────
@@ -263,10 +283,12 @@ Item {
             readOnly: !_dsb.editable
             validator: _dsb.validator
             inputMethodHints: Qt.ImhFormattedNumbersOnly
-        }
+            }
 
         MouseArea {
+            id: dsbHover
             anchors.fill: parent
+            hoverEnabled: true
             acceptedButtons: Qt.LeftButton
             z: 1000
 
@@ -302,12 +324,27 @@ Item {
         property real resetValue
         property real bigStep
         property real minStep
+
+        property Item valueBox: {
+            let p = parent
+            while (p) {
+                if (p.toString().indexOf("ValueBox") === 0)
+                    return p
+                p = p.parent
+                }
+            return null
+            }
+
+        Component.onCompleted: {
+            if (valueBox)
+                valueBox.hovered = Qt.binding(() => dsbHover.containsMouse)
+            }
         }
 
     // ── ValueBox ─────────────────────────────────────────────────────────────
     component ValueBox : Rectangle {
         id: vbox
-        color: vbox.enabled ? (hoverArea.containsMouse ? "#c2c2c2" : "#a9a9a9") : "#5a5a5a"
+        color: vbox.enabled ? (vbox.hovered ? "#c2c2c2" : "#a9a9a9") : "#5a5a5a"
         radius: 4
         implicitHeight: 28
         opacity: vbox.enabled ? 1.0 : 0.5
@@ -315,6 +352,7 @@ Item {
         property string unitText: ""
         property string subLabelText: ""
         property bool subLabelAlignRight: false
+        property bool hovered: hoverArea.containsMouse
 
         default property alias contentChildren: contentColumn.data
 
