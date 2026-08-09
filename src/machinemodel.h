@@ -23,7 +23,6 @@
 //   ColumnItem
 //    Describes a single item inside a "columns" block.
 //---------------------------------------------------------
-
 struct MachineColumnItem {
       QString name;
       bool isRow   = false;
@@ -42,7 +41,6 @@ struct MachineColumnItem {
 //    uses the Machine::properties() JSON to determine which
 //    properties to show and how to render each one.
 //---------------------------------------------------------
-
 class MachineModel : public QAbstractListModel
       {
       Q_OBJECT
@@ -99,6 +97,9 @@ class MachineModel : public QAbstractListModel
       void titleChanged();
       void propertiesJsonChanged();
       void machineDataChanged();
+
+    private Q_SLOTS:
+      void onMachinePropertyChanged();
 
     private:
       void parseProperties();
