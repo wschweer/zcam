@@ -92,6 +92,7 @@ qt_add_qml_module(zcam
         qml/MediaFontsPanel.qml
         qml/MediaArtworkPanel.qml
         qml/MediaIconsPanel.qml
+        qml/GalvoCalibrationDialog.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/machine.cpp src/machine.h
@@ -152,6 +153,7 @@ qt_add_qml_module(zcam
         src/imageimport.cpp src/imageimport.h
         src/cal.cpp src/cal.h
         src/ogr.cpp src/ogr.h
+        src/galvocalibration.cpp src/galvocalibration.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp

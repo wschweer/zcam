@@ -251,6 +251,12 @@ Window {
         }
 
     Action {
+        id: actionGalvoCalibration
+        text: qsTr("9-Point Galvo Calibration…")
+        onTriggered: galvoCalDialog.open()
+        }
+
+    Action {
         id: actionTestProject
         text: qsTr("Test Project")
         onTriggered: checkUnsavedAndProceed(
@@ -437,6 +443,14 @@ Window {
         }
 
     // =========================================================================
+    //  Galvo Calibration dialog
+    // =========================================================================
+
+    GalvoCalibrationDialog {
+        id: galvoCalDialog
+        }
+
+    // =========================================================================
     //  Layout: MenuBar / ToolBar / TabBar / StackLayout
     // =========================================================================
 
@@ -506,6 +520,9 @@ Window {
                     }
                 MenuItem {
                     action: actionCalibrationScan
+                    }
+                MenuItem {
+                    action: actionGalvoCalibration
                     }
                 MenuSeparator {}
                 MenuItem {
