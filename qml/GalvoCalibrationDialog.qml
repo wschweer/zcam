@@ -88,235 +88,112 @@ Dialog {
             Layout.fillHeight: true
             spacing: 20
 
-            // --- canvas diagram ---
-            Item {
-                Layout.preferredWidth: 340
-                Layout.preferredHeight: 340
-                Layout.alignment: Qt.AlignTop
-
-                Canvas {
-                    id: canvas
-                    anchors.fill: parent
-
-                    onPaint: {
-                        var ctx = getContext("2d")
-                        ctx.clearRect(0, 0, width, height)
-                        var cx = width / 2
-                        var cy = height / 2
-                        var half = width * 0.40   // half grid dimension in px
-
-                        ctx.strokeStyle = "white"
-                        ctx.lineWidth = 1.2
-
-                        // outer rectangle (the work area)
-                        ctx.strokeRect(cx - half, cy - half, half * 2, half * 2)
-
-                        // 3×3 grid lines
-                        ctx.beginPath()
-                        // vertical grid lines (-half, 0, +half)
-                        ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx - half, cy + half)
-                        ctx.moveTo(cx,        cy - half); ctx.lineTo(cx,        cy + half)
-                        ctx.moveTo(cx + half, cy - half); ctx.lineTo(cx + half, cy + half)
-                        ctx.moveTo(cx + half + 4, cy);   ctx.lineTo(cx + half + 22, cy)   // ext marker right
-                        ctx.moveTo(cx - half - 4, cy);   ctx.lineTo(cx - half - 22, cy)   // ext marker left
-                        // horizontal grid lines (-half, 0, +half)
-                        ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx + half, cy - half)
-                        ctx.moveTo(cx - half, cy);        ctx.lineTo(cx + half, cy)
-                        ctx.moveTo(cx - half, cy + half); ctx.lineTo(cx + half, cy + half)
-                        ctx.moveTo(cx, cy - half - 4);   ctx.lineTo(cx, cy - half - 22)  // ext marker top
-                        ctx.moveTo(cx, cy + half + 4);   ctx.lineTo(cx, cy + half + 22)  // ext marker bottom
-                        ctx.stroke()
-
-                        // measurement arrows: 12 double-headed arrows
-                        // X axis (6 horizontal arrows at 3 Y positions: -half*.5, 0, +half*.5):
-                        //   x1/x2 at y=-half*.5, x3/x4 at y=0, x5/x6 at y=+half*.5
-                        // Y axis (6 vertical arrows at 3 X positions: -half*.5, 0, +half*.5):
-                        //   y1/y2 at x=-half*.5, y3/y4 at x=0, y5/y6 at x=+half*.5
-                        var arrows = [
-                            // X cross — horizontal double-headed arrows
-                            { x1: cx - half, y1: cy - half*0.5, x2: cx,            y2: cy - half*0.5, id: "x1" },
-                            { x1: cx,        y1: cy - half*0.5, x2: cx + half,     y2: cy - half*0.5, id: "x2" },
-                            { x1: cx - half, y1: cy,            x2: cx,            y2: cy,            id: "x3" },
-                            { x1: cx,        y1: cy,            x2: cx + half,     y2: cy,            id: "x4" },
-                            { x1: cx - half, y1: cy + half*0.5, x2: cx,            y2: cy + half*0.5, id: "x5" },
-                            { x1: cx,        y1: cy + half*0.5, x2: cx + half,     y2: cy + half*0.5, id: "x6" },
-                            // Y cross — vertical double-headed arrows
-                            { x1: cx - half*0.5, y1: cy - half, x2: cx - half*0.5, y2: cy,            id: "y1" },
-                            { x1: cx - half*0.5, y1: cy,        x2: cx - half*0.5, y2: cy + half,     id: "y2" },
-                            { x1: cx,            y1: cy - half, x2: cx,            y2: cy,            id: "y3" },
-                            { x1: cx,            y1: cy,        x2: cx,            y2: cy + half,     id: "y4" },
-                            { x1: cx + half*0.5, y1: cy - half, x2: cx + half*0.5, y2: cy,            id: "y5" },
-                            { x1: cx + half*0.5, y1: cy,        x2: cx + half*0.5, y2: cy + half,     id: "y6" }
-                        ]
-
-                        ctx.strokeStyle = "#4fc3f7"
-                        ctx.fillStyle = "#4fc3f7"
-                        ctx.lineWidth = 1.5
-                        ctx.font = "bold 10px sans-serif"
-
-                        for (var i = 0; i < arrows.length; i++) {
-                            var a = arrows[i]
-                            // double-headed arrow
-                            var dx = a.x2 - a.x1
-                            var dy = a.y2 - a.y1
-                            var len = Math.sqrt(dx*dx + dy*dy)
-                            if (len < 20) continue
-                            var ux = dx/len, uy = dy/len
-                            var px = -uy, py = ux
-                            var head = 7
-
-                            ctx.beginPath()
-                            ctx.moveTo(a.x1 + ux*head, a.y1 + uy*head)
-                            ctx.lineTo(a.x2 - ux*head, a.y2 - uy*head)
-                            // head at end
-                            ctx.moveTo(a.x2, a.y2)
-                            ctx.lineTo(a.x2 - ux*head + px*3, a.y2 - uy*head + py*3)
-                            ctx.lineTo(a.x2 - ux*head - px*3, a.y2 - uy*head - py*3)
-                            ctx.closePath()
-                            ctx.fill()
-                            // head at start
-                            ctx.beginPath()
-                            ctx.moveTo(a.x1, a.y1)
-                            ctx.lineTo(a.x1 + ux*head + px*3, a.y1 + uy*head + py*3)
-                            ctx.lineTo(a.x1 + ux*head - px*3, a.y1 + uy*head - py*3)
-                            ctx.closePath()
-                            ctx.fill()
-
-                            // label outside the arrow
-                            var offX = px * 14, offY = py * 14
-                            if (a.id.charAt(0) === "y")
-                                offX += (a.x1 < cx ? -8 : 8)
-                            else
-                                offY += (a.y1 < cy ? -8 : 10)
-                            ctx.fillText(a.id, (a.x1 + a.x2) / 2 + offX, (a.y1 + a.y2) / 2 + offY + 3)
-                        }
-
-                        // grid spacing label at bottom left
-                        ctx.fillStyle = "white"
-                        ctx.font = "10px sans-serif"
-                        ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
-                    }
-                }
-            }
-
-            // --- 12 input fields in two groups ---
+            // --- canvas diagram + results below ---
             ColumnLayout {
-                Layout.fillHeight: true
-                Layout.fillWidth: true
-                spacing: 10
+                Layout.alignment: Qt.AlignTop
+                spacing: 8
 
-                GroupBox {
-                    title: qsTr("X-Axis (mm)")
-                    Layout.fillWidth: true
-                    GridLayout {
-                        columns: 4
-                        columnSpacing: 4
-                        rowSpacing: 4
-                        Label { text: "x1"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.xTopLeft.toFixed(2)
-                            onEditingFinished: galvoCalDialog.xTopLeft = text.replace(",", ".")
-                        }
-                        Label { text: "x2"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.xTopRight.toFixed(2)
-                            onEditingFinished: galvoCalDialog.xTopRight = text.replace(",", ".")
-                        }
-                        Label { text: "x3"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.xMiddleLeft.toFixed(2)
-                            onEditingFinished: galvoCalDialog.xMiddleLeft = text.replace(",", ".")
-                        }
-                        Label { text: "x4"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.xMiddleRight.toFixed(2)
-                            onEditingFinished: galvoCalDialog.xMiddleRight = text.replace(",", ".")
-                        }
-                        Label { text: "x5"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.xBottomLeft.toFixed(2)
-                            onEditingFinished: galvoCalDialog.xBottomLeft = text.replace(",", ".")
-                        }
-                        Label { text: "x6"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.xBottomRight.toFixed(2)
-                            onEditingFinished: galvoCalDialog.xBottomRight = text.replace(",", ".")
-                        }
-                    }
-                }
+                Item {
+                    Layout.preferredWidth: 340
+                    Layout.preferredHeight: 340
+                    Layout.alignment: Qt.AlignTop
 
-                GroupBox {
-                    title: qsTr("Y-Axis (mm)")
-                    Layout.fillWidth: true
-                    GridLayout {
-                        columns: 4
-                        columnSpacing: 4
-                        rowSpacing: 4
-                        Label { text: "y1"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.yLeftTop.toFixed(2)
-                            onEditingFinished: galvoCalDialog.yLeftTop = text.replace(",", ".")
-                        }
-                        Label { text: "y2"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.yLeftBottom.toFixed(2)
-                            onEditingFinished: galvoCalDialog.yLeftBottom = text.replace(",", ".")
-                        }
-                        Label { text: "y3"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.yCenterTop.toFixed(2)
-                            onEditingFinished: galvoCalDialog.yCenterTop = text.replace(",", ".")
-                        }
-                        Label { text: "y4"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.yCenterBottom.toFixed(2)
-                            onEditingFinished: galvoCalDialog.yCenterBottom = text.replace(",", ".")
-                        }
-                        Label { text: "y5"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.yRightTop.toFixed(2)
-                            onEditingFinished: galvoCalDialog.yRightTop = text.replace(",", ".")
-                        }
-                        Label { text: "y6"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.preferredWidth: 80
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.yRightBottom.toFixed(2)
-                            onEditingFinished: galvoCalDialog.yRightBottom = text.replace(",", ".")
+                    Canvas {
+                        id: canvas
+                        anchors.fill: parent
+
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            var cx = width / 2
+                            var cy = height / 2
+                            var half = width * 0.40   // half grid dimension in px
+
+                            ctx.strokeStyle = "white"
+                            ctx.lineWidth = 1.2
+
+                            // outer rectangle (the work area)
+                            ctx.strokeRect(cx - half, cy - half, half * 2, half * 2)
+
+                            // 3×3 grid lines
+                            ctx.beginPath()
+                            // vertical grid lines (-half, 0, +half)
+                            ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx - half, cy + half)
+                            ctx.moveTo(cx,        cy - half); ctx.lineTo(cx,        cy + half)
+                            ctx.moveTo(cx + half, cy - half); ctx.lineTo(cx + half, cy + half)
+                            ctx.moveTo(cx + half + 4, cy);   ctx.lineTo(cx + half + 22, cy)
+                            ctx.moveTo(cx - half - 4, cy);   ctx.lineTo(cx - half - 22, cy)
+                            // horizontal grid lines (-half, 0, +half)
+                            ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx + half, cy - half)
+                            ctx.moveTo(cx - half, cy);        ctx.lineTo(cx + half, cy)
+                            ctx.moveTo(cx - half, cy + half); ctx.lineTo(cx + half, cy + half)
+                            ctx.moveTo(cx, cy - half - 4);   ctx.lineTo(cx, cy - half - 22)
+                            ctx.moveTo(cx, cy + half + 4);   ctx.lineTo(cx, cy + half + 22)
+                            ctx.stroke()
+
+                            // measurement arrows: 12 double-headed arrows
+                            // X cross at y ∈ {-h/2, 0, +h/2} → x1-x6
+                            // Y cross at x ∈ {-h/2, 0, +h/2} → y1-y6
+                            var arrows = [
+                                { x1: cx - half, y1: cy - half*0.5, x2: cx,            y2: cy - half*0.5, id: "x1" },
+                                { x1: cx,        y1: cy - half*0.5, x2: cx + half,     y2: cy - half*0.5, id: "x2" },
+                                { x1: cx - half, y1: cy,            x2: cx,            y2: cy,            id: "x3" },
+                                { x1: cx,        y1: cy,            x2: cx + half,     y2: cy,            id: "x4" },
+                                { x1: cx - half, y1: cy + half*0.5, x2: cx,            y2: cy + half*0.5, id: "x5" },
+                                { x1: cx,        y1: cy + half*0.5, x2: cx + half,     y2: cy + half*0.5, id: "x6" },
+                                { x1: cx - half*0.5, y1: cy - half, x2: cx - half*0.5, y2: cy,            id: "y1" },
+                                { x1: cx - half*0.5, y1: cy,        x2: cx - half*0.5, y2: cy + half,     id: "y2" },
+                                { x1: cx,            y1: cy - half, x2: cx,            y2: cy,            id: "y3" },
+                                { x1: cx,            y1: cy,        x2: cx,            y2: cy + half,     id: "y4" },
+                                { x1: cx + half*0.5, y1: cy - half, x2: cx + half*0.5, y2: cy,            id: "y5" },
+                                { x1: cx + half*0.5, y1: cy,        x2: cx + half*0.5, y2: cy + half,     id: "y6" }
+                            ]
+
+                            ctx.strokeStyle = "#4fc3f7"
+                            ctx.fillStyle = "#4fc3f7"
+                            ctx.lineWidth = 1.5
+                            ctx.font = "bold 14px sans-serif"
+
+                            for (var i = 0; i < arrows.length; i++) {
+                                var a = arrows[i]
+                                var dx = a.x2 - a.x1
+                                var dy = a.y2 - a.y1
+                                var len = Math.sqrt(dx*dx + dy*dy)
+                                if (len < 20) continue
+                                var ux = dx/len, uy = dy/len
+                                var px = -uy, py = ux
+                                var head = 7
+
+                                ctx.beginPath()
+                                ctx.moveTo(a.x1 + ux*head, a.y1 + uy*head)
+                                ctx.lineTo(a.x2 - ux*head, a.y2 - uy*head)
+                                ctx.moveTo(a.x2, a.y2)
+                                ctx.lineTo(a.x2 - ux*head + px*3, a.y2 - uy*head + py*3)
+                                ctx.lineTo(a.x2 - ux*head - px*3, a.y2 - uy*head - py*3)
+                                ctx.closePath()
+                                ctx.fill()
+
+                                // head at start
+                                ctx.beginPath()
+                                ctx.moveTo(a.x1, a.y1)
+                                ctx.lineTo(a.x1 + ux*head + px*3, a.y1 + uy*head + py*3)
+                                ctx.lineTo(a.x1 + ux*head - px*3, a.y1 + uy*head - py*3)
+                                ctx.closePath()
+                                ctx.fill()
+
+                                // label (bold 14px) placed outside the arrow
+                                var offX = px * 20, offY = py * 20
+                                if (a.id.charAt(0) === "y")
+                                    offX += (a.x1 < cx ? -12 : 12)
+                                else
+                                    offY += (a.y1 < cy ? -12 : 14)
+                                ctx.fillText(a.id, (a.x1 + a.x2) / 2 + offX, (a.y1 + a.y2) / 2 + offY + 5)
+                            }
+
+                            // grid spacing label at bottom left
+                            ctx.fillStyle = "white"
+                            ctx.font = "10px sans-serif"
+                            ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
                         }
                     }
                 }
@@ -342,6 +219,133 @@ Dialog {
                         Label {
                             text: calib.valid ? calib.rmsError.toFixed(4) + " mm" : "—"
                             color: calib.valid && calib.rmsError < 0.1 ? "#4caf50" : (calib.valid && calib.rmsError < 0.5 ? "#ff9800" : "#f44336")
+                        }
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+            }
+
+            // --- 12 input fields in two groups ---
+            ColumnLayout {
+                Layout.fillHeight: true
+                Layout.fillWidth: true
+                spacing: 10
+
+                GroupBox {
+                    title: qsTr("X-Axis (mm)")
+                    Layout.fillWidth: true
+                    GridLayout {
+                        anchors.fill: parent
+                        columns: 4
+                        columnSpacing: 4
+                        rowSpacing: 4
+                        Label { text: "x1"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.xTopLeft.toFixed(2)
+                            onEditingFinished: galvoCalDialog.xTopLeft = text.replace(",", ".")
+                        }
+                        Label { text: "x2"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.xTopRight.toFixed(2)
+                            onEditingFinished: galvoCalDialog.xTopRight = text.replace(",", ".")
+                        }
+                        Label { text: "x3"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.xMiddleLeft.toFixed(2)
+                            onEditingFinished: galvoCalDialog.xMiddleLeft = text.replace(",", ".")
+                        }
+                        Label { text: "x4"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.xMiddleRight.toFixed(2)
+                            onEditingFinished: galvoCalDialog.xMiddleRight = text.replace(",", ".")
+                        }
+                        Label { text: "x5"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.xBottomLeft.toFixed(2)
+                            onEditingFinished: galvoCalDialog.xBottomLeft = text.replace(",", ".")
+                        }
+                        Label { text: "x6"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.xBottomRight.toFixed(2)
+                            onEditingFinished: galvoCalDialog.xBottomRight = text.replace(",", ".")
+                        }
+                    }
+                }
+
+                GroupBox {
+                    title: qsTr("Y-Axis (mm)")
+                    Layout.fillWidth: true
+                    GridLayout {
+                        anchors.fill: parent
+                        columns: 4
+                        columnSpacing: 4
+                        rowSpacing: 4
+                        Label { text: "y1"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.yLeftTop.toFixed(2)
+                            onEditingFinished: galvoCalDialog.yLeftTop = text.replace(",", ".")
+                        }
+                        Label { text: "y2"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.yLeftBottom.toFixed(2)
+                            onEditingFinished: galvoCalDialog.yLeftBottom = text.replace(",", ".")
+                        }
+                        Label { text: "y3"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.yCenterTop.toFixed(2)
+                            onEditingFinished: galvoCalDialog.yCenterTop = text.replace(",", ".")
+                        }
+                        Label { text: "y4"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.yCenterBottom.toFixed(2)
+                            onEditingFinished: galvoCalDialog.yCenterBottom = text.replace(",", ".")
+                        }
+                        Label { text: "y5"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.yRightTop.toFixed(2)
+                            onEditingFinished: galvoCalDialog.yRightTop = text.replace(",", ".")
+                        }
+                        Label { text: "y6"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
+                        TextField {
+                            Layout.fillWidth: true
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            horizontalAlignment: Text.AlignHCenter
+                            text: galvoCalDialog.yRightBottom.toFixed(2)
+                            onEditingFinished: galvoCalDialog.yRightBottom = text.replace(",", ".")
                         }
                     }
                 }
