@@ -20,7 +20,7 @@ Dialog {
     title: qsTr("9-Point Galvo Calibration")
     modal: true
     anchors.centerIn: parent
-    width: 760
+    width: 988
     height: 640
     padding: 20
 
@@ -94,8 +94,8 @@ Dialog {
                 spacing: 8
 
                 Item {
-                    Layout.preferredWidth: 340
-                    Layout.preferredHeight: 340
+                    Layout.preferredWidth: 442
+                    Layout.preferredHeight: 442
                     Layout.alignment: Qt.AlignTop
 
                     Canvas {
