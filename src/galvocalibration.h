@@ -18,6 +18,7 @@
 
 class ZCam;
 class Machine;
+
 //---------------------------------------------------------
 //   GalvoCalibration
 //    Computes galvo correction values (galvoScale and
@@ -41,7 +42,7 @@ class Machine;
 //      galvoScale = (1, 1) and galvoBulge = (0, 0).
 //---------------------------------------------------------
 class GalvoCalibration : public QObject
-{
+      {
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("GalvoCalibration objects are created by ZCam")
@@ -71,6 +72,9 @@ class GalvoCalibration : public QObject
                                double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
                                double yRightBottom);
 
+      /// Reset computed results to invalid state.
+      Q_INVOKABLE void clear();
+
       /// Apply the computed correction values to the machine and
       /// persist the machine configuration to disk.
       Q_INVOKABLE bool applyToMachine(Machine* machine);
@@ -90,4 +94,4 @@ class GalvoCalibration : public QObject
       /// Nominal grid spacing (field width * 0.5) in mm.
       Q_PROPERTY(double nominalSpacing READ nominalSpacing NOTIFY resultsChanged)
       double nominalSpacing() const { return nominal; }
-};
+      };

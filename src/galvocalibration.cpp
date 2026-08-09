@@ -17,11 +17,13 @@
 #include "machines.h"
 
 #include <cmath>
+
 //---------------------------------------------------------
 //   GalvoCalibration
 //---------------------------------------------------------
 GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent), zcam(zc) {
-}
+      }
+
 //---------------------------------------------------------
 //   compute
 //    Compute galvoScale and galvoBulge from 12 measured
@@ -60,13 +62,13 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       if (!machine) {
             Critical("GalvoCalibration::compute: no machine");
             return false;
-      }
+            }
 
       const double fieldHalf = machine->maxTravel().x() * 0.5;
       if (fieldHalf <= 0.0) {
             Critical("GalvoCalibration::compute: invalid field size {}", fieldHalf);
             return false;
-      }
+            }
       nominal = fieldHalf;
 
       //--- average each pair (cancels translation offset) ---
@@ -127,7 +129,7 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
             const double correctedMm = correctedGalvo / galvoScaleFactor / (isX ? sx : sy);
             const double err         = correctedMm - nominal;
             return err * err;
-      };
+            };
       sumSq     += rms(xTop, bulgeX, true);
       sumSq     += rms(xMiddle, bulgeX, true);
       sumSq     += rms(xBottom, bulgeX, true);
@@ -141,7 +143,22 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
            _scale.y(), bulgeX, bulgeY, _rmsError);
       emit resultsChanged();
       return true;
-}
+      }
+
+//---------------------------------------------------------
+//   clear
+//    Reset computed results to invalid state so the QML
+//    dialog shows placeholders instead of stale values.
+//---------------------------------------------------------
+void GalvoCalibration::clear() {
+      _valid    = false;
+      _scale    = QVector2D(1.0, 1.0);
+      _bulge    = QVector2D(0.0, 0.0);
+      _rmsError = 0.0;
+      nominal   = 0.0;
+      emit resultsChanged();
+      }
+
 //---------------------------------------------------------
 //   applyToMachine
 //    Write the computed galvoScale and galvoBulge values
@@ -151,12 +168,12 @@ bool GalvoCalibration::applyToMachine(Machine* machine) {
       if (!machine || !_valid) {
             Warning("GalvoCalibration::applyToMachine: no valid results");
             return false;
-      }
+            }
       auto* laser = qobject_cast<Laser*>(machine);
       if (!laser) {
             Warning("GalvoCalibration::applyToMachine: machine is not a laser");
             return false;
-      }
+            }
 
       laser->set_galvoScale(_scale);
       laser->set_galvoBulge(_bulge);
@@ -166,6 +183,6 @@ bool GalvoCalibration::applyToMachine(Machine* machine) {
       if (zcam) {
             zcam->saveAssets();
             Info("GalvoCalibration: applied to '{}' and saved", laser->name());
-      }
+            }
       return true;
-}
+      }

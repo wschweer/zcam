@@ -60,6 +60,8 @@ Dialog {
         // reset fields to nominal
         xTopLeft = xTopRight = xMiddleLeft = xMiddleRight = xBottomLeft = xBottomRight = nominalSpacing
         yLeftTop = yLeftBottom = yCenterTop = yCenterBottom = yRightTop = yRightBottom = nominalSpacing
+        // reset computed results so the user sees current machine values first
+        calib.clear()
         canvas.requestPaint()
     }
 
@@ -198,11 +200,45 @@ Dialog {
                     }
                 }
 
-                // --- results display ---
+                // --- current galvo settings (always visible) ---
                 GroupBox {
-                    title: qsTr("Correction")
+                    title: qsTr("Current Galvo Settings")
                     Layout.fillWidth: true
-                    visible: calib.valid
+                    GridLayout {
+                        columns: 2
+                        columnSpacing: 12
+                        rowSpacing: 4
+                        Label { text: qsTr("Scale:"); font.bold: true }
+                        Label {
+                            text: galvoCalDialog.machine ? "%1 %,  %2 %".arg(galvoCalDialog.machine.galvoScale.x.toFixed(3)).arg(galvoCalDialog.machine.galvoScale.y.toFixed(3)) : "—"
+                        }
+                        Label { text: qsTr("Bulge:"); font.bold: true }
+                        Label {
+                            text: galvoCalDialog.machine ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toExponential(3)).arg(galvoCalDialog.machine.galvoBulge.y.toExponential(3)) : "—"
+                        }
+                        Label { text: qsTr("Shear:"); font.bold: true }
+                        Label {
+                            text: galvoCalDialog.machine ? "%1,  %2".arg(galvoCalDialog.machine.galvoShear.x.toFixed(3)).arg(galvoCalDialog.machine.galvoShear.y.toFixed(3)) : "—"
+                        }
+                        Label { text: qsTr("Trapezoid:"); font.bold: true }
+                        Label {
+                            text: galvoCalDialog.machine ? "%1,  %2".arg(galvoCalDialog.machine.galvoTrapezoid.x.toFixed(3)).arg(galvoCalDialog.machine.galvoTrapezoid.y.toFixed(3)) : "—"
+                        }
+                        Label { text: qsTr("Rotate:"); font.bold: true }
+                        Label {
+                            text: galvoCalDialog.machine ? galvoCalDialog.machine.galvoRotate.toFixed(3) + " °" : "—"
+                        }
+                        Label { text: qsTr("Swap XY:"); font.bold: true }
+                        Label {
+                            text: galvoCalDialog.machine ? (galvoCalDialog.machine.galvoSwapxy ? qsTr("yes") : qsTr("no")) : "—"
+                        }
+                    }
+                }
+
+                // --- computed correction (always visible) ---
+                GroupBox {
+                    title: qsTr("Computed Correction")
+                    Layout.fillWidth: true
                     GridLayout {
                         columns: 2
                         columnSpacing: 12
