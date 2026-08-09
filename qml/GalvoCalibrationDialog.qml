@@ -397,7 +397,7 @@ Dialog {
                 text: qsTr("Change Calibration")
                 font: unifiedFont
                 highlighted: true
-                enabled: calib.valid && calib.rmsError < 1.0 && galvoCalDialog.allInputsValid
+                enabled: calib.valid && galvoCalDialog.allInputsValid
                 onClicked: {
                     galvoCalDialog.calib.applyToMachine(galvoCalDialog.machine)
                     galvoCalDialog.accept()
