@@ -24,9 +24,11 @@ Dialog {
     height: 680
     padding: 16
 
-    // Unified fonts for all labels and text fields (matches app default 13px)
-    readonly property font unifiedFont: Qt.font({ family: "sans-serif", pixelSize: 13 })
-    readonly property font unifiedFontBold: Qt.font({ family: "sans-serif", pixelSize: 13, weight: Font.Bold })
+    // Use the configured font from ZCam → Config
+    readonly property string cfgFontFamily: ZCam.config ? ZCam.config.font : "NotoSans"
+    readonly property int cfgFontSize: ZCam.config ? ZCam.config.fontSize : 12
+    readonly property font unifiedFont: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize })
+    readonly property font unifiedFontBold: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize, weight: Font.Bold })
 
     property Machine machine: null
     property double nominalSpacing: machine ? machine.maxTravel.x * 0.5 : 87.5
@@ -129,31 +131,31 @@ Dialog {
                             // outer rectangle
                             ctx.strokeRect(cx - half, cy - half, half * 2, half * 2)
 
-                            // X labels: on horizontal segments, offset perpendicular (vertical)
-                            // Y labels: on vertical segments, offset perpendicular (horizontal)
-                            // Offset direction: away from grid center to avoid overlap
-                            var xOff = 11   // vertical offset for X labels
-                            var yOff = 14   // horizontal offset for Y labels
+                            // X labels sit on horizontal segments — nudge up a few px
+                            // Y labels sit on vertical segments — nudge sideways a few px
+                            // Small offsets so labels are close to their lines but don't
+                            // overlap labels from the perpendicular axis at grid crossings.
+                            var nud = 5   // small perpendicular nudge in px
 
                             var labels = [
-                                // X labels (horizontal segments) — offset up for top/middle, down for bottom
-                                { mx: cx - half * 0.5, my: cy - half * 0.5 - xOff, id: "x1" },
-                                { mx: cx + half * 0.5, my: cy - half * 0.5 - xOff, id: "x2" },
-                                { mx: cx - half * 0.5, my: cy - xOff,              id: "x3" },
-                                { mx: cx + half * 0.5, my: cy - xOff,              id: "x4" },
-                                { mx: cx - half * 0.5, my: cy + half * 0.5 + xOff, id: "x5" },
-                                { mx: cx + half * 0.5, my: cy + half * 0.5 + xOff, id: "x6" },
-                                // Y labels (vertical segments) — offset left for left col, right for center/right col
-                                { mx: cx - half * 0.5 - yOff, my: cy - half * 0.5, id: "y1" },
-                                { mx: cx - half * 0.5 - yOff, my: cy + half * 0.5, id: "y2" },
-                                { mx: cx + yOff,              my: cy - half * 0.5, id: "y3" },
-                                { mx: cx + yOff,              my: cy + half * 0.5, id: "y4" },
-                                { mx: cx + half * 0.5 + yOff, my: cy - half * 0.5, id: "y5" },
-                                { mx: cx + half * 0.5 + yOff, my: cy + half * 0.5, id: "y6" }
+                                // X labels (horizontal segments) — nudge up
+                                { mx: cx - half * 0.5, my: cy - half * 0.5 - nud, id: "x1" },
+                                { mx: cx + half * 0.5, my: cy - half * 0.5 - nud, id: "x2" },
+                                { mx: cx - half * 0.5, my: cy - nud,              id: "x3" },
+                                { mx: cx + half * 0.5, my: cy - nud,              id: "x4" },
+                                { mx: cx - half * 0.5, my: cy + half * 0.5 - nud, id: "x5" },
+                                { mx: cx + half * 0.5, my: cy + half * 0.5 - nud, id: "x6" },
+                                // Y labels (vertical segments) — nudge sideways away from center
+                                { mx: cx - half * 0.5 - nud, my: cy - half * 0.5, id: "y1" },
+                                { mx: cx - half * 0.5 - nud, my: cy + half * 0.5, id: "y2" },
+                                { mx: cx + nud,              my: cy - half * 0.5, id: "y3" },
+                                { mx: cx + nud,              my: cy + half * 0.5, id: "y4" },
+                                { mx: cx + half * 0.5 + nud, my: cy - half * 0.5, id: "y5" },
+                                { mx: cx + half * 0.5 + nud, my: cy + half * 0.5, id: "y6" }
                             ]
 
                             ctx.fillStyle = "#4fc3f7"
-                            ctx.font = "bold 13px sans-serif"
+                            ctx.font = "bold " + galvoCalDialog.cfgFontSize + "pt " + galvoCalDialog.cfgFontFamily
                             ctx.textAlign = "center"
                             ctx.textBaseline = "middle"
                             for (var i = 0; i < labels.length; i++)
@@ -161,7 +163,7 @@ Dialog {
 
                             // nominal label
                             ctx.fillStyle = "white"
-                            ctx.font = "13px sans-serif"
+                            ctx.font = galvoCalDialog.cfgFontSize + "pt " + galvoCalDialog.cfgFontFamily
                             ctx.textAlign = "left"
                             ctx.textBaseline = "alphabetic"
                             ctx.fillText("nominal = " + galvoCalDialog.nominalSpacing.toFixed(1) + " mm", 4, height - 6)
