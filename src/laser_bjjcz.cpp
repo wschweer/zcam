@@ -2083,8 +2083,8 @@ void LaserBJJCZ::writeCorrectionTable() {
                   for (double x = -32; x <= 32; ++x) {
                         const double r2 = x * x + y * y;
                         const double r4 = r2 * r2;
-                        int corrX = int((kx * r2 + k4xlocal * r4 * 10.0) * x);
-                        int corrY = int((ky * r2 + k4ylocal * r4 * 10.0) * y);
+                        int corrX = int((kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x);
+                        int corrY = int((ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y);
 
                         // clamp so that (nominal position + correction)
                         // stays within the signed 16-bit range [-32767, 32767]

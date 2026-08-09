@@ -292,6 +292,17 @@ class Laser : public Machine
       static int cutoffFrequency(int pw);
       Q_INVOKABLE QStringList laserPulseList() const;
 
+      //--------------------------------------------------------------------
+      //     bulge4Scale
+      //     Scale factor for the fourth-order radial lens correction.
+      //     The raw r^4 coefficient would be inconveniently small, so the
+      //     stored galvoBulge4 value is multiplied by this factor whenever
+      //     it is applied (calibration fit and controller correction table).
+      //     No backwards compatibility is required; recalibrate after changing
+      //     this constant.
+      //--------------------------------------------------------------------
+      static constexpr double bulge4Scale = 0.001;
+
       virtual LaserPosition mapToGalvo(double, double);
       //--------------------------------------------------------------------
       //     readInputPort / writeOutputPort

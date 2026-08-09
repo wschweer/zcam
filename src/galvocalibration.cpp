@@ -31,13 +31,10 @@ namespace {
 constexpr double CORRECTION_GRID_HALF = 32.0;
 constexpr double CORRECTION_SCALE     = 65536.0 / 64.0; // = 1024 table units / grid unit
 constexpr double MEASUREMENT_GRID     = 16.0;           // "9 point" cross is at +/- half field
-// Empirical scale factor for the fourth-order radial term.  The 9-point pattern provides
-// only two distinct radii, so the fitted bulge4 coefficient is ill-conditioned and was
-// observed to be about an order of magnitude too large compared with manual board tuning.
-// Multiplying the r^4 term by this constant (in both the calibration fit and the controller
-// table) reduces the stored coefficient by the same factor while preserving the physical
-// correction.
-constexpr double BULGE4_SCALE         = 10.0;
+// The fourth-order radial term is scaled by Laser::bulge4Scale so the
+// stored galvoBulge4 values stay in a comfortable numerical range.
+// The same factor is used in the calibration fit and in the controller
+// correction table written by LaserBJJCZ::writeCorrectionTable().
 // Convert a physical offset in mm to correction-table units.
 // fieldHalf mm maps to CORRECTION_GRID_HALF grid units, i.e.
 // CORRECTION_GRID_HALF * CORRECTION_SCALE table units.
@@ -54,7 +51,7 @@ double tableToMm(double table, double fieldHalf) {
 // distortion that the correction table compensates.  'bulge' and
 // 'bulge4' are the values stored in the machine and sent to the
 // controller; the correction table adds
-//     (bulge*r² + bulge4*r⁴) * g
+//     (bulge*r² + bulge4*Laser::bulge4Scale*r⁴) * g
 // to the nominal position, so the uncompensated physical error has
 // the opposite sign.
 double distortedCoord(int gx, int gy, double fieldHalf, double bulge, double bulge4, bool isX) {
@@ -62,7 +59,7 @@ double distortedCoord(int gx, int gy, double fieldHalf, double bulge, double bul
       const double r4          = r2 * r2;
       const double nominal     = (isX ? gx : gy) * CORRECTION_SCALE;
       const double g           = isX ? gx : gy;
-      const double distortion  = -(bulge * r2 + bulge4 * r4 * BULGE4_SCALE) * g;
+      const double distortion  = -(bulge * r2 + bulge4 * r4 * Laser::bulge4Scale) * g;
       return tableToMm(nominal + distortion, fieldHalf);
       }
 
@@ -110,7 +107,7 @@ bool fitBulgePair(const Sample samples[3], double nominal, double fieldHalf, dou
             const double r2 =
                 MEASUREMENT_GRID * MEASUREMENT_GRID + double(samples[i].crossGrid * samples[i].crossGrid);
             const double r4        = r2 * r2;
-            const double r4s       = r4 * BULGE4_SCALE;
+            const double r4s       = r4 * Laser::bulge4Scale;
             const double errTable  = (samples[i].value - nominal) * mmToTable(1.0, fieldHalf);
             const double y         = -errTable / (2.0 * MEASUREMENT_GRID);
             s11                   += r2 * r2;
@@ -158,7 +155,7 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    offsets in units of CORRECTION_SCALE = 0x10000/64 = 1024.
 //    For grid coordinate g the nominal table entry is g*1024 and the
 //    lens-distortion correction is
-//        corr = (bulge * r² + bulge4 * BULGE4_SCALE * r⁴) * g
+//        corr = (bulge * r² + bulge4 * Laser::bulge4Scale * r⁴) * g
 //    where r² = gx² + gy² and r⁴ = r² * r².  The r⁴ term removes the
 //    S-shaped (mustache) distortion visible along the diagonals of the
 //    field.  The table entry is an offset that is added to the nominal
