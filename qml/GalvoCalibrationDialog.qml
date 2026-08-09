@@ -110,78 +110,64 @@ Dialog {
                             ctx.clearRect(0, 0, width, height)
                             var cx = width / 2
                             var cy = height / 2
-                            var half = width * 0.40
+                            var half = width * 0.36   // half the square size
+                            var ext = 20              // how far lines extend past the square
 
-                            // grid lines (white)
+                            // The 3×3 grid: 3 horizontal + 3 vertical lines
+                            // Lines extend slightly beyond the square so the
+                            // corner crossings are clearly visible.
+                            var ys = [cy - half, cy, cy + half]
+                            var xs = [cx - half, cx, cx + half]
+
                             ctx.strokeStyle = "white"
                             ctx.lineWidth = 1.2
                             ctx.beginPath()
-                            ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx - half, cy + half)
-                            ctx.moveTo(cx,        cy - half); ctx.lineTo(cx,        cy + half)
-                            ctx.moveTo(cx + half, cy - half); ctx.lineTo(cx + half, cy + half)
-                            ctx.moveTo(cx + half + 4, cy);   ctx.lineTo(cx + half + 22, cy)
-                            ctx.moveTo(cx - half - 4, cy);   ctx.lineTo(cx - half - 22, cy)
-                            ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx + half, cy - half)
-                            ctx.moveTo(cx - half, cy);        ctx.lineTo(cx + half, cy)
-                            ctx.moveTo(cx - half, cy + half); ctx.lineTo(cx + half, cy + half)
-                            ctx.moveTo(cx, cy - half - 4);   ctx.lineTo(cx, cy - half - 22)
-                            ctx.moveTo(cx, cy + half + 4);   ctx.lineTo(cx, cy + half + 22)
+                            // 3 horizontal lines (extend beyond square left/right)
+                            for (var yi = 0; yi < 3; yi++) {
+                                ctx.moveTo(cx - half - ext, ys[yi])
+                                ctx.lineTo(cx + half + ext, ys[yi])
+                            }
+                            // 3 vertical lines (extend beyond square top/bottom)
+                            for (var xi = 0; xi < 3; xi++) {
+                                ctx.moveTo(xs[xi], cy - half - ext)
+                                ctx.lineTo(xs[xi], cy + half + ext)
+                            }
                             ctx.stroke()
 
-                            // outer rectangle
-                            ctx.strokeRect(cx - half, cy - half, half * 2, half * 2)
-
-                            // --- draw measurement lines (thin, colored) ---
-                            // X measurements: horizontal half-segments at y = cy - h/2, cy, cy + h/2
-                            // Y measurements: vertical half-segments at x = cx - h/2, cx, cx + h/2
-                            ctx.strokeStyle = "#4fc3f7"
-                            ctx.lineWidth = 0.8
-                            ctx.beginPath()
-                            // X horizontal segments
-                            ctx.moveTo(cx - half, cy - half * 0.5); ctx.lineTo(cx, cy - half * 0.5)
-                            ctx.moveTo(cx,        cy - half * 0.5); ctx.lineTo(cx + half, cy - half * 0.5)
-                            ctx.moveTo(cx - half, cy);              ctx.lineTo(cx, cy)
-                            ctx.moveTo(cx,        cy);              ctx.lineTo(cx + half, cy)
-                            ctx.moveTo(cx - half, cy + half * 0.5); ctx.lineTo(cx, cy + half * 0.5)
-                            ctx.moveTo(cx,        cy + half * 0.5); ctx.lineTo(cx + half, cy + half * 0.5)
-                            // Y vertical segments
-                            ctx.moveTo(cx - half * 0.5, cy - half); ctx.lineTo(cx - half * 0.5, cy)
-                            ctx.moveTo(cx - half * 0.5, cy);        ctx.lineTo(cx - half * 0.5, cy + half)
-                            ctx.moveTo(cx,              cy - half); ctx.lineTo(cx, cy)
-                            ctx.moveTo(cx,              cy);        ctx.lineTo(cx, cy + half)
-                            ctx.moveTo(cx + half * 0.5, cy - half); ctx.lineTo(cx + half * 0.5, cy)
-                            ctx.moveTo(cx + half * 0.5, cy);        ctx.lineTo(cx + half * 0.5, cy + half)
-                            ctx.stroke()
-
-                            // --- labels at segment midpoints ---
-                            // X labels: on horizontal segments, nudge perpendicular (up for top/middle, down for bottom)
-                            // Y labels: on vertical segments, nudge perpendicular (left for left col, right for center/right col)
-                            // This avoids overlap at the 4 crossing points where X and Y segments intersect.
-                            var nud = 7
-
-                            var labels = [
-                                // X labels — on horizontal lines, nudge up (top & middle rows) or down (bottom row)
-                                { mx: cx - half * 0.5, my: cy - half * 0.5 - nud, id: "x1" },
-                                { mx: cx + half * 0.5, my: cy - half * 0.5 - nud, id: "x2" },
-                                { mx: cx - half * 0.5, my: cy - nud,              id: "x3" },
-                                { mx: cx + half * 0.5, my: cy - nud,              id: "x4" },
-                                { mx: cx - half * 0.5, my: cy + half * 0.5 + nud, id: "x5" },
-                                { mx: cx + half * 0.5, my: cy + half * 0.5 + nud, id: "x6" },
-                                // Y labels — on vertical lines, nudge left (left col) or right (center & right cols)
-                                { mx: cx - half * 0.5 - nud, my: cy - half * 0.5, id: "y1" },
-                                { mx: cx - half * 0.5 - nud, my: cy + half * 0.5, id: "y2" },
-                                { mx: cx + nud,              my: cy - half * 0.5, id: "y3" },
-                                { mx: cx + nud,              my: cy + half * 0.5, id: "y4" },
-                                { mx: cx + half * 0.5 + nud, my: cy - half * 0.5, id: "y5" },
-                                { mx: cx + half * 0.5 + nud, my: cy + half * 0.5, id: "y6" }
-                            ]
-
+                            // --- X labels: on horizontal lines at horizontal midpoint ---
+                            // 6 X measurements: left and right half of each of the 3 horizontal lines
+                            // Label sits directly on the line at the segment midpoint
                             ctx.fillStyle = "#4fc3f7"
                             ctx.font = "bold " + galvoCalDialog.cfgFontSize + "pt " + galvoCalDialog.cfgFontFamily
                             ctx.textAlign = "center"
                             ctx.textBaseline = "middle"
-                            for (var i = 0; i < labels.length; i++)
-                                ctx.fillText(labels[i].id, labels[i].mx, labels[i].my)
+
+                            var xLabels = [
+                                { mx: cx - half * 0.5, my: ys[0], id: "x1" },
+                                { mx: cx + half * 0.5, my: ys[0], id: "x2" },
+                                { mx: cx - half * 0.5, my: ys[1], id: "x3" },
+                                { mx: cx + half * 0.5, my: ys[1], id: "x4" },
+                                { mx: cx - half * 0.5, my: ys[2], id: "x5" },
+                                { mx: cx + half * 0.5, my: ys[2], id: "x6" }
+                            ]
+                            for (var i = 0; i < xLabels.length; i++)
+                                ctx.fillText(xLabels[i].id, xLabels[i].mx, xLabels[i].my)
+
+                            // --- Y labels: beside vertical lines at vertical midpoint ---
+                            // 6 Y measurements: top and bottom half of each of the 3 vertical lines
+                            // Label is placed to the right of the line at the segment midpoint
+                            ctx.textAlign = "left"
+                            var yOff = 4
+                            var yLabels = [
+                                { mx: xs[0] + yOff, my: cy - half * 0.5, id: "y1" },
+                                { mx: xs[0] + yOff, my: cy + half * 0.5, id: "y2" },
+                                { mx: xs[1] + yOff, my: cy - half * 0.5, id: "y3" },
+                                { mx: xs[1] + yOff, my: cy + half * 0.5, id: "y4" },
+                                { mx: xs[2] + yOff, my: cy - half * 0.5, id: "y5" },
+                                { mx: xs[2] + yOff, my: cy + half * 0.5, id: "y6" }
+                            ]
+                            for (var j = 0; j < yLabels.length; j++)
+                                ctx.fillText(yLabels[j].id, yLabels[j].mx, yLabels[j].my)
 
                             // nominal label
                             ctx.fillStyle = "white"
