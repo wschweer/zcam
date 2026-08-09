@@ -502,7 +502,7 @@ Item {
 
             Item {
                 width: parent ? parent.width : 0
-                implicitHeight: lineLabel.text.length > 0 ? Math.max(lineLabel.implicitHeight, 8) : 8
+                implicitHeight: lineLabel.text.length > 0 ? Math.max(lineLabel.implicitHeight, 8) + 4 : 8
 
                 property string propName
                 property var propValue
@@ -518,14 +518,16 @@ Item {
                     color: Material.foreground
                     opacity: 0.75
                     anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: lineLabel.text.length > 0 ? 8 : 0
+                    anchors.top: parent.top
+                    anchors.topMargin: lineLabel.text.length > 0 ? 2 : 0
                     }
 
                 Rectangle {
                     anchors.left: lineLabel.text.length > 0 ? lineLabel.right : parent.left
                     anchors.leftMargin: lineLabel.text.length > 0 ? 6 : 0
                     anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenter: lineLabel.text.length > 0 ? lineLabel.verticalCenter : parent.verticalCenter
                     height: 1
                     color: Material.accentColor
                     opacity: 0.3
@@ -914,7 +916,7 @@ Item {
 
             Item {
                 width: parent ? parent.width : 0
-                implicitHeight: colLineLabel.text.length > 0 ? Math.max(colLineLabel.implicitHeight, 8) : 8
+                implicitHeight: colLineLabel.text.length > 0 ? Math.max(colLineLabel.implicitHeight, 8) + 4 : 8
 
                 property string propName
                 property var propValue
@@ -930,14 +932,16 @@ Item {
                     color: Material.foreground
                     opacity: 0.75
                     anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: colLineLabel.text.length > 0 ? 8 : 0
+                    anchors.top: parent.top
+                    anchors.topMargin: colLineLabel.text.length > 0 ? 2 : 0
                     }
 
                 Rectangle {
                     anchors.left: colLineLabel.text.length > 0 ? colLineLabel.right : parent.left
                     anchors.leftMargin: colLineLabel.text.length > 0 ? 6 : 0
                     anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenter: colLineLabel.text.length > 0 ? colLineLabel.verticalCenter : parent.verticalCenter
                     height: 1
                     color: Material.accentColor
                     opacity: 0.3
