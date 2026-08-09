@@ -21,7 +21,7 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     width: 988
-    height: 640
+    height: 700
     padding: 20
 
     property Machine machine: null
@@ -200,56 +200,29 @@ Dialog {
                     }
                 }
 
-                // --- current galvo settings (always visible) ---
+                // --- correction (always visible, pre-filled with current machine values) ---
                 GroupBox {
-                    title: qsTr("Current Galvo Settings")
+                    title: qsTr("Correction")
                     Layout.fillWidth: true
                     GridLayout {
-                        columns: 2
+                        columns: 4
                         columnSpacing: 12
                         rowSpacing: 4
                         Label { text: qsTr("Scale:"); font.bold: true }
                         Label {
-                            text: galvoCalDialog.machine ? "%1 %,  %2 %".arg(galvoCalDialog.machine.galvoScale.x.toFixed(3)).arg(galvoCalDialog.machine.galvoScale.y.toFixed(3)) : "—"
+                            text: calib.valid
+                                ? "%1 %,  %2 %".arg(calib.scale.x.toFixed(3)).arg(calib.scale.y.toFixed(3))
+                                : (galvoCalDialog.machine
+                                    ? "%1 %,  %2 %".arg(galvoCalDialog.machine.galvoScale.x.toFixed(3)).arg(galvoCalDialog.machine.galvoScale.y.toFixed(3))
+                                    : "—")
                         }
                         Label { text: qsTr("Bulge:"); font.bold: true }
                         Label {
-                            text: galvoCalDialog.machine ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toExponential(3)).arg(galvoCalDialog.machine.galvoBulge.y.toExponential(3)) : "—"
-                        }
-                        Label { text: qsTr("Shear:"); font.bold: true }
-                        Label {
-                            text: galvoCalDialog.machine ? "%1,  %2".arg(galvoCalDialog.machine.galvoShear.x.toFixed(3)).arg(galvoCalDialog.machine.galvoShear.y.toFixed(3)) : "—"
-                        }
-                        Label { text: qsTr("Trapezoid:"); font.bold: true }
-                        Label {
-                            text: galvoCalDialog.machine ? "%1,  %2".arg(galvoCalDialog.machine.galvoTrapezoid.x.toFixed(3)).arg(galvoCalDialog.machine.galvoTrapezoid.y.toFixed(3)) : "—"
-                        }
-                        Label { text: qsTr("Rotate:"); font.bold: true }
-                        Label {
-                            text: galvoCalDialog.machine ? galvoCalDialog.machine.galvoRotate.toFixed(3) + " °" : "—"
-                        }
-                        Label { text: qsTr("Swap XY:"); font.bold: true }
-                        Label {
-                            text: galvoCalDialog.machine ? (galvoCalDialog.machine.galvoSwapxy ? qsTr("yes") : qsTr("no")) : "—"
-                        }
-                    }
-                }
-
-                // --- computed correction (always visible) ---
-                GroupBox {
-                    title: qsTr("Computed Correction")
-                    Layout.fillWidth: true
-                    GridLayout {
-                        columns: 2
-                        columnSpacing: 12
-                        rowSpacing: 4
-                        Label { text: qsTr("Scale:"); font.bold: true }
-                        Label {
-                            text: calib.valid ? "%1 %,  %2 %".arg(calib.scale.x.toFixed(3)).arg(calib.scale.y.toFixed(3)) : "—"
-                        }
-                        Label { text: qsTr("Bulge:"); font.bold: true }
-                        Label {
-                            text: calib.valid ? "%1,  %2".arg(calib.bulge.x.toExponential(3)).arg(calib.bulge.y.toExponential(3)) : "—"
+                            text: calib.valid
+                                ? "%1,  %2".arg(calib.bulge.x.toExponential(3)).arg(calib.bulge.y.toExponential(3))
+                                : (galvoCalDialog.machine
+                                    ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toExponential(3)).arg(galvoCalDialog.machine.galvoBulge.y.toExponential(3))
+                                    : "—")
                         }
                         Label { text: qsTr("RMS error:"); font.bold: true }
                         Label {
