@@ -17,6 +17,90 @@
 #include "machines.h"
 
 #include <cmath>
+namespace {
+// Correction table geometry used by LaserBJJCZ::writeCorrectionTable().
+// The table spans grid coordinates [-32, 32] in both axes.
+// One grid step corresponds to scale = 0x10000 / 64 = 1024 table units.
+constexpr double CORRECTION_GRID_HALF = 32.0;
+constexpr double CORRECTION_SCALE     = 65536.0 / 64.0; // = 1024 table units / grid unit
+constexpr double MEASUREMENT_GRID     = 16.0;           // "9 point" cross is at +/- half field
+// Convert a physical offset in mm to correction-table units.
+// fieldHalf mm maps to CORRECTION_GRID_HALF grid units, i.e.
+// CORRECTION_GRID_HALF * CORRECTION_SCALE table units.
+double mmToTable(double mm, double fieldHalf) {
+      return mm * (CORRECTION_GRID_HALF * CORRECTION_SCALE) / fieldHalf;
+      }
+
+// Convert correction-table units back to mm.
+double tableToMm(double table, double fieldHalf) {
+      return table * fieldHalf / (CORRECTION_GRID_HALF * CORRECTION_SCALE);
+      }
+
+// Position on the measured axis after applying the correction table.
+// For an X measurement we return the corrected x coordinate (mm),
+// for a Y measurement the corrected y coordinate.  The coordinate on
+// the cross axis does not influence the measured length.
+double correctedCoord(int gx, int gy, double fieldHalf, double bulge, bool isX) {
+      const double r2         = double(gx * gx + gy * gy);
+      const double nominal    = (isX ? gx : gy) * CORRECTION_SCALE;
+      const double correction = bulge * r2 * (isX ? gx : gy);
+      return tableToMm(nominal + correction, fieldHalf);
+      }
+
+// Simulated length of one measured line pair after applying the
+// correction table model.  For an X measurement the line runs from
+// (-16, gy) to (+16, gy); for a Y measurement from (gx, -16) to
+// (gx, +16).
+double simulatedLength(int crossGrid, bool isX, double fieldHalf, double bulgeX, double bulgeY) {
+      if (isX) {
+            return correctedCoord(16, crossGrid, fieldHalf, bulgeX, true) -
+                   correctedCoord(-16, crossGrid, fieldHalf, bulgeX, true);
+            }
+      return correctedCoord(crossGrid, 16, fieldHalf, bulgeY, false) -
+             correctedCoord(crossGrid, -16, fieldHalf, bulgeY, false);
+      }
+
+// One measurement sample used for fitting and for RMS evaluation.
+struct Sample {
+      double value;  // averaged measured length (mm)
+      int crossGrid; // grid coordinate on the cross axis
+      bool isX;      // true -> X-axis measurement
+      };
+
+// Fit a single bulge coefficient from the three samples of one axis.
+// The measured length error equals
+//     2 * bulge * r² * h          (h = 16, r² = h² + crossGrid²)
+// because the correction moves both ends of the line by the same
+// amount in opposite directions.  We use a least-squares fit over
+// the three samples with their actual r² values.
+double fitBulge(const Sample samples[3], double nominal, double fieldHalf) {
+      double num = 0.0;
+      double den = 0.0;
+      for (int i = 0; i < 3; ++i) {
+            const double r2 =
+                MEASUREMENT_GRID * MEASUREMENT_GRID + double(samples[i].crossGrid * samples[i].crossGrid);
+            const double errTable  = (samples[i].value - nominal) * mmToTable(1.0, fieldHalf);
+            const double factor    = 2.0 * MEASUREMENT_GRID * r2;
+            num                   += errTable * factor;
+            den                   += factor * factor;
+            }
+      return den == 0.0 ? 0.0 : num / den;
+      }
+
+// RMS residual after applying the correction table model to all six
+// averaged samples.
+double rmsResidual(const Sample samples[6], double fieldHalf, double bulgeX, double bulgeY) {
+      double sumSq = 0.0;
+      for (int i = 0; i < 6; ++i) {
+            const double simulated =
+                simulatedLength(samples[i].crossGrid, samples[i].isX, fieldHalf, bulgeX, bulgeY);
+            const double err  = samples[i].value - simulated;
+            sumSq            += err * err;
+            }
+      return std::sqrt(sumSq / 6.0);
+      }
+
+      } //namespace
 
 //---------------------------------------------------------
 //   GalvoCalibration
@@ -29,31 +113,26 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    Compute galvoScale and galvoBulge from 12 measured
 //    line lengths of the "Galvo Test 9" pattern.
 //
-//    The galvo maps the field [-fieldHalf, fieldHalf] mm
-//    to galvo units [-25800, 25800] with scale factor:
-//      galvo = mm * 25800 / fieldHalf * scale
+//    The laser field is [-fieldHalf, fieldHalf] mm.
+//    The "9 point" burn pattern places line pairs at +/- fieldHalf/2,
+//    which corresponds to grid coordinates +/- 16 inside the correction
+//    table used by LaserBJJCZ::writeCorrectionTable().
 //
-//    scale compensates the average linear deviation.
-//    The bulge (pincushion/barrel) correction uses the
-//    cubic formula from LaserBJJCZ::writeCorrectionTable():
-//      corr = bulge * r² * pos
-//    where pos is in grid units [-32, 32] and r² = x²+y².
+//    The correction table spans grid coordinates [-32, 32] and stores
+//    offsets in units of CORRECTION_SCALE = 0x10000/64 = 1024.
+//    For grid coordinate g the nominal table entry is g*1024 and the
+//    lens-distortion correction is
+//        corr = bulge * r² * g
+//    where r² = gx² + gy².
 //
-//    The six measured pairs (left/right of the X-axis
-//    cross and top/bottom of the Y-axis cross) are each
-//    averaged to eliminate any translation offset.
-//    Each measurement point sits at grid distance h = 16
-//    (half the field) in the relevant axis, so the mean
-//    of each pair cancels the cross-axis bulge contribution.
+//    scale: The centre measurement (xMiddle / yCenter) is least affected
+//    by distortion and is used as the pure linear scale.
+//    galvoScale is stored in percent: 100 = factor 1.0.
 //
-//      X axis:  Δx_measured (mm) → galvo error at (±16, y)
-//        pair mean cancels y bulge: r²_x = 256 + y²
-//      Y axis:  Δy_measured (mm) → galvo error at (x, ±16)
-//        pair mean cancels x bulge: r²_y = 256 + x²
-//
-//    Using averaged r² per cross arm:
-//      X: r² = 256 + 256/3  (y ∈ {16, 0, -16})
-//      Y: r² = 256 + 256/3  (x ∈ {16, 0, -16})
+//    bulge: The six measured pairs are averaged to cancel translation.
+//    For each axis we fit a single bulge coefficient to the three averaged
+//    lengths using the actual r² of each sample and the factor 2 that
+//    comes from moving both line ends.
 //---------------------------------------------------------
 bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
                                double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
@@ -72,74 +151,32 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       nominal = fieldHalf;
 
       //--- average each pair (cancels translation offset) ---
-      const double xTop    = (xTopLeft + xTopRight) * 0.5;
-      const double xMiddle = (xMiddleLeft + xMiddleRight) * 0.5;
-      const double xBottom = (xBottomLeft + xBottomRight) * 0.5;
-
-      const double yLeft   = (yLeftTop + yLeftBottom) * 0.5;
-      const double yCenter = (yCenterTop + yCenterBottom) * 0.5;
-      const double yRight  = (yRightTop + yRightBottom) * 0.5;
+      const Sample xSamples[3] = {
+               {      (xTopLeft + xTopRight) * 0.5,  16, true},
+               {(xMiddleLeft + xMiddleRight) * 0.5,   0, true},
+               {(xBottomLeft + xBottomRight) * 0.5, -16, true}
+            };
+      const Sample ySamples[3] = {
+               {    (yLeftTop + yLeftBottom) * 0.5, -16, false},
+               {(yCenterTop + yCenterBottom) * 0.5,   0, false},
+               {  (yRightTop + yRightBottom) * 0.5,  16, false}
+            };
 
       //--- scale: use center measurement only ---
-      // The center measurement (xMiddle / yCenter) is least
-      // affected by pincushion/barrel distortion and best
-      // represents the pure linear scale.  Using the mean of
-      // all three measurements would incorrectly fold the
-      // bulge distortion into the scale factor.
-      // galvoScale is stored in percent: 100 = factor 1.0 (see
-      // LaserBJJCZ::initEngine/mapToGalvo, which divide by 100).
-      const double sx = nominal / xMiddle;
-      const double sy = nominal / yCenter;
+      const double sx = nominal / xSamples[1].value;
+      const double sy = nominal / ySamples[1].value;
 
-      //--- bulge: least-squares fit of deviations ---
-      // Convert each mean to galvo-unit error:
-      //   measured galvo = mean [mm] * 25800 / fieldHalf
-      //   expected galvo = 25800
-      //   err = measured - expected = galvo bulge at grid pos h=16
-      //
-      // The bulge formula: corr = bulge * r² * h
-      //   with r² = 256 + 256/3 (mean of y² or x² across the three cross arms)
-      //   so h * r² = 16 * (256 + 85.333) = 16 * 341.333 = 5461.333
-      const double galvoScaleFactor = 25800.0 / fieldHalf;
-      const double r2mean           = 256.0 + 256.0 / 3.0;
-      const double denom            = 16.0 * r2mean;
-
-      const double errXTop    = xTop * galvoScaleFactor - 25800.0;
-      const double errXMiddle = xMiddle * galvoScaleFactor - 25800.0;
-      const double errXBottom = xBottom * galvoScaleFactor - 25800.0;
-
-      const double errYLeft   = yLeft * galvoScaleFactor - 25800.0;
-      const double errYCenter = yCenter * galvoScaleFactor - 25800.0;
-      const double errYRight  = yRight * galvoScaleFactor - 25800.0;
-
-      // Least-squares: bulge = Σ(err * h * r²) / Σ((h * r²)²)
-      // All terms share the same h * r² = denom, so this simplifies
-      // to the mean of (err / denom).
-      const double bulgeX = (errXTop + errXMiddle + errXBottom) / (3.0 * denom);
-      const double bulgeY = (errYLeft + errYCenter + errYRight) / (3.0 * denom);
+      //--- bulge: least-squares fit per axis ---
+      const double bulgeX = fitBulge(xSamples, nominal, fieldHalf);
+      const double bulgeY = fitBulge(ySamples, nominal, fieldHalf);
 
       _scale = QVector2D(sx * 100.0, sy * 100.0);
       _bulge = QVector2D(bulgeX, bulgeY);
 
-      //--- RMS error after correction (in mm) ---
-      double sumSq = 0.0;
-      auto rms     = [&](double measured, double bulgeVal, bool isX) {
-            // corrected galvo = measured galvo - bulge * r² * h
-            const double galvo          = measured * galvoScaleFactor;
-            const double corr           = bulgeVal * denom;
-            const double correctedGalvo = galvo - corr;
-            // back to mm with new scale
-            const double correctedMm = correctedGalvo / galvoScaleFactor / (isX ? sx : sy);
-            const double err         = correctedMm - nominal;
-            return err * err;
-            };
-      sumSq     += rms(xTop, bulgeX, true);
-      sumSq     += rms(xMiddle, bulgeX, true);
-      sumSq     += rms(xBottom, bulgeX, true);
-      sumSq     += rms(yLeft, bulgeY, false);
-      sumSq     += rms(yCenter, bulgeY, false);
-      sumSq     += rms(yRight, bulgeY, false);
-      _rmsError  = std::sqrt(sumSq / 6.0);
+      //--- RMS error after correction (simulated correction table) ---
+      const Sample allSamples[6] = {xSamples[0], xSamples[1], xSamples[2],
+                                    ySamples[0], ySamples[1], ySamples[2]};
+      _rmsError                  = rmsResidual(allSamples, fieldHalf, bulgeX, bulgeY);
 
       _valid = true;
       Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) rms={:.4f} mm", _scale.x(),
