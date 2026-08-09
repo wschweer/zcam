@@ -420,6 +420,8 @@ void InspectorModel::parseProperties() {
                                                 if (type == "line") {
                                                       ci.isLine = true;
                                                       ci.name   = "line";
+                                                      if (cell.contains("label") && cell["label"].is_string())
+                                                            ci.rowLabel = QString::fromStdString(cell["label"].get<std::string>());
                                                       }
                                                 else if (cell.contains("cells") && cell["cells"].is_array()) {
                                                       // Row cell: has sub-cells instead of a name
@@ -470,12 +472,15 @@ void InspectorModel::parseProperties() {
                               else if (row.contains("cells") && row["cells"].is_array()) {
                                     QStringList subs;
                                     bool hasLine = false;
+                                    QString lineLabel;
                                     for (const auto& cell : row["cells"]) {
                                           std::string type = cell.contains("type") && cell["type"].is_string()
                                                                  ? cell["type"].get<std::string>()
                                                                  : "";
                                           if (type == "line") {
                                                 hasLine = true;
+                                                if (cell.contains("label") && cell["label"].is_string())
+                                                      lineLabel = QString::fromStdString(cell["label"].get<std::string>());
                                                 continue;
                                                 }
                                           if (type == "empty") {
@@ -508,7 +513,7 @@ void InspectorModel::parseProperties() {
                                           _columnCounts.append(0);
                                           _columnItems.append(QList<ColumnItem> {});
                                           _subPropNames.append(QStringList {});
-                                          _rowLabels.append(QString());
+                                          _rowLabels.append(lineLabel);
                                           }
                                     else {
                                           // Empty row (no named cells) - add as empty entry
@@ -934,10 +939,11 @@ Recipe* InspectorModel::nameToLaserLayer(const QString& name) const {
 //    Resolve a Recipe* pointer to its name string.
 //---------------------------------------------------------
 
-QString InspectorModel::recipeToName(LaserRecipe* recipe) const {
-      if (!recipe)
+QString InspectorModel::recipeToName(QVariant recipe) const {
+      LaserRecipe* ptr = recipe.value<LaserRecipe*>();
+      if (!ptr)
             return {};
-      return recipe->name();
+      return ptr->name();
       }
 
 //---------------------------------------------------------

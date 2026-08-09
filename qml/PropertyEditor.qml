@@ -484,6 +484,7 @@ Item {
                         item.propName  = delegateRoot.model.propName
                         item.propValue = Qt.binding(() => delegateRoot.model.propValue)
                         item.meta      = root.metaFor(delegateRoot.model.propName)
+                        item.rowLabel  = delegateRoot.model.rowLabel ?? ""
                         item.propIndex = delegateRoot.index
                         item.enabled  = Qt.binding(() => root.isPropEnabled(item.meta))
                         item.opacity  = Qt.binding(() => loader.item ? (loader.item.enabled ? 1.0 : 0.4) : 0.4)
@@ -495,22 +496,35 @@ Item {
                 }
             }
 
-        // ── line: horizontal separator ───────────────────────────────────
+        // ── line: horizontal separator (optionally with label text) ──
         Component {
             id: lineDelegate
 
             Item {
                 width: parent ? parent.width : 0
-                implicitHeight: 8
+                implicitHeight: lineLabel.text.length > 0 ? Math.max(lineLabel.implicitHeight, 8) : 8
 
                 property string propName
                 property var propValue
                 property var meta
                 property int propIndex
+                property string rowLabel
                 property var setModelValue: function(v) {}
 
-                Rectangle {
+                Text {
+                    id: lineLabel
+                    text: parent.rowLabel
+                    font.bold: true
+                    font.pixelSize: 10
+                    color: Material.foreground
+                    opacity: 0.75
                     anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                Rectangle {
+                    anchors.left: lineLabel.text.length > 0 ? lineLabel.right : parent.left
+                    anchors.leftMargin: lineLabel.text.length > 0 ? 6 : 0
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     height: 1
@@ -684,7 +698,7 @@ Item {
                         const item = items[i]
                         key += (item.name || "") + "|" + (item.colSpan || 1) + "|"
                               + (item.isRow ? "1" : "0") + "|" + (item.isLine ? "1" : "0") + "|"
-                              + (item.isEmpty ? "1" : "0") + ";"
+                              + (item.isEmpty ? "1" : "0") + "|" + (item.rowLabel || "") + ";"
                     }
                     return key
                     }
@@ -848,8 +862,10 @@ Item {
                                     const d = colLoader.itemData
                                     if (!d || !item)
                                         return
-                                    if (d.isLine)
+                                    if (d.isLine) {
+                                        item.rowLabel = d.rowLabel || ""
                                         return
+                                        }
                                     if (d.isEmpty)
                                         return
                                     if (d.isRow) {
@@ -899,17 +915,29 @@ Item {
 
             Item {
                 width: parent ? parent.width : 0
-                height: 8
-                implicitHeight: 8
+                implicitHeight: colLineLabel.text.length > 0 ? Math.max(colLineLabel.implicitHeight, 8) : 8
 
                 property string propName
                 property var propValue
                 property var meta
                 property int propIndex
+                property string rowLabel
                 property var setModelValue: function(v) {}
 
-                Rectangle {
+                Text {
+                    id: colLineLabel
+                    text: parent.rowLabel
+                    font.bold: true
+                    font.pixelSize: 10
+                    color: Material.foreground
+                    opacity: 0.75
                     anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                Rectangle {
+                    anchors.left: colLineLabel.text.length > 0 ? colLineLabel.right : parent.left
+                    anchors.leftMargin: colLineLabel.text.length > 0 ? 6 : 0
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     height: 1
