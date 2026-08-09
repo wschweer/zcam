@@ -515,7 +515,6 @@ Item {
                     id: lineLabel
                     text: parent.rowLabel
                     font.bold: true
-                    font.pixelSize: 10
                     color: Material.foreground
                     opacity: 0.75
                     anchors.left: parent.left
@@ -928,7 +927,6 @@ Item {
                     id: colLineLabel
                     text: parent.rowLabel
                     font.bold: true
-                    font.pixelSize: 10
                     color: Material.foreground
                     opacity: 0.75
                     anchors.left: parent.left
