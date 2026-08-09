@@ -17,7 +17,6 @@
 #include "machines.h"
 
 #include <cmath>
-
 //---------------------------------------------------------
 //   GalvoCalibration
 //---------------------------------------------------------
@@ -80,6 +79,8 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double yRight  = (yRightTop + yRightBottom) * 0.5;
 
       //--- scale: mean of all six measurements ---
+      // galvoScale is stored in percent: 100 = factor 1.0 (see
+      // LaserBJJCZ::initEngine/mapToGalvo, which divide by 100).
       const double meanX = (xTop + xMiddle + xBottom) / 3.0;
       const double meanY = (yLeft + yCenter + yRight) / 3.0;
       const double sx    = nominal / meanX;
@@ -112,7 +113,7 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double bulgeX = (errXTop + errXMiddle + errXBottom) / (3.0 * denom);
       const double bulgeY = (errYLeft + errYCenter + errYRight) / (3.0 * denom);
 
-      _scale = QVector2D(sx, sy);
+      _scale = QVector2D(sx * 100.0, sy * 100.0);
       _bulge = QVector2D(bulgeX, bulgeY);
 
       //--- RMS error after correction (in mm) ---
@@ -136,8 +137,8 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       _rmsError  = std::sqrt(sumSq / 6.0);
 
       _valid = true;
-      Info("GalvoCalibration: scale=({:.6f},{:.6f}) bulge=({:.6e},{:.6e}) rms={:.4f} mm", sx, sy, bulgeX,
-           bulgeY, _rmsError);
+      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) rms={:.4f} mm", _scale.x(),
+           _scale.y(), bulgeX, bulgeY, _rmsError);
       emit resultsChanged();
       return true;
 }
@@ -160,9 +161,10 @@ bool GalvoCalibration::applyToMachine(Machine* machine) {
       laser->set_galvoScale(_scale);
       laser->set_galvoBulge(_bulge);
 
-      // Persist the machine configuration.
-      if (zcam && zcam->machines()) {
-            zcam->machines()->saveToDirectory(zcam->machinesDirectory());
+      // Persist all assets (config, machines, recipes) — also gives
+      // user feedback in the status bar via the assetsSaved signal.
+      if (zcam) {
+            zcam->saveAssets();
             Info("GalvoCalibration: applied to '{}' and saved", laser->name());
       }
       return true;

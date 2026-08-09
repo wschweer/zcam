@@ -18,7 +18,6 @@
 
 class ZCam;
 class Machine;
-
 //---------------------------------------------------------
 //   GalvoCalibration
 //    Computes galvo correction values (galvoScale and
