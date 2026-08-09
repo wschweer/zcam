@@ -24,8 +24,9 @@ Dialog {
     height: 660
     padding: 16
 
-    // Unified font for all labels and text fields
+    // Unified fonts for all labels and text fields
     readonly property font unifiedFont: Qt.font({ family: "sans-serif", pixelSize: 11 })
+    readonly property font unifiedFontBold: Qt.font({ family: "sans-serif", pixelSize: 11, weight: Font.Bold })
 
     property Machine machine: null
     property double nominalSpacing: machine ? machine.maxTravel.x * 0.5 : 87.5
@@ -71,8 +72,7 @@ Dialog {
         // --- info ---
         Label {
             text: "Machine: " + (galvoCalDialog.machine ? galvoCalDialog.machine.name : qsTr("(no machine)"))
-            font: unifiedFont
-            font.bold: true
+            font: unifiedFontBold
             Layout.alignment: Qt.AlignHCenter
         }
         Label {
@@ -170,8 +170,7 @@ Dialog {
                     rowSpacing: 2
                     Label {
                         text: qsTr("Scale:")
-                        font: unifiedFont
-                        font.bold: true
+                        font: unifiedFontBold
                     }
                     Label {
                         font: unifiedFont
@@ -183,8 +182,7 @@ Dialog {
                     }
                     Label {
                         text: qsTr("Bulge:")
-                        font: unifiedFont
-                        font.bold: true
+                        font: unifiedFontBold
                     }
                     Label {
                         font: unifiedFont
@@ -196,8 +194,7 @@ Dialog {
                     }
                     Label {
                         text: qsTr("RMS error:")
-                        font: unifiedFont
-                        font.bold: true
+                        font: unifiedFontBold
                     }
                     Label {
                         font: unifiedFont
