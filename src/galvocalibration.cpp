@@ -315,7 +315,7 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //
 //    scale: The centre measurement (xMiddle / yCenter) is corrected
 //    for the fitted bulge distortion and then used as the pure linear
-//    scale.  galvoScale is stored in percent: 100 = factor 1.0.
+//    scale.  galvoScale is stored as a factor: 1.0 = unity.
 //
 //    offset: The beam offset (dx, dy) in mm is estimated from the
 //    left/right (or top/bottom) asymmetry of the line pairs.  This
@@ -424,7 +424,7 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double sx          = nominal / avgXCenter;
       const double sy          = nominal / avgYCenter;
 
-      _scale  = QVector2D(sx * 100.0, sy * 100.0);
+      _scale  = QVector2D(sx, sy);
       _bulge  = QVector2D(bulgeX, bulgeY);
       _bulge4 = QVector2D(0.0, 0.0);   // not computed from 9-point pattern
 
@@ -531,7 +531,7 @@ QVariantMap GalvoCalibration::loadParameters(const QString& filePath) {
 //---------------------------------------------------------
 void GalvoCalibration::clear() {
       _valid    = false;
-      _scale    = QVector2D(100.0, 100.0);
+      _scale    = QVector2D(1.0, 1.0);
       _bulge    = QVector2D(0.0, 0.0);
       _offset   = QVector2D(0.0, 0.0);
       _bulge4   = QVector2D(0.0, 0.0);

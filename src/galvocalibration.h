@@ -39,7 +39,7 @@ class Machine;
 //
 //    If all values equal the nominal grid spacing
 //    (field width * 0.5), the galvo is perfectly calibrated:
-//      galvoScale = (100, 100), galvoBulge = (0, 0),
+//      galvoScale = (1, 1), galvoBulge = (0, 0),
 //      galvoOffset = (0, 0), galvoBulge4 = (0, 0).
 //
 //    galvoBulge4 is not computed from the 9-point pattern;
@@ -63,7 +63,7 @@ class GalvoCalibration : public QObject
       double nominal {0.0};
 
       // computed results
-      QVector2D _scale {100.0, 100.0};
+      QVector2D _scale {1.0, 1.0};
       QVector2D _bulge {0.0, 0.0};
       QVector2D _offset {0.0, 0.0};
       QVector2D _bulge4 {0.0, 0.0};

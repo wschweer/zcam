@@ -295,9 +295,9 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
       xc -= galvoOffset().x();
       yc -= galvoOffset().y();
 
-      // 5) Overall scale (percent -> factor, then raw galvo units).
-      const double xScale = (galvoScale().x() / 100.0) * 54000.0 / maxX;
-      const double yScale = (galvoScale().y() / 100.0) * 54000.0 / maxY;
+      // 5) Overall scale (factor, then raw galvo units).
+      const double xScale = galvoScale().x() * 54000.0 / maxX;
+      const double yScale = galvoScale().y() * 54000.0 / maxY;
 
       double rawX, rawY;
       if (galvoSwapxy()) {
@@ -338,8 +338,8 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
       // galvo range    -32767 -> 32767
       // aktually used: -25800 -> 25800 ( 175mmx175mm for 250mm Lens)
       // safety margin is typical 20%-21%
-      double xScale = galvoScale().x() / 100.0;
-      double yScale = galvoScale().y() / 100.0;
+      double xScale = galvoScale().x();
+      double yScale = galvoScale().y();
       xScale        = xScale * 25800 / maxTravel().x();
       yScale        = yScale * 25800 / maxTravel().y();
 
@@ -1023,9 +1023,10 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
           "label": "Galvo Scale",
           "type": "vector2d",
           "default": [
-            100.0,
-            100.0
-          ]
+            1.0,
+            1.0
+          ],
+          "precision": 6
         },
         {
           "label": " ",
@@ -1273,9 +1274,10 @@ static constexpr std::string_view _propertiesMOPA =
                         "label": "Scale",
                         "type": "vector2d",
                         "default": [
-                          100.0,
-                          100.0
-                        ]
+                          1.0,
+                          1.0
+                        ],
+                        "precision": 6
                       },
                       {
                         "label": "Shear",
@@ -1692,9 +1694,10 @@ static constexpr std::string_view _propertiesUV =
           "label": "Galvo Scale",
           "type": "vector2d",
           "default": [
-            100.0,
-            100.0
-          ]
+            1.0,
+            1.0
+          ],
+          "precision": 6
         },
         {
           "label": " ",

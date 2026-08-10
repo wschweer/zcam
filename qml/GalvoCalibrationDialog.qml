@@ -197,9 +197,9 @@ Dialog {
                     Label {
                         font: unifiedFont
                         text: calib.valid
-                            ? "%1 %,  %2 %".arg(calib.scale.x.toFixed(3)).arg(calib.scale.y.toFixed(3))
+                            ? "%1,  %2".arg(calib.scale.x.toFixed(6)).arg(calib.scale.y.toFixed(6))
                             : (galvoCalDialog.machine
-                                ? "%1 %,  %2 %".arg(galvoCalDialog.machine.galvoScale.x.toFixed(3)).arg(galvoCalDialog.machine.galvoScale.y.toFixed(3))
+                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoScale.x.toFixed(6)).arg(galvoCalDialog.machine.galvoScale.y.toFixed(6))
                                 : "—")
                     }
                     Label {
