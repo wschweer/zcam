@@ -68,6 +68,11 @@ Item {
     // ── WebEngine view ───────────────────────────────────────────────────────
     //   The url is recalculated whenever the language changes.
     //   For "de" the root index.html is loaded; for "en" the /en/ subdirectory.
+    //
+    //   The MkDocs readthedocs theme generates links like href="manual/"
+    //   (directory URLs).  The Qt resource system cannot resolve directory
+    //   URLs, so we intercept navigation requests and rewrite them to
+    //   append "index.html".
     WebEngineView {
         id: webView
         anchors.top: langBar.bottom
@@ -80,18 +85,23 @@ Item {
              ? "qrc:/manual/index.html"
              : "qrc:/manual/en/index.html"
 
-        // Redirect internal links that point to the language root
-        // (e.g. href=".." or href=".") to the correct manual page.
-        // External links are rejected.
         onNavigationRequested: function(request) {
-            var url = request.url.toString()
-            // Allow qrc:/ and internal relative links
-            if (url.startsWith("qrc:") || url.startsWith("file:") || url.startsWith("about:")) {
-                request.accept()
+            var u = request.url.toString()
+
+            // Reject external http/https links
+            if (u.startsWith("http://") || u.startsWith("https://")) {
+                request.reject()
                 return
             }
-            // Reject external http/https links
-            request.reject()
+
+            // Rewrite directory URLs: qrc:/manual/foo/ → qrc:/manual/foo/index.html
+            // The Qt resource system cannot resolve directory paths.
+            if (u.startsWith("qrc:") && u.endsWith("/")) {
+                request.redirect(Qt.resolvedUrl("index.html", request.url))
+                return
+            }
+
+            request.accept()
         }
     }
 }
