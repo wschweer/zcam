@@ -2179,13 +2179,7 @@ void LaserBJJCZ::writeCorrectionTable() {
                         corrX = std::clamp(corrX, corrMin, corrMax);
                         corrY = std::clamp(corrY, corrMin, corrMax);
 
-                        // clamp so that (nominal position + correction)
-                        // stays within the signed 16-bit range [-32767, 32767]
-                        int nominalX = int(x * scale);
-                        int nominalY = int(y * scale);
-                        int cX       = std::clamp(corrX, -32767 - nominalX, 32767 - nominalX);
-                        int cY       = std::clamp(corrY, -32767 - nominalY, 32767 - nominalY);
-                        corData.setValue(x, y, {cX, cY});
+                        corData.setValue(x, y, {corrX, corrY});
                         }
                   }
             }
