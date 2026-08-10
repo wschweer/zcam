@@ -289,7 +289,13 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
             yc /= (1.0 + trapY * xc / halfX);
       }
 
-      // 4) Overall scale (percent -> factor, then raw galvo units).
+      // 4) Beam offset.  Positive galvoOffset.x shifts the distortion
+      //    centre to the right; subtract it so the spot lands at the
+      //    desired CAD position.
+      xc -= galvoOffset().x();
+      yc -= galvoOffset().y();
+
+      // 5) Overall scale (percent -> factor, then raw galvo units).
       const double xScale = (galvoScale().x() / 100.0) * 54000.0 / maxX;
       const double yScale = (galvoScale().y() / 100.0) * 54000.0 / maxY;
 
@@ -500,7 +506,7 @@ bool LaserBJJCZ::waitReady() const {
             if (stopFraming || stopMarking)
                   return false;
             usleep(100);              // 100µs
-            if (i > 10 * 1000 * 10) { // 10sec
+            if (i > 10 * 1000 * 100) { // 100sec
                   throw(std::string("waitReady timeout"));
                   return false;
                   }
@@ -2108,30 +2114,26 @@ void LaserBJJCZ::writeCorrectionTable() {
 
             // < 0 Kissen
             // > 0 barrel distortion
+            //
+            // The correction table contains ONLY nonlinear (radial)
+            // distortion terms (bulge, bulge4).  All linear corrections
+            // (scale, offset, shear, trapezoid, rotation) are applied
+            // in mapToGalvo() so the hardware correction table stays
+            // small and the linear part can be adjusted without
+            // rewriting the table.
             const double k2x = galvoBulge().x();
             const double k2y = galvoBulge().y();
             const double k4x = galvoBulge4().x();
             const double k4y = galvoBulge4().y();
 
-            // Beam offset in mm → convert to grid units for the correction table.
-            // The offset shifts the centre of the radial distortion, producing
-            // additional odd-order terms proportional to bulge*offset.
-            const double fieldHalfX = maxTravel().x() * 0.5;
-            const double fieldHalfY = maxTravel().y() * 0.5;
-            const double dxGrid = galvoOffset().x() * CORRECTION_GRID_HALF / fieldHalfX;
-            const double dyGrid = galvoOffset().y() * CORRECTION_GRID_HALF / fieldHalfY;
-
             double kx = k2x;
             double ky = k2y;
             double k4xlocal = k4x;
             double k4ylocal = k4y;
-            double dxL = dxGrid;
-            double dyL = dyGrid;
 
             if (galvoSwapxy()) {
                   std::swap(kx, ky);
                   std::swap(k4xlocal, k4ylocal);
-                  std::swap(dxL, dyL);
                   }
 
             int scale = 0x10000 / 64;
@@ -2140,17 +2142,8 @@ void LaserBJJCZ::writeCorrectionTable() {
                   for (double x = -32; x <= 32; ++x) {
                         const double r2 = x * x + y * y;
                         const double r4 = r2 * r2;
-                        // Standard radial (r²) and fourth-order (r⁴) correction.
-                        double corrXd = (kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x;
-                        double corrYd = (ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y;
-                        // Offset correction: the distortion centre is shifted by (dxL, dyL)
-                        // in grid units.  The resulting additional correction terms are:
-                        //   corrX += kx * (3*dxL*x² + dxL*y² + 2*dyL*x*y)
-                        //   corrY += ky * (3*dyL*y² + dyL*x² + 2*dxL*x*y)
-                        corrXd += kx * (3.0 * dxL * x * x + dxL * y * y + 2.0 * dyL * x * y);
-                        corrYd += ky * (3.0 * dyL * y * y + dyL * x * x + 2.0 * dxL * x * y);
-                        int corrX = int(std::lround(corrXd));
-                        int corrY = int(std::lround(corrYd));
+                        int corrX = int(std::lround((kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x));
+                        int corrY = int(std::lround((ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y));
 
                         // Avoid 16-bit signed overflow in the packed correction value.
                         constexpr int corrMin = -0x7FFF;
