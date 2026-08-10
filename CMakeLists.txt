@@ -378,6 +378,28 @@ if(MKDOCS_EXECUTABLE)
         ${MKDOCS_OUTPUT_DIR}/*
     )
 
+
+    # -----------------------------------------------------------------
+    # Post-process: fix broken links in the generated HTML.
+    # The mkdocs-static-i18n plugin generates broken cross-language
+    # navigation links (href="manual.en.md") and directory URLs
+    # (href="manual/") that the Qt resource system cannot resolve.
+    # The fix-links.sh script rewrites them to proper index.html URLs.
+    # -----------------------------------------------------------------
+    execute_process(
+        COMMAND bash ${MKDOCS_SOURCE_DIR}/fix-links.sh ${MKDOCS_OUTPUT_DIR}
+        RESULT_VARIABLE FIX_LINKS_RESULT
+    )
+    if(NOT FIX_LINKS_RESULT EQUAL 0)
+        message(WARNING "Manual: fix-links.sh failed with code ${FIX_LINKS_RESULT}")
+    endif()
+
+    # Re-collect files after post-processing
+    file(GLOB_RECURSE MANUAL_HTML_FILES
+        RELATIVE ${MKDOCS_OUTPUT_DIR}
+        ${MKDOCS_OUTPUT_DIR}/*
+    )
+
     # Prefix each file with the output directory for qt_add_resources.
     # Exclude the hash file and binary sitemap from the resource.
     set(MANUAL_RESOURCE_FILES)
