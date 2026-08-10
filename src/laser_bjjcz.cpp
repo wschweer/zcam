@@ -2120,6 +2120,20 @@ void LaserBJJCZ::writeCorrectionTable() {
             //    The correction values are offsets from the nominal position.
             //    The actual position plus correction value cannot exceed the
             //    16 bit range and must be clamped.
+            //
+            //    TEST CORRECTION (hardware behaviour):
+            //    The original assumption was that the hardware adds the
+            //    table values to the nominal galvo position:
+            //        actual = nominal + corr
+            //    Test results show the hardware actually divides the
+            //    table values by 4 and subtracts them:
+            //        actual = nominal - corr / 4
+            //    The previously computed values were therefore inverted
+            //    (wrong sign) and too small by a factor of 4.
+            //    To compensate, the correction values are multiplied by -4:
+            //        corr_new = -4 * corr_old
+            //    so that  nominal - corr_new / 4 = nominal + corr_old
+            //    yields the desired physical correction.
             //-----------------------------------------------------------------
 
             // < 0 Kissen
@@ -2146,14 +2160,18 @@ void LaserBJJCZ::writeCorrectionTable() {
                   std::swap(k4xlocal, k4ylocal);
                   }
 
+            // Factor -4: the hardware subtracts corr/4 instead of adding corr.
+            // Multiply by -4 so the net effect matches the original model.
+            constexpr double tableScaleFactor = -4.0;
+
             int scale = 0x10000 / 64;
 
             for (double y = -32; y <= 32; ++y) {
                   for (double x = -32; x <= 32; ++x) {
                         const double r2 = x * x + y * y;
                         const double r4 = r2 * r2;
-                        int corrX = int(std::lround((kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x));
-                        int corrY = int(std::lround((ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y));
+                        int corrX = int(std::lround(tableScaleFactor * (kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x));
+                        int corrY = int(std::lround(tableScaleFactor * (ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y));
 
                         // Avoid 16-bit signed overflow in the packed correction value.
                         constexpr int corrMin = -0x7FFF;
