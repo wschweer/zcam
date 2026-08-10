@@ -68,7 +68,22 @@ Rectangle {
             Layout.fillWidth: true
             enabled: false
             Layout.margins: 10
-            Material.accent: (laserPanel.laser && (laserPanel.laser.framing || laserPanel.laser.marking)) ? "yellow" : Material.accent
+
+            // Use a custom handle so the knob can be yellow even when
+            // the slider is disabled (Material would otherwise grey it out).
+            property bool active: laserPanel.laser && (laserPanel.laser.framing || laserPanel.laser.marking)
+
+            handle: Rectangle {
+                x: elapsedTime.leftPadding + elapsedTime.availableWidth * elapsedTime.visualPosition
+                   - width / 2
+                y: elapsedTime.topPadding + elapsedTime.availableHeight / 2 - height / 2
+                implicitWidth: 18
+                implicitHeight: 18
+                radius: 9
+                color: elapsedTime.active ? "yellow" : Material.color(Material.Grey, Material.Shade500)
+                border.width: 1
+                border.color: elapsedTime.active ? "#b8860b" : Material.color(Material.Grey, Material.Shade700)
+            }
             }
 
         RowLayout {
