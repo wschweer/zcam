@@ -44,6 +44,11 @@ double tableToMm(double table, double fieldHalf) {
       return table * fieldHalf / (CORRECTION_GRID_HALF * CORRECTION_SCALE);
       }
 
+// Convert mm to grid units (used for offset conversion).
+double mmToGrid(double mm, double fieldHalf) {
+      return mm * CORRECTION_GRID_HALF / fieldHalf;
+      }
+
 // Position on the measured axis after applying the physical lens
 // distortion that the correction table compensates.  'bulge' is the
 // value stored in the machine and sent to the controller; the
@@ -90,6 +95,118 @@ struct PairSample {
       int g2;          // grid coordinate on the cross axis
       };
 
+//---------------------------------------------------------
+//   estimateOffset
+//    Estimate the beam offset (dx, dy) in mm from the
+//    left/right asymmetry of the measured line pairs.
+//
+//    When the beam hits the galvo with an offset dx (in grid
+//    units), the radial distortion centre shifts.  For an X-axis
+//    pair at cross-coordinate G with half-length h:
+//
+//      Left  = nominal - bulge*(h²+G²)*h*mmPT
+//                    - 3*bulge*h²*dx*mmPT + 2*bulge*h*G*dy*mmPT
+//      Right = nominal - bulge*(h²+G²)*h*mmPT
+//                    + 3*bulge*h²*dx*mmPT + 2*bulge*h*G*dy*mmPT
+//
+//    The asymmetry is:
+//      (Right - Left) / 2 = 3 * bulge * h² * dx * mmPT
+//
+//    This is constant across all three X pairs (h = MEASUREMENT_GRID
+//    is the same for all), so we average over all three.
+//    Similarly for Y pairs:
+//      (Bottom - Top) / 2 = 3 * bulge * h² * dy * mmPT
+//
+//    We can only determine the products bulge*dx and bulge*dy.
+//    To get dx, dy in mm we need bulge.  We use the current
+//    machine bulge as a first estimate.  If bulge is zero the
+//    offset is undefined (and irrelevant).
+//
+//    Returns the offset in mm.
+//---------------------------------------------------------
+QVector2D estimateOffset(const PairSample xPairs[3], const PairSample yPairs[3],
+                          double fieldHalf, double bulgeX, double bulgeY) {
+      const double mmPT = 1.0 / mmToTable(1.0, fieldHalf); // mm per table unit
+      const double h    = MEASUREMENT_GRID;
+
+      // Average asymmetry over the three X pairs.
+      double asymX = 0.0;
+      for (int i = 0; i < 3; ++i)
+            asymX += (xPairs[i].rightX - xPairs[i].leftX) * 0.5;
+      asymX /= 3.0;
+
+      // Average asymmetry over the three Y pairs.
+      double asymY = 0.0;
+      for (int i = 0; i < 3; ++i)
+            asymY += (yPairs[i].rightX - yPairs[i].leftX) * 0.5;
+      asymY /= 3.0;
+
+      // asymX = 3 * bulgeX * h² * dx_grid * mmPT
+      // => dx_grid = asymX / (3 * bulgeX * h² * mmPT)
+      // => dx_mm  = dx_grid * fieldHalf / CORRECTION_GRID_HALF
+      double dxMm = 0.0;
+      double dyMm = 0.0;
+      const double denom = 3.0 * h * h * mmPT;
+      if (std::abs(bulgeX) > 1e-12)
+            dxMm = (asymX / (denom * bulgeX)) * fieldHalf / CORRECTION_GRID_HALF;
+      if (std::abs(bulgeY) > 1e-12)
+            dyMm = (asymY / (denom * bulgeY)) * fieldHalf / CORRECTION_GRID_HALF;
+
+      return QVector2D(dxMm, dyMm);
+      }
+
+//---------------------------------------------------------
+//   centerMeasurements
+//    Correct the measured pair values for the effect of the
+//    beam offset so that the residual data is centred and the
+//    bulge fit is not corrupted.
+//
+//    For X-axis pair at cross-coordinate G:
+//      avg = (Left + Right) / 2
+//          = nominal - bulge*(h²+G²)*h*mmPT - 2*bulge*h*G*dy*mmPT
+//    The cross term -2*bulge*h*G*dy*mmPT depends on G and must
+//    be subtracted from the average.
+//
+//    For Y-axis pair at cross-coordinate G:
+//      avg = (Top + Bottom) / 2
+//          = nominal - bulge*(h²+G²)*h*mmPT - 2*bulge*h*G*dx*mmPT
+//    The cross term -2*bulge*h*G*dx*mmPT must be subtracted.
+//
+//    We also correct the individual left/right values for the
+//    asymmetry so that left == right after centering:
+//      left  += asym   (asym = (right-left)/2)
+//      right -= asym
+//    This makes the averaging in fitBulge exact.
+//---------------------------------------------------------
+void centerMeasurements(PairSample xPairs[3], PairSample yPairs[3],
+                         double fieldHalf, double bulgeX, double bulgeY,
+                         double dxMm, double dyMm) {
+      const double mmPT = 1.0 / mmToTable(1.0, fieldHalf);
+      const double h    = MEASUREMENT_GRID;
+      const double dxG  = mmToGrid(dxMm, fieldHalf);
+      const double dyG  = mmToGrid(dyMm, fieldHalf);
+
+      // X pairs: remove cross term -2*bulgeX*h*G*dy*mmPT from the
+      // average, and symmetrise left/right.
+      for (int i = 0; i < 3; ++i) {
+            const double G      = xPairs[i].g2;
+            const double cross  = -2.0 * bulgeX * h * G * dyG * mmPT;
+            const double asym   = (xPairs[i].rightX - xPairs[i].leftX) * 0.5;
+            xPairs[i].leftX  += asym - cross * 0.5;
+            xPairs[i].rightX -= asym - cross * 0.5;
+            }
+
+      // Y pairs: remove cross term -2*bulgeY*h*G*dx*mmPT from the
+      // average, and symmetrise top/bottom.
+      for (int i = 0; i < 3; ++i) {
+            const double G      = yPairs[i].g2;
+            const double cross  = -2.0 * bulgeY * h * G * dxG * mmPT;
+            const double asym   = (yPairs[i].rightX - yPairs[i].leftX) * 0.5;
+            yPairs[i].leftX  += asym - cross * 0.5;
+            yPairs[i].rightX -= asym - cross * 0.5;
+            }
+      }
+
 // Fit the r² distortion coefficients (axis-specific) from the six
 // averaged line-pair measurements.
 //
@@ -115,7 +232,7 @@ bool fitBulge(const PairSample xPairs[3], const PairSample yPairs[3],
       const double tablePerMm = mmToTable(1.0, fieldHalf);
 
       // X axis: least-squares fit for k2x from three averaged pairs.
-      double sumA = 0.0, sumB = 0.0, sumC = 0.0;
+      double sumA = 0.0, sumB = 0.0;
       for (int i = 0; i < 3; ++i) {
             const double avg = (xPairs[i].leftX + xPairs[i].rightX) * 0.5;
             const double r2  = double(xPairs[i].g1 * xPairs[i].g1 + xPairs[i].g2 * xPairs[i].g2);
@@ -124,14 +241,13 @@ bool fitBulge(const PairSample xPairs[3], const PairSample yPairs[3],
             const double a   = r2 * MEASUREMENT_GRID;
             sumA += a * a;
             sumB += a * y;
-            sumC += y * y;
             }
       if (std::abs(sumA) < 1.0e-12)
             return false;
       k2xOut = sumB / sumA;
 
       // Y axis: least-squares fit for k2y from three averaged pairs.
-      sumA = 0.0; sumB = 0.0; sumC = 0.0;
+      sumA = 0.0; sumB = 0.0;
       for (int i = 0; i < 3; ++i) {
             const double avg = (yPairs[i].leftX + yPairs[i].rightX) * 0.5;
             const double r2  = double(yPairs[i].g1 * yPairs[i].g1 + yPairs[i].g2 * yPairs[i].g2);
@@ -139,7 +255,6 @@ bool fitBulge(const PairSample xPairs[3], const PairSample yPairs[3],
             const double a   = r2 * MEASUREMENT_GRID;
             sumA += a * a;
             sumB += a * y;
-            sumC += y * y;
             }
       if (std::abs(sumA) < 1.0e-12)
             return false;
@@ -171,8 +286,17 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 
 //---------------------------------------------------------
 //   compute
-//    Compute galvo scale and bulge from 12 measured line lengths
-//    of the "Galvo Test 9" pattern.  galvoBulge4 is set to (0, 0).
+//    Compute galvo scale, offset and bulge from 12 measured
+//    line lengths of the "Galvo Test 9" pattern.
+//    galvoBulge4 is set to (0, 0).
+//
+//    Pipeline:
+//      1. Scale: from the center pair (least affected by distortion).
+//      2. Offset: estimated from left/right asymmetry using the
+//         current machine bulge as a first approximation.
+//      3. Centering: the measured values are corrected for the
+//         offset cross-terms so the bulge fit is not corrupted.
+//      4. Bulge: least-squares fit per axis from the centred data.
 //
 //    The laser field is [-fieldHalf, fieldHalf] mm.
 //    The "9 point" burn pattern places line pairs at +/- fieldHalf/2,
@@ -192,10 +316,17 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    by distortion and is used as the pure linear scale.
 //    galvoScale is stored in percent: 100 = factor 1.0.
 //
-//    bulge: The six measured pairs are averaged to cancel
-//    translation.  For each axis we fit the r² distortion coefficient
-//    from the three averaged pair lengths using the actual r² of each
-//    sample and the factor 2 that comes from moving both line ends.
+//    offset: The beam offset (dx, dy) in mm is estimated from the
+//    left/right (or top/bottom) asymmetry of the line pairs.  This
+//    requires knowing the bulge coefficient; we use the current
+//    machine bulge as a first approximation.  The offset is applied
+//    to centre the measurements before the bulge fit.
+//
+//    bulge: After centring, the six measured pairs are averaged to
+//    cancel translation.  For each axis we fit the r² distortion
+//    coefficient from the three averaged pair lengths using the
+//    actual r² of each sample and the factor 2 that comes from
+//    moving both line ends.
 //
 //    The values stored in the machine and sent to the controller are the
 //    negatives of the physical distortion coefficients.
@@ -219,12 +350,12 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       nominal = fieldHalf;
 
       //--- raw pair measurements (kept separate; averaging happens per equation) ---
-      const PairSample xPairs[3] = {
+      PairSample xPairs[3] = {
             {xTopLeft, xTopRight,       16, 16},
             {xMiddleLeft, xMiddleRight, 16,  0},
             {xBottomLeft, xBottomRight, 16, -16}
             };
-      const PairSample yPairs[3] = {
+      PairSample yPairs[3] = {
             {yLeftTop, yLeftBottom,     -16, 16},
             {yCenterTop, yCenterBottom,   0, 16},
             {yRightTop, yRightBottom,    16, 16}
@@ -234,12 +365,48 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       const double sx = nominal / ((xPairs[1].leftX + xPairs[1].rightX) * 0.5);
       const double sy = nominal / ((yPairs[1].leftX + yPairs[1].rightX) * 0.5);
 
-      //--- bulge: least-squares fit per axis ---
+      //--- offset: estimate from asymmetry using current machine bulge ---
+      auto* laser = qobject_cast<Laser*>(machine);
+      const double initialBulgeX = laser ? laser->galvoBulge().x() : 0.0;
+      const double initialBulgeY = laser ? laser->galvoBulge().y() : 0.0;
+      _offset = estimateOffset(xPairs, yPairs, fieldHalf, initialBulgeX, initialBulgeY);
+
+      //--- center measurements for the offset cross-terms ---
+      centerMeasurements(xPairs, yPairs, fieldHalf, initialBulgeX, initialBulgeY,
+                          _offset.x(), _offset.y());
+
+      //--- bulge: least-squares fit per axis from centred data ---
       double bulgeX, bulgeY;
       if (!fitBulge(xPairs, yPairs, nominal, fieldHalf, bulgeX, bulgeY)) {
             Critical("GalvoCalibration::compute: unable to fit bulge coefficients");
             return false;
             }
+
+      //--- refine offset with the fitted bulge ---
+      // Re-estimate offset from the ORIGINAL (uncentred) measurements
+      // using the now-known bulge.  This is a second pass that improves
+      // accuracy when the initial machine bulge was far off.
+      {
+      PairSample xPairsOrig[3] = {
+            {xTopLeft, xTopRight,       16, 16},
+            {xMiddleLeft, xMiddleRight, 16,  0},
+            {xBottomLeft, xBottomRight, 16, -16}
+            };
+      PairSample yPairsOrig[3] = {
+            {yLeftTop, yLeftBottom,     -16, 16},
+            {yCenterTop, yCenterBottom,   0, 16},
+            {yRightTop, yRightBottom,    16, 16}
+            };
+      _offset = estimateOffset(xPairsOrig, yPairsOrig, fieldHalf, bulgeX, bulgeY);
+
+      // Re-centre and re-fit with the refined offset.
+      centerMeasurements(xPairsOrig, yPairsOrig, fieldHalf, bulgeX, bulgeY,
+                          _offset.x(), _offset.y());
+      if (!fitBulge(xPairsOrig, yPairsOrig, nominal, fieldHalf, bulgeX, bulgeY)) {
+            Critical("GalvoCalibration::compute: unable to fit bulge coefficients (pass 2)");
+            return false;
+            }
+      }
 
       _scale  = QVector2D(sx * 100.0, sy * 100.0);
       _bulge  = QVector2D(bulgeX, bulgeY);
@@ -256,8 +423,8 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       _rmsError = rmsResidual(allSamples, fieldHalf, bulgeX, bulgeY);
 
       _valid = true;
-      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) bulge=({:.6e},{:.6e}) rms={:.4f} mm",
-           _scale.x(), _scale.y(), bulgeX, bulgeY, _rmsError);
+      Info("GalvoCalibration: scale=({:.3f}%,{:.3f}%) offset=({:.4f},{:.4f})mm bulge=({:.6e},{:.6e}) rms={:.4f} mm",
+           _scale.x(), _scale.y(), _offset.x(), _offset.y(), bulgeX, bulgeY, _rmsError);
       emit resultsChanged();
       return true;
       }
@@ -348,8 +515,9 @@ QVariantMap GalvoCalibration::loadParameters(const QString& filePath) {
 //---------------------------------------------------------
 void GalvoCalibration::clear() {
       _valid    = false;
-      _scale    = QVector2D(1.0, 1.0);
+      _scale    = QVector2D(100.0, 100.0);
       _bulge    = QVector2D(0.0, 0.0);
+      _offset   = QVector2D(0.0, 0.0);
       _bulge4   = QVector2D(0.0, 0.0);
       _rmsError = 0.0;
       nominal   = 0.0;
@@ -358,8 +526,8 @@ void GalvoCalibration::clear() {
 
 //---------------------------------------------------------
 //   applyToMachine
-//    Write the computed galvoScale and galvoBulge values
-//    to the machine and persist the machine configuration.
+//    Write the computed galvoScale, galvoOffset and galvoBulge
+//    values to the machine and persist the machine configuration.
 //    galvoBulge4 is set to (0, 0).
 //---------------------------------------------------------
 bool GalvoCalibration::applyToMachine(Machine* machine) {
@@ -374,6 +542,7 @@ bool GalvoCalibration::applyToMachine(Machine* machine) {
             }
 
       laser->set_galvoScale(_scale);
+      laser->set_galvoOffset(_offset);
       laser->set_galvoBulge(_bulge);
       laser->set_galvoBulge4(_bulge4);
 

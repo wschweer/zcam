@@ -215,6 +215,18 @@ Dialog {
                                 : "—")
                     }
                     Label {
+                        text: qsTr("Offset:")
+                        font: unifiedFontBold
+                    }
+                    Label {
+                        font: unifiedFont
+                        text: calib.valid
+                            ? "%1,  %2 mm".arg(calib.offset.x.toFixed(4)).arg(calib.offset.y.toFixed(4))
+                            : (galvoCalDialog.machine
+                                ? "%1,  %2 mm".arg(galvoCalDialog.machine.galvoOffset.x.toFixed(4)).arg(galvoCalDialog.machine.galvoOffset.y.toFixed(4))
+                                : "—")
+                    }
+                    Label {
                         text: qsTr("RMS error:")
                         font: unifiedFontBold
                     }

@@ -24,6 +24,9 @@ using namespace Clipper2Lib;
 static const int VENDOR  = 0x9588;
 static const int PRODUCT = 0x9899;
 
+// Correction table grid half-range (matches galvocalibration.cpp).
+static constexpr double CORRECTION_GRID_HALF = 32.0;
+
 //---------------------------------------------------------
 //   LaserParameterSet
 //---------------------------------------------------------
@@ -996,6 +999,20 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
           ]
         },
         {
+          "label": "Offset",
+          "cells": [
+            {
+              "name": "galvoOffset",
+              "type": "vector2d",
+              "min": -10.0,
+              "max": 10.0,
+              "default": 0.0,
+              "precision": 4,
+              "unit": "mm"
+            }
+          ]
+        },
+        {
           "name": "galvoScale",
           "label": "Galvo Scale",
           "type": "vector2d",
@@ -1228,6 +1245,20 @@ static constexpr std::string_view _propertiesMOPA =
                             "max": 5.0,
                             "default": 0.0,
                             "precision": 6
+                          }
+                        ]
+                      },
+                      {
+                        "label": "Offset",
+                        "cells": [
+                          {
+                            "name": "galvoOffset",
+                            "type": "vector2d",
+                            "min": -10.0,
+                            "max": 10.0,
+                            "default": 0.0,
+                            "precision": 4,
+                            "unit": "mm"
                           }
                         ]
                       },
@@ -1633,6 +1664,20 @@ static constexpr std::string_view _propertiesUV =
               "max": 5.0,
               "default": 0.0,
               "precision": 6
+            }
+          ]
+        },
+        {
+          "label": "Offset",
+          "cells": [
+            {
+              "name": "galvoOffset",
+              "type": "vector2d",
+              "min": -10.0,
+              "max": 10.0,
+              "default": 0.0,
+              "precision": 4,
+              "unit": "mm"
             }
           ]
         },
@@ -2068,14 +2113,25 @@ void LaserBJJCZ::writeCorrectionTable() {
             const double k4x = galvoBulge4().x();
             const double k4y = galvoBulge4().y();
 
+            // Beam offset in mm → convert to grid units for the correction table.
+            // The offset shifts the centre of the radial distortion, producing
+            // additional odd-order terms proportional to bulge*offset.
+            const double fieldHalfX = maxTravel().x() * 0.5;
+            const double fieldHalfY = maxTravel().y() * 0.5;
+            const double dxGrid = galvoOffset().x() * CORRECTION_GRID_HALF / fieldHalfX;
+            const double dyGrid = galvoOffset().y() * CORRECTION_GRID_HALF / fieldHalfY;
+
             double kx = k2x;
             double ky = k2y;
             double k4xlocal = k4x;
             double k4ylocal = k4y;
+            double dxL = dxGrid;
+            double dyL = dyGrid;
 
             if (galvoSwapxy()) {
                   std::swap(kx, ky);
                   std::swap(k4xlocal, k4ylocal);
+                  std::swap(dxL, dyL);
                   }
 
             int scale = 0x10000 / 64;
@@ -2084,8 +2140,17 @@ void LaserBJJCZ::writeCorrectionTable() {
                   for (double x = -32; x <= 32; ++x) {
                         const double r2 = x * x + y * y;
                         const double r4 = r2 * r2;
-                        int corrX = int(std::lround((kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x));
-                        int corrY = int(std::lround((ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y));
+                        // Standard radial (r²) and fourth-order (r⁴) correction.
+                        double corrXd = (kx * r2 + k4xlocal * r4 * Laser::bulge4Scale) * x;
+                        double corrYd = (ky * r2 + k4ylocal * r4 * Laser::bulge4Scale) * y;
+                        // Offset correction: the distortion centre is shifted by (dxL, dyL)
+                        // in grid units.  The resulting additional correction terms are:
+                        //   corrX += kx * (3*dxL*x² + dxL*y² + 2*dyL*x*y)
+                        //   corrY += ky * (3*dyL*y² + dyL*x² + 2*dxL*x*y)
+                        corrXd += kx * (3.0 * dxL * x * x + dxL * y * y + 2.0 * dyL * x * y);
+                        corrYd += ky * (3.0 * dyL * y * y + dyL * x * x + 2.0 * dxL * x * y);
+                        int corrX = int(std::lround(corrXd));
+                        int corrY = int(std::lround(corrYd));
 
                         // Avoid 16-bit signed overflow in the packed correction value.
                         constexpr int corrMin = -0x7FFF;

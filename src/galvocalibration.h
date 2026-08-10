@@ -21,8 +21,8 @@ class Machine;
 
 //---------------------------------------------------------
 //   GalvoCalibration
-//    Computes galvo correction values (galvoScale and
-//    galvoBulge) from 12 measured line lengths of the
+//    Computes galvo correction values (galvoScale, galvoBulge
+//    and galvoOffset) from 12 measured line lengths of the
 //    "Galvo Test 9" burn pattern.
 //
 //    The 3×3 grid burned on laser paper has line pairs at
@@ -39,10 +39,17 @@ class Machine;
 //
 //    If all values equal the nominal grid spacing
 //    (field width * 0.5), the galvo is perfectly calibrated:
-//      galvoScale = (1, 1), galvoBulge = (0, 0), galvoBulge4 = (0, 0).
+//      galvoScale = (100, 100), galvoBulge = (0, 0),
+//      galvoOffset = (0, 0), galvoBulge4 = (0, 0).
 //
 //    galvoBulge4 is not computed from the 9-point pattern;
 //    it is always set to (0, 0) by the calibration.
+//
+//    galvoOffset compensates a non-centred beam hitting the
+//    galvo/lens.  The offset is estimated from the
+//    left/right (or top/bottom) asymmetry of the measured
+//    line pairs BEFORE the bulge fit, so that the bulge
+//    coefficient is not corrupted by the offset.
 //---------------------------------------------------------
 class GalvoCalibration : public QObject
       {
@@ -56,8 +63,9 @@ class GalvoCalibration : public QObject
       double nominal {0.0};
 
       // computed results
-      QVector2D _scale {1.0, 1.0};
+      QVector2D _scale {100.0, 100.0};
       QVector2D _bulge {0.0, 0.0};
+      QVector2D _offset {0.0, 0.0};
       QVector2D _bulge4 {0.0, 0.0};
       double _rmsError {0.0};
       bool _valid {false};
@@ -68,9 +76,9 @@ class GalvoCalibration : public QObject
     public:
       explicit GalvoCalibration(ZCam* zc, QObject* parent = nullptr);
 
-      /// Compute galvoScale and galvoBulge from 12 horizontal/
-      /// vertical line lengths (in mm).  The machine supplies
-      /// the field size.  galvoBulge4 is set to (0, 0).
+      /// Compute galvoScale, galvoBulge and galvoOffset from 12
+      /// horizontal/vertical line lengths (in mm).  The machine
+      /// supplies the field size.  galvoBulge4 is set to (0, 0).
       /// Returns true on success.
       Q_INVOKABLE bool compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
                                 double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
@@ -101,6 +109,9 @@ class GalvoCalibration : public QObject
 
       Q_PROPERTY(QVector2D bulge READ bulge NOTIFY resultsChanged)
       QVector2D bulge() const { return _bulge; }
+
+      Q_PROPERTY(QVector2D offset READ offset NOTIFY resultsChanged)
+      QVector2D offset() const { return _offset; }
 
       Q_PROPERTY(QVector2D bulge4 READ bulge4 NOTIFY resultsChanged)
       QVector2D bulge4() const { return _bulge4; }

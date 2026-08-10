@@ -168,6 +168,7 @@ class Laser : public Machine
       // galvolaser
       PROPV(QVector2D, galvoBulge, QVector2D(0.0, 0.0))
       PROPV(QVector2D, galvoBulge4, QVector2D(0.0, 0.0))
+      PROPV(QVector2D, galvoOffset, QVector2D(0.0, 0.0))
       PROPV(QVector2D, galvoScale, QVector2D(1.0, 1.0))
       PROPV(QVector2D, galvoShear, QVector2D(0.0, 0.0))
       PROPV(QVector2D, galvoTrapezoid, QVector2D(0.0, 0.0))
