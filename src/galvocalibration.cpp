@@ -329,7 +329,10 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    moving both line ends.
 //
 //    The values stored in the machine and sent to the controller are the
-//    negatives of the physical distortion coefficients.
+//    physical distortion coefficients.  The correction table adds
+//        corr = +bulge * r² * g
+//    to the nominal position, cancelling the physical distortion which
+//    shifts the spot by -bulge * r² * g.  No sign inversion is needed.
 
 //---------------------------------------------------------
 
