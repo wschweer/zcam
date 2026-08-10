@@ -80,7 +80,7 @@ optionally shown/hidden.
 
 <div style="display: flex; align-items: center;">
   <div style="flex: 1; padding-right: 20px;">
-    <img src="assets/project.png" alt="Project Layout" width=200px>
+    <img src="../../assets/project.png" alt="Project Layout" width=200px>
   </div>
   <div style="flex: 2;">
 
@@ -474,11 +474,11 @@ all navigation operations.
 
 | Icon | Action | Icon | Action |
 | :--- | :--- | :--- | :--- |
-| <img src="assets/icons/view-top.svg" style="width:18px;"/> | Top | <img src="assets/icons/view-bottom.svg" style="width:18px;"/> | Bottom |
-| <img src="assets/icons/view-front.svg" style="width:18px;"/> | Front | <img src="assets/icons/view-rear.svg" style="width:18px;"/> | Rear |
-| <img src="assets/icons/view-left.svg" style="width:18px;"/> | Left | <img src="assets/icons/view-right.svg" style="width:18px;"/> | Right |
-| <img src="assets/icons/view-isometric.svg" style="width:18px;"/> | Isometric projection | <img src="assets/icons/view-perspective.svg" style="width:18px;"/> | Perspective projection |
-| <img src="assets/icons/view-fullscreen.svg" style="width:18px;"/> | Scale to fit screen | | |
+| <img src="../../assets/icons/view-top.svg" style="width:18px;"/> | Top | <img src="../../assets/icons/view-bottom.svg" style="width:18px;"/> | Bottom |
+| <img src="../../assets/icons/view-front.svg" style="width:18px;"/> | Front | <img src="../../assets/icons/view-rear.svg" style="width:18px;"/> | Rear |
+| <img src="../../assets/icons/view-left.svg" style="width:18px;"/> | Left | <img src="../../assets/icons/view-right.svg" style="width:18px;"/> | Right |
+| <img src="../../assets/icons/view-isometric.svg" style="width:18px;"/> | Isometric projection | <img src="../../assets/icons/view-perspective.svg" style="width:18px;"/> | Perspective projection |
+| <img src="../../assets/icons/view-fullscreen.svg" style="width:18px;"/> | Scale to fit screen | | |
 
 ### Drawing Tools
 

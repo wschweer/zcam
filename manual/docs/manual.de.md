@@ -78,7 +78,7 @@ ein-/ausblenden kannst.
 
 <div style="display: flex; align-items: center;">
   <div style="flex: 1; padding-right: 20px;">
-    <img src="assets/project.png" alt="Projektlayout" width=200px>
+    <img src="../assets/project.png" alt="Projektlayout" width=200px>
   </div>
   <div style="flex: 2;">
 
@@ -492,11 +492,11 @@ alle Navigationsoperationen verwendet werden.
 
 | Icon | Aktion | Icon | Aktion |
 | :--- | :--- | :--- | :--- |
-<img src="assets/icons/view-top.svg" style="width:18px;"/> | Oben | <img src="assets/icons/view-bottom.svg" style="width:18px;"/> | Unten
-<img src="assets/icons/view-front.svg" style="width:18px;"/> | Front | <img src="assets/icons/view-rear.svg" style="width:18px;"/> | Rückseite
-<img src="assets/icons/view-left.svg" style="width:18px;"/> | Links | <img src="assets/icons/view-right.svg" style="width:18px;"/> | Rechts
-<img src="assets/icons/view-isometric.svg" style="width:18px;"/> | Isometrische Projektion | <img src="assets/icons/view-perspective.svg" style="width:18px;"/> | Perspektivische Projektion
-<img src="assets/icons/view-fullscreen.svg" style="width:18px;"/> | Auf Bildschirm skalieren | |
+<img src="../assets/icons/view-top.svg" style="width:18px;"/> | Oben | <img src="../assets/icons/view-bottom.svg" style="width:18px;"/> | Unten
+<img src="../assets/icons/view-front.svg" style="width:18px;"/> | Front | <img src="../assets/icons/view-rear.svg" style="width:18px;"/> | Rückseite
+<img src="../assets/icons/view-left.svg" style="width:18px;"/> | Links | <img src="../assets/icons/view-right.svg" style="width:18px;"/> | Rechts
+<img src="../assets/icons/view-isometric.svg" style="width:18px;"/> | Isometrische Projektion | <img src="../assets/icons/view-perspective.svg" style="width:18px;"/> | Perspektivische Projektion
+<img src="../assets/icons/view-fullscreen.svg" style="width:18px;"/> | Auf Bildschirm skalieren | |
 
 ### Zeichen-Werkzeuge
 
