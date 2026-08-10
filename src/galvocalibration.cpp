@@ -291,12 +291,13 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    galvoBulge4 is set to (0, 0).
 //
 //    Pipeline:
-//      1. Scale: from the center pair (least affected by distortion).
-//      2. Offset: estimated from left/right asymmetry using the
+//      1. Offset: estimated from left/right asymmetry using the
 //         current machine bulge as a first approximation.
-//      3. Centering: the measured values are corrected for the
+//      2. Centering: the measured values are corrected for the
 //         offset cross-terms so the bulge fit is not corrupted.
-//      4. Bulge: least-squares fit per axis from the centred data.
+//      3. Bulge: least-squares fit per axis from the centred data.
+//      4. Scale: from the center pair corrected for the fitted
+//         bulge distortion at r² = g² (G=0).
 //
 //    The laser field is [-fieldHalf, fieldHalf] mm.
 //    The "9 point" burn pattern places line pairs at the field
@@ -312,9 +313,9 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //    to the nominal position, so the coefficients stored in the machine
 //    have the opposite sign of the measured physical distortion.
 //
-//    scale: The centre measurement (xMiddle / yCenter) is least affected
-//    by distortion and is used as the pure linear scale.
-//    galvoScale is stored in percent: 100 = factor 1.0.
+//    scale: The centre measurement (xMiddle / yCenter) is corrected
+//    for the fitted bulge distortion and then used as the pure linear
+//    scale.  galvoScale is stored in percent: 100 = factor 1.0.
 //
 //    offset: The beam offset (dx, dy) in mm is estimated from the
 //    left/right (or top/bottom) asymmetry of the line pairs.  This
@@ -364,10 +365,6 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
             {yRightTop, yRightBottom,    32, 32}
             };
 
-      //--- scale: use center measurement only ---
-      const double sx = nominal / ((xPairs[1].leftX + xPairs[1].rightX) * 0.5);
-      const double sy = nominal / ((yPairs[1].leftX + yPairs[1].rightX) * 0.5);
-
       //--- offset: estimate from asymmetry using current machine bulge ---
       auto* laser = qobject_cast<Laser*>(machine);
       const double initialBulgeX = laser ? laser->galvoBulge().x() : 0.0;
@@ -410,6 +407,22 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
             return false;
             }
       }
+
+      //--- scale: correct center pair for bulge, then compute scale ---
+      // The center pair (G=0, g=32) has r² = 32² + 0² = 1024.
+      // The measured avg = fieldHalf * scaleFactor - bulge * r² * g * mmPT
+      // So: avg_corrected = avg + bulge * r² * g * mmPT
+      // And: scale = fieldHalf / avg_corrected
+      const double tablePerMm = mmToTable(1.0, fieldHalf);
+      const double mmPT       = 1.0 / tablePerMm;
+      const double g          = MEASUREMENT_GRID;
+      const double r2_center = g * g;  // G=0
+      const double bulgeCorrX = bulgeX * r2_center * g * mmPT;
+      const double bulgeCorrY = bulgeY * r2_center * g * mmPT;
+      const double avgXCenter = (xMiddleLeft + xMiddleRight) * 0.5 + bulgeCorrX;
+      const double avgYCenter = (yCenterTop + yCenterBottom) * 0.5 + bulgeCorrY;
+      const double sx          = nominal / avgXCenter;
+      const double sy          = nominal / avgYCenter;
 
       _scale  = QVector2D(sx * 100.0, sy * 100.0);
       _bulge  = QVector2D(bulgeX, bulgeY);
