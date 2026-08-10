@@ -30,21 +30,19 @@ class Machine;
 //    left/center/right for the Y axis).  The user measures
 //    the distances between the two lines of each pair on
 //    both sides of the grid cross (left/right for X axis,
-//    top/bottom for Y axis) which yields 12 values.
-//    In addition the four diagonals from the centre to the
-//    outer rectangle corners are measured, giving 4 more
-//    values:
+//    top/bottom for Y axis) which yields 12 values:
 //
 //      x axis (measured horizontally, left/right):
 //        xTopLeft  xTopRight  xMiddleLeft xMiddleRight  xBottomLeft xBottomRight
 //      y axis (measured vertically, top/bottom):
 //        yLeftTop  yLeftBottom  yCenterTop yCenterBottom yRightTop yRightBottom
-//      diagonals (centre to outer corner):
-//        dTopLeft dTopRight dBottomLeft dBottomRight
 //
 //    If all values equal the nominal grid spacing
 //    (field width * 0.5), the galvo is perfectly calibrated:
 //      galvoScale = (1, 1), galvoBulge = (0, 0), galvoBulge4 = (0, 0).
+//
+//    galvoBulge4 is not computed from the 9-point pattern;
+//    it is always set to (0, 0) by the calibration.
 //---------------------------------------------------------
 class GalvoCalibration : public QObject
       {
@@ -70,14 +68,14 @@ class GalvoCalibration : public QObject
     public:
       explicit GalvoCalibration(ZCam* zc, QObject* parent = nullptr);
 
-      /// Compute galvoScale, galvoBulge and galvoBulge4 from 12 horizontal/
-      /// vertical line lengths and 4 diagonal lengths (in mm).  The machine
-      /// supplies the field size.  Returns true on success.
+      /// Compute galvoScale and galvoBulge from 12 horizontal/
+      /// vertical line lengths (in mm).  The machine supplies
+      /// the field size.  galvoBulge4 is set to (0, 0).
+      /// Returns true on success.
       Q_INVOKABLE bool compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
-                               double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
-                               double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
-                               double yRightBottom, double dTopLeft, double dTopRight, double dBottomLeft,
-                               double dBottomRight);
+                                double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
+                                double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
+                                double yRightBottom);
 
       /// Reset computed results to invalid state.
       Q_INVOKABLE void clear();
@@ -86,17 +84,16 @@ class GalvoCalibration : public QObject
       /// persist the machine configuration to disk.
       Q_INVOKABLE bool applyToMachine(Machine* machine);
 
-      /// Save the 16 raw measurement values (mm) to a JSON file.
+      /// Save the 12 raw measurement values (mm) to a JSON file.
       /// Returns true on success.
       Q_INVOKABLE bool saveParameters(const QString& filePath, double xTopLeft, double xTopRight,
-                                      double xMiddleLeft, double xMiddleRight, double xBottomLeft,
-                                      double xBottomRight, double yLeftTop, double yLeftBottom,
-                                      double yCenterTop, double yCenterBottom, double yRightTop,
-                                      double yRightBottom, double dTopLeft, double dTopRight,
-                                      double dBottomLeft, double dBottomRight);
+                                       double xMiddleLeft, double xMiddleRight, double xBottomLeft,
+                                       double xBottomRight, double yLeftTop, double yLeftBottom,
+                                       double yCenterTop, double yCenterBottom, double yRightTop,
+                                       double yRightBottom);
 
       /// Load a previously saved parameter set from a JSON file.
-      /// Returns a map with the 16 values (or an empty map on error).
+      /// Returns a map with the 12 values (or an empty map on error).
       Q_INVOKABLE QVariantMap loadParameters(const QString& filePath);
 
       Q_PROPERTY(QVector2D scale READ scale NOTIFY resultsChanged)

@@ -39,7 +39,7 @@ Dialog {
     property double nominalSpacing: machine ? machine.maxTravel.x * 0.5 : 87.5
     property GalvoCalibration calib: ZCam.galvoCalibration
 
-    // 16 measurement values (12 line-pair halves + 4 diagonals; defaults = nominal)
+    // 12 measurement values (12 line-pair halves; defaults = nominal)
     property double xTopLeft: nominalSpacing
     property double xTopRight: nominalSpacing
     property double xMiddleLeft: nominalSpacing
@@ -52,15 +52,10 @@ Dialog {
     property double yCenterBottom: nominalSpacing
     property double yRightTop: nominalSpacing
     property double yRightBottom: nominalSpacing
-    property double dTopLeft: nominalSpacing * Math.sqrt(2)
-    property double dTopRight: nominalSpacing * Math.sqrt(2)
-    property double dBottomLeft: nominalSpacing * Math.sqrt(2)
-    property double dBottomRight: nominalSpacing * Math.sqrt(2)
 
     property bool allInputsValid: {
         var fields = [xTopLeft, xTopRight, xMiddleLeft, xMiddleRight, xBottomLeft, xBottomRight,
-                      yLeftTop, yLeftBottom, yCenterTop, yCenterBottom, yRightTop, yRightBottom,
-                      dTopLeft, dTopRight, dBottomLeft, dBottomRight]
+                      yLeftTop, yLeftBottom, yCenterTop, yCenterBottom, yRightTop, yRightBottom]
         for (var i = 0; i < fields.length; ++i)
             if (!isFinite(fields[i]) || fields[i] <= 0.0)
                 return false
@@ -73,8 +68,6 @@ Dialog {
             nominalSpacing = machine.maxTravel.x * 0.5
         xTopLeft = xTopRight = xMiddleLeft = xMiddleRight = xBottomLeft = xBottomRight = nominalSpacing
         yLeftTop = yLeftBottom = yCenterTop = yCenterBottom = yRightTop = yRightBottom = nominalSpacing
-        var diag = nominalSpacing * Math.sqrt(2)
-        dTopLeft = dTopRight = dBottomLeft = dBottomRight = diag
         calib.clear()
         canvas.requestPaint()
     }
@@ -90,7 +83,7 @@ Dialog {
             Layout.alignment: Qt.AlignHCenter
         }
         Label {
-            text: qsTr("Burn the \"Galvo Test 9\" pattern on laser paper and enter the 12 measured line lengths and 4 diagonals (mm).")
+            text: qsTr("Burn the \"Galvo Test 9\" pattern on laser paper and enter the 12 measured line lengths (mm).")
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             font: unifiedFont
@@ -126,7 +119,6 @@ Dialog {
                             var ext = 20              // how far lines extend past the square
 
                             // The 3×3 grid: 3 horizontal + 3 vertical lines
-                            // plus the 4 diagonals from the centre to the outer corners.
                             var ys = [cy - half, cy, cy + half]
                             var xs = [cx - half, cx, cx + half]
 
@@ -143,15 +135,6 @@ Dialog {
                                 ctx.moveTo(xs[xi], cy - half - ext)
                                 ctx.lineTo(xs[xi], cy + half + ext)
                             }
-                            // 4 diagonals from centre to the outer corners
-                            ctx.moveTo(cx, cy)
-                            ctx.lineTo(cx - half - ext, cy - half - ext)
-                            ctx.moveTo(cx, cy)
-                            ctx.lineTo(cx + half + ext, cy - half - ext)
-                            ctx.moveTo(cx, cy)
-                            ctx.lineTo(cx - half - ext, cy + half + ext)
-                            ctx.moveTo(cx, cy)
-                            ctx.lineTo(cx + half + ext, cy + half + ext)
                             ctx.stroke()
 
                             // --- X labels: above horizontal lines at horizontal midpoint ---
@@ -191,21 +174,6 @@ Dialog {
                             for (var j = 0; j < yLabels.length; j++)
                                 ctx.fillText(yLabels[j].id, yLabels[j].mx, yLabels[j].my)
 
-                            // --- Diagonal labels: near the outer ends of the diagonals ---
-                            // 4 diagonal measurements: centre to each outer corner
-                            ctx.fillStyle = "#ffab91"
-                            ctx.textAlign = "center"
-                            ctx.textBaseline = "middle"
-                            var diagOff = 14
-                            var dLabels = [
-                                { mx: cx - half - diagOff, my: cy - half - diagOff, id: "d1" },
-                                { mx: cx + half + diagOff, my: cy - half - diagOff, id: "d2" },
-                                { mx: cx - half - diagOff, my: cy + half + diagOff, id: "d3" },
-                                { mx: cx + half + diagOff, my: cy + half + diagOff, id: "d4" }
-                            ]
-                            for (var k = 0; k < dLabels.length; k++)
-                                ctx.fillText(dLabels[k].id, dLabels[k].mx, dLabels[k].my)
-
                             // nominal label
                             ctx.fillStyle = "white"
                             ctx.font = galvoCalDialog.cfgFontSize + "px sans-serif"
@@ -244,18 +212,6 @@ Dialog {
                             ? "%1,  %2".arg(calib.bulge.x.toFixed(4)).arg(calib.bulge.y.toFixed(4))
                             : (galvoCalDialog.machine
                                 ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toFixed(4)).arg(galvoCalDialog.machine.galvoBulge.y.toFixed(4))
-                                : "—")
-                    }
-                    Label {
-                        text: qsTr("Bulge4:")
-                        font: unifiedFontBold
-                    }
-                    Label {
-                        font: unifiedFont
-                        text: calib.valid
-                            ? "%1,  %2".arg(calib.bulge4.x.toFixed(6)).arg(calib.bulge4.y.toFixed(6))
-                            : (galvoCalDialog.machine
-                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge4.x.toFixed(6)).arg(galvoCalDialog.machine.galvoBulge4.y.toFixed(6))
                                 : "—")
                     }
                     Label {
@@ -410,54 +366,6 @@ Dialog {
                     }
                 }
 
-                GroupBox {
-                    title: qsTr("Diagonals (mm)")
-                    Layout.fillWidth: true
-                    font: unifiedFont
-                    GridLayout {
-                        anchors.fill: parent
-                        columns: 4
-                        columnSpacing: 4
-                        rowSpacing: 4
-                        Label { text: "d1"; font: unifiedFont; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.fillWidth: true
-                            font: unifiedFont
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.dTopLeft.toFixed(2)
-                            onEditingFinished: galvoCalDialog.dTopLeft = parseFloat(text.replace(",", "."))
-                        }
-                        Label { text: "d2"; font: unifiedFont; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.fillWidth: true
-                            font: unifiedFont
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.dTopRight.toFixed(2)
-                            onEditingFinished: galvoCalDialog.dTopRight = parseFloat(text.replace(",", "."))
-                        }
-                        Label { text: "d3"; font: unifiedFont; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.fillWidth: true
-                            font: unifiedFont
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.dBottomLeft.toFixed(2)
-                            onEditingFinished: galvoCalDialog.dBottomLeft = parseFloat(text.replace(",", "."))
-                        }
-                        Label { text: "d4"; font: unifiedFont; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 24 }
-                        TextField {
-                            Layout.fillWidth: true
-                            font: unifiedFont
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
-                            horizontalAlignment: Text.AlignHCenter
-                            text: galvoCalDialog.dBottomRight.toFixed(2)
-                            onEditingFinished: galvoCalDialog.dBottomRight = parseFloat(text.replace(",", "."))
-                        }
-                    }
-                }
-
                 Item { Layout.fillHeight: true }
             }
         }
@@ -492,9 +400,7 @@ Dialog {
                                         galvoCalDialog.xBottomLeft, galvoCalDialog.xBottomRight,
                                         galvoCalDialog.yLeftTop, galvoCalDialog.yLeftBottom,
                                         galvoCalDialog.yCenterTop, galvoCalDialog.yCenterBottom,
-                                        galvoCalDialog.yRightTop, galvoCalDialog.yRightBottom,
-                                        galvoCalDialog.dTopLeft, galvoCalDialog.dTopRight,
-                                        galvoCalDialog.dBottomLeft, galvoCalDialog.dBottomRight)
+                                        galvoCalDialog.yRightTop, galvoCalDialog.yRightBottom)
                 }
             }
 
@@ -531,9 +437,7 @@ Dialog {
                 xBottomLeft, xBottomRight,
                 yLeftTop, yLeftBottom,
                 yCenterTop, yCenterBottom,
-                yRightTop, yRightBottom,
-                dTopLeft, dTopRight,
-                dBottomLeft, dBottomRight)
+                yRightTop, yRightBottom)
         }
     }
 
@@ -559,10 +463,6 @@ Dialog {
             yCenterBottom = values.yCenterBottom
             yRightTop     = values.yRightTop
             yRightBottom  = values.yRightBottom
-            dTopLeft      = values.dTopLeft
-            dTopRight     = values.dTopRight
-            dBottomLeft   = values.dBottomLeft
-            dBottomRight  = values.dBottomRight
             // Recompute if a machine is available.
             if (machine)
                 calib.compute(machine,
@@ -571,9 +471,7 @@ Dialog {
                     xBottomLeft, xBottomRight,
                     yLeftTop, yLeftBottom,
                     yCenterTop, yCenterBottom,
-                    yRightTop, yRightBottom,
-                    dTopLeft, dTopRight,
-                    dBottomLeft, dBottomRight)
+                    yRightTop, yRightBottom)
         }
     }
 }
