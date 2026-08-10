@@ -20,6 +20,7 @@
 #include <QFileInfo>
 #include <cstdlib>
 #include <functional>
+#include <QtWebEngineQuick>
 #include "zcam.h"
 
 //---------------------------------------------------------
@@ -76,6 +77,9 @@ static void firstInstall() {
 //---------------------------------------------------------
 
 int main(int argc, char* argv[]) {
+      // Initialize WebEngine before creating the application object
+      QtWebEngineQuick::initialize();
+
       QCoreApplication::setOrganizationName("zcam");
       QCoreApplication::setOrganizationDomain("zcam.org");
       QCoreApplication::setApplicationName("ZCam");

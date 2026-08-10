@@ -19,6 +19,7 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration Multimedia)
+find_package(Qt6 COMPONENTS WebEngineQuick QUIET)
 find_package(Qt6 COMPONENTS Quick3DPrivate QUIET)
 find_package(Qt6Multimedia QUIET)
 find_package(OpenCV REQUIRED)
@@ -93,6 +94,7 @@ qt_add_qml_module(zcam
         qml/MediaArtworkPanel.qml
         qml/MediaIconsPanel.qml
         qml/GalvoCalibrationDialog.qml
+        qml/ManualPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/machine.cpp src/machine.h
@@ -274,6 +276,100 @@ qt_add_resources(zcam gridline_shaders
     FILES shaders/gridline.vert shaders/gridline.frag
     )
 
+# ---------------------------------------------------------------------------
+# Manual — MkDocs generated HTML embedded via Qt resources.
+# The HTML is built from manual/docs/*.md by `mkdocs build` into
+# <build>/manual_site/.  The build runs at CMake configure time so the
+# generated files are available immediately for qt_add_resources.
+# Re-running cmake re-triggers the build whenever any markdown file or
+# mkdocs.yml changes.
+# ---------------------------------------------------------------------------
+find_program(MKDOCS_EXECUTABLE mkdocs)
+if(MKDOCS_EXECUTABLE)
+    set(MKDOCS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/manual)
+    set(MKDOCS_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/manual_site)
+    set(MKDOCS_CONFIG ${MKDOCS_SOURCE_DIR}/mkdocs.yml)
+
+    # Glob all markdown files as configure-time dependencies
+    file(GLOB MKDOCS_MD_FILES ${MKDOCS_SOURCE_DIR}/docs/*.md)
+
+    # Compute a hash of all markdown files + mkdocs.yml to detect changes
+    set(MKDOCS_DEPS_HASH "")
+    foreach(f ${MKDOCS_MD_FILES} ${MKDOCS_CONFIG})
+        file(SHA1 ${f} _hash)
+        string(APPEND MKDOCS_DEPS_HASH ${_hash})
+    endforeach()
+    string(SHA1 MKDOCS_DEPS_HASH ${MKDOCS_DEPS_HASH})
+
+    # Check if a rebuild is needed
+    set(MKDOCS_HASH_FILE ${CMAKE_CURRENT_BINARY_DIR}/manual_site/.mkdocs_hash)
+    set(NEEDS_REBUILD TRUE)
+    if(EXISTS ${MKDOCS_HASH_FILE})
+        file(READ ${MKDOCS_HASH_FILE} _old_hash)
+        string(STRIP ${_old_hash} _old_hash)
+        if(_old_hash STREQUAL MKDOCS_DEPS_HASH)
+            set(NEEDS_REBUILD FALSE)
+        endif()
+    endif()
+
+    if(NEEDS_REBUILD)
+        message(STATUS "Manual: Building MkDocs HTML...")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E rm -rf ${MKDOCS_OUTPUT_DIR}
+        )
+        execute_process(
+            COMMAND ${MKDOCS_EXECUTABLE} build
+                    --config-file ${MKDOCS_CONFIG}
+                    --site-dir ${MKDOCS_OUTPUT_DIR}
+            WORKING_DIRECTORY ${MKDOCS_SOURCE_DIR}
+            RESULT_VARIABLE MKDOCS_RESULT
+            OUTPUT_VARIABLE MKDOCS_OUTPUT_VAR
+            ERROR_VARIABLE MKDOCS_ERROR_VAR
+        )
+        if(MKDOCS_RESULT EQUAL 0)
+            file(WRITE ${MKDOCS_HASH_FILE} ${MKDOCS_DEPS_HASH})
+            message(STATUS "Manual: MkDocs HTML built successfully")
+        else()
+            message(WARNING "Manual: MkDocs build failed: ${MKDOCS_ERROR_VAR}")
+        endif()
+    else()
+        message(STATUS "Manual: MkDocs HTML up to date")
+    endif()
+
+    # Collect all generated HTML files for embedding
+    file(GLOB_RECURSE MANUAL_HTML_FILES
+        RELATIVE ${MKDOCS_OUTPUT_DIR}
+        ${MKDOCS_OUTPUT_DIR}/*
+    )
+
+    # Prefix each file with the output directory for qt_add_resources.
+    # Exclude the hash file and binary sitemap from the resource.
+    set(MANUAL_RESOURCE_FILES)
+    foreach(f ${MANUAL_HTML_FILES})
+        if(f STREQUAL ".mkdocs_hash")
+            continue()
+        endif()
+        if(f MATCHES "\\.gz$")
+            continue()
+        endif()
+        list(APPEND MANUAL_RESOURCE_FILES "${MKDOCS_OUTPUT_DIR}/${f}")
+    endforeach()
+
+    if(MANUAL_RESOURCE_FILES)
+        qt_add_resources(zcam manual
+            PREFIX "/manual"
+            BASE "${MKDOCS_OUTPUT_DIR}"
+            FILES ${MANUAL_RESOURCE_FILES}
+        )
+        list(LENGTH MANUAL_RESOURCE_FILES _manual_count)
+        message(STATUS "Manual: ${_manual_count} files embedded")
+    else()
+        message(WARNING "Manual: No HTML files found to embed")
+    endif()
+else()
+    message(WARNING "MkDocs not found — manual panel will show an error page. Install mkdocs to enable the manual.")
+endif()
+
 target_link_libraries(zcam PRIVATE
       Qt6::Core
       Qt6::Gui
@@ -284,6 +380,7 @@ target_link_libraries(zcam PRIVATE
       Qt6::Qml
       Qt6::QmlIntegration
       Qt6::Multimedia
+      Qt6::WebEngineQuick
       ${OpenCV_LIBS}
       PkgConfig::UDEV
       PkgConfig::LIBUSB

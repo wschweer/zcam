@@ -39,6 +39,12 @@ Or use the Ninja build system (build.ninja is pre-generated).
   source path; the image is reloaded from disk on project load. Import via
   `ZCam::importFile()`, drag-drop on the 3D canvas, or `importImageAt()` for
   positioned placement.
+- **ManualPanel (QML)**: Integrated manual viewer. Displays MkDocs-generated
+  HTML inside a `WebEngineView`. The HTML is built by CMake from `manual/docs/*.md`
+  via `mkdocs build` at configure time, then embedded as a Qt resource
+  (`qrc:/manual/`). German is the primary language, English is an automatically
+  translated variant. Language switching is done via buttons in the panel.
+  Requires `Qt6::WebEngineQuick` (initialised in `main.cpp`).
 
 ## File Imports
 - **SVG / DXF / BREP**: `ZCam::importFile()` dispatches by suffix to the

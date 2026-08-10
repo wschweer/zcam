@@ -21,3 +21,6 @@ sniffer
 # OpenCASCADE (now using system-installed packages, not bundled)
 external/occt/
 Papers
+
+# MkDocs generated manual site
+manual/_site/

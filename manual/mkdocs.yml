@@ -1,0 +1,60 @@
+site_name: ZCam Manual
+site_description: ZCam — Manufacturing tool for G-code machines and fiber laser engraving
+site_url: ""
+
+# Build output into a directory that CMake picks up for resource embedding
+site_dir: _site
+
+# ---------------------------------------------------------------------------
+# Theme — readthedocs is lightweight, dependency-free and ships with mkdocs.
+# It provides a sidebar navigation tree and search box, both of which
+# work perfectly inside a Qt WebEngineView.
+# ---------------------------------------------------------------------------
+theme:
+  name: readthedocs
+  language: en
+
+# ---------------------------------------------------------------------------
+# Internationalisation — German is the primary language, English is an
+# automatically translated variant.  The mkdocs-static-i18n plugin serves
+# the correct version based on the language suffix in the filename.
+# ---------------------------------------------------------------------------
+plugins:
+  - search
+  - i18n:
+      default_language: de
+      default_language_only: false
+      languages:
+        - locale: de
+          name: Deutsch
+          default: true
+        - locale: en
+          name: English
+      no_translated_content: true
+
+# ---------------------------------------------------------------------------
+# Navigation — uses the full filename with suffix.  The i18n plugin maps
+# each page to the correct locale variant.
+# ---------------------------------------------------------------------------
+nav:
+  - de:
+      - Startseite: index.de.md
+      - Handbuch: manual.de.md
+      - Installation: install.de.md
+      - Entwicklung: development.de.md
+      - Projektion: projection.de.md
+      - Build: build.de.md
+  - en:
+      - Home: index.en.md
+      - Manual: manual.en.md
+      - Installation: install.en.md
+      - Development: development.en.md
+      - Projection: projection.en.md
+      - Build: build.en.md
+
+# ---------------------------------------------------------------------------
+# Markdown extensions — tables and admonitions are used in the manual.
+# ---------------------------------------------------------------------------
+markdown_extensions:
+  - admonition
+  - tables

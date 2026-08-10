@@ -691,6 +691,7 @@ Window {
                     TabBtn { text: qsTr("Recipes") }
                     TabBtn { text: qsTr("Machines") }
                     TabBtn { text: qsTr("Config") }
+                    TabBtn { text: qsTr("Manual") }
                     }
 
                 // Spacer pushes the Cam button to the right edge
@@ -787,6 +788,11 @@ Window {
                 // Tab 2 – Configure App
                 ConfigSystem {
                     id: configSystem
+                    }
+
+                // Tab 4 – Manual (MkDocs generated HTML via WebEngine)
+                ManualPanel {
+                    id: manualPanel
                     }
                 }
             LaserPanel {
