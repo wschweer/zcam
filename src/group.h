@@ -53,7 +53,7 @@ class Group : public Element3d
             ]
         },
         {
-            "label": "Recipe",
+            "label": "Mop",
             "cells": [
                 {
                     "name": "laserLayer",

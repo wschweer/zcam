@@ -26,7 +26,7 @@ class Cam;
 class Group;
 class Element3d;
 class Fixture;
-class Recipe;
+class LaserMop;
 class Rectangle;
 class Polygon;
 class Ellipse;
@@ -248,7 +248,7 @@ class AddGridCommand : public UndoCommand
 class AddLaserLayerCommand : public UndoCommand
       {
       Fixture* _fixture;
-      Recipe* _laserLayer;
+      LaserMop* _laserLayer;
       int _row {-1}; ///< position within fixture's children
 
     public:

@@ -376,9 +376,9 @@ double Laser::guessJobDuration() const
 
       Fixture* fixture = zcam->project()->fixture();
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto ll = toType<Recipe>(e);
+            auto ll = toType<LaserMop>(e);
             if (!ll->burn())
                   continue;
             const LaserRecipe* recipe = ll->recipe();
@@ -511,9 +511,9 @@ void Laser::doStartMarking() {
             try {
                   for (auto e : fixture->children()) {
                         Debug("==mark <{}>", e->name());
-                        if (!isType<Recipe>(e))
+                        if (!isType<LaserMop>(e))
                               continue;
-                        auto ll = toType<Recipe>(e);
+                        auto ll = toType<LaserMop>(e);
                         if (!ll->burn())
                               continue;
                         LaserPath spl             = ll->collectLaserPath();

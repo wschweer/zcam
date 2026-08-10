@@ -24,8 +24,8 @@
 #include "painterpath.h"
 #include "clipper.h"
 
-class Recipe;
-Q_DECLARE_OPAQUE_POINTER(Recipe*)
+class LaserMop;
+Q_DECLARE_OPAQUE_POINTER(LaserMop*)
 
 static constexpr double FONT_SCALE    = 0.352778 * .1;
 static constexpr double FONT_SCALE_UP = 10.0;
@@ -56,7 +56,7 @@ class Element3d : public Element
       // element inherits the LaserLayer from its parent (see
       // effectiveLaserLayer()).  This replaces the old Layer→LaserLayer
       // association via LaserLayer::baseElement.
-      PROPV(Recipe*, laserLayer, nullptr)
+      PROPV(LaserMop*, laserLayer, nullptr)
       PROPV(TessGeometry*, geometry, nullptr)
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
@@ -223,7 +223,7 @@ class Element3d : public Element
       /// Returns the effective LaserLayer for this element by walking
       /// up the parent chain until a non-null laserLayer is found.
       /// Returns nullptr if no ancestor (including self) has a laserLayer set.
-      Recipe* effectiveLaserLayer() const;
+      LaserMop* effectiveLaserLayer() const;
       QRectF boundingBox() const;
       /// Element-specific content bounding box.  The base
       /// implementation returns an empty rect; elements that carry

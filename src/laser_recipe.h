@@ -21,6 +21,7 @@ using json = nlohmann::json;
 //---------------------------------------------------------
 //   LaserPass
 //---------------------------------------------------------
+
 class LaserPass
       {
       Q_GADGET
@@ -353,7 +354,7 @@ class LaserPass
             ]
         }
     ]
-                                    })"};
+                                                      })"};
 
       //      PROPV_GADGET(double, onDelay, 100.0)
       //      PROPV_GADGET(double, offDelay, 100.0)
@@ -374,6 +375,7 @@ class LaserPass
 //---------------------------------------------------------
 //   LaserPasses
 //---------------------------------------------------------
+
 class LaserPasses : public std::vector<LaserPass>
       {
       Q_GADGET
@@ -386,6 +388,7 @@ class LaserPasses : public std::vector<LaserPass>
 //---------------------------------------------------------
 //   LaserRecipe
 //---------------------------------------------------------
+
 class LaserRecipe
       {
       Q_GADGET
@@ -414,13 +417,14 @@ class LaserRecipe
       void setRelativeFilePath(const QString& p) { _relativeFilePath = p; }
       };
 
-//=========================================================
+//---------------------------------------------------------
 //   RecipeTreeModel
 //    A QAbstractItemModel that represents the recipe directory
 //    structure as a tree.  Folders are branch nodes, recipe
 //    files are leaf nodes.  Each leaf carries a recipeIdx that
 //    indexes into LaserReceipes::recipes.
-//=========================================================
+//---------------------------------------------------------
+
 class RecipeTreeModel : public QAbstractItemModel
       {
       Q_OBJECT
@@ -469,7 +473,8 @@ class RecipeTreeModel : public QAbstractItemModel
 //---------------------------------------------------------
 //   Recipes
 //---------------------------------------------------------
-class LaserReceipes : public QObject
+
+class Recipe : public QObject
       {
       Q_OBJECT
       QML_ELEMENT
@@ -496,8 +501,8 @@ class LaserReceipes : public QObject
       void machineTypeChanged();
 
     public:
-      LaserReceipes(QObject* parent = nullptr);
-      ~LaserReceipes();
+      Recipe(QObject* parent = nullptr);
+      ~Recipe();
       QString machineType() const { return _machineType; }
       void set_machineType(const QString& type);
       Q_INVOKABLE LaserRecipe recipe(int idx) const {

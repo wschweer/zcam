@@ -22,7 +22,7 @@
 
 class Usb;
 class Group;
-class Recipe;
+class LaserMop;
 class LaserSettings;
 class Fixture;
 class ZCam;
@@ -195,7 +195,7 @@ class Packet6 : public std::array<uint16_t, 6>
       {
     public:
       Packet6(uint16_t cmd = Command::listEndOfList, uint16_t a = 0, uint16_t b = 0, uint16_t c = 0,
-              uint16_t d = 0, uint16_t e = 0) {
+          uint16_t d = 0, uint16_t e = 0) {
             data()[0] = cmd;
             data()[1] = a;
             data()[2] = b;

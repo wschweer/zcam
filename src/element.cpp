@@ -126,7 +126,7 @@ void Element::fromJson(const json& data) {
                               element->fromJson(value);
                               }
                         else if (key == "laserLayer" || key == "recipe") {
-                              element = new Recipe(zcam, this);
+                              element = new LaserMop(zcam, this);
                               element->fromJson(value);
                               }
                         else if (key == "rectangle") {

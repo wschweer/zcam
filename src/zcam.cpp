@@ -72,7 +72,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       // Reason: we cannot easily manage the object order in QObject tree
 
       _machines = new Machines(this);
-      _recipes  = new LaserReceipes(this);
+      _recipes  = new Recipe(this);
 
       _galvoCalibration = new GalvoCalibration(this, this);
 
@@ -130,7 +130,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       // layer added/removed), check whether any Recipe (LaserLayer) element
       // in the current project references that recipe.  If so, mark the
       // CAM data as dirty so the user knows a refresh is needed.
-      connect(_recipes, &LaserReceipes::recipeChanged, this, [this](int idx) {
+      connect(_recipes, &Recipe::recipeChanged, this, [this](int idx) {
             if (!_project || !_recipes || !_rootElement)
                   return;
             LaserRecipe* changedRecipe = _recipes->recipePtr(idx);
@@ -142,7 +142,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
             std::function<void(Element*)> walk = [&](Element* e) {
                   if (found)
                         return;
-                  auto* ll = qobject_cast<Recipe*>(e);
+                  auto* ll = qobject_cast<LaserMop*>(e);
                   if (ll && ll->recipe() == changedRecipe) {
                         found = true;
                         return;
@@ -159,7 +159,7 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       // or reloaded from disk), recipe pointers held by Recipe elements
       // may become invalid or point to different recipes.  Mark CAM dirty
       // so the user knows a refresh is needed.
-      connect(_recipes, &LaserReceipes::recipeModelChanged, this, [this]() { setCamDirty(true); });
+      connect(_recipes, &Recipe::recipeModelChanged, this, [this]() { setCamDirty(true); });
 
       // Automatically save assets (machines, recipes) and stop the laser
       // when the application is about to quit so changes are not lost and
@@ -1749,7 +1749,7 @@ Group* ZCam::layerPtr(const QString& name) const {
 static void collectLaserLayers(Element* root, QStringList& names) {
       if (!root)
             return;
-      if (isType<Recipe>(root))
+      if (isType<LaserMop>(root))
             names.append(root->name());
       for (Element* child : root->children())
             collectLaserLayers(child, names);
@@ -1765,11 +1765,11 @@ QStringList ZCam::laserLayerNames() const {
 //   laserLayerPtr
 //    Return the LaserLayer* for a given name, or nullptr.
 //---------------------------------------------------------
-Recipe* ZCam::laserLayerPtr(const QString& name) const {
+LaserMop* ZCam::laserLayerPtr(const QString& name) const {
       Element* e = Element::byName(name);
       if (!e)
             return nullptr;
-      return qobject_cast<Recipe*>(e);
+      return qobject_cast<LaserMop*>(e);
       }
 
 //---------------------------------------------------------
@@ -2838,7 +2838,7 @@ void ZCam::createTestProject() {
       auto fixture = project->fixture();
       auto cam     = project->cam();
       auto cad     = project->cad();
-      auto ll      = new Recipe(this, fixture);
+      auto ll      = new LaserMop(this, fixture);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));

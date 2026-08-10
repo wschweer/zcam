@@ -58,9 +58,9 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
             }
 
       for (auto e : children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto layer = toType<Recipe>(e);
+            auto layer = toType<LaserMop>(e);
             if (!layer->burn())
                   continue;
             auto elements = layer->collectElements();

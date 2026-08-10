@@ -35,14 +35,14 @@
 //    at any depth are found, as long as they resolve to this LaserLayer.
 //---------------------------------------------------------
 
-static void collectBurnElementsForLaserLayer(Element* parent, const Recipe* ll,
+static void collectBurnElementsForLaserLayer(Element* parent, const LaserMop* ll,
                                              std::vector<const Element3d*>& out) {
       for (Element* child : parent->children()) {
             auto* ce = qobject_cast<Element3d*>(child);
             if (!ce)
                   continue;
             // Skip LaserLayer elements themselves — they are not geometry.
-            if (isType<Recipe>(ce))
+            if (isType<LaserMop>(ce))
                   continue;
             // Check if this element's effective LaserLayer is the one we're looking for.
             if (ce->effectiveLaserLayer() == ll && ce->burn() && !ce->pathList().empty())
@@ -61,7 +61,7 @@ static void collectBurnElementsForLaserLayer(Element* parent, const Recipe* ll,
 //    subtree recursively.
 //---------------------------------------------------------
 
-std::vector<const Element3d*> Recipe::collectElements() const {
+std::vector<const Element3d*> LaserMop::collectElements() const {
       std::vector<const Element3d*> elements;
       Project* proj = zcam->project();
       if (!proj)
@@ -86,7 +86,7 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //   LaserLayer
 //---------------------------------------------------------
 
-Recipe::Recipe(ZCam* w, Element* parent) : Element3d(w, parent) {
+LaserMop::LaserMop(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("");
       // LaserLayer no longer creates its own _geometry.
       // Display geometry is collected and rendered by Cam.
@@ -106,7 +106,7 @@ Recipe::Recipe(ZCam* w, Element* parent) : Element3d(w, parent) {
 //    Cam applies the panel-grid offsets when building the full layout.
 //---------------------------------------------------------
 
-PathsD Recipe::collectLayerPath() {
+PathsD LaserMop::collectLayerPath() {
       spl.clear();
       auto elements = collectElements();
 
@@ -136,7 +136,7 @@ PathsD Recipe::collectLayerPath() {
 //    Cam handles the grid layout.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD Recipe::processTileLines() const {
+Clipper2Lib::PathsD LaserMop::processTileLines() const {
       if (!recipe()) {
             Critical("no recipe for <{}>", name());
             return {};
@@ -196,7 +196,7 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
 //    No panel-grid offsets are applied.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD Recipe::collectDisplayLines() const {
+Clipper2Lib::PathsD LaserMop::collectDisplayLines() const {
       Clipper2Lib::PathsD tileLines = processTileLines();
 
       // Optimise the line order for display
@@ -261,7 +261,7 @@ Clipper2Lib::PathsD Recipe::collectDisplayLines() const {
 //    and must contain the full panel layout.
 //---------------------------------------------------------
 
-LaserPath Recipe::collectLaserPath() const {
+LaserPath LaserMop::collectLaserPath() const {
       if (!recipe()) {
             Critical("no recipe for <{}>", name());
             return LaserPath();
@@ -512,7 +512,7 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //    fill polygon spdi with hatch pattern
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD Recipe::createFill(Clipper2Lib::PathsD& spdi) const {
+Clipper2Lib::PathsD LaserMop::createFill(Clipper2Lib::PathsD& spdi) const {
       Clipper2Lib::PathsD lineList;
 
       const LaserPasses* fll = &recipe()->passes();

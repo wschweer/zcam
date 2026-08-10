@@ -509,7 +509,7 @@ class ZCam : public QObject
 
       PROPV(TreeModel*, treeModel, nullptr)
       PROPV(Machines*, machines, nullptr)
-      PROPV(LaserReceipes*, recipes, nullptr)
+      PROPV(Recipe*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
       PROPV(GalvoCalibration*, galvoCalibration, nullptr)
 
@@ -876,7 +876,7 @@ class ZCam : public QObject
       /// Returns a list of all LaserLayer element names in the current project.
       Q_INVOKABLE QStringList laserLayerNames() const;
       /// Returns the LaserLayer* pointer for a given name, or nullptr.
-      Q_INVOKABLE Recipe* laserLayerPtr(const QString& name) const;
+      Q_INVOKABLE LaserMop* laserLayerPtr(const QString& name) const;
 
       /// Returns a list of all Recipe names from ZCam::recipes.
       Q_INVOKABLE QStringList recipeNames() const;

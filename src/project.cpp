@@ -256,7 +256,7 @@ void Project::updateCadLayerVisibility() {
       QSet<Group*> referencedLayers;
       if (_fixture) {
             for (const auto c : _fixture->children()) {
-                  auto* ll = qobject_cast<Recipe*>(c);
+                  auto* ll = qobject_cast<LaserMop*>(c);
                   if (ll) {
                         // Walk the Cad subtree to find elements referencing this LaserLayer
                         if (_cad) {
@@ -613,7 +613,7 @@ void AddGridCommand::undo() {
 
 AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
     : UndoCommand(zcam), _fixture(fixture) {
-      _laserLayer = new Recipe(zcam, nullptr);
+      _laserLayer = new LaserMop(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
       // The user assigns elements to this LaserLayer via the laserLayer property.
       _laserLayer->setName(QStringLiteral("LaserLayer"));
@@ -1203,7 +1203,7 @@ void Project::removeElement(Element* el) {
             // Find LaserLayers in the fixture whose collectElements()
             // includes any element under the removed Layer.
             for (const auto c : _fixture->children()) {
-                  auto ll = qobject_cast<Recipe*>(c);
+                  auto ll = qobject_cast<LaserMop*>(c);
                   if (!ll)
                         continue;
                   // Check if any element in the LaserLayer's collection

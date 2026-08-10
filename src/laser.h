@@ -31,7 +31,7 @@ class ZCam;
 class Machine;
 class Project;
 class Fixture;
-class Recipe;
+class LaserMop;
 class Group;
 
 using PathsD = Clipper2Lib::PathsD;

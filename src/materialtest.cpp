@@ -31,6 +31,7 @@
 //---------------------------------------------------------
 //   MaterialTest
 //---------------------------------------------------------
+
 MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Group(zcam, parent) {
       if (zcam->config())
             setColor(zcam->config()->materialTestColor());
@@ -63,7 +64,7 @@ MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Group(zcam, parent) {
       // editor), regenerate the material test children so the text labels
       // (power, speed, frequency, ...) reflect the updated values.
       if (auto* r = this->zcam->recipes()) {
-            connect(r, &LaserReceipes::recipeChanged, this, [this](int idx) {
+            connect(r, &Recipe::recipeChanged, this, [this](int idx) {
                   LaserRecipe* changed = this->zcam->recipes()->recipePtr(idx);
                   if (!changed)
                         return;
@@ -80,6 +81,7 @@ MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Group(zcam, parent) {
 //    strip the demo content so the test routines can populate
 //    it with test-specific content.  Returns the new Project*.
 //---------------------------------------------------------
+
 static Project* createFiberLaserProject(ZCam* zcam) {
       // newProject() clears the undo stack, destroys the old tree,
       // creates a fresh RootElement + Project with demo content.
@@ -98,6 +100,7 @@ static Project* createFiberLaserProject(ZCam* zcam) {
 //    populated: update the tree model, resolve the machine,
 //    refresh CAM data, and clear the dirty/cam-dirty flags.
 //---------------------------------------------------------
+
 static void finalizeProject(ZCam* zcam) {
       // Do NOT call setRoot(zcam->rootElement()) directly because
       // rootElement() returns Project (a child of RootElement) while
@@ -125,6 +128,7 @@ static void finalizeProject(ZCam* zcam) {
 //---------------------------------------------------------
 //   createMaterialTest
 //---------------------------------------------------------
+
 void ZCam::createMaterialTest() {
       // Preserve the machine from the current project before
       // creating a new one.  The Machine* is owned by the
@@ -168,7 +172,7 @@ void ZCam::createMaterialTest() {
       cad->addChild(mtest);
 
       // Create a LaserLayer linked to the pattern layer
-      auto ll = new Recipe(this, fixture);
+      auto ll = new LaserMop(this, fixture);
       ll->setName("LL-Pattern");
       // Set the LaserLayer on the Pattern layer so all children inherit it.
       mtest->set_laserLayer(ll);
@@ -191,6 +195,7 @@ void ZCam::createMaterialTest() {
 //---------------------------------------------------------
 //   genRowText
 //---------------------------------------------------------
+
 QString MaterialTest::genRowText(int row) const {
       QString s;
       double v = rowValue(row);
@@ -209,6 +214,7 @@ QString MaterialTest::genRowText(int row) const {
 //---------------------------------------------------------
 //   genColText
 //---------------------------------------------------------
+
 QString MaterialTest::genColText(int col) const {
       QString s;
       double v = columnValue(col);
@@ -240,6 +246,7 @@ static QString label(ParameterType t) {
 //---------------------------------------------------------
 //   createChildren
 //---------------------------------------------------------
+
 void MaterialTest::createChildren() {
       // Delete the fixture LaserLayers (Recipe elements) that were created
       // by the previous createChildren() call.  These are identified by
@@ -260,7 +267,7 @@ void MaterialTest::createChildren() {
       // filters by burn() && !pathList().empty() and checks parent()==this,
       // which never matches: the burnable elements (Rectangles, Text) have the
       // Group layer as parent, not this MaterialTest.
-      QSet<Recipe*> childLaserLayers;
+      QSet<LaserMop*> childLaserLayers;
       for (Element* c : children()) {
             auto* e3d = qobject_cast<Element3d*>(c);
             if (e3d && e3d->laserLayer())
@@ -278,7 +285,7 @@ void MaterialTest::createChildren() {
       // still alive (QML needs the pointer to find the matching node).
       QList<Element*> toDelete;
       for (Element* c : fixture->children()) {
-            auto* ll = qobject_cast<Recipe*>(c);
+            auto* ll = qobject_cast<LaserMop*>(c);
             if (!ll)
                   continue;
             if (childLaserLayers.contains(ll))
@@ -350,8 +357,8 @@ void MaterialTest::createChildren() {
                   layer->setExpanded(false);
                   addChild(layer);
 
-                  double cv  = columnValue(column);
-                  Recipe* ll = new Recipe(zcam, fixture);
+                  double cv    = columnValue(column);
+                  LaserMop* ll = new LaserMop(zcam, fixture);
                   ll->setName(format("ll-{}-{}", row, column).c_str());
                   ll->set_recipe(materialLayer());
                   layer->set_laserLayer(ll);
@@ -379,7 +386,7 @@ void MaterialTest::createChildren() {
             borderL->setName("layer-border");
             addChild(borderL);
 
-            Recipe* ll = new Recipe(zcam, fixture);
+            LaserMop* ll = new LaserMop(zcam, fixture);
             ll->setName("ll-border");
             borderL->set_laserLayer(ll);
             ll->set_recipe(borderLayer());
@@ -458,21 +465,21 @@ void MaterialTest::createChildren() {
             addText(x, y - 4, s, textL, 6.0, 0.0);
 
             for (int row = 0; row < rows(); ++row)
-                  addText(samples.right(), samples.top() + row * h + h * .5, genRowText(row), textL, 6.0,
-                          0.0);
+                  addText(
+                      samples.right(), samples.top() + row * h + h * .5, genRowText(row), textL, 6.0, 0.0);
             for (int col = 0; col < columns(); ++col)
-                  addText(samples.left() + col * w + w * .5, samples.top(), genColText(col), textL, 6.0,
-                          -90.0);
+                  addText(
+                      samples.left() + col * w + w * .5, samples.top(), genColText(col), textL, 6.0, -90.0);
 
             auto colLabel    = label(ParameterType(columnParameter()));
             double textWidth = 15; // TODO: text width of colLabel
             addText(samples.left() + samples.width() * .5 - textWidth * .5, samples.top() - 9, colLabel,
-                    textL, 6.0, 0.0);
+                textL, 6.0, 0.0);
             // textWidth
             addText(samples.right() + 9, samples.top() + samples.height() * .5 - textWidth * .5,
-                    label(ParameterType(rowParameter())), textL, 6.0, 90.0);
+                label(ParameterType(rowParameter())), textL, 6.0, 90.0);
 
-            Recipe* ll = new Recipe(zcam, fixture);
+            LaserMop* ll = new LaserMop(zcam, fixture);
             ll->setName("ll-text");
             textL->set_laserLayer(ll);
             ll->set_recipe(textLayer());
@@ -501,14 +508,14 @@ void MaterialTest::createChildren() {
       // created child Groups — collectElements() would fail because the
       // children's pathList may not be populated yet.
       if (fixture) {
-            QSet<Recipe*> newChildLaserLayers;
+            QSet<LaserMop*> newChildLaserLayers;
             for (Element* c : children()) {
                   auto* e3d = qobject_cast<Element3d*>(c);
                   if (e3d && e3d->laserLayer())
                         newChildLaserLayers.insert(e3d->laserLayer());
                   }
             for (Element* c : fixture->children()) {
-                  auto* ll = qobject_cast<Recipe*>(c);
+                  auto* ll = qobject_cast<LaserMop*>(c);
                   if (!ll)
                         continue;
                   if (newChildLaserLayers.contains(ll))
@@ -524,6 +531,7 @@ void MaterialTest::createChildren() {
 //---------------------------------------------------------
 //   addText
 //---------------------------------------------------------
+
 void MaterialTest::addText(double x, double y, const QString& s, Group* layer, double pt, double rot) {
       auto r = new Text(zcam, layer);
       r->setName("text");
@@ -540,6 +548,7 @@ void MaterialTest::addText(double x, double y, const QString& s, Group* layer, d
 //---------------------------------------------------------
 //   rowValue
 //---------------------------------------------------------
+
 double MaterialTest::rowValue(int row) const {
       switch (ParameterType(rowParameter())) {
             case ParameterType::Pulse: {
@@ -565,6 +574,7 @@ double MaterialTest::rowValue(int row) const {
 //---------------------------------------------------------
 //   columnValue
 //---------------------------------------------------------
+
 double MaterialTest::columnValue(int col) const {
       switch (ParameterType(columnParameter())) {
             case ParameterType::Pulse: {
@@ -595,6 +605,7 @@ double MaterialTest::columnValue(int col) const {
 //    lines) and two diagonal lines extending a few millimeters
 //    beyond the work area for alignment verification.
 //---------------------------------------------------------
+
 void ZCam::createGalvoTest() {
       // Preserve the machine from the current project before
       // creating a new one.  The Machine* is owned by the
@@ -679,7 +690,7 @@ void ZCam::createGalvoTest() {
       layer->addChild(label);
 
       // Create a LaserLayer linked to the galvo pattern layer
-      auto ll = new Recipe(this, fixture);
+      auto ll = new LaserMop(this, fixture);
       ll->setName("LL-GalvoPattern9");
       layer->set_laserLayer(ll);
       auto recipes = this->recipes();
@@ -694,6 +705,7 @@ void ZCam::createGalvoTest() {
 //   fixup
 //    this is called after loading the project
 //---------------------------------------------------------
+
 void MaterialTest::fixup() {
       Element3d::fixup();
       createChildren();

@@ -194,9 +194,9 @@ void Cam::updateCam() {
       input.panelVDistance = panelVDistance();
 
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto* ll = toType<Recipe>(e);
+            auto* ll = toType<LaserMop>(e);
 
             Clipper2Lib::PathsD tileLines = ll->collectDisplayLines();
             if (tileLines.size() < 2) {
@@ -289,9 +289,9 @@ Clipper2Lib::PathD Cam::convexHull() const {
       double panelVD = panelVDistance();
 
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto* layer = toType<Recipe>(e);
+            auto* layer = toType<LaserMop>(e);
             if (!layer->burn())
                   continue;
 
@@ -339,9 +339,9 @@ Clipper2Lib::RectD Cam::boundingBox() const {
       bool found = false;
 
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto* layer = toType<Recipe>(e);
+            auto* layer = toType<LaserMop>(e);
             if (!layer->burn())
                   continue;
 

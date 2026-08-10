@@ -129,7 +129,7 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
             return true;
             }
       else if (type == "laserLayer") {
-            Recipe* recipe = value.value<Recipe*>();
+            LaserMop* recipe = value.value<LaserMop*>();
             data[name]     = recipe ? recipe->name().toStdString() : "";
             return true;
             }
@@ -194,7 +194,7 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
-            Recipe* ll     = element->zcamInstance()->laserLayerPtr(llName);
+            LaserMop* ll     = element->zcamInstance()->laserLayerPtr(llName);
             if (ll)
                   mp.write(element, QVariant::fromValue(ll));
             else if (!llName.isEmpty())
@@ -332,7 +332,7 @@ void Element3d::fixup() {
                   QMetaProperty mp = meta->property(idx);
 
                   if (ref.refType == "laserLayer") {
-                        Recipe* ll = zcamInstance()->laserLayerPtr(ref.name);
+                        LaserMop* ll = zcamInstance()->laserLayerPtr(ref.name);
                         if (ll)
                               mp.write(this, QVariant::fromValue(ll));
                         else
@@ -383,7 +383,7 @@ bool Element3d::ancestorsShow() const {
 //    first non-null laserLayer reference found.  Returns nullptr
 //    if no ancestor (including self) has a laserLayer set.
 //---------------------------------------------------------
-Recipe* Element3d::effectiveLaserLayer() const {
+LaserMop* Element3d::effectiveLaserLayer() const {
       const Element3d* e = this;
       while (e) {
             if (e->_laserLayer)

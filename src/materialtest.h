@@ -63,7 +63,7 @@ class MaterialTest : public Group
                       ]
                     },
                     {
-                      "label": "Recipe",
+                      "label": "Mop",
                       "cells": [
                         {
                           "name": "laserLayer",

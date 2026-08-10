@@ -117,7 +117,7 @@ class ImageElement : public Element3d
             ]
         },
         {
-            "label": "Recipe",
+            "label": "Mops",
             "cells": [
                 {
                     "name": "laserLayer",

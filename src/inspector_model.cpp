@@ -911,7 +911,7 @@ QStringList InspectorModel::laserLayerNames() const {
 //---------------------------------------------------------
 
 QString InspectorModel::laserLayerToName(QVariant ll) const {
-      Recipe* ptr = ll.value<Recipe*>();
+      LaserMop* ptr = ll.value<LaserMop*>();
       if (!ptr)
             return {};
       return ptr->name();
@@ -922,7 +922,7 @@ QString InspectorModel::laserLayerToName(QVariant ll) const {
 //    Resolve a name string back to a LaserLayer* pointer.
 //---------------------------------------------------------
 
-Recipe* InspectorModel::nameToLaserLayer(const QString& name) const {
+LaserMop* InspectorModel::nameToLaserLayer(const QString& name) const {
       if (!_element || name.isEmpty())
             return nullptr;
       ZCam* zc    = nullptr;

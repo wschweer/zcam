@@ -108,7 +108,7 @@ void ZCam::calibrationScan() {
       //      auto framing = new Framing>(this, fixture);
       //      fixture->setFraming(framing);
 
-      auto ll = new Recipe(this, fixture);
+      auto ll = new LaserMop(this, fixture);
       //      ll->setLaserLayer(wcam->laserLayerSettings("cbBlackTest"));
 
       //      _cadLayer->set(layers);
@@ -209,7 +209,7 @@ void ZCam::createGalvoTest64() {
       layer->addChild(label);
 
       // Create a LaserLayer linked to the galvo pattern layer
-      auto ll = new Recipe(this, fixture);
+      auto ll = new LaserMop(this, fixture);
       ll->setName("LL-GalvoPattern64");
       layer->set_laserLayer(ll);
       auto recipes = this->recipes();
@@ -621,7 +621,7 @@ void ZCam::galvotest65img(const QString& filename) {
       Assert(fixture);
 
       Group* group = new Group(this, cad);
-      auto ll      = new Recipe(this, fixture);
+      auto ll      = new LaserMop(this, fixture);
       ll->setName("LL-Calibration");
       fixture->addChild(ll);
 

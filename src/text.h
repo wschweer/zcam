@@ -65,7 +65,7 @@ class Text : public Element3d
             ]
         },
         {
-            "label": "Recipe",
+            "label": "Mop",
             "cells": [
                 {
                     "name": "laserLayer",
