@@ -296,8 +296,13 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
       yc -= galvoOffset().y();
 
       // 5) Overall scale (factor, then raw galvo units).
-      const double xScale = galvoScale().x() * 54000.0 / maxX;
-      const double yScale = galvoScale().y() * 54000.0 / maxY;
+      //    Use 2 × 25800 = 51600 as the full-range factor to match the
+      //    safe galvo half-range (25800) used in initEngine().  The
+      //    hardware supports ±32767 but 25800 keeps a ~21% safety margin;
+      //    using 54000 (half-range 27000) left only ~17.5% and caused
+      //    overflow at field corners with galvoScale slightly above 1.0.
+      const double xScale = galvoScale().x() * 51600.0 / maxX;
+      const double yScale = galvoScale().y() * 51600.0 / maxY;
 
       double rawX, rawY;
       if (galvoSwapxy()) {
@@ -309,9 +314,11 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
             rawY = trunc(yc * yScale + 0x8000);
             }
       if (rawX < 0.0 || rawX > 0xffff || rawY < 0.0 || rawY > 0xffff) {
-            Critical("position out of range 0x{:04x} {} ----  0x{:04x} {}",
-                     (unsigned)std::clamp(rawX, 0.0, (double)0xffff), x,
-                     (unsigned)std::clamp(rawY, 0.0, (double)0xffff), y);
+            Critical("position out of range ({:.2f}, {:.2f}) raw=({:.0f}, {:.0f}) "
+                     "field=({:.1f}, {:.1f}) scale=({:.6f}, {:.6f})",
+                     x, y, rawX, rawY,
+                     maxX, maxY,
+                     galvoScale().x(), galvoScale().y());
             return LaserPosition((unsigned)std::clamp(rawX, 0.0, (double)0xffff),
                                  (unsigned)std::clamp(rawY, 0.0, (double)0xffff));
             }
