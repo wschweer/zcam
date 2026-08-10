@@ -646,22 +646,23 @@ void ZCam::createGalvoTest() {
       sq->update();
       layer->addChild(sq);
 
-      // Crosshair (horizontal + vertical) and diagonals
-      // extending a few millimeters beyond the work area
+      // Crosshair: 3 horizontal + 3 vertical lines
+      // extending a few millimeters beyond the work area.
+      // The lines are at the field edges (0, h/2, h) and (0, w/2, w),
+      // which correspond to grid coordinates -32, 0, +32 in the
+      // correction table.
       auto lines = new Polygon(this, layer);
       lines->setName("lines");
-      // Horizontal line
-      lines->moveTo({-ext, h * .5});
-      lines->lineTo({w + ext, h * .5});
-      // Vertical line
-      lines->moveTo({w * .5, -ext});
-      lines->lineTo({w * .5, h + ext});
-      // Diagonal: top-left to bottom-right
-      lines->moveTo({-ext, h + ext});
-      lines->lineTo({w + ext, -ext});
-      // Diagonal: bottom-left to top-right
-      lines->moveTo({-ext, -ext});
-      lines->lineTo({w + ext, h + ext});
+      // 3 horizontal lines at y = 0, h/2, h
+      for (double y : {0.0, h * .5, h}) {
+            lines->moveTo({-ext, y});
+            lines->lineTo({w + ext, y});
+            }
+      // 3 vertical lines at x = 0, w/2, w
+      for (double x : {0.0, w * .5, w}) {
+            lines->moveTo({x, -ext});
+            lines->lineTo({x, h + ext});
+            }
       lines->setColor(QColor("black"));
       lines->update();
       layer->addChild(lines);

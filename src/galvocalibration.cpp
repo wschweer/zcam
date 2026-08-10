@@ -30,7 +30,7 @@ namespace {
 // One grid step corresponds to scale = 0x10000 / 64 = 1024 table units.
 constexpr double CORRECTION_GRID_HALF = 32.0;
 constexpr double CORRECTION_SCALE     = 65536.0 / 64.0; // = 1024 table units / grid unit
-constexpr double MEASUREMENT_GRID     = 16.0;           // "9 point" cross is at +/- half field
+constexpr double MEASUREMENT_GRID     = 32.0;           // "9 point" cross spans the full field (grid ±32)
 
 // Convert a physical offset in mm to correction-table units.
 // fieldHalf mm maps to CORRECTION_GRID_HALF grid units, i.e.
@@ -219,11 +219,11 @@ void centerMeasurements(PairSample xPairs[3], PairSample yPairs[3],
 // Per-axis pair measurements constrain k2x resp. k2y through the
 // coordinate offsets at their radius.  Each line pair at +/-h measures
 // 2*err(h), so the equation per pair is:
-//     y = (nominal - avg) * tpm * 0.5
+//     y = (nominal - avg) * tpm
 // where avg = (left+right)/2.
 //
 // The three measurements per axis span two distinct radii
-// (r² = 256 and 512), which is sufficient for a single-parameter fit.
+// (r² = 1024 and 2048), which is sufficient for a single-parameter fit.
 bool fitBulge(const PairSample xPairs[3], const PairSample yPairs[3],
               double nominal, double fieldHalf, double& k2xOut, double& k2yOut) {
       k2xOut = 0.0;
@@ -236,7 +236,7 @@ bool fitBulge(const PairSample xPairs[3], const PairSample yPairs[3],
       for (int i = 0; i < 3; ++i) {
             const double avg = (xPairs[i].leftX + xPairs[i].rightX) * 0.5;
             const double r2  = double(xPairs[i].g1 * xPairs[i].g1 + xPairs[i].g2 * xPairs[i].g2);
-            const double y   = (nominal - avg) * tablePerMm * 0.5;
+            const double y   = (nominal - avg) * tablePerMm;
             // equation: y = k2x * r² * MEASUREMENT_GRID
             const double a   = r2 * MEASUREMENT_GRID;
             sumA += a * a;
@@ -251,7 +251,7 @@ bool fitBulge(const PairSample xPairs[3], const PairSample yPairs[3],
       for (int i = 0; i < 3; ++i) {
             const double avg = (yPairs[i].leftX + yPairs[i].rightX) * 0.5;
             const double r2  = double(yPairs[i].g1 * yPairs[i].g1 + yPairs[i].g2 * yPairs[i].g2);
-            const double y   = (nominal - avg) * tablePerMm * 0.5;
+            const double y   = (nominal - avg) * tablePerMm;
             const double a   = r2 * MEASUREMENT_GRID;
             sumA += a * a;
             sumB += a * y;
@@ -299,9 +299,9 @@ GalvoCalibration::GalvoCalibration(ZCam* zc, QObject* parent) : QObject(parent),
 //      4. Bulge: least-squares fit per axis from the centred data.
 //
 //    The laser field is [-fieldHalf, fieldHalf] mm.
-//    The "9 point" burn pattern places line pairs at +/- fieldHalf/2,
-//    which corresponds to grid coordinates +/- 16 inside the correction
-//    table used by LaserBJJCZ::writeCorrectionTable().
+//    The "9 point" burn pattern places line pairs at the field
+//    edges (grid ±32) and center (grid 0), spanning the full
+//    correction table used by LaserBJJCZ::writeCorrectionTable().
 //
 //    The correction table spans grid coordinates [-32, 32] and stores
 //    offsets in units of CORRECTION_SCALE = 0x10000/64 = 1024.
@@ -351,14 +351,14 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
 
       //--- raw pair measurements (kept separate; averaging happens per equation) ---
       PairSample xPairs[3] = {
-            {xTopLeft, xTopRight,       16, 16},
-            {xMiddleLeft, xMiddleRight, 16,  0},
-            {xBottomLeft, xBottomRight, 16, -16}
+            {xTopLeft, xTopRight,       32, 32},
+            {xMiddleLeft, xMiddleRight, 32,  0},
+            {xBottomLeft, xBottomRight, 32, -32}
             };
       PairSample yPairs[3] = {
-            {yLeftTop, yLeftBottom,     -16, 16},
-            {yCenterTop, yCenterBottom,   0, 16},
-            {yRightTop, yRightBottom,    16, 16}
+            {yLeftTop, yLeftBottom,     -32, 32},
+            {yCenterTop, yCenterBottom,   0, 32},
+            {yRightTop, yRightBottom,    32, 32}
             };
 
       //--- scale: use center measurement only ---
@@ -388,14 +388,14 @@ bool GalvoCalibration::compute(Machine* machine, double xTopLeft, double xTopRig
       // accuracy when the initial machine bulge was far off.
       {
       PairSample xPairsOrig[3] = {
-            {xTopLeft, xTopRight,       16, 16},
-            {xMiddleLeft, xMiddleRight, 16,  0},
-            {xBottomLeft, xBottomRight, 16, -16}
+            {xTopLeft, xTopRight,       32, 32},
+            {xMiddleLeft, xMiddleRight, 32,  0},
+            {xBottomLeft, xBottomRight, 32, -32}
             };
       PairSample yPairsOrig[3] = {
-            {yLeftTop, yLeftBottom,     -16, 16},
-            {yCenterTop, yCenterBottom,   0, 16},
-            {yRightTop, yRightBottom,    16, 16}
+            {yLeftTop, yLeftBottom,     -32, 32},
+            {yCenterTop, yCenterBottom,   0, 32},
+            {yRightTop, yRightBottom,    32, 32}
             };
       _offset = estimateOffset(xPairsOrig, yPairsOrig, fieldHalf, bulgeX, bulgeY);
 
