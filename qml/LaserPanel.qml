@@ -68,6 +68,7 @@ Rectangle {
             Layout.fillWidth: true
             enabled: false
             Layout.margins: 10
+            Material.accent: (laserPanel.laser && (laserPanel.laser.framing || laserPanel.laser.marking)) ? "yellow" : Material.accent
             }
 
         RowLayout {
@@ -82,13 +83,13 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.horizontalStretchFactor: 2
                 onClicked: { laserPanel.laser.startFraming()}
-                Material.foreground: "black"
+                Material.foreground: "white"
                 }
             Button {
                 id: startButton
                 Layout.fillWidth: true
                 text: "Marking"
-                Material.foreground: "black"
+                Material.foreground: "white"
                 enabled: laserPanel.laser?.enabled ?? false
                 checked: laserPanel.laser?.marking ?? false
                 onClicked: { laserPanel.laser.startMarking() }
@@ -100,7 +101,7 @@ Rectangle {
             Button {
                 id: stopButton
                 text: "Stop"
-                Material.foreground: "black"
+                Material.foreground: "white"
                 enabled: laserPanel.laser?.enabled ?? false
                 Layout.fillWidth: true
                 onClicked: { laserPanel.laser.stop() }
