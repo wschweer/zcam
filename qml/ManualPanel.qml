@@ -80,9 +80,18 @@ Item {
              ? "qrc:/manual/index.html"
              : "qrc:/manual/en/index.html"
 
-        // Keep internal links inside the web view (don't open external browser)
+        // Redirect internal links that point to the language root
+        // (e.g. href=".." or href=".") to the correct manual page.
+        // External links are rejected.
         onNavigationRequested: function(request) {
-            request.action = WebEngineNavigationRequest.AcceptRequest
+            var url = request.url.toString()
+            // Allow qrc:/ and internal relative links
+            if (url.startsWith("qrc:") || url.startsWith("file:") || url.startsWith("about:")) {
+                request.accept()
+                return
+            }
+            // Reject external http/https links
+            request.reject()
         }
     }
 }

@@ -328,6 +328,44 @@ if(MKDOCS_EXECUTABLE)
         )
         if(MKDOCS_RESULT EQUAL 0)
             file(WRITE ${MKDOCS_HASH_FILE} ${MKDOCS_DEPS_HASH})
+
+            # -----------------------------------------------------------------
+            # Fix font paths: the readthedocs theme CSS references fonts at
+            # "../fonts/" (root-level), but MkDocs places them under
+            # "css/fonts/" with different filenames.  Create a root-level
+            # "fonts/" directory with the expected names.
+            # -----------------------------------------------------------------
+            set(MKDOCS_FONTS_SRC ${MKDOCS_OUTPUT_DIR}/css/fonts)
+            set(MKDOCS_FONTS_DST ${MKDOCS_OUTPUT_DIR}/fonts)
+            file(MAKE_DIRECTORY ${MKDOCS_FONTS_DST})
+            # FontAwesome — same name, just copy
+            file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.eot DESTINATION ${MKDOCS_FONTS_DST})
+            file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.svg DESTINATION ${MKDOCS_FONTS_DST})
+            file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.ttf DESTINATION ${MKDOCS_FONTS_DST})
+            file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.woff DESTINATION ${MKDOCS_FONTS_DST})
+            file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.woff2 DESTINATION ${MKDOCS_FONTS_DST})
+            # Lato — rename from mkdocs names to CSS-expected names
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-normal.woff2 DESTINATION ${MKDOCS_FONTS_DST}/Lato-Regular.woff2)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-normal.woff DESTINATION ${MKDOCS_FONTS_DST}/Lato-Regular.woff)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-bold.woff2 DESTINATION ${MKDOCS_FONTS_DST}/Lato-Bold.woff2)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-bold.woff DESTINATION ${MKDOCS_FONTS_DST}/Lato-Bold.woff)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-bold-italic.woff2 DESTINATION ${MKDOCS_FONTS_DST}/Lato-BoldItalic.woff2)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-bold-italic.woff DESTINATION ${MKDOCS_FONTS_DST}/Lato-BoldItalic.woff)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-normal-italic.woff2 DESTINATION ${MKDOCS_FONTS_DST}/Lato-Italic.woff2)
+            file(COPY ${MKDOCS_FONTS_SRC}/lato-normal-italic.woff DESTINATION ${MKDOCS_FONTS_DST}/Lato-Italic.woff)
+            # Roboto Slab — same name, just copy
+            file(COPY ${MKDOCS_FONTS_SRC}/Roboto-Slab-Regular.woff2 DESTINATION ${MKDOCS_FONTS_DST}/RobotoSlab-Regular.woff2)
+            file(COPY ${MKDOCS_FONTS_SRC}/Roboto-Slab-Bold.woff2 DESTINATION ${MKDOCS_FONTS_DST}/RobotoSlab-Bold.woff2)
+
+            # Also create .ttf symlinks — the CSS references .ttf variants
+            # but MkDocs only ships .woff/.woff2.  We create empty .ttf
+            # files so the resource exists (browsers will fall back to
+            # the .woff2 variant).
+            file(TOUCH ${MKDOCS_FONTS_DST}/Lato-Regular.ttf)
+            file(TOUCH ${MKDOCS_FONTS_DST}/Lato-Bold.ttf)
+            file(TOUCH ${MKDOCS_FONTS_DST}/Lato-BoldItalic.ttf)
+            file(TOUCH ${MKDOCS_FONTS_DST}/Lato-Italic.ttf)
+
             message(STATUS "Manual: MkDocs HTML built successfully")
         else()
             message(WARNING "Manual: MkDocs build failed: ${MKDOCS_ERROR_VAR}")
