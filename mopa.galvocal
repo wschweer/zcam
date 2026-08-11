@@ -1,0 +1,16 @@
+{
+  "type": "GalvoCalibration9",
+  "version": 2,
+  "xBottomLeft": 85.71,
+  "xBottomRight": 84.8,
+  "xMiddleLeft": 87.79,
+  "xMiddleRight": 87.25,
+  "xTopLeft": 85.97,
+  "xTopRight": 85.62,
+  "yCenterBottom": 87.0,
+  "yCenterTop": 88.0,
+  "yLeftBottom": 89.8,
+  "yLeftTop": 90.87,
+  "yRightBottom": 88.46,
+  "yRightTop": 90.56
+}

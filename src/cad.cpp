@@ -18,7 +18,7 @@
 //   Element
 //---------------------------------------------------------
 
-Cad::Cad(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
+Cad::Cad(ZCam* zcam, Element* parent) : Group(zcam, parent) {
       setName("");
       zcam->project()->set_cad(this);
       }

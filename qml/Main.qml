@@ -229,9 +229,9 @@ Window {
 
     Action {
         id: actionGalvoTest
-        text: qsTr("Galvo Test")
+        text: qsTr("Galvo Test 9")
         onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"),
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 9?"),
             function () { ZCam.createGalvoTest() })
         }
 
@@ -248,6 +248,20 @@ Window {
         onTriggered: checkUnsavedAndProceed(
             qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"),
             function () { ZCam.calibrationScan() })
+        }
+
+    Action {
+        id: actionGalvoCalibration
+        text: qsTr("9-Point Galvo Calibration…")
+        onTriggered: galvoCalDialog.open()
+        }
+
+    Action {
+        id: actionTestProject
+        text: qsTr("Test Project")
+        onTriggered: checkUnsavedAndProceed(
+            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Test Project?"),
+            function () { ZCam.createTestProject() })
         }
 
     Action {
@@ -295,7 +309,14 @@ Window {
     FileDialog {
         id: importFileDialog
         title: qsTr("Import File")
-        nameFilters: [qsTr("Supported formats (*.svg *.dxf *.stl *.obj *.xml *.cvg)"), qsTr("IPC-2581 (*.xml *.cvg)"), qsTr("All files (*)")]
+        nameFilters: [
+            qsTr("All supported formats (*.svg *.dxf *.dwg *.brep *.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp *.xml *.cvg)"),
+            qsTr("Vector graphics (*.svg *.dxf *.dwg)"),
+            qsTr("BREP CAD (*.brep)"),
+            qsTr("Pixel images (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp)"),
+            qsTr("IPC-2581 (*.xml *.cvg)"),
+            qsTr("All files (*)")
+            ]
         fileMode: FileDialog.OpenFile
         onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
         }
@@ -343,6 +364,8 @@ Window {
 
         Label {
             text: unsavedChangesGuard.messageText
+            width: 360
+            wrapMode: Text.WordWrap
             }
         onAccepted: {   // Save
             if (ZCam.project.projectPath === "")
@@ -420,6 +443,14 @@ Window {
         }
 
     // =========================================================================
+    //  Galvo Calibration dialog
+    // =========================================================================
+
+    GalvoCalibrationDialog {
+        id: galvoCalDialog
+        }
+
+    // =========================================================================
     //  Layout: MenuBar / ToolBar / TabBar / StackLayout
     // =========================================================================
 
@@ -489,6 +520,13 @@ Window {
                     }
                 MenuItem {
                     action: actionCalibrationScan
+                    }
+                MenuItem {
+                    action: actionGalvoCalibration
+                    }
+                MenuSeparator {}
+                MenuItem {
+                    action: actionTestProject
                     }
                 }
 
@@ -653,6 +691,7 @@ Window {
                     TabBtn { text: qsTr("Recipes") }
                     TabBtn { text: qsTr("Machines") }
                     TabBtn { text: qsTr("Config") }
+                    TabBtn { text: qsTr("Manual") }
                     }
 
                 // Spacer pushes the Cam button to the right edge
@@ -749,6 +788,11 @@ Window {
                 // Tab 2 – Configure App
                 ConfigSystem {
                     id: configSystem
+                    }
+
+                // Tab 4 – Manual (MkDocs generated HTML via WebEngine)
+                ManualPanel {
+                    id: manualPanel
                     }
                 }
             LaserPanel {

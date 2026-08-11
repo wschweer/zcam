@@ -42,7 +42,8 @@ json Machine::toJson() const {
 
       const QMetaObject* meta = metaObject();
       for (const auto& [name, type] : propNames)
-            propjson::writePropertyToJson(data, this, meta, false, name, type);
+            propjson::writePropertyToJson(data, this, meta, false, name, type,
+                                          propjson::precisionForName(propStr, name));
 
       return data;
       }

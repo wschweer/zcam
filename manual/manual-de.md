@@ -645,7 +645,27 @@ Die Laser-State-Machine durchläuft: **Off → Idle → Framing/Marking → Idle
 
 ---
 
-# Galvo Laser
+# Laser
+## Galvo Laser
+### Laser Typen
+#### Q-Switched Laser
+
+Der Q-Switched Laser ist ein Impulslaser. Du kannst du Leistung und Impulsfrequenz
+einstellen.
+
+#### MOPA Laser
+
+Bei MOPA Lasern kannst du zusätzlich die Impulsdauer einstellen. Dadurch ist es z.B. möglich,
+Edelstahl farbig zu markieren.
+
+#### UV Laser
+
+UV Laser können die Ausgangsleistung nicht verändern. Die aufgebrachte Laserleistung
+kannst du durch die Scan-Geschwindigkeit sowie die Pulsfrequenz einstellen. Normalerweise
+ist die Impulsdauer auch fest oder nur sehr eingeschränkt wählbar.
+Die hervorragendste Eigenschaft von UV Lasern ist das "Kaltlasern". Der Laser hat einen
+sehr kleinen Focus, welches eine hohe Energiedichte auf dem Material zur Folge hat. Material
+wird so schnell vom Laser abgetragen, das erst gar nichts heiss werden kann.
 
 ## Arbeitsfläche und Koordinatensystem
 
@@ -717,7 +737,9 @@ generiert ein Raster von Testquadraten mit variierender Leistung und Geschwindig
 (oder anderen Parametern), um die optimalen Einstellungen für ein bestimmtes
 Material zu finden.
 
-## Galvotest
+## Kalibrieren
+
+Linsensystem haben Verzerrungen, die du ausgleichen kannst.
 
 Das Menü **Tools → Galvotest** erstellt ein Galvo-Kalibrierungstest-Element zur
 Überprüfung der Galvo-Ausrichtung und Korrekturparameter.

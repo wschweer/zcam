@@ -35,14 +35,14 @@
 //    at any depth are found, as long as they resolve to this LaserLayer.
 //---------------------------------------------------------
 
-static void collectBurnElementsForLaserLayer(Element* parent, const Recipe* ll,
+static void collectBurnElementsForLaserLayer(Element* parent, const LaserMop* ll,
                                              std::vector<const Element3d*>& out) {
       for (Element* child : parent->children()) {
             auto* ce = qobject_cast<Element3d*>(child);
             if (!ce)
                   continue;
             // Skip LaserLayer elements themselves — they are not geometry.
-            if (isType<Recipe>(ce))
+            if (isType<LaserMop>(ce))
                   continue;
             // Check if this element's effective LaserLayer is the one we're looking for.
             if (ce->effectiveLaserLayer() == ll && ce->burn() && !ce->pathList().empty())
@@ -61,7 +61,7 @@ static void collectBurnElementsForLaserLayer(Element* parent, const Recipe* ll,
 //    subtree recursively.
 //---------------------------------------------------------
 
-std::vector<const Element3d*> Recipe::collectElements() const {
+std::vector<const Element3d*> LaserMop::collectElements() const {
       std::vector<const Element3d*> elements;
       Project* proj = zcam->project();
       if (!proj)
@@ -86,7 +86,7 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //   LaserLayer
 //---------------------------------------------------------
 
-Recipe::Recipe(ZCam* w, Element* parent) : Element3d(w, parent) {
+LaserMop::LaserMop(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("");
       // LaserLayer no longer creates its own _geometry.
       // Display geometry is collected and rendered by Cam.
@@ -106,23 +106,23 @@ Recipe::Recipe(ZCam* w, Element* parent) : Element3d(w, parent) {
 //    Cam applies the panel-grid offsets when building the full layout.
 //---------------------------------------------------------
 
-PathsD Recipe::collectLayerPath() {
+PathsD LaserMop::collectLayerPath() {
       spl.clear();
       auto elements = collectElements();
 
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool    persp = false;
+      double  h     = 0.0;
+      QPointF vc;
+      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
+            persp = cam->perspective();
+            h     = cam->projectionHeight();
+            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
+            }
+
       for (const auto* ce : elements) {
-            const auto& pl = ce->pathList();
-
-            QMatrix4x4 matrix = ce->globalMatrix();
-
-            for (const auto& p : pl) {
-                  Clipper2Lib::PathD cp;
-                  for (const auto& pt : p) {
-                        auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                        cp.push_back({r.x(), r.y()});
-                        }
-                  spl.push_back(cp);
-                  }
+            Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h, vc);
+            spl.append_range(paths);
             }
 
       return spl;
@@ -136,7 +136,7 @@ PathsD Recipe::collectLayerPath() {
 //    Cam handles the grid layout.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD Recipe::processTileLines() const {
+Clipper2Lib::PathsD LaserMop::processTileLines() const {
       if (!recipe()) {
             Critical("no recipe for <{}>", name());
             return {};
@@ -145,22 +145,21 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
       Clipper2Lib::PathsD lineList;
       auto elements = collectElements();
 
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool    persp = false;
+      double  h     = 0.0;
+      QPointF vc;
+      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
+            persp = cam->perspective();
+            h     = cam->projectionHeight();
+            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
+            }
+
       for (const auto* ce : elements) {
-            PathList pl = ce->pathList();
+            Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, h, vc);
 
-            QMatrix4x4 matrix = ce->globalMatrix();
-
-            Clipper2Lib::PathsD ll;
-            for (const auto& p : pl) {
-                  Clipper2Lib::PathD cp;
-                  for (const auto& pt : p) {
-                        auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                        cp.push_back({r.x(), r.y()});
-                        }
-                  ll.push_back(cp);
-                  }
             auto* ls = &recipe()->pass(0);
-            if (pl.fill())
+            if (ce->pathList().fill())
                   lineList.append_range(createFill(ll));
             else if (ls->wobble()) {
                   for (const auto& p : ll) {
@@ -197,7 +196,7 @@ Clipper2Lib::PathsD Recipe::processTileLines() const {
 //    No panel-grid offsets are applied.
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD Recipe::collectDisplayLines() const {
+Clipper2Lib::PathsD LaserMop::collectDisplayLines() const {
       Clipper2Lib::PathsD tileLines = processTileLines();
 
       // Optimise the line order for display
@@ -262,7 +261,7 @@ Clipper2Lib::PathsD Recipe::collectDisplayLines() const {
 //    and must contain the full panel layout.
 //---------------------------------------------------------
 
-LaserPath Recipe::collectLaserPath() const {
+LaserPath LaserMop::collectLaserPath() const {
       if (!recipe()) {
             Critical("no recipe for <{}>", name());
             return LaserPath();
@@ -272,6 +271,10 @@ LaserPath Recipe::collectLaserPath() const {
 
       double panelHD = cam->panelHDistance();
       double panelVD = cam->panelVDistance();
+      // Projection settings of the active Cam (perspective vs. orthographic).
+      bool persp   = cam->perspective();
+      double prjH  = cam->projectionHeight();
+      QPointF vc   = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
       double w, h;
       zcam->project()->fixture()->size(w, h);
 
@@ -284,26 +287,22 @@ LaserPath Recipe::collectLaserPath() const {
                   double yo = (panelVD + h) * row;
 
                   for (const auto* ce : elements) {
-                        PathList pl = ce->pathList();
-
-                        QMatrix4x4 matrix = ce->globalMatrix();
+                        Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, prjH, vc);
 
                         //===========================================
                         //    convert to CAM coordinate system
                         //===========================================
 
-                        Clipper2Lib::PathsD ll;
-                        for (const auto& p : pl) {
-                              Clipper2Lib::PathD cp;
-                              for (const auto& pt : p) {
-                                    auto r = matrix.map(QVector3D(pt.x(), pt.y(), 0.0));
-                                    cp.push_back({r.x() + xo, r.y() + yo});
+                        // Apply panel-grid offsets
+                        for (auto& p : ll)
+                              for (auto& pt : p) {
+                                    pt.x += xo;
+                                    pt.y += yo;
                                     }
-                              ll.push_back(cp);
-                              }
+
                         auto* ls        = &recipe()->pass(0);
                         bool mustWobble = ls->wobble();
-                        if (pl.fill()) {
+                        if (ce->pathList().fill()) {
                               lineList.append_range(createFill(ll));
                               }
                         else {
@@ -513,7 +512,7 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //    fill polygon spdi with hatch pattern
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD Recipe::createFill(Clipper2Lib::PathsD& spdi) const {
+Clipper2Lib::PathsD LaserMop::createFill(Clipper2Lib::PathsD& spdi) const {
       Clipper2Lib::PathsD lineList;
 
       const LaserPasses* fll = &recipe()->passes();

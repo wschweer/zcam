@@ -18,27 +18,53 @@
 //---------------------------------------------------------
 //   MachineModel
 //---------------------------------------------------------
-
 MachineModel::MachineModel(QObject* parent) : QAbstractListModel(parent) {
       }
 
 //---------------------------------------------------------
 //   setMachine
 //---------------------------------------------------------
-
 void MachineModel::setMachine(Machine* machine) {
       if (_machine == machine)
             return;
       _machine = machine;
       emit machineChanged();
       parseProperties();
+
+      // Connect all Q_PROPERTY NOTIFY signals of the machine so that
+      // external changes (e.g. GalvoCalibration::applyToMachine) are
+      // reflected in the QML PropertyEditor immediately.
+      if (_machine) {
+      const QMetaObject* meta = _machine->metaObject();
+      for (int i = 0; i < meta->propertyCount(); ++i) {
+      QMetaProperty mp = meta->property(i);
+      if (!mp.hasNotifySignal())
+      continue;
+      QByteArray sig = "2" + mp.notifySignal().methodSignature();
+      connect(_machine, sig, this, SLOT(onMachinePropertyChanged()));
+      }
+      }
+      }
+
+//---------------------------------------------------------
+//   onMachinePropertyChanged
+//    Called when any Q_PROPERTY of the current machine changes
+//    its value (e.g. via GalvoCalibration::applyToMachine).
+//    Refreshes all model rows so QML shows the new values.
+//---------------------------------------------------------
+void MachineModel::onMachinePropertyChanged() {
+      if (_propertyNames.isEmpty())
+            return;
+      QModelIndex first = index(0, 0);
+      QModelIndex last  = index(rowCount() - 1, 0);
+      emit dataChanged(first, last, {PropValueRole, SubValuesRole, ColumnItemsRole});
+      emit machineDataChanged();
       }
 
 //---------------------------------------------------------
 //   parseProperties
 //    Parse the Machine::properties() JSON and build the internal
 //    model rows, analog to InspectorModel::parseProperties().
-
 void MachineModel::parseProperties() {
       beginResetModel();
       _propertyNames.clear();
@@ -99,6 +125,9 @@ void MachineModel::parseProperties() {
                                           if (type == "line") {
                                                 ci.isLine = true;
                                                 ci.name   = "line";
+                                                if (cell.contains("label") && cell["label"].is_string())
+                                                      ci.rowLabel = QString::fromStdString(
+                                                          cell["label"].get<std::string>());
                                                 }
                                           else if (cell.contains("cells") && cell["cells"].is_array()) {
                                                 // Row cell: has sub-cells instead of a name
@@ -147,12 +176,16 @@ void MachineModel::parseProperties() {
                         else if (row.contains("cells") && row["cells"].is_array()) {
                               QStringList subs;
                               bool hasLine = false;
+                              QString lineLabel;
                               for (const auto& cell : row["cells"]) {
                                     std::string type = cell.contains("type") && cell["type"].is_string()
                                                            ? cell["type"].get<std::string>()
                                                            : "";
                                     if (type == "line") {
                                           hasLine = true;
+                                          if (cell.contains("label") && cell["label"].is_string())
+                                                lineLabel =
+                                                    QString::fromStdString(cell["label"].get<std::string>());
                                           continue;
                                           }
                                     if (type == "empty") {
@@ -183,7 +216,7 @@ void MachineModel::parseProperties() {
                                     _columnCounts.append(0);
                                     _columnItems.append(QList<MachineColumnItem> {});
                                     _subPropNames.append(QStringList {});
-                                    _rowLabels.append(QString());
+                                    _rowLabels.append(lineLabel);
                                     }
                               else {
                                     _propertyNames.append("empty");
@@ -222,7 +255,6 @@ void MachineModel::parseProperties() {
 //---------------------------------------------------------
 //   rowCount
 //---------------------------------------------------------
-
 int MachineModel::rowCount(const QModelIndex& parent) const {
       if (parent.isValid())
             return 0;
@@ -234,7 +266,6 @@ int MachineModel::rowCount(const QModelIndex& parent) const {
 //    Read property values from the Machine via the Qt meta-object
 //    system, using read() since Machine is a QObject.
 //---------------------------------------------------------
-
 QVariant MachineModel::data(const QModelIndex& index, int role) const {
       if (!index.isValid() || index.row() >= static_cast<int>(_propertyNames.size()))
             return {};
@@ -333,7 +364,6 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
 //    Write a property value back to the Machine using
 //    write() and emit dataChanged.
 //---------------------------------------------------------
-
 bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int role) {
       if (!index.isValid() || index.row() >= static_cast<int>(_propertyNames.size()))
             return false;
@@ -373,7 +403,6 @@ bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int 
 //---------------------------------------------------------
 //   setSubProperty
 //---------------------------------------------------------
-
 bool MachineModel::setSubProperty(int row, const QString& subName, const QVariant& value) {
       if (!_machine || row < 0 || row >= _propertyNames.size())
             return false;
@@ -406,7 +435,6 @@ bool MachineModel::setSubProperty(int row, const QString& subName, const QVarian
 //---------------------------------------------------------
 //   setColumnProperty
 //---------------------------------------------------------
-
 bool MachineModel::setColumnProperty(int modelRow, const QString& propName, const QVariant& value) {
       if (!_machine || modelRow < 0 || modelRow >= _propertyNames.size())
             return false;
@@ -441,7 +469,6 @@ bool MachineModel::setColumnProperty(int modelRow, const QString& propName, cons
 //    Read any property value from the current Machine by name.
 //    Used by the QML PropertyEditor to evaluate the "enabled" keyword.
 //---------------------------------------------------------
-
 QVariant MachineModel::elementProperty(const QString& name) const {
       if (!_machine || name.isEmpty())
             return {};
@@ -456,7 +483,6 @@ QVariant MachineModel::elementProperty(const QString& name) const {
 //---------------------------------------------------------
 //   roleNames
 //---------------------------------------------------------
-
 QHash<int, QByteArray> MachineModel::roleNames() const {
       QHash<int, QByteArray> roles;
       roles[PropNameRole]    = "propName";
@@ -475,7 +501,6 @@ QHash<int, QByteArray> MachineModel::roleNames() const {
 //   machineTypes
 //    Return the list of available machine type strings.
 //---------------------------------------------------------
-
 QStringList MachineModel::machineTypes() const {
       QStringList result;
       for (const auto& t : ::machineTypes)
@@ -487,7 +512,6 @@ QStringList MachineModel::machineTypes() const {
 //   boardTypes
 //    Return the list of available board type strings.
 //---------------------------------------------------------
-
 QStringList MachineModel::boardTypes() const {
       QStringList result;
       for (const auto& t : ::boardTypes)
@@ -501,7 +525,6 @@ QStringList MachineModel::boardTypes() const {
 //    libpcap can open for live capture.  Uses pcap_findalldevs()
 //    to enumerate all interfaces on the system.
 //---------------------------------------------------------
-
 QStringList MachineModel::ethDevices() const {
       QStringList result;
       pcap_if_t* alldevs = nullptr;

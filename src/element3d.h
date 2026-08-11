@@ -17,13 +17,15 @@
 #include <QColor>
 #include <QMatrix4x4>
 #include <QRectF>
+#include <QPointF>
 #include "macros.h"
 #include "element.h"
 #include "tessgeometry.h"
 #include "painterpath.h"
+#include "clipper.h"
 
-class Recipe;
-Q_DECLARE_OPAQUE_POINTER(Recipe*)
+class LaserMop;
+Q_DECLARE_OPAQUE_POINTER(LaserMop*)
 
 static constexpr double FONT_SCALE    = 0.352778 * .1;
 static constexpr double FONT_SCALE_UP = 10.0;
@@ -42,7 +44,6 @@ Q_DECLARE_METATYPE(LockScaleMode)
 //---------------------------------------------------------
 //   Element3d
 //---------------------------------------------------------
-
 class Element3d : public Element
       {
       Q_OBJECT
@@ -55,7 +56,7 @@ class Element3d : public Element
       // element inherits the LaserLayer from its parent (see
       // effectiveLaserLayer()).  This replaces the old Layer→LaserLayer
       // association via LaserLayer::baseElement.
-      PROPV(Recipe*, laserLayer, nullptr)
+      PROPV(LaserMop*, laserLayer, nullptr)
       PROPV(TessGeometry*, geometry, nullptr)
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
@@ -116,7 +117,7 @@ class Element3d : public Element
       PathList _pathList;
       mutable QMatrix4x4 _matrix;
       int _vertexRevision {0};
-      bool _batching {false}; ///< suppresses vertexRevisionChanged during batch updates
+      bool _batching {false};    ///< suppresses vertexRevisionChanged during batch updates
       bool _snapActiveX {false}; ///< grid snap active on X (for reference-point marker)
       bool _snapActiveY {false}; ///< grid snap active on Y (for reference-point marker)
 
@@ -147,6 +148,7 @@ class Element3d : public Element
 
     public:
       Element3d(ZCam*, Element* parent = nullptr);
+      ~Element3d();
       virtual json toJson() const override;
       virtual void fromJson(const json& json) override;
       virtual void fixup() override;
@@ -221,7 +223,7 @@ class Element3d : public Element
       /// Returns the effective LaserLayer for this element by walking
       /// up the parent chain until a non-null laserLayer is found.
       /// Returns nullptr if no ancestor (including self) has a laserLayer set.
-      Recipe* effectiveLaserLayer() const;
+      LaserMop* effectiveLaserLayer() const;
       QRectF boundingBox() const;
       /// Element-specific content bounding box.  The base
       /// implementation returns an empty rect; elements that carry
@@ -269,12 +271,49 @@ class Element3d : public Element
       void strokeAndFill();
       };
 
+//---------------------------------------------------------
+//   projectPathListToXY
+//    Transform a 2D PathList through the element's globalMatrix()
+//    and project the resulting 3D points onto the z=0 plane.
+//
+//    The globalMatrix() contains the full 3D transformation
+//    (translation, rotation, scale, mirror) of the element and
+//    all its ancestors.  Mapping the 2D path points as
+//    QVector3D(pt.x(), pt.y(), 0) yields the element's position
+//    in project-root (scene) space.  Two projection modes are
+//    supported:
+//
+//      Orthographic (perspective == false, default):
+//          drop z.  The z=0 plane is reproduced 1:1 in mm and
+//          geometry at z != 0 is foreshortened without depth cue.
+//
+//      Perspective (perspective == true):
+//          central projection from a fixed viewpoint onto the z=0
+//          plane.  The viewpoint is the perpendicular foot point
+//          viewCenter = (cx, cy) raised to projectionHeight above
+//          z=0:  eye = (cx, cy, H).  A scene point p = (x, y, z) is
+//          projected radially about the foot point by the scale
+//              s = H / (H - z)
+//          applied to the offset from (cx, cy):
+//              out = (cx, cy) + (p_xy - (cx, cy)) * s .
+//          The z=0 plane maps 1:1 in mm about (cx, cy); only geometry
+//          with z != 0 is perspectively distorted.  Points at or above
+//          the viewpoint height are clamped away from the s -> infinity
+//          pole.
+//
+//    In both modes the result is in project-root coordinate space
+//    (mm) on the z=0 plane — exactly the 2D data the laser needs.
+//    projectionHeight <= 0 falls back to orthographic projection.
+//---------------------------------------------------------
+
+Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective = false,
+                                        double projectionHeight = 0.0, const QPointF& viewCenter = QPointF());
+
 extern void closePath(PathList& _pathList);
 
 //---------------------------------------------------------
 //   RootElement
 //---------------------------------------------------------
-
 class RootElement : public Element3d
       {
       Q_OBJECT

@@ -1600,7 +1600,7 @@ bool import(ZCam* zcam, const QString& path) {
       if (!fixture && !zcam->project()->fixtures().empty())
             fixture = zcam->project()->fixtures().at(0);
       if (fixture && root) {
-            auto* ll = new Recipe(zcam, fixture);
+            auto* ll = new LaserMop(zcam, fixture);
             ll->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
             ll->setExpanded(false);
             root->set_laserLayer(ll);

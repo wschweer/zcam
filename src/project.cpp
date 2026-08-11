@@ -24,6 +24,7 @@
 #include "zcam.h"
 #include "treemodel.h"
 #include "undo.h"
+#include "scriptengine.h"
 #include "logger.h"
 
 #include <QSet>
@@ -62,6 +63,36 @@ void HandleDragCommand::redo() {
       if (!_element)
             return;
       _element->setVertexPos(_handleIndex, _newPos);
+      zcam->setCamDirty(true);
+      }
+
+//-------------------------------------------------------------------
+//   ScriptBindingCommand implementation
+//-------------------------------------------------------------------
+
+void ScriptBindingCommand::undo() {
+      if (!_element || !zcam)
+            return;
+      ScriptEngine* se = zcam->scriptEngine();
+      if (!se)
+            return;
+      if (_oldScript.isEmpty())
+            se->removeBinding(_element, _prop);
+      else
+            se->createBinding(_element, _prop, _comp, _oldScript);
+      zcam->setCamDirty(true);
+      }
+
+void ScriptBindingCommand::redo() {
+      if (!_element || !zcam)
+            return;
+      ScriptEngine* se = zcam->scriptEngine();
+      if (!se)
+            return;
+      if (_newScript.isEmpty())
+            se->removeBinding(_element, _prop);
+      else
+            se->createBinding(_element, _prop, _comp, _newScript);
       zcam->setCamDirty(true);
       }
 
@@ -149,7 +180,7 @@ void Project::changeProperty(Element* element, const QString& propName, const QV
                   propertyMetaType = mp.metaType();
                   if (propertyMetaType.id() == QMetaType::QObjectStar ||
                       (propertyMetaType.id() >= QMetaType::User &&
-                       propertyMetaType.sizeOf() == sizeof(void*))) {
+                          propertyMetaType.sizeOf() == sizeof(void*))) {
                         isNullPointerWrite = true;
                         }
                   }
@@ -254,7 +285,7 @@ void Project::updateCadLayerVisibility() {
       QSet<Group*> referencedLayers;
       if (_fixture) {
             for (const auto c : _fixture->children()) {
-                  auto* ll = qobject_cast<Recipe*>(c);
+                  auto* ll = qobject_cast<LaserMop*>(c);
                   if (ll) {
                         // Walk the Cad subtree to find elements referencing this LaserLayer
                         if (_cad) {
@@ -522,8 +553,7 @@ void AddFixtureCommand::undo() {
 //   AddCameraCommand implementation
 //---------------------------------------------------------
 
-AddCameraCommand::AddCameraCommand(ZCam* zcam, Element* project)
-    : UndoCommand(zcam), _project(project) {
+AddCameraCommand::AddCameraCommand(ZCam* zcam, Element* project) : UndoCommand(zcam), _project(project) {
       _camera = new CameraElement(zcam, nullptr);
       _camera->set_show(false);
       }
@@ -567,8 +597,7 @@ void AddCameraCommand::undo() {
 //   AddGridCommand implementation
 //---------------------------------------------------------
 
-AddGridCommand::AddGridCommand(ZCam* zcam, Element* project)
-    : UndoCommand(zcam), _project(project) {
+AddGridCommand::AddGridCommand(ZCam* zcam, Element* project) : UndoCommand(zcam), _project(project) {
       _grid = new Grid(zcam, nullptr);
       }
 
@@ -613,7 +642,7 @@ void AddGridCommand::undo() {
 
 AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
     : UndoCommand(zcam), _fixture(fixture) {
-      _laserLayer = new Recipe(zcam, nullptr);
+      _laserLayer = new LaserMop(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
       // The user assigns elements to this LaserLayer via the laserLayer property.
       _laserLayer->setName(QStringLiteral("LaserLayer"));
@@ -665,7 +694,8 @@ AddRectangleCommand::AddRectangleCommand(ZCam* zcam, Group* layer, double x, dou
       _rect = new Rectangle(zcam, nullptr);
       _rect->set_size(QVector2D(0.0, 0.0));
       _rect->set_pos(QVector3D(x, y, 0.0));
-      _rect->setColor(QColor("cyan"));
+      if (zcam->config())
+            _rect->setColor(zcam->config()->rectangleColor());
       _rect->set_lineWidth(0.5);
       _rect->set_fill(true);
       _rect->update();
@@ -716,7 +746,8 @@ AddPolygonCommand::AddPolygonCommand(ZCam* zcam, Group* layer, double x, double 
     : UndoCommand(zcam), _layer(layer) {
       _poly = new Polygon(zcam, nullptr);
       _poly->set_pos(QVector3D(x, y, 0.0));
-      _poly->setColor(QColor("cyan"));
+      if (zcam->config())
+            _poly->setColor(zcam->config()->polygonColor());
       _poly->set_lineWidth(0.5);
       _poly->set_fill(true);
       _poly->update();
@@ -768,7 +799,8 @@ AddEllipseCommand::AddEllipseCommand(ZCam* zcam, Group* layer, double x, double 
       _ellipse = new Ellipse(zcam, nullptr);
       _ellipse->set_size(QVector2D(0.0, 0.0));
       _ellipse->set_pos(QVector3D(x, y, 0.0));
-      _ellipse->setColor(QColor("cyan"));
+      if (zcam->config())
+            _ellipse->setColor(zcam->config()->ellipseColor());
       _ellipse->set_lineWidth(0.5);
       _ellipse->set_fill(true);
       _ellipse->update();
@@ -820,7 +852,8 @@ AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y)
       _text = new Text(zcam, nullptr);
       _text->set_text("");
       _text->set_pos(QVector3D(x, y, 0.0));
-      _text->setColor(QColor("green"));
+      if (zcam->config())
+            _text->setColor(zcam->config()->textColor());
       _text->set_fill(true);
       _text->update();
       }
@@ -1199,7 +1232,7 @@ void Project::removeElement(Element* el) {
             // Find LaserLayers in the fixture whose collectElements()
             // includes any element under the removed Layer.
             for (const auto c : _fixture->children()) {
-                  auto ll = qobject_cast<Recipe*>(c);
+                  auto ll = qobject_cast<LaserMop*>(c);
                   if (!ll)
                         continue;
                   // Check if any element in the LaserLayer's collection

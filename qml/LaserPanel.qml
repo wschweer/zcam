@@ -66,8 +66,24 @@ Rectangle {
             to: laserPanel.laser?.estimatedEnd ?? 0
             value: laserPanel.laser?.currentTime ?? 0
             Layout.fillWidth: true
-            enabled: laserPanel.laser?.enabled ?? false
+            enabled: false
             Layout.margins: 10
+
+            // Use a custom handle so the knob can be yellow even when
+            // the slider is disabled (Material would otherwise grey it out).
+            property bool active: laserPanel.laser && (laserPanel.laser.framing || laserPanel.laser.marking)
+
+            handle: Rectangle {
+                x: elapsedTime.leftPadding + elapsedTime.availableWidth * elapsedTime.visualPosition
+                   - width / 2
+                y: elapsedTime.topPadding + elapsedTime.availableHeight / 2 - height / 2
+                implicitWidth: 18
+                implicitHeight: 18
+                radius: 9
+                color: elapsedTime.active ? "yellow" : Material.color(Material.Grey, Material.Shade500)
+                border.width: 1
+                border.color: elapsedTime.active ? "#b8860b" : Material.color(Material.Grey, Material.Shade700)
+            }
             }
 
         RowLayout {
@@ -82,13 +98,13 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.horizontalStretchFactor: 2
                 onClicked: { laserPanel.laser.startFraming()}
-                Material.foreground: "black"
+                Material.foreground: "white"
                 }
             Button {
                 id: startButton
                 Layout.fillWidth: true
                 text: "Marking"
-                Material.foreground: "black"
+                Material.foreground: "white"
                 enabled: laserPanel.laser?.enabled ?? false
                 checked: laserPanel.laser?.marking ?? false
                 onClicked: { laserPanel.laser.startMarking() }
@@ -100,7 +116,7 @@ Rectangle {
             Button {
                 id: stopButton
                 text: "Stop"
-                Material.foreground: "black"
+                Material.foreground: "white"
                 enabled: laserPanel.laser?.enabled ?? false
                 Layout.fillWidth: true
                 onClicked: { laserPanel.laser.stop() }
@@ -145,52 +161,90 @@ Rectangle {
             font.bold: true
             enabled: laserPanel.laser?.enabled ?? false
             }
-        GridLayout {
+        ColumnLayout {
             id: outputPortGrid
-            columns: 16
+            spacing: 2
             Layout.fillWidth: true
             Layout.margins: 5
             enabled: laserPanel.laser?.enabled ?? false
 
-            Repeater {
-                model: 16
-                delegate: ColumnLayout {
-                    spacing: 0
-                    Layout.fillWidth: true
-                    Rectangle {
+            // Row 1: bits 0–7
+            RowLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Repeater {
+                    model: 8
+                    delegate: ColumnLayout {
+                        spacing: 0
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 28
-                        radius: 4
-                        color: laserPanel.laser && ((laserPanel.laser.outputPort >> modelData) & 1)
-                               ? Material.color(Material.Blue, Material.Shade500)
-                               : Material.color(Material.Grey, Material.Shade700)
-                        border.width: 1
-                        border.color: Material.color(Material.Grey, Material.Shade500)
+                        Layout.horizontalStretchFactor: 1
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            radius: 4
+                            color: laserPanel.laser && ((laserPanel.laser.outputPort >> modelData) & 1)
+                                   ? Material.color(Material.Blue, Material.Shade500)
+                                   : Material.color(Material.Grey, Material.Shade700)
+                            border.width: 1
+                            border.color: Material.color(Material.Grey, Material.Shade500)
 
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (laserPanel.laser)
-                                    laserPanel.laser.toggleOutputBit(modelData)
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (laserPanel.laser)
+                                        laserPanel.laser.toggleOutputBit(modelData)
+                                    }
+                                }
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData
+                                color: "white"
+                                font.bold: true
+                                font.pixelSize: 10
                                 }
                             }
-
-                        Label {
-                            anchors.centerIn: parent
-                            text: modelData
-                            color: "white"
-                            font.bold: true
-                            font.pixelSize: 10
-                            }
                         }
-                    Label {
+                    }
+                }
+            // Row 2: bits 8–15
+            RowLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Repeater {
+                    model: 8
+                    delegate: ColumnLayout {
+                        spacing: 0
                         Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignCenter
-                        horizontalAlignment: Text.AlignHCenter
-                        text: modelData
-                        color: Material.foreground
-                        font.pixelSize: 9
+                        Layout.horizontalStretchFactor: 1
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            radius: 4
+                            color: laserPanel.laser && ((laserPanel.laser.outputPort >> (modelData + 8)) & 1)
+                                   ? Material.color(Material.Blue, Material.Shade500)
+                                   : Material.color(Material.Grey, Material.Shade700)
+                            border.width: 1
+                            border.color: Material.color(Material.Grey, Material.Shade500)
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (laserPanel.laser)
+                                        laserPanel.laser.toggleOutputBit(modelData + 8)
+                                    }
+                                }
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData + 8
+                                color: "white"
+                                font.bold: true
+                                font.pixelSize: 10
+                                }
+                            }
                         }
                     }
                 }
@@ -204,43 +258,72 @@ Rectangle {
             font.bold: true
             enabled: laserPanel.laser?.enabled ?? false
             }
-        GridLayout {
+        ColumnLayout {
             id: inputPortGrid
-            columns: 16
+            spacing: 2
             Layout.fillWidth: true
             Layout.margins: 5
             enabled: laserPanel.laser?.enabled ?? false
 
-            Repeater {
-                model: 16
-                delegate: ColumnLayout {
-                    spacing: 0
-                    Layout.fillWidth: true
-                    Rectangle {
+            // Row 1: bits 0–7
+            RowLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Repeater {
+                    model: 8
+                    delegate: ColumnLayout {
+                        spacing: 0
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 28
-                        radius: 4
-                        color: laserPanel.laser && ((laserPanel.laser.inputPort >> modelData) & 1)
-                               ? Material.color(Material.Green, Material.Shade500)
-                               : Material.color(Material.Grey, Material.Shade700)
-                        border.width: 1
-                        border.color: Material.color(Material.Grey, Material.Shade500)
+                        Layout.horizontalStretchFactor: 1
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            radius: 4
+                            color: laserPanel.laser && ((laserPanel.laser.inputPort >> modelData) & 1)
+                                   ? Material.color(Material.Green, Material.Shade500)
+                                   : Material.color(Material.Grey, Material.Shade700)
+                            border.width: 1
+                            border.color: Material.color(Material.Grey, Material.Shade500)
 
-                        Label {
-                            anchors.centerIn: parent
-                            text: modelData
-                            color: "white"
-                            font.bold: true
-                            font.pixelSize: 10
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData
+                                color: "white"
+                                font.bold: true
+                                font.pixelSize: 10
+                                }
                             }
                         }
-                    Label {
+                    }
+                }
+            // Row 2: bits 8–15
+            RowLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Repeater {
+                    model: 8
+                    delegate: ColumnLayout {
+                        spacing: 0
                         Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignCenter
-                        horizontalAlignment: Text.AlignHCenter
-                        text: modelData
-                        color: Material.foreground
-                        font.pixelSize: 9
+                        Layout.horizontalStretchFactor: 1
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            radius: 4
+                            color: laserPanel.laser && ((laserPanel.laser.inputPort >> (modelData + 8)) & 1)
+                                   ? Material.color(Material.Green, Material.Shade500)
+                                   : Material.color(Material.Grey, Material.Shade700)
+                            border.width: 1
+                            border.color: Material.color(Material.Grey, Material.Shade500)
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData + 8
+                                color: "white"
+                                font.bold: true
+                                font.pixelSize: 10
+                                }
+                            }
                         }
                     }
                 }

@@ -71,6 +71,8 @@ Polygon::Polygon(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("");
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
+      if (w->config())
+            setColor(w->config()->polygonColor());
       }
 
 Polygon::~Polygon() {
@@ -197,7 +199,7 @@ bool Polygon::isVertex(int idx) const {
       // When a segment is selected, only show handles for the vertices
       // belonging to that segment (its two endpoints and, for curve
       // segments, its control points).
-      PPType t = painterPath[idx].type;
+      PPType t               = painterPath[idx].type;
       bool isVertexOrControl = t == PPType::MoveTo || t == PPType::LineTo || t == PPType::CurveTo ||
                                t == PPType::CurveToData1 || t == PPType::CurveToData2;
       if (isVertexOrControl)

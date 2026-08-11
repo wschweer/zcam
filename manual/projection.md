@@ -1,0 +1,176 @@
+# Perspektivische Projektion für das Lasern (WYSIWYG)
+
+Stand: 2026 — **IMPLEMENTIERT** (Option A: einstellbar als Property von `Cam`).
+Referenz-Implementierung: `projectPathListToXY()` in `src/element3d.cpp`.
+
+## Anforderungen (vom Benutzer festgelegt)
+
+1. **Der Laser bekommt ausschließlich 2D-Koordinaten in mm.**
+   Er hat nichts mit Projektion/Galvo-Optik zu tun. Die Projektion ist eine
+   reine Darstellungseigenschaft.
+
+2. **Elemente, die exakt auf der z=0-Ebene liegen, bleiben 1:1 in mm
+   unverändert.** Die mm-Größe auf z=0 darf sich nicht ändern.
+
+3. **Nur Geometrie mit z ≠ 0** (z. B. ein um die Y-Achse gedrehter Text)
+   **verändert sich durch die perspektivische Projektion** — sie wird
+   verzerrt, so wie sie aus der Blickrichtung erscheint.
+
+4. **Was gelasert wird = was man in der Draufsicht sieht.** Die Perspektive
+   bildet die z ≠ 0-Geometrie „von oben" als Zentralprojektion auf die
+   z=0-Ebene ab.
+
+5. **„Feste Skalierung":** Unabhängig von Zoom/Pan und der frei rotierbaren
+   3D-Ansicht. Ergebnis immer in mm auf z=0.
+
+## Kern-Transformation
+
+Für jeden Punkt `p = (x, y, z)` in Szene-mm, mit Blickpunkt
+`eye = (cx, cy, H)`:
+
+```
+orthografisch:   (x, y, z)  →  (x, y)
+perspektivisch:  out_xy = (cx, cy) + (p_xy − (cx, cy)) · s,   s = H / (H − z)
+```
+
+mit `H` = Höhe des Blickpunkts über z=0 und `viewCenter = (cx, cy)` = senkrechter
+Fußpunkt des Blickpunkts auf der Arbeitsebene.
+
+**Wichtig:** Die Skalierung erfolgt **radial um den Fußpunkt `(cx, cy)`**, nicht
+um den Koordinaten-Ursprung `(0,0)`. Das war der Fehler der ersten Umsetzung:
+Skalierung um den Ursprung verzerrt die Geometrie versetzt relativ zur
+Kamera-Darstellung (siehe Bild: schwarz ≠ gelb). Erst die Skalierung um den
+Fußpunkt der Blickrichtung (`out = c + (p_xy − c)·s`) entspricht der
+GPU-Zentralprojektion der Canvas-Kamera.
+
+Eigenschaften:
+- z = 0  → s = 1  → **z=0-Ebene bleibt 1:1 in mm** ✔ (Anforderung 2)
+- z ≠ 0  → s ≠ 1  → erhöhte/rotierte Geometrie wird verzerrt ✔ (Anforderung 3)
+- Kein Bezug zu Galvo/Optik/Zoom ✔ (Anforderungen 1, 5)
+
+Dies ist die einzige Transformation, die alle Anforderungen gleichzeitig
+erfüllt. Eine echte Screen-Space-Projektion (NDC + Viewport, FOV, Zoom) würde
+die z=0-Ebene zoom-abhängig skalieren und verletzt Anforderung 2 — sie kommt
+für den Laser nicht in Frage.
+
+## Woher kommt `H`? — Entscheidung: Option A (fixe Blickhöhe, einstellbar)
+
+`H` ist ein konstanter, konfigurierbarer Wert — **keine** Galvo-Objektivhöhe.
+Je kleiner `H`, desto stärker der perspektivische Effekt; je größer, desto
+ortho-ähnlicher. Gewählt wurde **Option A** (fixe, einstellbare Blickhöhe als
+Property von `Cam`), nicht Option B (Live-Kamerahöhe aus der View), weil die
+QML-Kamera praktisch immer auf ~1000 mm Höhe steht (Zoom läuft über
+`root.scale`, nicht über Kamerahöhe) und Option B damit bei normaler Ansicht
+praktisch orthografisch wäre.
+
+## Implementierung
+
+### 1. `Cam`: neue Properties `perspective`, `projectionHeight`, `viewCenter` (cam.h)
+
+```cpp
+PROPV(bool, perspective, false)            ///< Zentralprojektion an/aus
+PROPV(double, projectionHeight, 1000.0)    ///< Blickpunkt-Höhe [mm] über z=0
+PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0))  ///< Fußpunkt (x,y) [mm] auf z=0
+```
+
+- Inspector-Zeilen „Projection" (Checkbox `perspective`, Feld `projectionHeight`)
+  und „View Center" (`viewCenter`, vector2d).
+- Serialisierung über das bestehende `properties()`-JSON
+  (`parseAllPropertyNames`, Typen `bool`/`float`/`vector2d`).
+- Im Constructor werden `perspectiveChanged`/`projectionHeightChanged`/
+  `viewCenterChanged` mit `zcam->setCamDirty(true)` verbunden.
+- Default: `perspective = false` → unverändertes orthografisches Verhalten
+  (abwärtskompatibel), `projectionHeight = 1000` mm, `viewCenter = (0,0)`.
+
+**Bezug zur Canvas-Kamera (View3DPanel.qml):** Die QML-`camera2.position` ist
+`(cx·scale, cy·scale, H)` in Szenen-Einheiten, wobei die QML `root.scale` den
+Zoom liefert und die Geometrie in mm (root-lokal) liegt. Der senkrechte
+Fußpunkt der Kamera auf z=0 in root-lokalen mm ist also
+`viewCenter = (camera2.position.x / root.scale, camera2.position.y / root.scale)`.
+Für die Standard-Draufsicht ist das der Workspace-Mittelpunkt
+`(maxTravel.x/2, maxTravel.y/2)`. Um die projizierte Cam-Geometrie exakt mit
+der gelben Kamera-Darstellung zu überlagern, `viewCenter` auf diesen Wert
+setzen (nicht `(0,0)`).
+
+### 1b. „Grab Camera View" — Kamera EXAKT übernehmen
+
+Statt `viewCenter`/`projectionHeight` von Hand zu setzen, gibt es im
+Cam-Inspector neben „Perspective" den Button **„Grab"**.
+
+**Wichtig:** Die Werte werden jetzt **EXAKT** aus der GPU-Projektion
+abgeleitet, nicht mehr aus `camera2.position` approximiert:
+
+- Die QML-3D-Ansicht (View3DPanel.qml) berechnet **wie screenToScene()/**
+  **updateGridViewport()** über `cam.mapFromViewport()` +
+  `root.mapPositionFromScene()`:
+  - `viewCenter` (cx, cy) = Schnittpunkt des Mittelstrahls (viewport 0.5, 0.5)
+    mit der z=0-Ebene, in **root-lokalen mm**,
+  - `projectionHeight` = z-Komponente des Kamera-Auges in **root-lokalen mm**.
+- `ZCam.updateViewCamera(cx, cy, h)` publiziert beide in den Singleton
+  (transienter View-Zustand `viewCameraCenter`/`viewCameraHeight`).
+- `Cam::grabCameraView()` (Q_INVOKABLE) übernimmt sie direkt (→ camDirty)
+  und ruft `refreshCam()`.
+
+Das reproduziert die echte GPU-Projektion (inkl. FOV, Aspect, Clip,
+root-Scale und -Rotation) statt einer Näherung. Die projizierte
+Laser-Geometrie stimmt daher exakt mit der Kamera-Darstellung überein —
+sofern die Canvas-Ansicht eine z=0-Top-Down-Ansicht ist.
+
+**Hinweis zur Verzeichnungsstärke:** Die perspektivische Verzerrung hängt von
+`projectionHeight` ab (s = H/(H−z)). Die QML-Kamera steht meist auf ~1000 mm
+→ s ≈ 1 → fast orthografisch. Ein starker perspektivischer Canvas-Effekt
+entsteht überwiegend durch die freie **Rotation** der Szene, nicht durch die
+Kamerahöhe.
+
+- Implementierung: `cam.h/.cpp` (`grabCameraView`), `zcam.h/.cpp`
+  (`updateViewCamera` + `viewCameraCenter/Height`), Property-Typ `cameraCapture`
+  in `cam.h`-JSON + Button-Delegate(s) in `PropertyEditor.qml`.
+
+### 2. `projectPathListToXY()` erweitert (element3d.h / element3d.cpp)
+
+```cpp
+PathsD projectPathListToXY(const Element3d* element, bool perspective = false,
+                           double projectionHeight = 0.0);
+```
+
+Perspektivischer Zweig nach `matrix.map()`:
+
+```cpp
+double denom = H - double(r.z());
+if (denom < zEps) denom = zEps;   // 0.1 mm — Pol-Klemme
+double s = H / denom;
+cp.push_back({cx + (r.x() - cx) * s, cy + (r.y() - cy) * s});
+```
+
+`perspective == false` oder `projectionHeight <= 0` → orthografisch (z droppen),
+1:1 wie bisher. Die Klemme `zEps` verhindert, dass Punkte nahe/über der
+Blickpunkt-Höhe gegen unendlich skalieren.
+
+### 3. Aufrufer verdrahtet (lesen `perspective`/`projectionHeight`/`viewCenter` vom Cam)
+
+- `recipe.cpp` `collectLayerPath()`        — Layer-Polygone (z. B. convexHull)
+- `recipe.cpp` `processTileLines()`        — Fill/Wobble/Linien (Anzeige)
+- `recipe.cpp` `collectLaserPath()`        — eigentlicher Laser-Pfad
+- `fixture.cpp` `Fixture::size()`          — Tile-Größe / Panel-Raster
+
+### Was sich NICHT ändert
+
+- **Fill/Hatch** (`createFill`, `Clipper::hatch`): läuft auf den projizierten
+  2D-Polygonen mit konstantem `interval` → physikalisch konstante Dichte.
+- Panel-Raster, Framing, Konvexhülle, BoundingBox: unverändert — arbeiten
+  auf den bereits projizierten 2D-Daten.
+- Die frei rotierbare 3D-Ansicht (View3DPanel.qml) bleibt ein reines
+  Darstellungs-Feature, entkoppelt vom Laser-Pfad.
+
+## Hinweis zur Verwendung
+
+- `perspective` einschalten, wenn Objekte z ≠ 0 haben (um X/Y rotierte Texte,
+  BREP-Volumen) und als perspektivische Draufsicht gelasert werden sollen.
+- `projectionHeight` klein wählen (z. B. 50–200 mm) für einen deutlich
+  sichtbaren perspektivischen Effekt; groß (≥ 1000 mm) für fast orthografisch.
+- `viewCenter` auf den Fußpunkt der Blickrichtung setzen — typischerweise der
+  Mittelpunkt des angeschauten Bereichs (z. B. Workspace-Mitte
+  `(maxTravel.x/2, maxTravel.y/2)`). Nur dann stimmt die projizierte
+  Cam-Geometrie mit der Kamera-Darstellung auf dem Canvas überein.
+- Flache Elemente (z = 0) sind von der Perspektive unberührt (s = 1) und
+  bleiben maßstabsgetreu in mm.

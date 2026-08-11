@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "brepocct.h"   // must come before Qt / project headers
+#include "brepocct.h" // must come before Qt / project headers
 
 #include <QRectF>
 #include <QString>
@@ -55,97 +55,100 @@ class BrepElement : public Element3d
     protected:
       inline static constexpr std::string_view _properties {
          R"json({
-    "class": "BrepElement",
-    "rows": [
-        {
-            "label": "File",
-            "cells": [
-                {
-                    "name": "brepFilePath",
-                    "type": "string",
-                    "sublabel": "Path"
-                }
-            ]
-        },
-        {
-            "label": "Visibility",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "show"
-                },
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "burn"
-                }
-            ]
-        },
-        {
-            "label": "Pos.",
-            "cells": [
-                {
-                    "name": "pos",
-                    "type": "vector3d",
-                    "unit": "mm",
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Rot.",
-            "cells": [
-                {
-                    "name": "rot",
-                    "type": "vector3d",
-                    "unit": "°",
-                    "min": 0.0,
-                    "max": 360,
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Scale",
-            "cells": [
-                {
-                    "name": "scale",
-                    "type": "scale",
-                    "min": 0.001,
-                    "max": 1000,
-                    "default": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                }
-            ]
-        }
-    ]
-})json"};
+                  "class": "BrepElement",
+                  "rows": [
+                    {
+                      "label": "File",
+                      "cells": [
+                        {
+                          "name": "brepFilePath",
+                          "type": "string",
+                          "sublabel": "Path"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Visibility",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "show"
+                        },
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "burn"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "scriptable": true,
+                          "min": 0.001,
+                          "max": 1000,
+                          "default": [
+                            1.0,
+                            1.0,
+                            1.0
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                      })json"};
 
-      BrepGeometry* _brepGeometry { nullptr };
-      BrepEdgeGeometry* _edgeGeometry { nullptr };
-      QString _sourcePath;         ///< file path of imported .brep file
-      bool _hasShape { false };    ///< true if geometry is loaded
-      bool _hasPolyline { false }; ///< true when a 2D outline was built
-      PathList _polylinePathList;  ///< 2D outline from the brep edges
-      QRectF _worldBBox;           ///< cached world-space bounding box
-      QVector3D _meshMin;          ///< cached local mesh bounds (all axes, incl. z)
+      BrepGeometry* _brepGeometry {nullptr};
+      BrepEdgeGeometry* _edgeGeometry {nullptr};
+      QString _sourcePath;        ///< file path of imported .brep file
+      bool _hasShape {false};     ///< true if geometry is loaded
+      bool _hasPolyline {false};  ///< true when a 2D outline was built
+      PathList _polylinePathList; ///< 2D outline from the brep edges
+      QRectF _worldBBox;          ///< cached world-space bounding box
+      QVector3D _meshMin;         ///< cached local mesh bounds (all axes, incl. z)
       QVector3D _meshMax;
 
       // Tessellation parameters (OCCT defaults are quite coarse)
-      double _deflection {0.1};  ///< linear deflection (mm)
-      double _angle {0.5};       ///< angular deflection (rad)
+      double _deflection {0.1}; ///< linear deflection (mm)
+      double _angle {0.5};      ///< angular deflection (rad)
 
     public:
       BrepElement(ZCam*, Element* parent = nullptr);
@@ -158,17 +161,14 @@ class BrepElement : public Element3d
       QString brepFilePath() const { return _sourcePath; }
       BrepGeometry* brepGeometry() const { return _brepGeometry; }
       BrepEdgeGeometry* edgeGeometry() const { return _edgeGeometry; }
-
       bool loadFile(const QString& path);
       bool insertIntoProject(ZCam* zcam, Element* parent, int row);
-
       // The element renders an actual shape on the 3D canvas,
       // so it can be picked and dragged there (the base class
       // defaults both to false, which would hide it from the
       // bounding-box picker).
       Q_INVOKABLE virtual bool visible() const override { return true; }
       Q_INVOKABLE bool draggable() const override { return true; }
-
       // Returns the cached local bounding box (updated by loadFile()
       // from the tessellated mesh bounds).  Overrides the base
       // implementation, which would fall back to childrenBoundingBox()
@@ -192,7 +192,6 @@ class BrepElement : public Element3d
       /// elements.
       virtual void updateSelectionGeometry() override;
       QString sourcePath() const { return _sourcePath; }
-
       // Rebuild the GPU geometry and the cached bounding boxes from
       // the source file.  The canvas calls update() whenever the
       // scene is (re)populated — including after a project load, so
@@ -208,15 +207,14 @@ class BrepElement : public Element3d
             // re-renders when the content changes.
             updateSelectionGeometry();
             }
-
       virtual json toJson() const override;
       virtual void fromJson(const json& data) override;
       virtual void fixup() override;
 
       // Static helpers used by the import / boundingBox entry points.
       static bool loadShapeFromFile(const QString& path, TopoDS_Shape& shape);
-      static bool buildPolylineFromShape(const TopoDS_Shape& shape, double deflection,
-                                         PathList& pathList, QRectF& worldBBox);
-      static bool computeMeshBounds(const TopoDS_Shape& shape, double deflection, double angle,
-                                    QVector3D& bMin, QVector3D& bMax);
+      static bool buildPolylineFromShape(
+          const TopoDS_Shape& shape, double deflection, PathList& pathList, QRectF& worldBBox);
+      static bool computeMeshBounds(
+          const TopoDS_Shape& shape, double deflection, double angle, QVector3D& bMin, QVector3D& bMax);
       };

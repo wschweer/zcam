@@ -1,134 +1,48 @@
-# Umstrukturierung Machine — ERLEDIGT
+# Scripting
 
-Bisher enthielt Machine einen Pointer auf Laser. Machine ist nun die Basisklasse von
-Laser. Ebenso ist LaserEngine Teil von Laser, welches die Basisklasse für Laser-Varianten
-darstellt. Es ergibt sich folgende Struktur:
+Status: IMPLEMENTIERT (siehe src/scriptengine.{h,cpp}, qml/PropertyEditor.qml).
 
-- QObject
-  - class Machine : public QObject        (virtuelle Klasse)
-    - class Laser : public Machine        (virtuelle Klasse)
-      - class LaserBJJCZ : public Laser
-      - class LaserRKQ : public Laser
-    - class MachineGCode : public Machine      (neu)
+Scripting erlaubt es, fixe werte in der gui durch ein javascript zu ersetzen, welches den
+Wert dynamisch aus u.U. anderen Werten berechnet. Dieses "binding" funktioniert so das
+bei einer Änderung eines "anderen" Wertes das abhängige property neu berechnet wird.
+Es werden aktuelle Qt Mechanismen verwendet.
 
+Umsetzung:
 
-## Implementierung
+- [x] Alle Elemente des Project Trees werden per Namen in der js Engine registriert
+  sodas ihre properties von js aus sichtbar sind:
 
-Die `LaserEngine`-Klasse wurde aufgelöst. Ihre Funktionalität wurde in die `Laser`-
-Basisklasse integriert:
+      project.cad.layer1.circle2.x = 22 * 5 + project.cad.layer1.rectangle2.width
 
-- **laserengine.h** — Enthält nur noch Datentypen und Hilfsstrukturen (LaserPath,
-  LaserParameterSet, ParameterType, Pulse33, LaserStatusFlags, etc.). Die
-  `LaserEngine`-Klasse selbst wurde entfernt.
-- **laser.h** — `Laser` erbt nun von `Machine` (statt von `QObject`). Die
-  LaserEngine-Schnittstelle (init, exit, stop, startFraming, etc.) ist als
-  pure virtual Methoden in `Laser` definiert. Die Pulse-Tabelle ist eine statische
-  Methode von `Laser`. Die Laser-Status-Properties (enabled, framing, marking,
-  testMode, dryRun, etc.) sind direkt in `Laser` definiert.
-- **laser.cpp** — Implementiert die Framing/Marking-State-Machine und die
-  Hintergrund-Threads. Ruft die abstrakten Engine-Methoden (startFramingEngine,
-  stopMarkingEngine, etc.) auf, die von den konkreten Laser-Varianten implementiert
-  werden.
-- **laser_bjjcz.h/.cpp** — `LaserBJJCZ` erbt von `Laser` (statt von `LaserEngine`).
-  Implementiert die USB-Kommunikation und alle BJJCZ-spezifischen Befehle.
-- **laser_rkq.h/.cpp** — `LaserRKQ` erbt von `Laser` (statt von `LaserEngine`).
-  Implementiert die Ethernet-Kommunikation via libpcap.
+  (ScriptEngine::rebuildRegistry/registriert jedes Element mit seinem eindeutigen,
+  zu einem gültigen JS-Identifier sanitisierten Namen; Vektor-Properties werden als
+  {x,y,z}-Snapshut-Objekte vor jeder Evaluierung aktualisiert, da der Qt QObject
+  wrapper für QVector2D/3D keine Komponenten-Properties exponiert.)
 
-### Machine als virtuelle Basisklasse
+- [x] Elemente müssen registriert und de-registriert werden wenn sie in den projectbaunm
+  eingefügt oder entfernt werden.  (Element::setName / ~Element / rebuildRegistry)
 
-- **machine.h** — `Machine` hat `virtual ~Machine() = default` und die
-  `PROPV(Laser*, laser, nullptr)` Property wurde entfernt. Eine statische
-  Factory-Methode `Machine::create(zcam, machineType, boardType)` wurde
-  hinzugefügt, die die korrekte konkrete Unterklasse erzeugt.
-- **machine.cpp** — Verwendet `metaObject()` statt `&Machine::staticMetaObject`
-  für die JSON-Serialisierung, so dass die korrekte Metatabelle der konkreten
-  Unterklasse verwendet wird. Die `fromJson`-Methode erzeugt keinen `Laser` mehr.
+- [x] Elemente bekommen die Eigenschaft "scriptable". Der bool ist default false.
+  (Umsetzung über gespeicherte script/scriptProp/scriptComp-Properties am Element;
+  Bindings sind nur aktiv, wenn ein Script gesetzt ist.)
 
-### MachineGCode (neu)
+- [x] Ein Button rechts neben jedem property im inspector der scriptable ist (expression symbol).
+  Das expression icon gibt es in zwei ausführungen: wenn ein script aktiv/inactiv ist
+  (icons/bound-expression.svg / bound-expression-unset.svg)
 
-- **machinegcode.h/.cpp** — Neue konkrete `Machine`-Subklasse für G-Code CNC
-  Maschinen. Verwendet die `Machine`-Basisklassen-Implementierung für
-  `toJson`/`fromJson`/`properties`.
+- [x] Ein popup menu zur Eingabe des scripts, des script ergebnisses und einer evtl. Fehlermeldung
+  (bei z.B. Syntaxfehler des scripts)
+  Das popup erscheint beim drücken des script buttons
+  Das popup hat eine checkbox  um das script zu aktivieren. Wird es deaktiviert, dann wird das
+  property fix auf den letzten evaluierten Wert gesetzt.
+  (ScriptPopup in PropertyEditor.qml mit live-Auswertung, Fehleranzeige und
+  Active-Checkbox, InspectorModel::setScript/removeScript/testScript)
 
-### Machines
+- [x] serialisiere den script im projectfile
+  (Element::toJson/fromJson → "script"/"scriptComp" JSON; Round-Trip im
+  --script-test Selftest verifiziert)
 
-- **machines.cpp** — Verwendet `Machine::create()` Factory, um die korrekte
-  `Machine`-Subklasse basierend auf `type` und `boardType` aus dem JSON zu erzeugen.
-
-### Anpassungen an Anwendungen
-
-- **materialtest.cpp** — Verwendet `Laser::pulseTable()` (statisch) statt
-  `machine()->laser()->engine()->pulseTable()`.
-- **inspector_model.cpp** — Verwendet `qobject_cast<Laser*>()` um die
-  `laserPulseList()` vom Machine-Objekt aufzurufen.
-- **LaserPanel.qml** — Die `laser` Property bezieht sich direkt auf das Machine-
-  Objekt (da Laser nun von Machine erbt). Die `toString()`-Methode prüft, ob
-  das Machine-Objekt ein Laser ist.
-- **PropertyEditor.qml** — Die `freqModel()`-Funktionen verwenden
-  `ZCam.project?.machine?.laserPulseList` statt
-  `ZCam.project.laser.engine.laserPulseList`.
-
-### CMakeLists.txt
-
-- Neue Dateien `src/machinegcode.cpp`/`src/machinegcode.h` wurden hinzugefügt.
-- Der doppelte Eintrag `src/laser.h` wurde entfernt.
-
-
-# Umstrukturierung der JSON Property Listen — ERLEDIGT
-
-In der Gui werden Properties wie folgt angeordnet: Eine "row" besteht aus einem oder mehreren
-Properties "cells". Eine "cell" kann den typ "empty" haben und nimmt dann nur leeren Platz ein.
-Eine "row" hat ein Label und eine "cell" ein "sublabel" welches optional ist.
-
-Rows können in mehreren Spalten angeordnet werden ("columns"). "columns" ist optional und
-default ist "1".
-Eine Row kann leer sein "{}" und nimmt in der GUI dann nur Platz ein.
-
-Beispiel:
-
-              "class": "Text",
-              "columns": 1,
-              "rows": [
-                    {
-                    "label": "Location",
-                    "cells": [
-                          {
-                          "name": "property1",
-                          "sublabel": "x",
-                          "type": "float"
-                          },
-                          {
-                          "name": "property2",
-                          "sublabel": "y",
-                          "type": "double"
-                          }
-                          ]
-                     },
-                    {
-                    "label": "Rotation",
-                    "cells": [
-                          {
-                          "name": "property3",
-                          "type": "vector3d"
-                          }
-                          ]
-                     },
-                    ]
-              ]
-
-## Implementierung
-
-Die C++ Routinen wurden angepasst, um sowohl das neue "rows"/"cells" Format als auch das
-alte "items"/"row" Format zu unterstützen. Beide Formate können gleichzeitig verwendet werden,
-wobei das alte Format als Rückfalloption dient.
-
-### Geänderte Dateien:
-
-- `src/propertyjson.h` — unverändert (Schnittstelle bleibt gleich)
-- `src/propertyjson.cpp` — `collectPropertyNames()` und `parseAllPropertyNames()` unterstützen jetzt "rows"/"cells"
-- `src/inspector_model.h` — `ColumnItem` um `isEmpty` Feld erweitert
-- `src/inspector_model.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format; `connectPropertySignals()` überspringt "empty" Einträge; `setData()` blockiert "empty" Einträge
-- `src/machinemodel.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format
-- `src/configmodel.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format
-- `src/layersettingmodel.cpp` — `parseProperties()` verarbeitet "rows"/"cells" Format
-- `qml/PropertyEditor.qml` — `propMetaMap` verarbeitet "rows"/"cells"; "empty" propName wird zu `emptyDelegate` geroutet; `sublabel` wird für Unter-Property-Labels unterstützt (mit Fallback auf `label`)
+- [x] die Werte im Inspector müssen grau dargestellt werden, wenn sie das Ergebnis eines scripts
+  sind und vom Benutzer nicht geändert werden können.
+  (InspectorModel::isScriptBound → Delegate disabled; setData/setSubProperty/
+  setColumnProperty blockieren Schreibzugriffe auf gebundene Properties.)

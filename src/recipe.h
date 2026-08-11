@@ -27,7 +27,7 @@
 //    - material test can override up to two parameters
 //---------------------------------------------------------
 
-class Recipe : public Element3d
+class LaserMop : public Element3d
       {
       Q_OBJECT
       QML_ELEMENT
@@ -50,7 +50,7 @@ class Recipe : public Element3d
       PROPV(bool, showMoves, true)
 
       inline static constexpr std::string_view _properties {R"({
-    "class": "Recipe",
+    "class": "Mop",
     "rows": [
         {
             "label": "State",
@@ -70,7 +70,7 @@ class Recipe : public Element3d
             ]
         },
         {
-            "label": "Recipe",
+            "label": "Mop",
             "cells": [
                 {
                     "name": "recipe",
@@ -94,6 +94,7 @@ class Recipe : public Element3d
                 {
                     "name": "kerfOffset",
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 0.001,
                     "default": 0.03
@@ -110,6 +111,7 @@ class Recipe : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "default": 0.0,
                     "name": "overrideValue1",
                     "sublabel": "value"
@@ -126,6 +128,7 @@ class Recipe : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "default": 0.0,
                     "name": "overrideValue2",
                     "sublabel": "value"
@@ -150,19 +153,19 @@ class Recipe : public Element3d
             ]
         }
     ]
-            })"};
+                  })"};
 
       /// Process one tile's geometry through the recipe (fill, wobble, lines)
       /// and return raw line segments without panel-grid offsets.
       Clipper2Lib::PathsD processTileLines() const;
 
     public:
-      Recipe(ZCam*, Element* parent = nullptr);
-      ~Recipe() {}
+      LaserMop(ZCam*, Element* parent = nullptr);
+      ~LaserMop() {}
       /// No-op: LaserLayer no longer fills its own _geometry.
       /// Display geometry is collected by Cam::updateCam().
       void update(int flags = -1) override {}
-      virtual QString typeName() override { return QStringLiteral("recipe"); }
+      virtual QString typeName() override { return QStringLiteral("laserMop"); }
       virtual const std::string_view properties() const override { return _properties; }
       // LaserLayer elements can be deleted from the project tree.
       static constexpr bool s_deletable = true;

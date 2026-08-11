@@ -26,7 +26,7 @@ class Cam;
 class Group;
 class Element3d;
 class Fixture;
-class Recipe;
+class LaserMop;
 class Rectangle;
 class Polygon;
 class Ellipse;
@@ -36,7 +36,8 @@ class Text;
 //   UndoStack
 //---------------------------------------------------------
 
-class UndoStack : public QObject {
+class UndoStack : public QObject
+      {
       Q_OBJECT
       QML_ELEMENT
       QML_UNCREATABLE("no")
@@ -45,17 +46,17 @@ class UndoStack : public QObject {
       Q_PROPERTY(bool canRedo READ canRedo NOTIFY undoChanged)
       Q_PROPERTY(bool dirty READ dirty NOTIFY undoChanged)
 
-      UndoCommand* curCmd { nullptr };
-      QList<UndoCommand*> macroStack;  ///< stack of parent macros for nesting
+      UndoCommand* curCmd {nullptr};
+      QList<UndoCommand*> macroStack; ///< stack of parent macros for nesting
       QList<UndoCommand*> list;
-      int curIdx   { 0 };
-      int cleanIdx { 0 };
-      bool _active { true };   // don't record commands if not active
-      bool inUndoRedo { false };
+      int curIdx {0};
+      int cleanIdx {0};
+      bool _active {true}; // don't record commands if not active
+      bool inUndoRedo {false};
 
       ZCam* zcam;
 
-   signals:
+    signals:
       void undoChanged();
       void dirtyChanged();
 
@@ -69,12 +70,23 @@ class UndoStack : public QObject {
       void push(UndoCommand*); // push & execute
       void push1(UndoCommand*);
       void pop();
-      void setClean()      { cleanIdx = curIdx; emit dirtyChanged(); }     // this is set by project->save()
+      void setClean() {
+            cleanIdx = curIdx;
+            emit dirtyChanged();
+            } // this is set by project->save()
+      /// Mark the project as dirty by decrementing cleanIdx so that
+      /// dirty() returns true.  Used for changes that don't go
+      /// through the undo stack (e.g. script active toggle).
+      void markDirty() {
+            if (cleanIdx == curIdx) {
+                  cleanIdx = -1;
+                  emit dirtyChanged();
+                  }
+            }
       bool canUndo() const { return curIdx > 0; }
       bool canRedo() const { return curIdx < list.size(); }
-      bool dirty() const   { return cleanIdx != curIdx; }
+      bool dirty() const { return cleanIdx != curIdx; }
       bool isActive() const { return curCmd != nullptr; }
-
       Q_INVOKABLE void undo();
       Q_INVOKABLE void redo();
       };
@@ -83,7 +95,8 @@ class UndoStack : public QObject {
 //   UndoCommand
 //---------------------------------------------------------
 
-class UndoCommand {
+class UndoCommand
+      {
       QList<UndoCommand*> childList;
 
     protected:
@@ -96,10 +109,9 @@ class UndoCommand {
       virtual ~UndoCommand();
       virtual void undo();
       virtual void redo();
-
       void appendChild(UndoCommand* cmd) { childList.append(cmd); }
-      UndoCommand* removeChild()         { return childList.takeLast(); }
-      int childCount() const             { return childList.size(); }
+      UndoCommand* removeChild() { return childList.takeLast(); }
+      int childCount() const { return childList.size(); }
       void unwind();
       virtual void cleanup(bool undo);
       virtual std::string description() const { return "?"; }
@@ -119,11 +131,14 @@ class PropertyChangeCommand : public UndoCommand
       QVariant _newValue;
 
     public:
-      PropertyChangeCommand(ZCam* zc, Element* el, const std::string& n, const QVariant& ov, const QVariant& nv)
+      PropertyChangeCommand(
+          ZCam* zc, Element* el, const std::string& n, const QVariant& ov, const QVariant& nv)
           : UndoCommand(zc), _element(el), _propName(n), _oldValue(ov), _newValue(nv) {}
       void undo() override;
       void redo() override;
-      std::string description() const override { return std::format("Change {} of {}", _propName, _element->name()); }
+      std::string description() const override {
+            return std::format("Change {} of {}", _propName, _element->name());
+            }
       };
 
 //---------------------------------------------------------
@@ -162,7 +177,7 @@ class AddGroupCommand : public UndoCommand
       Cad* _cad;
       Group* _layer;
       Fixture* _fixture;
-//      Recipe* _laserLayer;
+      //      Recipe* _laserLayer;
       int _row {-1};   ///< position within cad's children
       int _llRow {-1}; ///< position within fixture's children
 
@@ -248,7 +263,7 @@ class AddGridCommand : public UndoCommand
 class AddLaserLayerCommand : public UndoCommand
       {
       Fixture* _fixture;
-      Recipe* _laserLayer;
+      LaserMop* _laserLayer;
       int _row {-1}; ///< position within fixture's children
 
     public:
@@ -389,7 +404,7 @@ class RemoveElementCommand : public UndoCommand
       Element* _parent;
       Element* _child;
       int _row {-1}; ///< original position within parent's children
-      Fixture* _removedFixture { nullptr };
+      Fixture* _removedFixture {nullptr};
 
     public:
       /// If the removed element is a Fixture, this stores the pointer so
@@ -420,7 +435,8 @@ class MoveElementCommand : public UndoCommand
       int _newRow {-1}; ///< target position within new parent
 
     public:
-      MoveElementCommand(ZCam* zc, Element* element, Element* oldParent, int oldRow, Element* newParent, int newRow)
+      MoveElementCommand(
+          ZCam* zc, Element* element, Element* oldParent, int oldRow, Element* newParent, int newRow)
           : UndoCommand(zc), _element(element), _oldParent(oldParent), _newParent(newParent), _oldRow(oldRow),
             _newRow(newRow) {}
       void undo() override;
@@ -448,4 +464,37 @@ class InsertElementCommand : public UndoCommand
       void undo() override;
       void redo() override;
       std::string description() const override { return std::format("Insert Element"); }
+      };
+
+//--------------------------------------------------------------------
+//     ScriptBindingCommand
+//--------------------------------------------------------------------
+//   Undoable command that creates or removes a script binding on
+//   an Element.  Stores the old and new script text (and component
+//   index) so that undo/redo can toggle between them.  When the
+//   new script is empty the binding is removed; when the old script
+//   is empty a new binding is created.
+//
+//   Both undo() and redo() go through ScriptEngine::createBinding /
+//   removeBinding so that the persisted script text on the Element
+//   is kept in sync and the project is marked dirty.
+class ScriptBindingCommand : public UndoCommand
+      {
+      Element* _element;
+      QString _prop;
+      int _comp;
+      QString _oldScript;
+      QString _newScript;
+
+    public:
+      ScriptBindingCommand(ZCam* zc, Element* el, const QString& prop, int comp, const QString& oldScript,
+          const QString& newScript)
+          : UndoCommand(zc), _element(el), _prop(prop), _comp(comp), _oldScript(oldScript),
+            _newScript(newScript) {}
+      void undo() override;
+      void redo() override;
+      std::string description() const override {
+            return std::format(
+                "Script binding {}.{}", _element ? _element->name() : QStringLiteral("?"), _prop);
+            }
       };

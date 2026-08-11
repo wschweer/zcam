@@ -39,6 +39,7 @@ using PropNameList = std::vector<std::pair<std::string, std::string>>;
 //    (propertyName, type) pairs.
 //    Uses the "rows"/"cells" format.
 //---------------------------------------------------------
+
 PropNameList parseAllPropertyNames(std::string_view propStr);
 
 //---------------------------------------------------------
@@ -52,8 +53,45 @@ PropNameList parseAllPropertyNames(std::string_view propStr);
 //    gadget – true for Q_GADGET (uses readOnGadget),
 //             false for QObject (uses read)
 //---------------------------------------------------------
+
 bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObject* meta, bool gadget,
-                         const std::string& name, const std::string& type);
+    const std::string& name, const std::string& type, int precision = -1);
+
+//---------------------------------------------------------
+//   precisionForName
+//    Return the "precision" metadata declared in the properties()
+//    JSON definition for the given property name.  Returns -1 if no
+//    precision is declared or the name is not found.
+//---------------------------------------------------------
+
+int precisionForName(std::string_view propStr, const std::string& name);
+
+//---------------------------------------------------------
+//   defaultScriptForName
+//    Return the "script" metadata declared in the properties()
+//    JSON definition for the given property name.  Returns an
+//    empty string if no default script is declared or the name
+//    is not found.
+//---------------------------------------------------------
+
+std::string defaultScriptForName(std::string_view propStr, const std::string& name);
+
+//---------------------------------------------------------
+//   DefaultScript
+//    A pair of (propertyName, scriptText) for properties that
+//    declare a default script in the properties() JSON.
+//---------------------------------------------------------
+
+using DefaultScript = std::pair<std::string, std::string>;
+
+//---------------------------------------------------------
+//   allDefaultScripts
+//    Parse the properties() JSON definition and return a list of
+//    all (propertyName, scriptText) pairs that declare a default
+//    script.  Uses the "rows"/"cells" format.
+//---------------------------------------------------------
+
+std::vector<DefaultScript> allDefaultScripts(std::string_view propStr);
 
 //---------------------------------------------------------
 //   readPropertyFromJson
@@ -61,7 +99,8 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
 //    the property was handled, false if the type is unknown or
 //    the key is missing.
 //---------------------------------------------------------
+
 bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObject* meta, bool gadget,
-                          const std::string& name, const std::string& type);
+    const std::string& name, const std::string& type);
 
       } // namespace propjson

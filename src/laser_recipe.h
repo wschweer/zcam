@@ -19,7 +19,7 @@ using json = nlohmann::json;
 #include "macros.h"
 
 //---------------------------------------------------------
-//   LaserLayerSetting
+//   LaserPass
 //---------------------------------------------------------
 
 class LaserPass
@@ -46,8 +46,8 @@ class LaserPass
       PROPV_GADGET(bool, overrideTimings, false)
       PROPV_GADGET(double, onDelay, 100.0)
       PROPV_GADGET(double, offDelay, 100.0)
-      PROPV_GADGET(double, endDelay, 1000.0)
-      PROPV_GADGET(double, polygonDelay, 100.0)
+      PROPV_GADGET(double, endDelay, 200.0)
+      PROPV_GADGET(double, polygonDelay, 150.0)
       PROPV_GADGET(double, jumpSpeed, 6000.0)
       PROPV_GADGET(double, minJumpDelay, 200.0)
       PROPV_GADGET(double, maxJumpDelay, 400.0)
@@ -55,7 +55,6 @@ class LaserPass
 
       Q_PROPERTY(double intervalLpi READ intervalLpi WRITE setIntervalLpi NOTIFY intervalChanged)
       Q_PROPERTY(double intervalLpmm READ intervalLpmm WRITE setIntervalLpmm NOTIFY intervalChanged)
-
 
       inline static constexpr std::string_view _properties {R"({
     "class": "Layer Setting",
@@ -80,6 +79,7 @@ class LaserPass
                 },
                 {
                     "type": "int",
+                    "scriptable": true,
                     "min": 1,
                     "max": 10000,
                     "default": 1,
@@ -105,6 +105,7 @@ class LaserPass
                     "cells": [
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "%",
                             "min": 0.0,
                             "max": 100.0,
@@ -114,6 +115,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "kHz",
                             "default": 40.0,
                             "name": "frequency",
@@ -127,6 +129,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm/s",
                             "min": 0.0,
                             "max": 100000.0,
@@ -148,6 +151,7 @@ class LaserPass
                             "name": "interval",
                             "sublabel": " ",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.001,
                             "max": 100.0,
@@ -156,12 +160,14 @@ class LaserPass
                         {
                             "name": "intervalLpi",
                             "sublabel": "Lpi",
-                            "type": "float"
+                            "type": "float",
+                            "scriptable": true
                         },
                         {
                             "name": "intervalLpmm",
                             "sublabel": "Lpmm",
-                            "type": "float"
+                            "type": "float",
+                            "scriptable": true
                         }
                       ]
                 },
@@ -170,6 +176,7 @@ class LaserPass
                     "cells": [
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "°",
                             "min": -360.0,
                             "max": 360.0,
@@ -179,6 +186,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "°",
                             "min": -360.0,
                             "max": 360.0,
@@ -199,6 +207,7 @@ class LaserPass
                         },
                         {
                             "type": "int",
+                            "scriptable": true,
                             "min": 1,
                             "max": 100,
                             "default": 1,
@@ -218,6 +227,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.0,
                             "max": 10.0,
@@ -227,6 +237,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.0,
                             "max": 10.0,
@@ -279,6 +290,7 @@ class LaserPass
                             "sublabel": "limit",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.0,
                             "max": 100.0,
@@ -289,6 +301,7 @@ class LaserPass
                             "sublabel": "minDelay",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -299,6 +312,7 @@ class LaserPass
                             "sublabel": "maxDelay",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -325,6 +339,7 @@ class LaserPass
                             "sublabel": "off",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -335,6 +350,7 @@ class LaserPass
                             "sublabel": "end",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -345,6 +361,7 @@ class LaserPass
                             "sublabel": "polygon",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -355,7 +372,7 @@ class LaserPass
             ]
         }
     ]
-                              })"};
+                                                            })"};
 
       //      PROPV_GADGET(double, onDelay, 100.0)
       //      PROPV_GADGET(double, offDelay, 100.0)
@@ -367,7 +384,6 @@ class LaserPass
       json toJson() const;
       void fromJson(const json&);
       const std::string_view properties() const { return _properties; }
-
       double intervalLpi() const { return 25.4 / interval(); }
       double intervalLpmm() const { return 1.0 / interval(); }
       void setIntervalLpi(double v) { set_interval(25.4 / v); }
@@ -411,24 +427,21 @@ class LaserRecipe
       LaserRecipe() {}
       json toJson() const;
       void fromJson(const json&);
-
       const LaserPasses& passes() const { return _passes; }
       LaserPasses& passes() { return _passes; }
-
       const LaserPass& pass(int idx) const { return _passes.at(idx); }
       LaserPass& pass(int idx) { return _passes.at(idx); }
-
       QString relativeFilePath() const { return _relativeFilePath; }
       void setRelativeFilePath(const QString& p) { _relativeFilePath = p; }
       };
 
-//=========================================================
+//---------------------------------------------------------
 //   RecipeTreeModel
 //    A QAbstractItemModel that represents the recipe directory
 //    structure as a tree.  Folders are branch nodes, recipe
 //    files are leaf nodes.  Each leaf carries a recipeIdx that
 //    indexes into LaserReceipes::recipes.
-//=========================================================
+//---------------------------------------------------------
 
 class RecipeTreeModel : public QAbstractItemModel
       {
@@ -479,7 +492,7 @@ class RecipeTreeModel : public QAbstractItemModel
 //   Recipes
 //---------------------------------------------------------
 
-class LaserReceipes : public QObject
+class Recipe : public QObject
       {
       Q_OBJECT
       QML_ELEMENT
@@ -506,8 +519,8 @@ class LaserReceipes : public QObject
       void machineTypeChanged();
 
     public:
-      LaserReceipes(QObject* parent = nullptr);
-      ~LaserReceipes();
+      Recipe(QObject* parent = nullptr);
+      ~Recipe();
       QString machineType() const { return _machineType; }
       void set_machineType(const QString& type);
       Q_INVOKABLE LaserRecipe recipe(int idx) const {
@@ -563,7 +576,6 @@ class LaserReceipes : public QObject
 
       /// Remove a folder and all recipes inside it.
       Q_INVOKABLE bool removeFolder(const QString& relDir);
-
       };
 
 Q_DECLARE_METATYPE(LaserPass)

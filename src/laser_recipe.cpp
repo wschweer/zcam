@@ -432,7 +432,7 @@ static QString sanitiseFileName(QString name) {
 //   LaserReceipes
 //=========================================================
 
-LaserReceipes::LaserReceipes(QObject* parent) : QObject(parent), _treeModel(new RecipeTreeModel(this)) {
+Recipe::Recipe(QObject* parent) : QObject(parent), _treeModel(new RecipeTreeModel(this)) {
       // Register the opaque pointer metatypes so that QML can correctly
       // wrap and unwrap LaserRecipe* and LaserPass* values without
       // attempting to manage their lifetime.
@@ -440,13 +440,13 @@ LaserReceipes::LaserReceipes(QObject* parent) : QObject(parent), _treeModel(new 
       qRegisterMetaType<LaserPass*>("LaserPass*");
       }
 
-LaserReceipes::~LaserReceipes() = default;
+Recipe::~Recipe() = default;
 
 //---------------------------------------------------------
 //   set_machineType
 //    Set the machine type filter and reload recipes from disk.
 //---------------------------------------------------------
-void LaserReceipes::set_machineType(const QString& type) {
+void Recipe::set_machineType(const QString& type) {
       if (_machineType == type)
             return;
       _machineType = type;
@@ -458,13 +458,13 @@ void LaserReceipes::set_machineType(const QString& type) {
 //   reload
 //    Reload recipes from disk using the current _rootDir and _machineType.
 //---------------------------------------------------------
-void LaserReceipes::reload() {
+void Recipe::reload() {
       if (_rootDir.isEmpty())
             return;
       loadFromDirectory(_rootDir, _machineType);
       }
 
-void LaserReceipes::updateRecipe(int idx, const LaserRecipe& r) {
+void Recipe::updateRecipe(int idx, const LaserRecipe& r) {
       if (idx >= 0 && idx < recipes.size()) {
             recipes[idx] = r;
             emit recipeModelChanged();
@@ -472,7 +472,7 @@ void LaserReceipes::updateRecipe(int idx, const LaserRecipe& r) {
             }
       }
 
-void LaserReceipes::addRecipe(const QString& name) {
+void Recipe::addRecipe(const QString& name) {
       LaserRecipe r;
       r.set_name(name);
       recipes.push_back(r);
@@ -480,7 +480,7 @@ void LaserReceipes::addRecipe(const QString& name) {
       rebuildTreeModel();
       }
 
-void LaserReceipes::removeRecipe(int idx) {
+void Recipe::removeRecipe(int idx) {
       if (idx < 0 || idx >= static_cast<int>(recipes.size()))
             return;
 
@@ -516,7 +516,7 @@ void LaserReceipes::removeRecipe(int idx) {
       rebuildTreeModel();
       }
 
-LaserPass LaserReceipes::layer(int recipeIdx, int layerIdx) {
+LaserPass Recipe::layer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             const auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes().size())
@@ -525,7 +525,7 @@ LaserPass LaserReceipes::layer(int recipeIdx, int layerIdx) {
       return LaserPass();
       }
 
-LaserPass* LaserReceipes::layerPtr(int recipeIdx, int layerIdx) {
+LaserPass* Recipe::layerPtr(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes().size())
@@ -534,7 +534,7 @@ LaserPass* LaserReceipes::layerPtr(int recipeIdx, int layerIdx) {
       return nullptr;
       }
 
-void LaserReceipes::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
+void Recipe::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes().size()) {
@@ -544,7 +544,7 @@ void LaserReceipes::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l)
             }
       }
 
-void LaserReceipes::addLayer(int recipeIdx, const QString& name) {
+void Recipe::addLayer(int recipeIdx, const QString& name) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             LaserPass l;
             l.set_name(name);
@@ -553,7 +553,7 @@ void LaserReceipes::addLayer(int recipeIdx, const QString& name) {
             }
       }
 
-void LaserReceipes::removeLayer(int recipeIdx, int layerIdx) {
+void Recipe::removeLayer(int recipeIdx, int layerIdx) {
       if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
             auto& r = recipes[recipeIdx];
             if (layerIdx >= 0 && layerIdx < r.passes().size()) {
@@ -563,7 +563,7 @@ void LaserReceipes::removeLayer(int recipeIdx, int layerIdx) {
             }
       }
 
-QStringList LaserReceipes::layerModel(int recipeIdx) const {
+QStringList Recipe::layerModel(int recipeIdx) const {
       QStringList names;
       if (recipeIdx >= 0 && recipeIdx < recipes.size())
             for (const auto& l : recipes[recipeIdx].passes())
@@ -571,7 +571,7 @@ QStringList LaserReceipes::layerModel(int recipeIdx) const {
       return names;
       }
 
-QStringList LaserReceipes::recipeModel() const {
+QStringList Recipe::recipeModel() const {
       QStringList names;
       for (const auto& r : recipes)
             names.append(r.name());
@@ -582,7 +582,7 @@ QStringList LaserReceipes::recipeModel() const {
 //   toJson
 //---------------------------------------------------------
 
-json LaserReceipes::toJson() const {
+json Recipe::toJson() const {
       json data = json::array();
       for (const auto& r : recipes)
             data.push_back(r.toJson());
@@ -593,7 +593,7 @@ json LaserReceipes::toJson() const {
 //   fromJson
 //---------------------------------------------------------
 
-void LaserReceipes::fromJson(const json& data) {
+void Recipe::fromJson(const json& data) {
       recipes.clear();
       if (data.is_array()) {
             for (const auto& r : data) {
@@ -611,7 +611,7 @@ void LaserReceipes::fromJson(const json& data) {
 //    descending into subdirectories.  Builds the tree model.
 //---------------------------------------------------------
 
-void LaserReceipes::loadFromDirectory(const QString& dir, const QString& machineType) {
+void Recipe::loadFromDirectory(const QString& dir, const QString& machineType) {
       recipes.clear();
       _rootDir = dir;
 
@@ -686,7 +686,7 @@ void LaserReceipes::loadFromDirectory(const QString& dir, const QString& machine
 //    preserving subdirectory structure.
 //---------------------------------------------------------
 
-void LaserReceipes::saveToDirectory(const QString& dir, const QString& machineType) const {
+void Recipe::saveToDirectory(const QString& dir, const QString& machineType) const {
       // If machineType is set, save under dir/machineType/
       QString baseDir = dir;
       if (!machineType.isEmpty())
@@ -737,7 +737,7 @@ void LaserReceipes::saveToDirectory(const QString& dir, const QString& machineTy
 //    and recipe leaf nodes under their respective directories.
 //---------------------------------------------------------
 
-void LaserReceipes::rebuildTreeModel() {
+void Recipe::rebuildTreeModel() {
       _treeModel->beginBuild();
 
       // If a machine type filter is active, create a top-level node
@@ -781,7 +781,7 @@ void LaserReceipes::rebuildTreeModel() {
       _treeModel->endBuild();
       }
 
-void LaserReceipes::addRecipeInDir(const QString& name, const QString& relDir) {
+void Recipe::addRecipeInDir(const QString& name, const QString& relDir) {
       LaserRecipe r;
       r.set_name(name);
       r.setRelativeFilePath(relDir);
@@ -800,7 +800,7 @@ void LaserReceipes::addRecipeInDir(const QString& name, const QString& relDir) {
 //    is created in the root.
 //---------------------------------------------------------
 
-bool LaserReceipes::addFolder(const QString& folderName, const QString& parentRelDir) {
+bool Recipe::addFolder(const QString& folderName, const QString& parentRelDir) {
       if (_rootDir.isEmpty() || folderName.isEmpty())
             return false;
 
@@ -832,7 +832,7 @@ bool LaserReceipes::addFolder(const QString& folderName, const QString& parentRe
 //    Remove a folder and all recipes inside it.
 //---------------------------------------------------------
 
-bool LaserReceipes::removeFolder(const QString& relDir) {
+bool Recipe::removeFolder(const QString& relDir) {
       if (_rootDir.isEmpty() || relDir.isEmpty())
             return false;
 

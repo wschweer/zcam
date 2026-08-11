@@ -25,12 +25,13 @@
 
 #include <thread>
 #include <atomic>
+#include <cmath>
 
 class ZCam;
 class Machine;
 class Project;
 class Fixture;
-class Recipe;
+class LaserMop;
 class Group;
 
 using PathsD = Clipper2Lib::PathsD;
@@ -59,7 +60,6 @@ struct LaserPathElement {
 //    This is a list of points representing a path the
 //    laser has to travel along.
 //---------------------------------------------------------
-
 class LaserPath : public std::vector<LaserPathElement>
       {
     public:
@@ -81,7 +81,6 @@ class LaserPath : public std::vector<LaserPathElement>
 //---------------------------------------------------------
 //   LineSegment
 //---------------------------------------------------------
-
 struct LineSegment {
       Vec2d p1; // start position of Line
       Vec2d p2; // end position of Line
@@ -90,7 +89,6 @@ struct LineSegment {
 //---------------------------------------------------------
 //   LineSegments
 //---------------------------------------------------------
-
 class LineSegments : public std::vector<LineSegment>
       {
     public:
@@ -100,7 +98,6 @@ class LineSegments : public std::vector<LineSegment>
 //---------------------------------------------------------
 //   LaserPosition
 //---------------------------------------------------------
-
 struct LaserPosition {
       uint16_t x;
       uint16_t y;
@@ -115,7 +112,6 @@ enum class ParameterType : int { None, Speed, Power, Interval, Frequency, Count,
 //---------------------------------------------------------
 //   LaserParameterSet
 //---------------------------------------------------------
-
 struct LaserParameterSet {
       double power;
       double speed;
@@ -138,7 +134,6 @@ struct LaserParameterSet {
 //---------------------------------------------------------
 //   Pulse
 //---------------------------------------------------------
-
 struct Pulse33 {
       int pulseWidth;      // ns
       int cutOffFrequency; // above this the laser will have expected output power
@@ -163,7 +158,6 @@ enum class LaserState {
 //    and integrates the LaserEngine interface (framing/marking
 //    state machine, background threads, board communication).
 //---------------------------------------------------------
-
 class Laser : public Machine
       {
       Q_OBJECT
@@ -173,6 +167,8 @@ class Laser : public Machine
       // Laser state properties (exposed to QML)
       // galvolaser
       PROPV(QVector2D, galvoBulge, QVector2D(0.0, 0.0))
+      PROPV(QVector2D, galvoBulge4, QVector2D(0.0, 0.0))
+      PROPV(QVector2D, galvoOffset, QVector2D(0.0, 0.0))
       PROPV(QVector2D, galvoScale, QVector2D(1.0, 1.0))
       PROPV(QVector2D, galvoShear, QVector2D(0.0, 0.0))
       PROPV(QVector2D, galvoTrapezoid, QVector2D(0.0, 0.0))
@@ -181,8 +177,8 @@ class Laser : public Machine
 
       PROPV(double, onDelay, 100.0)
       PROPV(double, offDelay, 100.0)
-      PROPV(double, endDelay, 100.0)
-      PROPV(double, polygonDelay, 100.0)
+      PROPV(double, endDelay, 200.0)
+      PROPV(double, polygonDelay, 150.0)
 
       PROPV(double, jumpSpeed, 6000.0)
       PROPV(double, minJumpDelay, 200.0)
@@ -228,6 +224,7 @@ class Laser : public Machine
       PROPV(int, inputPort, 0)
 
       QTimer inputPortTimer;
+      QTimer markTimer;
 
       LaserState state;
       std::thread* framingThread {nullptr};
@@ -281,11 +278,31 @@ class Laser : public Machine
       void setAbortFlag() { aborting = true; }
       QElapsedTimer markTime;
 
+      //--------------------------------------------------------------------
+      //     guessJobDuration
+      //     Estimate the total mark-job duration in seconds by
+      //     analyzing the laser path geometry and the recipe
+      //     parameters.  Called when jobDuration is 0 (first run)
+      //     to provide an initial estimate for the progress slider.
+      //--------------------------------------------------------------------
+      double guessJobDuration() const;
+
       // Pulse table (shared by all laser variants)
       static const std::vector<Pulse33>& pulseTable();
       static int maxFrequency(int pw);
       static int cutoffFrequency(int pw);
       Q_INVOKABLE QStringList laserPulseList() const;
+
+      //--------------------------------------------------------------------
+      //     bulge4Scale
+      //     Scale factor for the fourth-order radial lens correction.
+      //     The raw r^4 coefficient would be inconveniently small, so the
+      //     stored galvoBulge4 value is multiplied by this factor whenever
+      //     it is applied (calibration fit and controller correction table).
+      //     No backwards compatibility is required; recalibrate after changing
+      //     this constant.
+      //--------------------------------------------------------------------
+      static constexpr double bulge4Scale = 0.001;
 
       virtual LaserPosition mapToGalvo(double, double);
       //--------------------------------------------------------------------
@@ -295,9 +312,7 @@ class Laser : public Machine
       //     (LaserBJJCZ, LaserRKQ) implement the actual hardware I/O.
       //     The base class provides safe no-op defaults.
       //--------------------------------------------------------------------
-
       virtual int readInputPort() { return 0; }
-
       //--------------------------------------------------------------------
       //     toggleOutputBit
       //     Q_INVOKABLE helper for QML: toggles a single bit in the

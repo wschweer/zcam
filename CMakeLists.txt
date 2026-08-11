@@ -19,6 +19,7 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Quick3D Qml QuickControls2 QmlIntegration Multimedia)
+find_package(Qt6 COMPONENTS WebEngineQuick QUIET)
 find_package(Qt6 COMPONENTS Quick3DPrivate QUIET)
 find_package(Qt6Multimedia QUIET)
 find_package(OpenCV REQUIRED)
@@ -75,6 +76,7 @@ qt_add_qml_module(zcam
         qml/GridShape.qml
         qml/LaserLayer1.qml
         qml/BRepShape.qml
+        qml/ImageShape.qml
         qml/TreeViewPanel.qml
         qml/InspectorPanel.qml
         qml/PropertyEditor.qml
@@ -91,6 +93,8 @@ qt_add_qml_module(zcam
         qml/MediaFontsPanel.qml
         qml/MediaArtworkPanel.qml
         qml/MediaIconsPanel.qml
+        qml/GalvoCalibrationDialog.qml
+        qml/ManualPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/machine.cpp src/machine.h
@@ -144,11 +148,15 @@ qt_add_qml_module(zcam
 
         src/geometryworker.cpp src/geometryworker.h
         src/mediabrowser.cpp src/mediabrowser.h
+        src/scriptengine.cpp src/scriptengine.h
         src/cameraelement.cpp src/cameraelement.h
         src/cameraoverlaygeometry.cpp src/cameraoverlaygeometry.h
         src/cameratexturedata.cpp src/cameratexturedata.h
+        src/imageelement.cpp src/imageelement.h
+        src/imageimport.cpp src/imageimport.h
         src/cal.cpp src/cal.h
         src/ogr.cpp src/ogr.h
+        src/galvocalibration.cpp src/galvocalibration.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp
@@ -225,6 +233,8 @@ qt_add_resources(zcam icons FILES
       icons/visible.svg
       icons/invisible.svg
       icons/select.svg
+      icons/bound-expression.svg
+      icons/bound-expression-unset.svg
       icons/Draft_Polygon.svg
       icons/Draft_Rectangle.svg
       icons/Draft_Circle.svg
@@ -269,6 +279,158 @@ qt_add_resources(zcam gridline_shaders
     FILES shaders/gridline.vert shaders/gridline.frag
     )
 
+# ---------------------------------------------------------------------------
+# Manual — MkDocs generated HTML embedded via Qt resources.
+# The HTML is built from manual/docs/*.md by `mkdocs build` into
+# <build>/manual_site/.  The build runs at CMake configure time so the
+# generated files are available immediately for qt_add_resources.
+# Re-running cmake re-triggers the build whenever any markdown file or
+# mkdocs.yml changes.
+# ---------------------------------------------------------------------------
+find_program(MKDOCS_EXECUTABLE mkdocs)
+if(MKDOCS_EXECUTABLE)
+    set(MKDOCS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/manual)
+    set(MKDOCS_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/manual_site)
+    set(MKDOCS_CONFIG ${MKDOCS_SOURCE_DIR}/mkdocs.yml)
+
+    # Glob all markdown files as configure-time dependencies
+    file(GLOB MKDOCS_MD_FILES ${MKDOCS_SOURCE_DIR}/docs/*.md)
+
+    # Compute a hash of all markdown files + mkdocs.yml to detect changes
+    set(MKDOCS_DEPS_HASH "")
+    foreach(f ${MKDOCS_MD_FILES} ${MKDOCS_CONFIG})
+        file(SHA1 ${f} _hash)
+        string(APPEND MKDOCS_DEPS_HASH ${_hash})
+    endforeach()
+    string(SHA1 MKDOCS_DEPS_HASH ${MKDOCS_DEPS_HASH})
+
+    # Check if a rebuild is needed
+    set(MKDOCS_HASH_FILE ${CMAKE_CURRENT_BINARY_DIR}/manual_site/.mkdocs_hash)
+    set(NEEDS_REBUILD TRUE)
+    if(EXISTS ${MKDOCS_HASH_FILE})
+        file(READ ${MKDOCS_HASH_FILE} _old_hash)
+        string(STRIP ${_old_hash} _old_hash)
+        if(_old_hash STREQUAL MKDOCS_DEPS_HASH)
+            set(NEEDS_REBUILD FALSE)
+        endif()
+    endif()
+
+    if(NEEDS_REBUILD)
+        message(STATUS "Manual: Building MkDocs HTML...")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E rm -rf ${MKDOCS_OUTPUT_DIR}
+        )
+        execute_process(
+            COMMAND ${MKDOCS_EXECUTABLE} build
+                    --config-file ${MKDOCS_CONFIG}
+                    --site-dir ${MKDOCS_OUTPUT_DIR}
+            WORKING_DIRECTORY ${MKDOCS_SOURCE_DIR}
+            RESULT_VARIABLE MKDOCS_RESULT
+            OUTPUT_VARIABLE MKDOCS_OUTPUT_VAR
+            ERROR_VARIABLE MKDOCS_ERROR_VAR
+        )
+        if(MKDOCS_RESULT EQUAL 0)
+            file(WRITE ${MKDOCS_HASH_FILE} ${MKDOCS_DEPS_HASH})
+            message(STATUS "Manual: MkDocs HTML built successfully")
+        else()
+            message(WARNING "Manual: MkDocs build failed: ${MKDOCS_ERROR_VAR}")
+        endif()
+    else()
+        message(STATUS "Manual: MkDocs HTML up to date")
+    endif()
+
+    # -----------------------------------------------------------------
+    # Fix font paths: the readthedocs theme CSS references fonts at
+    # "../fonts/" (root-level), but MkDocs places them under
+    # "css/fonts/" with different filenames.  Create a root-level
+    # "fonts/" directory with the expected names.
+    # This runs every configure to ensure fonts are correct even if
+    # the MkDocs build was skipped (cache hit).
+    # -----------------------------------------------------------------
+    set(MKDOCS_FONTS_SRC ${MKDOCS_OUTPUT_DIR}/css/fonts)
+    set(MKDOCS_FONTS_DST ${MKDOCS_OUTPUT_DIR}/fonts)
+    file(MAKE_DIRECTORY ${MKDOCS_FONTS_DST})
+    # FontAwesome — same name, just copy
+    file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.eot DESTINATION ${MKDOCS_FONTS_DST})
+    file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.svg DESTINATION ${MKDOCS_FONTS_DST})
+    file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.ttf DESTINATION ${MKDOCS_FONTS_DST})
+    file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.woff DESTINATION ${MKDOCS_FONTS_DST})
+    file(COPY ${MKDOCS_FONTS_SRC}/fontawesome-webfont.woff2 DESTINATION ${MKDOCS_FONTS_DST})
+    # Lato — rename from mkdocs names to CSS-expected names
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-normal.woff2         DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-Regular.woff2)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-normal.woff          DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-Regular.woff)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-bold.woff2           DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-Bold.woff2)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-bold.woff            DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-Bold.woff)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-bold-italic.woff2   DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-BoldItalic.woff2)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-bold-italic.woff    DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-BoldItalic.woff)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-normal-italic.woff2 DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-Italic.woff2)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/lato-normal-italic.woff  DESTINATION ${MKDOCS_FONTS_DST} RENAME Lato-Italic.woff)
+    # Roboto Slab — rename from mkdocs names to CSS-expected names
+    file(INSTALL ${MKDOCS_FONTS_SRC}/Roboto-Slab-Regular.woff2 DESTINATION ${MKDOCS_FONTS_DST} RENAME RobotoSlab-Regular.woff2)
+    file(INSTALL ${MKDOCS_FONTS_SRC}/Roboto-Slab-Bold.woff2    DESTINATION ${MKDOCS_FONTS_DST} RENAME RobotoSlab-Bold.woff2)
+    # Also create empty .ttf files — the CSS references .ttf variants
+    # but MkDocs only ships .woff/.woff2.  Browsers fall back to .woff2.
+    file(TOUCH ${MKDOCS_FONTS_DST}/Lato-Regular.ttf)
+    file(TOUCH ${MKDOCS_FONTS_DST}/Lato-Bold.ttf)
+    file(TOUCH ${MKDOCS_FONTS_DST}/Lato-BoldItalic.ttf)
+    file(TOUCH ${MKDOCS_FONTS_DST}/Lato-Italic.ttf)
+
+    # Collect all generated HTML files for embedding
+    file(GLOB_RECURSE MANUAL_HTML_FILES
+        RELATIVE ${MKDOCS_OUTPUT_DIR}
+        ${MKDOCS_OUTPUT_DIR}/*
+    )
+
+
+    # -----------------------------------------------------------------
+    # Post-process: fix broken links in the generated HTML.
+    # The mkdocs-static-i18n plugin generates broken cross-language
+    # navigation links (href="manual.en.md") and directory URLs
+    # (href="manual/") that the Qt resource system cannot resolve.
+    # The fix-links.sh script rewrites them to proper index.html URLs.
+    # -----------------------------------------------------------------
+    execute_process(
+        COMMAND bash ${MKDOCS_SOURCE_DIR}/fix-links.sh ${MKDOCS_OUTPUT_DIR}
+        RESULT_VARIABLE FIX_LINKS_RESULT
+    )
+    if(NOT FIX_LINKS_RESULT EQUAL 0)
+        message(WARNING "Manual: fix-links.sh failed with code ${FIX_LINKS_RESULT}")
+    endif()
+
+    # Re-collect files after post-processing
+    file(GLOB_RECURSE MANUAL_HTML_FILES
+        RELATIVE ${MKDOCS_OUTPUT_DIR}
+        ${MKDOCS_OUTPUT_DIR}/*
+    )
+
+    # Prefix each file with the output directory for qt_add_resources.
+    # Exclude the hash file and binary sitemap from the resource.
+    set(MANUAL_RESOURCE_FILES)
+    foreach(f ${MANUAL_HTML_FILES})
+        if(f STREQUAL ".mkdocs_hash")
+            continue()
+        endif()
+        if(f MATCHES "\\.gz$")
+            continue()
+        endif()
+        list(APPEND MANUAL_RESOURCE_FILES "${MKDOCS_OUTPUT_DIR}/${f}")
+    endforeach()
+
+    if(MANUAL_RESOURCE_FILES)
+        qt_add_resources(zcam manual
+            PREFIX "/manual"
+            BASE "${MKDOCS_OUTPUT_DIR}"
+            FILES ${MANUAL_RESOURCE_FILES}
+        )
+        list(LENGTH MANUAL_RESOURCE_FILES _manual_count)
+        message(STATUS "Manual: ${_manual_count} files embedded")
+    else()
+        message(WARNING "Manual: No HTML files found to embed")
+    endif()
+else()
+    message(WARNING "MkDocs not found — manual panel will show an error page. Install mkdocs to enable the manual.")
+endif()
+
 target_link_libraries(zcam PRIVATE
       Qt6::Core
       Qt6::Gui
@@ -279,6 +441,7 @@ target_link_libraries(zcam PRIVATE
       Qt6::Qml
       Qt6::QmlIntegration
       Qt6::Multimedia
+      Qt6::WebEngineQuick
       ${OpenCV_LIBS}
       PkgConfig::UDEV
       PkgConfig::LIBUSB

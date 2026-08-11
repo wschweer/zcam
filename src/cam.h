@@ -30,6 +30,9 @@ class Cam : public Element3d
       PROPV(double, panelHDistance, 0.0)
       PROPV(double, panelVDistance, 0.0)
       PROPV(Stock*, stock, nullptr)
+      PROPV(bool, perspective, false)                   ///< project with central (perspective) projection
+      PROPV(double, projectionHeight, 1000.0)           ///< viewpoint height [mm] above the z=0 plane
+      PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0)) ///< foot point (x,y) [mm] of the viewpoint on z=0
 
       inline static constexpr std::string_view _properties {R"({
     "class": "Cam",
@@ -57,6 +60,7 @@ class Cam : public Element3d
                 {
                     "name": "pos",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "mm",
                     "default": [
                         0.0,
@@ -72,6 +76,7 @@ class Cam : public Element3d
                 {
                     "name": "rot",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "°",
                     "min": 0.0,
                     "max": 360,
@@ -89,6 +94,7 @@ class Cam : public Element3d
                 {
                     "name": "scale",
                     "type": "scale",
+                    "scriptable": true,
                     "min": 0.001,
                     "max": 1000,
                     "default": [
@@ -122,6 +128,7 @@ class Cam : public Element3d
             "cells": [
                 {
                     "type": "int",
+                    "scriptable": true,
                     "min": 1,
                     "max": 100,
                     "default": 1,
@@ -130,6 +137,7 @@ class Cam : public Element3d
                 },
                 {
                     "type": "int",
+                    "scriptable": true,
                     "min": 1,
                     "max": 100,
                     "default": 1,
@@ -143,6 +151,7 @@ class Cam : public Element3d
             "cells": [
                 {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.0,
                     "max": 50.0,
@@ -152,6 +161,7 @@ class Cam : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.0,
                     "max": 50.0,
@@ -160,9 +170,58 @@ class Cam : public Element3d
                     "sublabel": "V"
                 }
             ]
+        },
+        {
+            "cells": [
+                {
+                    "name": "line",
+                    "type": "line"
+                }
+            ]
+        },
+        {
+            "label": "3D",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": false,
+                    "name": "perspective",
+                    "sublabel": " "
+                },
+                {
+                    "name": "cameraCapture",
+                    "type": "cameraCapture",
+                    "sublabel": " "
+                },
+                {
+                    "type": "float",
+                    "scriptable": true,
+                    "unit": "mm",
+                    "min": 1.0,
+                    "max": 100000.0,
+                    "default": 1000.0,
+                    "name": "projectionHeight",
+                    "sublabel": "h"
+                }
+            ]
+        },
+        {
+            "label": "Center",
+            "cells": [
+                {
+                    "name": "viewCenter",
+                    "type": "vector2d",
+                    "scriptable": true,
+                    "unit": "mm",
+                    "default": [
+                        0.0,
+                        0.0
+                    ]
+                }
+            ]
         }
     ]
-})"};
+            })"};
 
     signals:
       void panelChanged();
@@ -184,4 +243,11 @@ class Cam : public Element3d
       /// Property changes only set the camDirty flag so the user knows
       /// a refresh is pending.
       Q_INVOKABLE void updateCam();
+      /// Adopt the live view-camera from the 3D canvas (View3DPanel).
+      /// Reads the camera eye / root scale mirrored into ZCam by
+      /// ZCam::updateViewCamera(), derives viewCenter (the perpendicular
+      /// foot of the camera on z=0 in root-local mm) and projectionHeight,
+      /// assigns both properties, marks the cam data dirty and triggers a
+      /// recalculation so the laser projection matches the canvas view.
+      Q_INVOKABLE void grabCameraView();
       };

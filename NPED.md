@@ -30,10 +30,55 @@ Or use the Ninja build system (build.ninja is pre-generated).
   in the XY plane (pos/rot/overlaySize + trapezX/trapezY keystone correction via
   CameraOverlayGeometry). CameraTextureData binds to the element for the 3D
   overlay texture; visibility gates camera capture.
+- **ImageElement : Element3d**: Displays a pixel-based image (PNG, JPEG, BMP,
+  GIF, TIFF, WEBP) on the 3D canvas as a textured quad in the XY plane.
+  ImagePlaneGeometry provides a unit quad with UVs; ImageTextureData loads the
+  image file and uploads it as an RGBA8 texture. The element's scale represents
+  the physical size in mm; on import the larger axis defaults to 100 mm with
+  aspect-ratio preserved (lockScale = Lock). The filePath property stores the
+  source path; the image is reloaded from disk on project load. Import via
+  `ZCam::importFile()`, drag-drop on the 3D canvas, or `importImageAt()` for
+  positioned placement.
+- **ScriptEngine (QJSEngine singleton)**: JavaScript property bindings
+  ("Scripting", siehe TODO.md).  Jede benannte Element-Instanz ist im
+  JavaScript-Namespace `project.<pfad>.<name>` sichtbar (Namen werden in
+  Element::setName zu gültigen JS-Identifiern sanitisiert).  PropertyBinding
+  evaluiert ein Script und schreibt das Ergebnis in ein Skalar- oder
+  Vektor-Komponenten-Property; statische Dependency-Analyse (Identifier-Scan)
+  verdrahtet NOTIFY-Signale aller referenzierten Elemente über
+  QMetaObject::connect(signalIdx → slotIdx) zur Re-Evaluierung.  Da Qt's
+  QObject-Wrapper für QVector2D/3D keine Komponenten-Properties anbietet,
+  werden Vektor-Properties vor jeder Evaluierung als {x,y,z}-Snapshots in
+  den Namespace geschrieben (refreshVectorSnapshots).  Scripts werden auf dem
+  Element persistiert (script/scriptProp/scriptComp) und im Projektfile
+  serialisiert.  Inspector (PropertyEditor.qml) zeigt pro numerischem
+  Property einen f(x)-Button (bound-expression*.svg) mit Popup
+  (Editor, Live-Auswertung, Fehleranzeige, Active-Checkbox); gebundene
+  Properties sind im GUI readonly/grau.
+  **Default-Scripts**: Das properties()-JSON kann pro Cell ein `"script"`-Feld
+  enthalten, das ein Default-Script definiert (analog zum `"default"`-Wert).
+  Ein Element mit einem Default-Script ist automatisch scriptable (der f(x)-Button
+  wird angezeigt) und das Default-Script wird beim Erstellen des Elements
+  (addChild) bzw. beim Laden eines Projekts (rebuildRegistry) als aktives
+  Binding registriert, sofern kein manuell gespeichertes Script für diese
+  Property existiert.  Siehe `propjson::allDefaultScripts()` und
+  `ScriptEngine::applyDefaultScripts()`.
+- **Selftest**: `build/zcam --script-test` lädt /tmp/script-test.zcam,
+  prüft Laden/Evaluieren, Dependency-Reaktion, Laufzeit-Bindings,
+  Serialisierung und Binding-Remove.
+- **ManualPanel (QML)**: Integrated manual viewer. Displays MkDocs-generated
+  HTML inside a `WebEngineView`. The HTML is built by CMake from `manual/docs/*.md`
+  via `mkdocs build` at configure time, then embedded as a Qt resource
+  (`qrc:/manual/`). German is the primary language, English is an automatically
+  translated variant. Language switching is done via buttons in the panel.
+  Requires `Qt6::WebEngineQuick` (initialised in `main.cpp`).
 
 ## File Imports
 - **SVG / DXF / BREP**: `ZCam::importFile()` dispatches by suffix to the
   respective importers (`svg.cpp`, `dxfimport.cpp`, `brepimport.cpp`).
+- **Images (PNG, JPEG, BMP, GIF, TIFF, WEBP)**: `ImageImport::import()` /
+  `ImageImport::importAt()` create an `ImageElement` in the CAD tree.
+  Dispatched by suffix from `ZCam::importFile()` and drag-drop on the 3D canvas.
 - **IPC-2581 (revision C)**: `importipc2581.cpp` parses the PCB "digital twin"
   XML. All layers become Groups with Polygon children (arcs/primitives are
   flattened) below a new import layer; negative polarity and Cutout geometry is

@@ -22,6 +22,8 @@ class Fixture : public Element3d
       Q_OBJECT
 
       PROPV(Framing*, framing, nullptr);
+      PROPV(double, jobDuration, 0)
+      PROPV(bool, jobDurationEstimated, false)
       inline static constexpr std::string_view _properties {R"({
     "class": "Fixture",
     "rows": [
@@ -58,6 +60,7 @@ class Fixture : public Element3d
                 {
                     "name": "pos",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "mm",
                     "default": [
                         0.0,
@@ -73,6 +76,7 @@ class Fixture : public Element3d
                 {
                     "name": "rot",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "°",
                     "min": 0.0,
                     "max": 360,
@@ -90,6 +94,7 @@ class Fixture : public Element3d
                 {
                     "name": "scale",
                     "type": "scale",
+                    "scriptable": true,
                     "min": 0.001,
                     "max": 1000,
                     "default": [
@@ -111,7 +116,7 @@ class Fixture : public Element3d
             ]
         }
     ]
-})"};
+            })"};
 
     signals:
       void transformChanged();
@@ -121,6 +126,8 @@ class Fixture : public Element3d
       ~Fixture() {}
       virtual QString typeName() override { return QStringLiteral("fixture"); }
       virtual const std::string_view properties() const override { return _properties; }
+      virtual json toJson() const override;
+      virtual void fromJson(const json&) override;
       void genPath();
 
       Clipper2Lib::RectD size(double& width, double& height) const;

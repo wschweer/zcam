@@ -81,6 +81,18 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
       state = LaserState::Off;
 
       //
+      //  mark timer: updates currentTime every 100 ms while a
+      //  mark job is running.  estimatedEnd is set from the
+      //  active fixture's jobDuration (if known from a previous
+      //  run) when marking starts.
+      //
+      markTimer.setInterval(100);
+      connect(&markTimer, &QTimer::timeout, this, [this] {
+            double elapsed = markTime.elapsed() / 1000.0;
+            set_currentTime(elapsed);
+            });
+
+      //
       //  action: the framing thread actually stopped
       //
       connect(
@@ -118,6 +130,26 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                       markingThread->join();
                 delete markingThread;
                 markingThread = nullptr;
+
+                //
+                //  stop the elapsed-time timer and store the
+                //  measured job duration in the active fixture.
+                //  If the duration was only a guess (jobDurationEstimated),
+                //  replace it with the actually measured time and clear
+                //  the estimate marker.  Using changeProperty marks the
+                //  project dirty so the value is saved on exit.
+                //
+                markTimer.stop();
+                double elapsed = markTime.elapsed() / 1000.0;
+                set_currentTime(elapsed);
+                if (zcam->project() && zcam->project()->fixture()) {
+                      Fixture* fixture = zcam->project()->fixture();
+                      if (fixture->jobDurationEstimated()) {
+                            zcam->project()->changeProperty(fixture, QStringLiteral("jobDuration"), QVariant::fromValue(elapsed));
+                            fixture->set_jobDurationEstimated(false);
+                            }
+                      }
+
                 if (state == LaserState::MarkingAboutToIdle) {
                       changeState(LaserState::Idle);
                       }
@@ -226,8 +258,7 @@ void Laser::exit() {
                   changeState(LaserState::AboutToExit);
                   stopFraming = true;
                   return;
-            default:
-                  break;
+            default: break;
             }
       exitEngine();
       changeState(LaserState::Off);
@@ -312,6 +343,123 @@ void Laser::startFraming() {
       }
 
 //---------------------------------------------------------
+//   guessJobDuration
+//    Estimate the total mark-job duration in seconds.
+//
+//    Iterates over all recipes in the fixture, collects the
+//    laser path for each, and accumulates:
+//      - total jump distance (mm) for all MoveTo segments
+//      - total mark distance (mm) for all MarkTo segments
+//      - number of jumps and marks
+//    The estimated time is:
+//      (jumpDistance / jumpSpeed + markDistance / markSpeed
+//         + numJumps * K1 + numMarks * K2) * K3
+//    where K1, K2, K3 are empirical magic constants.
+//---------------------------------------------------------
+
+double Laser::guessJobDuration() const
+      {
+      if (!zcam->project() || !zcam->project()->fixture())
+            return 0.0;
+
+      // Empirical magic constants
+      constexpr double K1 = 0.0001;  // per-jump overhead (seconds)
+      constexpr double K2 = 0.0001;  // per-mark overhead (seconds)
+      constexpr double K3 = 1.2;     // global fudge factor
+
+      double totalJumpDistance = 0.0;
+      double totalMarkDistance = 0.0;
+      int    numJumps           = 0;
+      int    numMarks           = 0;
+      double totalJumpTime     = 0.0;
+      double totalMarkTime     = 0.0;
+
+      Fixture* fixture = zcam->project()->fixture();
+      for (auto e : fixture->children()) {
+            if (!isType<LaserMop>(e))
+                  continue;
+            auto ll = toType<LaserMop>(e);
+            if (!ll->burn())
+                  continue;
+            const LaserRecipe* recipe = ll->recipe();
+            if (!recipe)
+                  continue;
+
+            LaserPath path = ll->collectLaserPath();
+
+            // Determine the effective speeds from the first enabled pass.
+            // If no pass is enabled, skip this recipe.
+            double jumpSpeed = this->jumpSpeed();
+            double markSpeed = 0.0;
+            for (int i = 0; i < static_cast<int>(recipe->passes().size()); ++i) {
+                  const LaserPass& pass = recipe->pass(i);
+                  if (!pass.enabled())
+                        continue;
+                  markSpeed = pass.speed();
+                  if (pass.overrideTimings())
+                        jumpSpeed = pass.jumpSpeed();
+                  break;
+                  }
+            if (markSpeed <= 0.0)
+                  continue;
+
+            // Accumulate distances and counts, scaled by the number
+            // of global passes and the number of enabled sub-layers.
+            int numEnabledLayers = 0;
+            for (int i = 0; i < static_cast<int>(recipe->passes().size()); ++i)
+                  if (recipe->pass(i).enabled())
+                        ++numEnabledLayers;
+            int totalPasses = recipe->numPasses() * numEnabledLayers;
+            if (totalPasses <= 0)
+                  continue;
+
+            if (path.size() < 2)
+                  continue;
+
+            double recipeJumpDist = 0.0;
+            double recipeMarkDist = 0.0;
+            int    recipeJumps    = 0;
+            int    recipeMarks    = 0;
+
+            Vec2d prev = path.front().p;
+            for (size_t i = 1; i < path.size(); ++i) {
+                  const auto& elem = path[i];
+                  double dx = elem.x() - prev.x();
+                  double dy = elem.y() - prev.y();
+                  double dist = std::sqrt(dx * dx + dy * dy);
+                  if (elem.type == LaserPathElementType::MoveTo) {
+                        recipeJumpDist += dist;
+                        ++recipeJumps;
+                        }
+                  else {
+                        recipeMarkDist += dist;
+                        ++recipeMarks;
+                        }
+                  prev = elem.p;
+                  }
+
+            // Scale by the number of passes — the path is marked
+            // once per global pass per enabled sub-layer.
+            recipeJumpDist *= totalPasses;
+            recipeMarkDist *= totalPasses;
+            recipeJumps    *= totalPasses;
+            recipeMarks    *= totalPasses;
+
+            totalJumpDistance += recipeJumpDist;
+            totalMarkDistance += recipeMarkDist;
+            numJumps          += recipeJumps;
+            numMarks          += recipeMarks;
+
+            if (jumpSpeed > 0.0)
+                  totalJumpTime += recipeJumpDist / jumpSpeed;
+            if (markSpeed > 0.0)
+                  totalMarkTime += recipeMarkDist / markSpeed;
+            }
+
+      return (totalJumpTime + totalMarkTime + numJumps * K1 + numMarks * K2) * K3;
+      }
+
+//---------------------------------------------------------
 //   doStartMarking
 //    we are in idle state and want to start marking
 //---------------------------------------------------------
@@ -321,6 +469,33 @@ void Laser::doStartMarking() {
             Critical("incomplete project");
             return;
             }
+
+      //
+      //  set up the elapsed-time tracking:
+      //   - estimatedEnd is set from the fixture's cached jobDuration
+      //     (0 when unknown, i.e. first run)
+      //   - currentTime is reset to 0
+      //   - markTime (QElapsedTimer) is started
+      //   - markTimer fires every 100 ms to update currentTime for
+      //     the slider in the LaserPanel
+      //
+      Fixture* fixture = zcam->project()->fixture();
+      double duration = fixture->jobDuration();
+      if (duration == 0.0) {
+            //
+            //  No measured duration yet — estimate it from the laser
+            //  path geometry and remember that this is only a guess.
+            //  The marker jobDurationEstimated is set so that after the
+            //  job finishes the measured time can replace the estimate.
+            //
+            duration = guessJobDuration();
+            fixture->set_jobDuration(duration);
+            fixture->set_jobDurationEstimated(true);
+            }
+      set_estimatedEnd(duration);
+      set_currentTime(0.0);
+      markTime.start();
+      markTimer.start();
 
       markingThread = new std::thread([this] {
             //
@@ -336,9 +511,9 @@ void Laser::doStartMarking() {
             try {
                   for (auto e : fixture->children()) {
                         Debug("==mark <{}>", e->name());
-                        if (!isType<Recipe>(e))
+                        if (!isType<LaserMop>(e))
                               continue;
-                        auto ll = toType<Recipe>(e);
+                        auto ll = toType<LaserMop>(e);
                         if (!ll->burn())
                               continue;
                         LaserPath spl             = ll->collectLaserPath();
@@ -433,6 +608,7 @@ void Laser::shutdown() {
       // any blocking USB operations.
       stopFraming = true;
       stopMarking = true;
+      markTimer.stop();
 
       setAbortFlag();
 

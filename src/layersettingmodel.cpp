@@ -115,6 +115,8 @@ void LayerSettingModel::parseProperties() {
                                           if (type == "line") {
                                                 ci.isLine = true;
                                                 ci.name   = "line";
+                                                if (cell.contains("label") && cell["label"].is_string())
+                                                      ci.rowLabel = QString::fromStdString(cell["label"].get<std::string>());
                                                 }
                                           else if (cell.contains("cells") && cell["cells"].is_array()) {
                                                 // Row cell: has sub-cells instead of a name
@@ -163,12 +165,15 @@ void LayerSettingModel::parseProperties() {
                         else if (row.contains("cells") && row["cells"].is_array()) {
                               QStringList subs;
                               bool hasLine = false;
+                              QString lineLabel;
                               for (const auto& cell : row["cells"]) {
                                     std::string type = cell.contains("type") && cell["type"].is_string()
                                                            ? cell["type"].get<std::string>()
                                                            : "";
                                     if (type == "line") {
                                           hasLine = true;
+                                          if (cell.contains("label") && cell["label"].is_string())
+                                                lineLabel = QString::fromStdString(cell["label"].get<std::string>());
                                           continue;
                                           }
                                     if (type == "empty") {
@@ -199,7 +204,7 @@ void LayerSettingModel::parseProperties() {
                                     _columnCounts.append(0);
                                     _columnItems.append(QList<LayerSettingColumnItem> {});
                                     _subPropNames.append(QStringList {});
-                                    _rowLabels.append(QString());
+                                    _rowLabels.append(lineLabel);
                                     }
                               else {
                                     _propertyNames.append("empty");

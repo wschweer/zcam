@@ -14,6 +14,22 @@
 namespace propjson {
 
 //---------------------------------------------------------
+//   roundToPrecision
+//    Round a floating point value to the given number of decimal
+//    places when precision >= 0.  Used for serialisation so that
+//    values declared with a specific precision in properties() are
+//    stored with at least that many digits and are not silently
+//    truncated by downstream formatting.
+//---------------------------------------------------------
+
+static double roundToPrecision(double value, int precision) {
+      if (precision < 0)
+            return value;
+      const double factor = std::pow(10.0, precision);
+      return std::round(value * factor) / factor;
+      }
+
+//---------------------------------------------------------
 //   collectCellPropertyNames
 //    Extract (name, type) pairs from a single cell.
 //    Handles nested cells (row within columns).
@@ -53,10 +69,9 @@ PropNameList parseAllPropertyNames(std::string_view propStr) {
 
       if (j.contains("rows") && j["rows"].is_array()) {
             for (const auto& row : j["rows"]) {
-                  if (row.contains("cells") && row["cells"].is_array()) {
+                  if (row.contains("cells") && row["cells"].is_array())
                         for (const auto& cell : row["cells"])
                               collectCellPropertyNames(cell, propNames);
-                        }
                   }
             }
 
@@ -82,8 +97,8 @@ static QVariant readPropertyRaw(const void* obj, const QMetaObject* meta, bool g
 //    supporting both QObject (write) and Q_GADGET (writeOnGadget).
 //---------------------------------------------------------
 
-static bool writePropertyRaw(void* obj, const QMetaObject* meta, bool gadget, int idx,
-                             const QVariant& value) {
+static bool writePropertyRaw(
+    void* obj, const QMetaObject* meta, bool gadget, int idx, const QVariant& value) {
       QMetaProperty mp = meta->property(idx);
       if (gadget)
             return mp.writeOnGadget(obj, value);
@@ -95,7 +110,7 @@ static bool writePropertyRaw(void* obj, const QMetaObject* meta, bool gadget, in
 //---------------------------------------------------------
 
 bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObject* meta, bool gadget,
-                         const std::string& name, const std::string& type) {
+    const std::string& name, const std::string& type, int precision) {
       QByteArray propName = QByteArray::fromStdString(name);
       int idx             = meta->indexOfProperty(propName.constData());
       if (idx < 0)
@@ -106,16 +121,16 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
       if (type == "vector3d" || type == "scale") {
             QVector3D v        = value.value<QVector3D>();
             nlohmann::json arr = nlohmann::json::array();
-            arr.push_back(v.x());
-            arr.push_back(v.y());
-            arr.push_back(v.z());
+            arr.push_back(roundToPrecision(v.x(), precision));
+            arr.push_back(roundToPrecision(v.y(), precision));
+            arr.push_back(roundToPrecision(v.z(), precision));
             data[name] = arr;
             }
-      else if (type == "vector2d") {
+      else if (type == "vector2d" || type == "size") {
             QVector2D v        = value.value<QVector2D>();
             nlohmann::json arr = nlohmann::json::array();
-            arr.push_back(v.x());
-            arr.push_back(v.y());
+            arr.push_back(roundToPrecision(v.x(), precision));
+            arr.push_back(roundToPrecision(v.y(), precision));
             data[name] = arr;
             }
       else if (type == "color") {
@@ -143,7 +158,7 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
                 tid == QMetaType::ULong || tid == QMetaType::ULongLong)
                   data[name] = value.toInt();
             else
-                  data[name] = value.toDouble();
+                  data[name] = roundToPrecision(value.toDouble(), precision);
             }
       else {
             // Fallback: store as string
@@ -160,7 +175,7 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
 //---------------------------------------------------------
 
 bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObject* meta, bool gadget,
-                          const std::string& name, const std::string& type) {
+    const std::string& name, const std::string& type) {
       if (!data.contains(name))
             return false;
       const nlohmann::json& jval = data.at(name);
@@ -177,7 +192,7 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
             v.setZ(jval.at(2).get<double>());
             return writePropertyRaw(obj, meta, gadget, idx, QVariant::fromValue(v));
             }
-      else if (type == "vector2d") {
+      else if (type == "vector2d" || type == "size") {
             QVector2D v;
             v.setX(jval.at(0).get<double>());
             v.setY(jval.at(1).get<double>());
@@ -209,9 +224,130 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
             }
       else {
             // Fallback: string types
-            return writePropertyRaw(obj, meta, gadget, idx,
-                                    QVariant(QString::fromStdString(jval.get<std::string>())));
+            return writePropertyRaw(
+                obj, meta, gadget, idx, QVariant(QString::fromStdString(jval.get<std::string>())));
             }
       }
 
-} // namespace propjson
+//---------------------------------------------------------
+//   precisionForName
+//    Walk the properties() JSON definition and return the declared
+//    precision for the named property.  Handles the rows/cells format
+//    including nested sub-cells.  Returns -1 if the property is not
+//    found or has no precision field.
+//---------------------------------------------------------
+
+static void collectCellPrecision(const nlohmann::json& cell, const std::string& name, int& out) {
+      if (out >= 0)
+            return;
+      if (cell.contains("name") && cell["name"].is_string() && cell["name"].get<std::string>() == name &&
+          cell.contains("precision") && cell["precision"].is_number_integer()) {
+            out = cell["precision"].get<int>();
+            return;
+            }
+      if (cell.contains("cells") && cell["cells"].is_array())
+            for (const auto& subCell : cell["cells"])
+                  collectCellPrecision(subCell, name, out);
+      }
+
+int precisionForName(std::string_view propStr, const std::string& name) {
+      int precision = -1;
+      try {
+            nlohmann::json j = nlohmann::json::parse(propStr);
+            if (j.contains("rows") && j["rows"].is_array()) {
+                  for (const auto& row : j["rows"]) {
+                        if (row.contains("cells") && row["cells"].is_array())
+                              for (const auto& cell : row["cells"])
+                                    collectCellPrecision(cell, name, precision);
+                        }
+                  }
+            }
+      catch (const nlohmann::json::parse_error& err) {
+            Warning("precisionForName: JSON parse error: {}", err.what());
+            }
+      return precision;
+      }
+
+//---------------------------------------------------------
+//   collectCellDefaultScript
+//    Walk a cell (and any nested sub-cells) looking for the
+//    "script" metadata for the given property name.
+//---------------------------------------------------------
+
+static void collectCellDefaultScript(const nlohmann::json& cell, const std::string& name, std::string& out) {
+      if (!out.empty())
+            return;
+      if (cell.contains("name") && cell["name"].is_string() && cell["name"].get<std::string>() == name &&
+          cell.contains("script") && cell["script"].is_string()) {
+            out = cell["script"].get<std::string>();
+            return;
+            }
+      if (cell.contains("cells") && cell["cells"].is_array())
+            for (const auto& subCell : cell["cells"])
+                  collectCellDefaultScript(subCell, name, out);
+      }
+
+//---------------------------------------------------------
+//   defaultScriptForName
+//---------------------------------------------------------
+
+std::string defaultScriptForName(std::string_view propStr, const std::string& name) {
+      std::string script;
+      try {
+            nlohmann::json j = nlohmann::json::parse(propStr);
+            if (j.contains("rows") && j["rows"].is_array()) {
+                  for (const auto& row : j["rows"]) {
+                        if (row.contains("cells") && row["cells"].is_array())
+                              for (const auto& cell : row["cells"])
+                                    collectCellDefaultScript(cell, name, script);
+                        }
+                  }
+            }
+      catch (const nlohmann::json::parse_error& err) {
+            Warning("defaultScriptForName: JSON parse error: {}", err.what());
+            }
+      return script;
+      }
+
+//---------------------------------------------------------
+//   collectAllCellDefaultScripts
+//    Walk a cell (and any nested sub-cells) and collect all
+//    (name, script) pairs that declare a "script" metadata.
+//---------------------------------------------------------
+
+static void collectAllCellDefaultScripts(const nlohmann::json& cell, std::vector<DefaultScript>& out) {
+      if (cell.contains("name") && cell["name"].is_string() && cell.contains("script") &&
+          cell["script"].is_string()) {
+            std::string name   = cell["name"].get<std::string>();
+            std::string script = cell["script"].get<std::string>();
+            if (!script.empty())
+                  out.emplace_back(name, script);
+            }
+      if (cell.contains("cells") && cell["cells"].is_array())
+            for (const auto& subCell : cell["cells"])
+                  collectAllCellDefaultScripts(subCell, out);
+      }
+
+//---------------------------------------------------------
+//   allDefaultScripts
+//---------------------------------------------------------
+
+std::vector<DefaultScript> allDefaultScripts(std::string_view propStr) {
+      std::vector<DefaultScript> scripts;
+      try {
+            nlohmann::json j = nlohmann::json::parse(propStr);
+            if (j.contains("rows") && j["rows"].is_array()) {
+                  for (const auto& row : j["rows"]) {
+                        if (row.contains("cells") && row["cells"].is_array())
+                              for (const auto& cell : row["cells"])
+                                    collectAllCellDefaultScripts(cell, scripts);
+                        }
+                  }
+            }
+      catch (const nlohmann::json::parse_error& err) {
+            Warning("allDefaultScripts: JSON parse error: {}", err.what());
+            }
+      return scripts;
+      }
+
+      } // namespace propjson

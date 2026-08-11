@@ -15,6 +15,7 @@
 #include <QQmlEngine>
 #include <QJSEngine>
 #include <QVector3D>
+#include <QVector2D>
 #include <QFont>
 #include <QColor>
 #include <QRectF>
@@ -30,6 +31,8 @@
 class Project;
 class Element3d;
 class TreeModel;
+class GalvoCalibration;
+class ScriptEngine;
 
 //---------------------------------------------------------
 //   Config
@@ -54,6 +57,17 @@ class Config : public QObject
       PROPV(QColor, markColor, QColor("#000000"))
       PROPV(QColor, moveColor, QColor("#0000ff"))
       PROPV(QColor, framingColor, QColor("#00ff00"))
+      // Default colours for displayable elements
+      PROPV(QColor, rectangleColor, QColor("cyan"))
+      PROPV(QColor, polygonColor, QColor("cyan"))
+      PROPV(QColor, ellipseColor, QColor("cyan"))
+      PROPV(QColor, textColor, QColor("green"))
+      PROPV(QColor, stockColor, QColor("green"))
+      PROPV(QColor, brepColor, QColor(120, 150, 180))
+      PROPV(QColor, imageColor, QColor(180, 180, 180))
+      PROPV(QColor, fixtureColor, QColor("green"))
+      PROPV(QColor, materialTestColor, QColor("gray"))
+      PROPV(QColor, cameraColor, QColor("green"))
       PROPV(bool, showGrid, true)
       PROPV(double, gridSpacing, 10.0)
       PROPV(double, smPanX, 4.0)
@@ -84,6 +98,7 @@ class Config : public QObject
                           "name": "iconSize",
                           "label": "Icon Size",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "GUI",
                           "min": 16,
                           "max": 128,
@@ -93,6 +108,7 @@ class Config : public QObject
                           "name": "navCubeSize",
                           "label": "Nav Cube Size",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "GUI",
                           "min": 80,
                           "max": 400,
@@ -102,6 +118,7 @@ class Config : public QObject
                           "name": "handleSize",
                           "label": "Handle Size",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "GUI",
                           "min": 0.01,
                           "max": 1.0,
@@ -114,6 +131,7 @@ class Config : public QObject
                           "name": "dragThreshold",
                           "label": "Drag Threshold",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "GUI",
                           "unit": "mm",
                           "min": 0.0,
@@ -136,6 +154,7 @@ class Config : public QObject
                             },
                             {
                               "type": "int",
+                              "scriptable": true,
                               "cat": "GUI",
                               "min": 6,
                               "max": 72,
@@ -162,6 +181,7 @@ class Config : public QObject
                           "name": "gridSpacing",
                           "label": "Grid Spacing",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "View",
                           "unit": "mm",
                           "min": 1.0,
@@ -216,6 +236,71 @@ class Config : public QObject
                         {
                           "name": "moveColor",
                           "label": "Move Color",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "type": "line",
+                          "name": "line",
+                          "colSpan": 2
+                        },
+                        {
+                          "name": "rectangleColor",
+                          "label": "Rectangle",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "polygonColor",
+                          "label": "Polygon",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "ellipseColor",
+                          "label": "Ellipse",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "textColor",
+                          "label": "Text",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "stockColor",
+                          "label": "Stock",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "brepColor",
+                          "label": "BREP",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "imageColor",
+                          "label": "Image",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "fixtureColor",
+                          "label": "Fixture",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "materialTestColor",
+                          "label": "Material Test",
+                          "type": "color",
+                          "cat": "Colors"
+                        },
+                        {
+                          "name": "cameraColor",
+                          "label": "Camera",
                           "type": "color",
                           "cat": "Colors"
                         }
@@ -277,6 +362,7 @@ class Config : public QObject
                           "name": "dxfScale",
                           "label": "DXF Scale",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "Project",
                           "unit": "dpmm",
                           "min": 0.001,
@@ -290,6 +376,7 @@ class Config : public QObject
                           "name": "dxfCircleResolution",
                           "label": "DXF Circle Resolution",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "Project",
                           "unit": "segments",
                           "min": 8,
@@ -302,6 +389,7 @@ class Config : public QObject
                           "name": "dxfCurveResolution",
                           "label": "DXF Curve Resolution",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "Project",
                           "unit": "segments",
                           "min": 4,
@@ -320,6 +408,7 @@ class Config : public QObject
                           "name": "smPanX",
                           "label": "Pan Left/Right",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 50.0,
@@ -332,6 +421,7 @@ class Config : public QObject
                           "name": "smPanY",
                           "label": "Pan Up/Down",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 50.0,
@@ -344,6 +434,7 @@ class Config : public QObject
                           "name": "smZoom",
                           "label": "Zoom",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 50.0,
@@ -356,6 +447,7 @@ class Config : public QObject
                           "name": "smPitch",
                           "label": "Tilt Up/Down",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 10.0,
@@ -368,6 +460,7 @@ class Config : public QObject
                           "name": "smYaw",
                           "label": "Turn Left/Right",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 10.0,
@@ -380,6 +473,7 @@ class Config : public QObject
                           "name": "smRoll",
                           "label": "Twist",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 10.0,
@@ -433,8 +527,10 @@ class ZCam : public QObject
 
       PROPV(TreeModel*, treeModel, nullptr)
       PROPV(Machines*, machines, nullptr)
-      PROPV(LaserReceipes*, recipes, nullptr)
+      PROPV(Recipe*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
+      PROPV(GalvoCalibration*, galvoCalibration, nullptr)
+      PROPV(ScriptEngine*, scriptEngine, nullptr)
 
       void loadAssets();
 
@@ -461,42 +557,70 @@ class ZCam : public QObject
       QPointer<Element3d> _pendingSegmentElement;
       QVector3D _pendingSegmentClickPos;
       bool _pendingSegmentToggleOff {false};
+      void logPosition(const char* caller);
       // State for magnetic grid snap during element drag.
       // The reference point for each element is (0,0) in local coords.
-      // When the reference point crosses a grid line, the element "snaps"
-      // to that line.  Further dragging accumulates in _snapExcess and
-      // once it exceeds half the minor spacing, the element "breaks free"
-      // and moves freely until the next line is crossed.
+      //
+      // Simple nearest-line algorithm (per axis, independently):
+      // the cursor always "owns" a virtual position that follows the
+      // mouse unhindered; the element snaps to the grid line nearest
+      // to the cursor and sticks to it until the cursor moves more
+      // than half the minor spacing away — then the element jumps to
+      // the new nearest line.  There is no special "break free"
+      // threshold on top of the snap distance, so the element can
+      // never lag a full grid cell behind the cursor.
       struct SnapState {
-            bool activeX {false}; ///< currently snapped on X axis
-            bool activeY {false}; ///< currently snapped on Y axis
-            double excessX {0.0}; ///< accumulated drag beyond the snap point (X)
-            double excessY {0.0}; ///< accumulated drag beyond the snap point (Y)
-            QVector3D refPos;     ///< world position of the element reference point (0,0 local)
-            void reset(bool keepRef = false) {
-                  activeX = activeY = false;
-                  excessX = excessY = 0.0;
-                  if (!keepRef)
-                        refPos = QVector3D();
-                  }
+            QVector3D refPos;              ///< world position of the element reference point (0,0 local)
+            QVector3D cursorPos;           ///< world position the cursor currently points at (element origin
+                                           ///< at drag start, cursorPos + drag delta afterwards)
+            bool hasCursorPos {false};     ///< true once cursorPos/refPos/lastSnappedX/Y are seeded
+            double lastSnappedX {0.0};     ///< last snapped line position on X (valid when hasCursorPos)
+            double lastSnappedY {0.0};     ///< last snapped line position on Y (valid when hasCursorPos)
+            bool lastSnapModifier {false}; ///< last Shift state — detects mid-drag modifier change
             };
       SnapState _snapState;
 
-      /// True while an element drag with grid snap (and therefore the
-      /// reference-point cross) is active.  Unlike the per-axis
-      /// activeX/activeY flags this is set once at startElementDrag()
-      /// and cleared once at endElementDrag() — it never toggles in the
-      /// middle of a drag, so the QML marker cannot flicker.
+      /// True while an element drag is in progress.  Set once at
+      /// startElementDrag() and cleared once at endElementDrag() —
+      /// it never toggles in the middle of a drag.
       Q_PROPERTY(bool snapDragActive READ snapDragActive NOTIFY snapDragActiveChanged)
       bool _snapDragActive {false};
       bool snapDragActive() const { return _snapDragActive; }
 
-      /// World position of the reference point (element origin) as used
-      /// for the current drag / snap state.  Returns the position recorded
-      /// while a drag with grid snap is in progress, otherwise the live
-      /// position from the element's current globalMatrix().
+      /// World position of the element reference point (origin).
+      /// Kept in sync in every drag frame by dragged() / scaled().
       Q_PROPERTY(QVector3D snapRefPos READ snapRefPos NOTIFY snapRefPosChanged)
       QVector3D snapRefPos() const;
+
+      //----------------------------------------------------------------
+      //   Live 3D view-camera mirror
+      //    The QML 3D panel (View3DPanel.qml) continuously pushes the
+      //    perpendicular foot point of the canvas camera on z=0 and its
+      //    height above z=0 — BOTH in root-local millimetres, computed
+      //    exactly like screenToScene()/updateGridViewport() via
+      //    cam.mapFromViewport + root.mapPositionFromScene — via
+      //    updateViewCamera().  Cam::grabCameraView() consumes these to
+      //    align its projection viewCenter / projectionHeight so the
+      //    laser projection matches what is shown on the canvas.
+      //    These are transient view state, not part of the project file.
+      //----------------------------------------------------------------
+      Q_PROPERTY(QVector2D viewCameraCenter READ viewCameraCenter NOTIFY viewCameraChanged)
+      Q_PROPERTY(double viewCameraHeight READ viewCameraHeight NOTIFY viewCameraChanged)
+
+    public:
+      QVector2D viewCameraCenter() const { return _viewCameraCenter; }
+      double viewCameraHeight() const { return _viewCameraHeight; }
+      /// Called from QML (3D panel) whenever the canvas view changes
+      /// (pan / zoom / rotate).  Publishes the camera's perpendicular
+      /// foot point on z=0 (cx, cy) and its height above z=0, both in
+      /// root-local millimetres.
+      Q_INVOKABLE void updateViewCamera(double cx, double cy, double height);
+    Q_SIGNALS:
+      void viewCameraChanged();
+
+    protected:
+      QVector2D _viewCameraCenter {QVector2D(0.0, 0.0)};
+      double _viewCameraHeight {1000.0};
 
       // SVG drag-preview state
       TessGeometry* _dragPreviewGeometry {nullptr};
@@ -515,8 +639,9 @@ class ZCam : public QObject
       void camDirtyChanged();
       void currentElementChanged();
       void selectedElementsChanged();
-      /// Emitted when snapRefPos changes (snap engages / disengages /
-      /// reference point moves during a drag with active grid snap).
+      /// Emitted when snapRefPos changes: snap engages / disengages,
+      /// the reference point moves during a drag (with or without grid
+      /// snap), at drag start, and during pivot-scale.
       void snapRefPosChanged();
       /// Emitted once when a drag with grid snap starts (true) and ends
       /// (false).  Unlike snapRefPosChanged this never toggles mid-drag.
@@ -526,7 +651,7 @@ class ZCam : public QObject
       void remove3dElement(Element3d*); // signal 3d gui to remove an element from the scene graph
       void add3dElement(Element3d*);    // signal 3d gui to add a new element into the scene graph
       void addSubElement(Element3d*,
-                         Element3d*); // signal 3d gui to add a new subelement into the scene graph
+          Element3d*); // signal 3d gui to add a new subelement into the scene graph
       //      void rootElementChanged(Element3d*);        // signal 3d gui to rebuild scene graph
       void startDragElement(Element3d*); // signal 3d gui to drag this element
 
@@ -558,6 +683,7 @@ class ZCam : public QObject
       // ── Project lifecycle (moved from ProjectManager) ───────────────────
       /// Start a fresh, unnamed project.  Returns false if user cancelled.
       Q_INVOKABLE void newProject(bool clearPersistedPath = true);
+      Q_INVOKABLE void createTestProject();
       void startNewProject(bool clearPersistedPath = true);
       void endNewProject();
 
@@ -592,6 +718,13 @@ class ZCam : public QObject
       Element3d* currentElement() const { return _currentElement; }
       void setCurrentElement(Element3d* el);
 
+      /// Clear all tracking pointers (hoverElement, currentElement,
+      /// _selectedElements) that reference the given element.  Called
+      /// from the Element3d destructor to prevent dangling-pointer
+      /// dereferences when elements are deleted (e.g. when
+      /// MaterialTest::createChildren() recreates its children).
+      void forgetElement(Element3d* el);
+
       /// Return the default machines directory: $(HOME)/ZCam/machines
       static QString defaultMachinesDirectory();
       /// Return the default recipes directory: $(HOME)/ZCam/recipes
@@ -610,10 +743,19 @@ class ZCam : public QObject
       /// Called from QML when an element is dragged in the 3D viewport.
       /// When the project's Grid has snap enabled, grid lines act
       /// magnetically: the element's reference point (0,0 in local
-      /// coords) snaps to a grid line when it crosses it, and the
-      /// element only breaks free after the drag exceeds half the
-      /// minor grid spacing beyond the snap point.
+      /// coords), which follows the cursor, snaps to the nearest grid
+      /// line and only jumps to another line once the cursor is closer
+      /// to that line (distance > half the minor spacing).
       Q_INVOKABLE void dragged(Element3d* element, const QVector3D& delta, int modifiers);
+
+      /// Called from QML during a drag to re-anchor the grid-snap
+      /// reference point to the current cursor position (in root
+      /// coordinates).  Must be invoked whenever the canvas camera
+      /// pans or rotates mid-drag:  the delta streams from
+      /// screenToScene() are only valid as long as the camera is
+      /// fixed, so after a camera jump they would corrupt the snap
+      /// position without a re-anchor.
+      Q_INVOKABLE void updateDragAnchor(Element3d* element, const QVector3D& cursorPos);
 
       /// Called from QML when an element is rotated in the 3D viewport.
       Q_INVOKABLE void rotated(Element3d* element, const QVector3D& deltaRotation, int modifiers);
@@ -623,8 +765,8 @@ class ZCam : public QObject
       /// the scaling operation — typically the current mouse position.
       /// The element's position is adjusted so that the pivot point
       /// stays fixed in world space, analogous to zooming the canvas.
-      Q_INVOKABLE void scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers,
-                              const QVector3D& pivot);
+      Q_INVOKABLE void scaled(
+          Element3d* element, const QVector3D& scaleFactor, int modifiers, const QVector3D& pivot);
       /// Called from QML when the user starts dragging an element.
       /// Records the original transform for the undo command and
       /// resets the magnetic-snap state.
@@ -672,12 +814,10 @@ class ZCam : public QObject
       /// Dump all ray-pick candidates (hit t, name, world 3D box)
       /// to the application log — diagnosis helper for picking issues.
       Q_INVOKABLE void debugRayPick(const QVector3D& origin, const QVector3D& dir);
-
       /// Simple log bridge for QML diagnosis output (console.log from
       /// QML does not necessarily reach zcam.log depending on how the
       /// app was started).
-      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
-
+      //      Q_INVOKABLE void logLine(const QString& msg) { Debug("qml: {}", msg.toUtf8().constData()); }
       /// Convenience helper for QML: unproject the viewport point
       /// (x, y in pixels) of the given View3D through its camera and
       /// root node and pick with the resulting ray via
@@ -755,7 +895,7 @@ class ZCam : public QObject
       /// Returns a list of all LaserLayer element names in the current project.
       Q_INVOKABLE QStringList laserLayerNames() const;
       /// Returns the LaserLayer* pointer for a given name, or nullptr.
-      Q_INVOKABLE Recipe* laserLayerPtr(const QString& name) const;
+      Q_INVOKABLE LaserMop* laserLayerPtr(const QString& name) const;
 
       /// Returns a list of all Recipe names from ZCam::recipes.
       Q_INVOKABLE QStringList recipeNames() const;
@@ -857,6 +997,15 @@ class ZCam : public QObject
       /// the bounding box's bottom-left corner is at (x, y) in the
       /// parent layer's local coordinate space.
       Q_INVOKABLE void importSvgAt(const QString& path, double x, double y);
+
+      /// Import an image file (PNG, JPEG, BMP, ...) and position the
+      /// resulting ImageElement so the bounding box's bottom-left
+      /// corner is at (x, y) in scene coordinates.
+      Q_INVOKABLE bool importImageAt(const QString& path, double x, double y);
+
+      /// Compute the bounding box (in mm) of an image file, assuming
+      /// the default scale (larger axis = 100 mm).
+      Q_INVOKABLE QRectF imageBoundingBox(const QString& path);
 
       /// Export the project's CAD tree to an SVG file.
       /// The CAD hierarchy (Cad root, Group layers and nested groups)

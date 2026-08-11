@@ -16,6 +16,7 @@
 #include "tessgeometry.h"
 #include "types.h"
 #include "rectangle.h"
+#include "scriptengine.h"
 #include <QMatrix4x4>
 
 //---------------------------------------------------------
@@ -27,20 +28,36 @@
 //               that changed the most drives the other proportionally
 //      Square – force width == height using the most-changed axis
 //---------------------------------------------------------
+
 void Rectangle::set_size(QVector2D v) {
       if (v == _size)
             return;
+      // Skip lock enforcement when a script binding for "size" is
+      // involved — either a component binding is currently writing
+      // this property, or an active binding (scalar or component)
+      // will be re-evaluated because of this change (e.g. size.x
+      // bound to "size.y * 0.5" while the user edits size.y).
+      // In both cases the script controls the value; lock
+      // enforcement would override the scripted value (or square
+      // the user value so nothing visually changes).
+      ScriptEngine* se = zcam ? zcam->scriptEngine() : nullptr;
+      if (se && (se->isWritingComponentBinding(this, QStringLiteral("size")) ||
+                 se->bindingFor(this, QStringLiteral("size")))) {
+            _size = v;
+            emit sizeChanged();
+            return;
+            }
       auto mode = static_cast<LockScaleMode>(lockSize());
       if (mode == LockScaleMode::Square) {
             double s = std::max(v.x(), v.y());
-            v = QVector2D(s, s);
+            v        = QVector2D(s, s);
             }
       else if (mode == LockScaleMode::Lock) {
             if (qAbs(_size.x()) >= 1e-12 && qAbs(_size.y()) >= 1e-12) {
                   double factorW = v.x() / _size.x();
                   double factorH = v.y() / _size.y();
                   double factor  = std::max(factorW, factorH);
-                  v = QVector2D(_size.x() * factor, _size.y() * factor);
+                  v              = QVector2D(_size.x() * factor, _size.y() * factor);
                   }
             }
       if (v == _size)
@@ -58,6 +75,15 @@ Rectangle::Rectangle(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill     = true;
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
+      if (w->config())
+            setColor(w->config()->rectangleColor());
+      // Apply the GUI default declared in the properties JSON:
+      // lockSize defaults to Square (2), the member initializer is
+      // only a C++-level fallback.  NOTE: files saved before this
+      // default existed have no lockSize entry; fromJson() re-reads
+      // the stored size after the first pass, so the constructor
+      // default must not distort loaded values (see fromJson).
+      _lockSize = static_cast<int>(LockScaleMode::Square);
 
       connect(this, &Rectangle::cornerChanged, [this] {
             if (!_suppressUpdate)
@@ -228,21 +254,21 @@ void Rectangle::setVertexPos(int idx, const QVector3D& pos) {
       auto mode = static_cast<LockScaleMode>(lockSize());
       if (mode == LockScaleMode::Square) {
             double s = std::max(newW, newH);
-            newW = s;
-            newH = s;
+            newW     = s;
+            newH     = s;
             }
       else if (mode == LockScaleMode::Lock) {
             if (qAbs(_size.x()) < 1e-12 || qAbs(_size.y()) < 1e-12) {
                   double s = std::max(newW, newH);
-                  newW = s;
-                  newH = s;
+                  newW     = s;
+                  newH     = s;
                   }
             else {
                   double factorW = newW / _size.x();
                   double factorH = newH / _size.y();
                   double factor  = std::max(factorW, factorH);
-                  newW = _size.x() * factor;
-                  newH = _size.y() * factor;
+                  newW           = _size.x() * factor;
+                  newH           = _size.y() * factor;
                   }
             }
 

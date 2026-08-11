@@ -16,8 +16,11 @@
 #include "framing.h"
 #include "recipe.h"
 #include "geometryworker.h"
+#include "machine.h"
 
 #include <QPointer>
+#include <QVector2D>
+#include <QVector3D>
 #include <future>
 #include <limits>
 #include <memory>
@@ -143,6 +146,13 @@ Cam::Cam(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
       // Cam is hidden by default — the user enables it via the
       // visibility toggle in the project tree when needed.
       set_show(false);
+
+      // Toggling the projection mode or changing the viewpoint height
+      // alters the projected (laser) geometry, so mark the cam data
+      // dirty to prompt a refresh before the next marking run.
+      connect(this, &Cam::perspectiveChanged, zcam, [zcam] { zcam->setCamDirty(true); });
+      connect(this, &Cam::projectionHeightChanged, zcam, [zcam] { zcam->setCamDirty(true); });
+      connect(this, &Cam::viewCenterChanged, zcam, [zcam] { zcam->setCamDirty(true); });
       };
 
 //---------------------------------------------------------
@@ -184,9 +194,9 @@ void Cam::updateCam() {
       input.panelVDistance = panelVDistance();
 
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto* ll = toType<Recipe>(e);
+            auto* ll = toType<LaserMop>(e);
 
             Clipper2Lib::PathsD tileLines = ll->collectDisplayLines();
             if (tileLines.size() < 2) {
@@ -211,6 +221,54 @@ void Cam::updateCam() {
       }
 
 //---------------------------------------------------------
+//   grabCameraView
+//    Adopt the live view-camera from the 3D canvas.  The QML 3D panel
+//    continuously mirrors the camera's perpendicular foot on z=0 (cx, cy)
+//    and its height above z=0 — both in root-local millimetres — into
+//    ZCam (ZCam::updateViewCamera), computed exactly like screenToScene()
+//    via cam.mapFromViewport + root.mapPositionFromScene.  This reproduces
+//    the true GPU projection instead of approximating it.  The values are
+//    assigned to viewCenter / projectionHeight (which marks the cam data
+//    dirty via the constructor connections) and a recalculation is
+//    triggered so the laser projection matches the canvas view.
+//---------------------------------------------------------
+
+void Cam::grabCameraView() {
+      if (!zcam)
+            return;
+
+      // The QML 3D panel has already computed the camera's
+      // perpendicular foot on z=0 (cx, cy) and its height above z=0
+      // in root-local millimetres via cam.mapFromViewport +
+      // root.mapPositionFromScene (exactly like screenToScene).
+      // Adopt them directly.
+      double cx = zcam->viewCameraCenter().x();
+      double cy = zcam->viewCameraCenter().y();
+      double h  = zcam->viewCameraHeight();
+
+      // Fallback: when no meaningful camera height has been mirrored
+      // yet, use the workspace centre of the current machine as the
+      // foot point and 1000 mm as the height.
+      if (h < 1e-6) {
+            Machine* m = zcam->project() ? zcam->project()->machine() : nullptr;
+            if (m) {
+                  cx = m->maxTravel().x() * 0.5;
+                  cy = m->maxTravel().y() * 0.5;
+                  }
+            h = 1000.0;
+            }
+
+      // Assign the properties.  Setting them emits *Changed signals,
+      // which the constructor has connected to setCamDirty(true).
+      set_viewCenter(QVector2D(cx, cy));
+      set_projectionHeight(h);
+
+      // Trigger a recalculation so the projected geometry immediately
+      // reflects the newly adopted camera view.
+      zcam->refreshCam();
+      }
+
+//---------------------------------------------------------
 //   convexHull
 //    Compute the convex hull of all burn LaserLayer geometry,
 //    including panel-grid offsets.  The single-tile polygon data
@@ -231,9 +289,9 @@ Clipper2Lib::PathD Cam::convexHull() const {
       double panelVD = panelVDistance();
 
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto* layer = toType<Recipe>(e);
+            auto* layer = toType<LaserMop>(e);
             if (!layer->burn())
                   continue;
 
@@ -281,9 +339,9 @@ Clipper2Lib::RectD Cam::boundingBox() const {
       bool found = false;
 
       for (auto e : fixture->children()) {
-            if (!isType<Recipe>(e))
+            if (!isType<LaserMop>(e))
                   continue;
-            auto* layer = toType<Recipe>(e);
+            auto* layer = toType<LaserMop>(e);
             if (!layer->burn())
                   continue;
 

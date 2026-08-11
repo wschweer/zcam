@@ -42,13 +42,16 @@
 
 BrepElement::BrepElement(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
       set_model(QStringLiteral("BRepShape.qml"));
-      _brepGeometry  = new BrepGeometry();
-      _edgeGeometry  = new BrepEdgeGeometry();
+      _brepGeometry = new BrepGeometry();
+      _edgeGeometry = new BrepEdgeGeometry();
       _edgeGeometry->setSource(_brepGeometry);
       // Default steel-blue CAD colour; ProjectTree.qml binds this to
       // the model material (instance.color = element.curColor), so
       // without a valid colour the object renders black.
-      setColor(QColor(120, 150, 180));
+      if (zcam->config())
+            setColor(zcam->config()->brepColor());
+      else
+            setColor(QColor(120, 150, 180));
       }
 
 BrepElement::~BrepElement() = default;
@@ -110,11 +113,10 @@ bool BrepElement::loadFile(const QString& path) {
       // for solids, shells and faces alike).
       QVector3D bMin, bMax;
       if (computeMeshBounds(shape, 0.1, 0.5, bMin, bMax)) {
-            _worldBBox = QRectF(bMin.x(), bMin.y(), bMax.x() - bMin.x(),
-                                bMax.y() - bMin.y());
+            _worldBBox = QRectF(bMin.x(), bMin.y(), bMax.x() - bMin.x(), bMax.y() - bMin.y());
             _meshMin   = bMin;
             _meshMax   = bMax;
-            _hasShape  = true;    // tessellated mesh loaded successfully
+            _hasShape  = true; // tessellated mesh loaded successfully
             updateSelectionGeometry();
             }
 
@@ -232,8 +234,8 @@ bool BrepElement::loadShapeFromFile(const QString& path, TopoDS_Shape& shape) {
       OCC_CATCH_SIGNALS
       try {
             BRep_Builder builder;
-            return BRepTools::Read(shape, path.toUtf8().constData(), builder) == Standard_True
-                    && !shape.IsNull();
+            return BRepTools::Read(shape, path.toUtf8().constData(), builder) == Standard_True &&
+                   !shape.IsNull();
             }
       catch (const Standard_Failure&) {
             return false;
@@ -246,8 +248,8 @@ bool BrepElement::loadShapeFromFile(const QString& path, TopoDS_Shape& shape) {
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-bool BrepElement::buildPolylineFromShape(const TopoDS_Shape& shape, double deflection,
-                                         PathList& pathList, QRectF& worldBBox) {
+bool BrepElement::buildPolylineFromShape(const TopoDS_Shape& shape, double deflection, PathList& pathList,
+                                         QRectF& worldBBox) {
       if (shape.IsNull())
             return false;
       OCC_CATCH_SIGNALS
@@ -283,7 +285,7 @@ bool BrepElement::buildPolylineFromShape(const TopoDS_Shape& shape, double defle
                         const gp_Pnt& p = disc.Value(i);
                         path.push_back({p.X(), p.Y()});
                         worldBBox |= QRectF(p.X(), p.Y(), 0.0, 0.0);
-                        has = true;
+                        has        = true;
                         }
                   if (!path.empty())
                         pathList.push_back(std::move(path));
@@ -322,7 +324,7 @@ bool BrepElement::computeMeshBounds(const TopoDS_Shape& shape, double deflection
                               p = p.Transformed(loc.Transformation());
                         if (!has) {
                               bMin = bMax = QVector3D(float(p.X()), float(p.Y()), float(p.Z()));
-                              has   = true;
+                              has         = true;
                               continue;
                               }
                         bMin.setX(std::min(bMin.x(), float(p.X())));

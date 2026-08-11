@@ -187,70 +187,6 @@ Item {
         _hoveredHandle = newHover;
         }
 
-    //─────────────────────────────────────────────────────────────
-    //  Snap reference-point marker
-    //    A small cross rendered at the element's reference point
-    //    (element origin, 0,0 in local coords) while a drag with
-    //    grid snap is active.  Two thin #Cube models form the
-    //    horizontal and vertical bars.
-    //
-    //    Visibility is driven by ZCam.snapDragActive, a flag that
-    //    is set once at startElementDrag() and cleared once at
-    //    endElementDrag() — it never toggles in the middle of a drag
-    //    (unlike the per-axis snap flags that can switch on/off as
-    //    the cursor crosses grid lines), so the cross cannot flicker
-    //    or disappear mid-drag.
-    //
-    //    The position comes from ZCam.snapRefPos, which is derived
-    //    from the exact same parent-local pos value that is assigned
-    //    to the element during the drag (see ZCam::dragged).
-    //    Like the vertex handles, the marker lives inside root so
-    //    its position uses root-space coordinates directly.
-    //─────────────────────────────────────────────────────────────
-
-    Node {
-        id: snapMarker
-        parent: root
-        visible: ZCam.snapDragActive
-        position: ZCam.snapRefPos
-
-        // Scale compensation factor for a constant on-screen size
-        // regardless of the canvas zoom (root.scale), analogous to
-        // the vertex handles.  Shared by both bars.
-        property vector3d unitScale: {
-            var rs = root.scale
-            var f = rs.x !== 0 ? 1.0 / rs.x : 1.0
-            return Qt.vector3d(f, f, f)
-            }
-
-        // Thin horizontal bar at the reference point.
-        Model {
-            source: "#Cube"
-            pickable: false
-            scale: snapMarker.unitScale.times(Qt.vector3d(0.06, 0.006, 0.006))
-            materials: [
-                PrincipledMaterial {
-                    cullMode: PrincipledMaterial.NoCulling
-                    lighting: PrincipledMaterial.NoLighting
-                    baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
-                }
-            ]
-        }
-        // Thin vertical bar at the reference point.
-        Model {
-            source: "#Cube"
-            pickable: false
-            scale: snapMarker.unitScale.times(Qt.vector3d(0.006, 0.06, 0.006))
-            materials: [
-                PrincipledMaterial {
-                    cullMode: PrincipledMaterial.NoCulling
-                    lighting: PrincipledMaterial.NoLighting
-                    baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
-                }
-            ]
-        }
-    }
-
     // Finish the current polygon drawing session.
     // Closes the polygon and resets drawing state.
     function finishPolygonDrawing() {
@@ -273,6 +209,49 @@ Item {
         }
 
     //=========================================================
+    //  Mirror the perspective camera into ZCam
+    //    Computes EXACTLY like screenToScene()/updateGridViewport():
+    //    the camera's perpendicular foot on z=0 and its height above
+    //    z=0, both in root-local millimetres, by raycasting the centre
+    //    view ray through cam.mapFromViewport + root.mapPositionFromScene.
+    //    This reproduces the true GPU projection (incl. FOV, aspect,
+    //    clip range and the root scale/rotation) instead of approximating
+    //    it from camera2.position.  Pushed to ZCam so Cam::grabCameraView()
+    //    makes the laser projection match what is shown on the canvas.
+    //=========================================================
+    function pushViewCamera() {
+        if (typeof ZCam.updateViewCamera !== "function")
+            return;
+
+        var cam = view3D.camera;
+
+        // Camera eye in root-local coordinates (the point the GPU
+        // projects from).  camera2.position is in scene units; map it
+        // into root-local (mm) exactly like the near/far raycast below.
+        var eyeRoot = root.mapPositionFromScene(camera2.position);
+
+        // Centre view ray through the viewport (0.5, 0.5) at near/far
+        // depth, mapped into root-local coordinates.  Its intersection
+        // with the z=0 plane is the camera's perpendicular foot = viewCenter.
+        var nearC = root.mapPositionFromScene(cam.mapFromViewport(Qt.vector3d(0.5, 0.5, 0)));
+        var farC  = root.mapPositionFromScene(cam.mapFromViewport(Qt.vector3d(0.5, 0.5, 1)));
+        var dir   = farC.minus(nearC);
+
+        var cx = 0.0, cy = 0.0;
+        if (Math.abs(dir.z) > 1e-9) {
+            var t = (0.0 - nearC.z) / dir.z;
+            var fp = nearC.plus(dir.times(t));
+            cx = fp.x;
+            cy = fp.y;
+            }
+
+        // Height above z=0 in root-local mm = camera eye z-component.
+        var h = eyeRoot.z;
+
+        ZCam.updateViewCamera(cx, cy, h);
+        }
+
+    //=========================================================
     //  Grid viewport update
     //    Computes the currently visible scene region in local
     //    coordinates and pushes it to the Grid element so the
@@ -280,6 +259,10 @@ Item {
     //    area at the current zoom/pan state.
     //=========================================================
     function updateGridViewport() {
+        // Mirror the current camera into ZCam so Cam::grabCameraView()
+        // always sees the latest view state (pan / zoom / rotate).
+        pushViewCamera();
+
         var grid = ZCam.project ? ZCam.project.gridElement : null;
         if (!grid)
             return;
@@ -379,15 +362,15 @@ Item {
             // created, causing the initial positionChanged signal
             // to be missed.
             position: camera1.position
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
         PerspectiveCamera {
             id: bgCameraPerspective
             // See comment above for bgCameraOrtho.
             position: camera2.position
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
 
         Node {
@@ -480,14 +463,14 @@ Item {
         OrthographicCamera {
             id: camera1
             position: Qt.vector3d(0, 0, 1000)
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
         PerspectiveCamera {
             id: camera2
             position: Qt.vector3d(0, 0, 1000)
-            clipNear: 0.1
-            clipFar: 10000
+            clipNear: 0.01
+            clipFar: 100000
             }
         DirectionalLight {
             eulerRotation.x: -30
@@ -647,7 +630,24 @@ Item {
         pCamera.checked = panel.perspectiveCamera;
         // Initialize the grid to cover the default viewport.
         Qt.callLater(updateGridViewport);
+        // Publish the initial camera state so Cam::grabCameraView() has a
+        // valid position even before the user moves the camera.
+        Qt.callLater(pushViewCamera);
         }
+
+    // Mirror the perspective camera into ZCam whenever its position or the
+    // root zoom scale changes (pan via SpaceMouse / middle-drag, wheel zoom).
+    Connections {
+        target: camera2
+        function onPositionChanged() { pushViewCamera(); }
+        }
+    Connections {
+        target: root
+        function onScaleChanged() { pushViewCamera(); }
+        }
+    // The camera is also moved by pan gestures (mouseArea.pan) and by
+    // SpaceMouse translate; those update camera2.position and thus already
+    // trigger onPositionChanged above.
 
     SpaceMouse {
         // Per-axis sensitivity, configurable in Config → SpaceMouse.
@@ -751,6 +751,7 @@ Item {
         property real frameDelta: 10
         property var curNode: null
         property variant vertexDragHandle: null
+        property var _panGrabPoint: null   // scene point grabbed at middle-button press
         // Drag threshold: accumulate scene-space movement until it
         // exceeds config.dragThreshold before actually moving the
         // element.  This prevents accidental micro-moves when the user
@@ -759,29 +760,33 @@ Item {
         property bool _dragThresholdMet: false
         acceptedButtons: Qt.AllButtons
 
-        function pan(delta) {
+        //-----------------------------------------------------
+        //  pan
+        //    Grab-and-drag panning: on middle-button press the scene
+        //    point under the cursor is stored in _panGrabPoint.  On
+        //    each subsequent move the camera is shifted so that the
+        //    grabbed scene point stays exactly under the cursor.
+        //    This works correctly regardless of zoom level (root.scale),
+        //    rotation or projection type because it uses the same
+        //    screenToScene raycast the rest of the viewport uses.
+        //-----------------------------------------------------
+        function pan(grabScene, currentScene) {
+            if (!grabScene || !currentScene)
+                return;
+            // Delta in root-local coordinates (mm).
+            var localDelta = currentScene.minus(grabScene);
+            // Convert root-local delta to world (scene) delta.
+            // mapPositionToScene applies root's rotation + scale but
+            // also root.position; subtracting the mapped origin
+            // (== root.position) cancels the translation so we get
+            // only the rotation + scale contribution.
+            var worldOrigin = root.mapPositionToScene(Qt.vector3d(0, 0, 0));
+            var worldTarget = root.mapPositionToScene(localDelta);
+            var worldDelta  = worldTarget.minus(worldOrigin);
+            // Move the camera opposite to the delta so the grabbed
+            // point follows the cursor (grab-and-drag metaphor).
             var cam = view3D.camera;
-            var up = cam.up;
-            var right = cam.right;
-            var unitsPerPixel = 1.0;
-
-            if (cam.fieldOfView !== undefined) {
-                var fovRad = cam.fieldOfView * (Math.PI / 180);
-                var distance = cam.z;
-                distance = Math.abs(distance);
-                var viewHeightAtDepth = 2 * distance * Math.tan(fovRad / 2);
-                unitsPerPixel = viewHeightAtDepth / panel.height;
-                } else {
-                var camScale = (cam.scale) ? cam.scale.y : 1.0;
-                if (camScale === 0)
-                    camScale = 0.001;
-                unitsPerPixel = 1.0 / camScale;
-                }
-
-            var moveX = -delta.x * unitsPerPixel;
-            var moveY = delta.y * unitsPerPixel;
-            var moveVec = right.times(moveX).plus(up.times(moveY));
-            cam.position = cam.position.minus(moveVec);
+            cam.position = cam.position.minus(worldDelta);
             }
 
         // Step sizes for mouse-wheel scaling/zooming:
@@ -849,6 +854,8 @@ Item {
             // Reset drag threshold state on every press.
             _dragAccum = Qt.vector3d(0, 0, 0);
             _dragThresholdMet = false;
+            // Store the scene point under the cursor for grab-and-drag panning.
+            _panGrabPoint = eLastPos;
             // Ctrl+Left-drag starts a lasso selection.
             if (mouse.button == Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)) {
                 lassoActive = true;
@@ -1055,6 +1062,7 @@ Item {
                 ZCam.endVertexDrag(vertexDragHandle._poly, vertexDragHandle._vertexIndex);
                 vertexDragHandle = null;
                 }
+            _panGrabPoint = null;
             ZCam.endElementDrag();
             if (ZCam.currentTool != "rectangle" && ZCam.currentTool != "polygon" && ZCam.currentTool != "circle")
                 curNode = null;
@@ -1092,9 +1100,9 @@ Item {
                 if (el.show)
                     return { element: el, objectHit: results[i].objectHit, bounds: results[i].bounds };
                 }
-            ZCam.logLine("pickAll: " + results.length + " hits");
-            if (results.length === 0)
-                ZCam.logLine("pickAll -> no usable element (0 hits), falling back to pickAt");
+//            ZCam.logLine("pickAll: " + results.length + " hits");
+//            if (results.length === 0)
+//                ZCam.logLine("pickAll -> no usable element (0 hits), falling back to pickAt");
             // Fallback: C++ ray-based 3D-bbox picking.
             var el2 = ZCam.pickAt(view3D, root, vx, vy);
             if (!el2)
@@ -1189,10 +1197,10 @@ Item {
                 lastPos = currentPos;
                 updateGridViewport();
                 } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
-                pan(delta);
+                pan(_panGrabPoint, pos3d);
                 lastPos = currentPos;
                 updateGridViewport();
-                } else if ((mouse.buttons == Qt.LeftButton) && (mouse.modifiers == Qt.NoModifier)) {
+                } else if ((mouse.buttons == Qt.LeftButton) && ((mouse.modifiers == Qt.NoModifier) || (mouse.modifiers == Qt.ShiftModifier))) {
                 if (vertexDragHandle) {
                     // The handle is a child of root, so pos3d is already
                     // in the same coordinate space as the handle.
@@ -1230,7 +1238,8 @@ Item {
         }
 
     //-----------------------------------------------------
-    //  Drag & Drop area for SVG / DXF / DWG import
+    //  Drag & Drop area for file import (SVG, DXF, DWG, BREP,
+    //  PNG, JPEG, BMP, GIF, TIFF, WEBP, IPC-2581 XML/CVG)
     //-----------------------------------------------------
 
     DropArea {
@@ -1247,7 +1256,12 @@ Item {
         function containsImportable(urls) {
             for (var i = 0; i < urls.length; ++i) {
                 var path = urls[i].toString().toLowerCase();
-                if (path.endsWith(".svg") || path.endsWith(".dxf") || path.endsWith(".dwg"))
+                if (path.endsWith(".svg") || path.endsWith(".dxf") || path.endsWith(".dwg")
+                    || path.endsWith(".brep")
+                    || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg")
+                    || path.endsWith(".bmp") || path.endsWith(".gif") || path.endsWith(".tiff")
+                    || path.endsWith(".tif") || path.endsWith(".webp")
+                    || path.endsWith(".xml") || path.endsWith(".cvg"))
                     return true;
                 }
             return false;
@@ -1284,7 +1298,12 @@ Item {
                 for (var i = 0; i < drop.urls.length; ++i) {
                     var path = drop.urls[i].toString();
                     var lower = path.toLowerCase();
-                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")) {
+                    if (lower.endsWith(".svg") || lower.endsWith(".dxf") || lower.endsWith(".dwg")
+                        || lower.endsWith(".brep")
+                        || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                        || lower.endsWith(".bmp") || lower.endsWith(".gif") || lower.endsWith(".tiff")
+                        || lower.endsWith(".tif") || lower.endsWith(".webp")
+                        || lower.endsWith(".xml") || lower.endsWith(".cvg")) {
                         if (path.startsWith("file://"))
                             path = path.substring("file://".length);
                         return path;
@@ -1358,6 +1377,21 @@ Item {
                             ZCam.importFile(path);
                         imported = true;
                         }
+                    else if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                             || lower.endsWith(".bmp") || lower.endsWith(".gif") || lower.endsWith(".tiff")
+                             || lower.endsWith(".tif") || lower.endsWith(".webp")) {
+                        if (dropPos)
+                            ZCam.importImageAt(path, dropPos.x, dropPos.y);
+                        else
+                            ZCam.importFile(path);
+                        imported = true;
+                        }
+                    else {
+                        // brep, xml (IPC-2581), cvg and any other importable
+                        // format — use importFile() which dispatches by suffix.
+                        ZCam.importFile(path);
+                        imported = true;
+                        }
                     }
                 }
             else if (isArtworkDrag(drop)) {
@@ -1368,6 +1402,14 @@ Item {
                         ZCam.importSvgAt(artworkPath, dropPos.x, dropPos.y);
                     else if ((artLower.endsWith(".dxf") || artLower.endsWith(".dwg")) && dropPos)
                         ZCam.importDxfAt(artworkPath, dropPos.x, dropPos.y);
+                    else if (artLower.endsWith(".png") || artLower.endsWith(".jpg") || artLower.endsWith(".jpeg")
+                             || artLower.endsWith(".bmp") || artLower.endsWith(".gif") || artLower.endsWith(".tiff")
+                             || artLower.endsWith(".tif") || artLower.endsWith(".webp")) {
+                        if (dropPos)
+                            ZCam.importImageAt(artworkPath, dropPos.x, dropPos.y);
+                        else
+                            ZCam.importFile(artworkPath);
+                    }
                     else
                         ZCam.importFile(artworkPath);
                     imported = true;
@@ -1400,7 +1442,7 @@ Item {
 
         Label {
             anchors.centerIn: parent
-            text: qsTr("Drop SVG / DXF to import")
+            text: qsTr("Drop file to import")
             font.pixelSize: 24
             font.bold: true
             color: "white"
@@ -1449,6 +1491,59 @@ Item {
             ctx.stroke();
             }
         }
+
+    //─────────────────────────────────────────────────────────────
+    //  Snap reference-point marker
+    //    Two thin #Cube models rendered at the element's reference
+    //    point (element origin, 0,0 in local coords) while a drag is
+    //    in progress.  The models are parented to root (like
+    //    svgDragPreview) so they participate in the 3D scene.
+    //
+    //    Visibility is driven by ZCam.snapDragActive, a flag that
+    //    is set once at startElementDrag() and cleared once at
+    //    endElementDrag().
+    //─────────────────────────────────────────────────────────────
+
+    // Scale compensation factor for a constant on-screen size
+    // regardless of the canvas zoom (root.scale).
+    property vector3d _snapUnitScale: {
+        var rs = root.scale
+        var f = rs.x !== 0 ? 1.0 / rs.x : 1.0
+        return Qt.vector3d(f, f, f)
+    }
+
+    // Thin horizontal bar at the reference point.
+    Model {
+        parent: root
+        source: "#Cube"
+        visible: ZCam.snapDragActive
+        pickable: false
+        position: ZCam.snapRefPos
+        scale: panel._snapUnitScale.times(Qt.vector3d(0.06, 0.006, 0.006))
+        materials: [
+            PrincipledMaterial {
+                cullMode: PrincipledMaterial.NoCulling
+                lighting: PrincipledMaterial.NoLighting
+                baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
+            }
+        ]
+    }
+    // Thin vertical bar at the reference point.
+    Model {
+        parent: root
+        source: "#Cube"
+        visible: ZCam.snapDragActive
+        pickable: false
+        position: ZCam.snapRefPos
+        scale: panel._snapUnitScale.times(Qt.vector3d(0.006, 0.06, 0.006))
+        materials: [
+            PrincipledMaterial {
+                cullMode: PrincipledMaterial.NoCulling
+                lighting: PrincipledMaterial.NoLighting
+                baseColor: Qt.rgba(1.0, 0.4, 0.0, 1.0) // orange
+            }
+        ]
+    }
 
     // SVG drag-preview bounding box rendered in the 3D scene.
     // The geometry is a rectangle outline created by ZCam::startSvgDrag()

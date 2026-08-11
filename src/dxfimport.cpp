@@ -1170,7 +1170,7 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
                   fixture = zcam->project()->fixtures().at(0);
             }
       if (fixture) {
-            auto* ll = new Recipe(zcam, fixture);
+            auto* ll = new LaserMop(zcam, fixture);
             ll->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
             ll->setExpanded(false);
             layer->set_laserLayer(ll);

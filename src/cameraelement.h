@@ -104,6 +104,7 @@ class CameraElement : public Element3d
                         {
                           "name": "pos",
                           "type": "vector3d",
+                          "scriptable": true,
                           "unit": "mm"
                         }
                       ]
@@ -114,6 +115,7 @@ class CameraElement : public Element3d
                         {
                           "name": "overlaySize",
                           "type": "vector2d",
+                          "scriptable": true,
                           "unit": "mm",
                           "min": 1.0,
                           "max": 10000.0,
@@ -130,6 +132,7 @@ class CameraElement : public Element3d
                         {
                           "name": "rot",
                           "type": "vector3d",
+                          "scriptable": true,
                           "unit": "°",
                           "min": -360.0,
                           "max": 360.0,
@@ -146,6 +149,7 @@ class CameraElement : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1.0,
                           "max": 1.0,
                           "precision": 3,
@@ -155,6 +159,7 @@ class CameraElement : public Element3d
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1.0,
                           "max": 1.0,
                           "precision": 3,
@@ -169,6 +174,7 @@ class CameraElement : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": 0.0,
                           "max": 1.0,
                           "precision": 2,
@@ -182,6 +188,7 @@ class CameraElement : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1.0,
                           "max": 1.0,
                           "precision": 2,

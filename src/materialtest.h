@@ -11,14 +11,14 @@
 
 #pragma once
 
-#include "element3d.h"
+#include "group.h"
 #include "laser.h"
 
 //---------------------------------------------------------
 //   MaterialTest
 //---------------------------------------------------------
 
-class MaterialTest : public Element3d
+class MaterialTest : public Group
       {
       Q_OBJECT
       QML_ELEMENT
@@ -40,6 +40,7 @@ class MaterialTest : public Element3d
       PROPV(LaserRecipe*, borderLayer, nullptr)
       PROPV(bool, showBorder, true)
       PROPV(bool, showText, true)
+      PROPV(bool, fill, true)
 
       inline static constexpr std::string_view _properties {
          R"json({
@@ -63,7 +64,7 @@ class MaterialTest : public Element3d
                       ]
                     },
                     {
-                      "label": "Recipe",
+                      "label": "Mop",
                       "cells": [
                         {
                           "name": "laserLayer",
@@ -91,10 +92,70 @@ class MaterialTest : public Element3d
                       ]
                     },
                     {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "scriptable": true,
+                          "min": 0.001,
+                          "max": 1000,
+                          "default": [
+                            1.0,
+                            1.0,
+                            1.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
+                    },
+                    {
                       "label": "Grid",
                       "cells": [
                         {
                           "type": "int",
+                          "scriptable": true,
                           "min": 1,
                           "max": 100,
                           "default": 5,
@@ -103,6 +164,7 @@ class MaterialTest : public Element3d
                         },
                         {
                           "type": "int",
+                          "scriptable": true,
                           "min": 1,
                           "max": 100,
                           "default": 5,
@@ -116,6 +178,7 @@ class MaterialTest : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "unit": "mm",
                           "min": 1.0,
                           "max": 100.0,
@@ -126,6 +189,7 @@ class MaterialTest : public Element3d
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "unit": "mm",
                           "min": 1.0,
                           "max": 100.0,
@@ -166,6 +230,7 @@ class MaterialTest : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
@@ -175,6 +240,7 @@ class MaterialTest : public Element3d
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
@@ -189,6 +255,7 @@ class MaterialTest : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
@@ -198,12 +265,23 @@ class MaterialTest : public Element3d
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
                           "default": 80.0,
                           "name": "columnMax",
                           "sublabel": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Fill",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "fill"
                         }
                       ]
                     },
@@ -277,7 +355,6 @@ class MaterialTest : public Element3d
       QString genColText(int col) const;
       double rowValue(int row) const;
       double columnValue(int col) const;
-      void updateChildren();
       void addText(double x, double y, const QString& s, Group* layer, double pt, double rot);
       void createChildren();
 
