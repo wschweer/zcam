@@ -24,6 +24,7 @@
 #include "zcam.h"
 #include "treemodel.h"
 #include "undo.h"
+#include "scriptengine.h"
 #include "logger.h"
 
 #include <QSet>
@@ -62,6 +63,36 @@ void HandleDragCommand::redo() {
       if (!_element)
             return;
       _element->setVertexPos(_handleIndex, _newPos);
+      zcam->setCamDirty(true);
+      }
+
+//-------------------------------------------------------------------
+//   ScriptBindingCommand implementation
+//-------------------------------------------------------------------
+
+void ScriptBindingCommand::undo() {
+      if (!_element || !zcam)
+            return;
+      ScriptEngine* se = zcam->scriptEngine();
+      if (!se)
+            return;
+      if (_oldScript.isEmpty())
+            se->removeBinding(_element, _prop);
+      else
+            se->createBinding(_element, _prop, _comp, _oldScript);
+      zcam->setCamDirty(true);
+      }
+
+void ScriptBindingCommand::redo() {
+      if (!_element || !zcam)
+            return;
+      ScriptEngine* se = zcam->scriptEngine();
+      if (!se)
+            return;
+      if (_newScript.isEmpty())
+            se->removeBinding(_element, _prop);
+      else
+            se->createBinding(_element, _prop, _comp, _newScript);
       zcam->setCamDirty(true);
       }
 
@@ -151,7 +182,7 @@ void Project::changeProperty(Element* element, const QString& propName, const QV
                   propertyMetaType = mp.metaType();
                   if (propertyMetaType.id() == QMetaType::QObjectStar ||
                       (propertyMetaType.id() >= QMetaType::User &&
-                       propertyMetaType.sizeOf() == sizeof(void*))) {
+                          propertyMetaType.sizeOf() == sizeof(void*))) {
                         isNullPointerWrite = true;
                         }
                   }

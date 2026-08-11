@@ -27,95 +27,98 @@ class Cad : public Group
 
       inline static constexpr std::string_view _properties {
          R"json({
-    "class": "Cad",
-    "rows": [
-        {
-            "label": "Visibility",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "show",
-                    "sublabel": "Show"
-                },
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "burn",
-                    "sublabel": "Burn"
-                }
-            ]
-        },
-        {
-            "label": "Mop",
-            "cells": [
-                {
-                    "name": "laserLayer",
-                    "type": "laserLayer",
-                    "default": ""
-                }
-            ]
-        },
-        {
-            "label": "Pos.",
-            "cells": [
-                {
-                    "name": "pos",
-                    "type": "vector3d",
-                    "unit": "mm",
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Rot.",
-            "cells": [
-                {
-                    "name": "rot",
-                    "type": "vector3d",
-                    "unit": "°",
-                    "min": 0.0,
-                    "max": 360,
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Scale",
-            "cells": [
-                {
-                    "name": "scale",
-                    "type": "scale",
-                    "min": 0.001,
-                    "max": 1000,
-                    "default": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Lock",
-            "cells": [
-                {
-                    "name": "lockScale",
-                    "type": "lockScale",
-                    "default": 2
-                }
-            ]
-        }
-    ]
-})json"};
+                  "class": "Cad",
+                  "rows": [
+                    {
+                      "label": "Visibility",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "show",
+                          "sublabel": "Show"
+                        },
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "burn",
+                          "sublabel": "Burn"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Mop",
+                      "cells": [
+                        {
+                          "name": "laserLayer",
+                          "type": "laserLayer",
+                          "default": ""
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "scriptable": true,
+                          "min": 0.001,
+                          "max": 1000,
+                          "default": [
+                            1.0,
+                            1.0,
+                            1.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Lock",
+                      "cells": [
+                        {
+                          "name": "lockScale",
+                          "type": "lockScale",
+                          "default": 2
+                        }
+                      ]
+                    }
+                  ]
+                      })json"};
 
     protected:
 

@@ -148,6 +148,7 @@ qt_add_qml_module(zcam
 
         src/geometryworker.cpp src/geometryworker.h
         src/mediabrowser.cpp src/mediabrowser.h
+        src/scriptengine.cpp src/scriptengine.h
         src/cameraelement.cpp src/cameraelement.h
         src/cameraoverlaygeometry.cpp src/cameraoverlaygeometry.h
         src/cameratexturedata.cpp src/cameratexturedata.h
@@ -232,6 +233,8 @@ qt_add_resources(zcam icons FILES
       icons/visible.svg
       icons/invisible.svg
       icons/select.svg
+      icons/bound-expression.svg
+      icons/bound-expression-unset.svg
       icons/Draft_Polygon.svg
       icons/Draft_Rectangle.svg
       icons/Draft_Circle.svg

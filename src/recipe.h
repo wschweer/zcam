@@ -94,6 +94,7 @@ class LaserMop : public Element3d
                 {
                     "name": "kerfOffset",
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 0.001,
                     "default": 0.03
@@ -110,6 +111,7 @@ class LaserMop : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "default": 0.0,
                     "name": "overrideValue1",
                     "sublabel": "value"
@@ -126,6 +128,7 @@ class LaserMop : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "default": 0.0,
                     "name": "overrideValue2",
                     "sublabel": "value"
@@ -150,7 +153,7 @@ class LaserMop : public Element3d
             ]
         }
     ]
-            })"};
+                  })"};
 
       /// Process one tile's geometry through the recipe (fill, wobble, lines)
       /// and return raw line segments without panel-grid offsets.

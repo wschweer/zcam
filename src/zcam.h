@@ -32,6 +32,7 @@ class Project;
 class Element3d;
 class TreeModel;
 class GalvoCalibration;
+class ScriptEngine;
 
 //---------------------------------------------------------
 //   Config
@@ -96,6 +97,7 @@ class Config : public QObject
                           "name": "iconSize",
                           "label": "Icon Size",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "GUI",
                           "min": 16,
                           "max": 128,
@@ -105,6 +107,7 @@ class Config : public QObject
                           "name": "navCubeSize",
                           "label": "Nav Cube Size",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "GUI",
                           "min": 80,
                           "max": 400,
@@ -114,6 +117,7 @@ class Config : public QObject
                           "name": "handleSize",
                           "label": "Handle Size",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "GUI",
                           "min": 0.01,
                           "max": 1.0,
@@ -126,6 +130,7 @@ class Config : public QObject
                           "name": "dragThreshold",
                           "label": "Drag Threshold",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "GUI",
                           "unit": "mm",
                           "min": 0.0,
@@ -148,6 +153,7 @@ class Config : public QObject
                             },
                             {
                               "type": "int",
+                              "scriptable": true,
                               "cat": "GUI",
                               "min": 6,
                               "max": 72,
@@ -174,6 +180,7 @@ class Config : public QObject
                           "name": "gridSpacing",
                           "label": "Grid Spacing",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "View",
                           "unit": "mm",
                           "min": 1.0,
@@ -354,6 +361,7 @@ class Config : public QObject
                           "name": "dxfScale",
                           "label": "DXF Scale",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "Project",
                           "unit": "dpmm",
                           "min": 0.001,
@@ -367,6 +375,7 @@ class Config : public QObject
                           "name": "dxfCircleResolution",
                           "label": "DXF Circle Resolution",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "Project",
                           "unit": "segments",
                           "min": 8,
@@ -379,6 +388,7 @@ class Config : public QObject
                           "name": "dxfCurveResolution",
                           "label": "DXF Curve Resolution",
                           "type": "int",
+                          "scriptable": true,
                           "cat": "Project",
                           "unit": "segments",
                           "min": 4,
@@ -397,6 +407,7 @@ class Config : public QObject
                           "name": "smPanX",
                           "label": "Pan Left/Right",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 50.0,
@@ -409,6 +420,7 @@ class Config : public QObject
                           "name": "smPanY",
                           "label": "Pan Up/Down",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 50.0,
@@ -421,6 +433,7 @@ class Config : public QObject
                           "name": "smZoom",
                           "label": "Zoom",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 50.0,
@@ -433,6 +446,7 @@ class Config : public QObject
                           "name": "smPitch",
                           "label": "Tilt Up/Down",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 10.0,
@@ -445,6 +459,7 @@ class Config : public QObject
                           "name": "smYaw",
                           "label": "Turn Left/Right",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 10.0,
@@ -457,6 +472,7 @@ class Config : public QObject
                           "name": "smRoll",
                           "label": "Twist",
                           "type": "float",
+                          "scriptable": true,
                           "cat": "SpaceMouse",
                           "min": 0.1,
                           "max": 10.0,
@@ -512,6 +528,7 @@ class ZCam : public QObject
       PROPV(Recipe*, recipes, nullptr)
       PROPV(QString, currentTool, QString("pointer"))
       PROPV(GalvoCalibration*, galvoCalibration, nullptr)
+      PROPV(ScriptEngine*, scriptEngine, nullptr)
 
       void loadAssets();
 
@@ -632,7 +649,7 @@ class ZCam : public QObject
       void remove3dElement(Element3d*); // signal 3d gui to remove an element from the scene graph
       void add3dElement(Element3d*);    // signal 3d gui to add a new element into the scene graph
       void addSubElement(Element3d*,
-                         Element3d*); // signal 3d gui to add a new subelement into the scene graph
+          Element3d*); // signal 3d gui to add a new subelement into the scene graph
       //      void rootElementChanged(Element3d*);        // signal 3d gui to rebuild scene graph
       void startDragElement(Element3d*); // signal 3d gui to drag this element
 
@@ -746,8 +763,8 @@ class ZCam : public QObject
       /// the scaling operation — typically the current mouse position.
       /// The element's position is adjusted so that the pivot point
       /// stays fixed in world space, analogous to zooming the canvas.
-      Q_INVOKABLE void scaled(Element3d* element, const QVector3D& scaleFactor, int modifiers,
-                              const QVector3D& pivot);
+      Q_INVOKABLE void scaled(
+          Element3d* element, const QVector3D& scaleFactor, int modifiers, const QVector3D& pivot);
       /// Called from QML when the user starts dragging an element.
       /// Records the original transform for the undo command and
       /// resets the magnetic-snap state.

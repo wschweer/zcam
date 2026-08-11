@@ -72,6 +72,7 @@ class Polygon : public Element3d
                         {
                           "name": "pos",
                           "type": "vector3d",
+                          "scriptable": true,
                           "unit": "mm",
                           "default": [
                             0.0,
@@ -87,6 +88,7 @@ class Polygon : public Element3d
                         {
                           "name": "rot",
                           "type": "vector3d",
+                          "scriptable": true,
                           "unit": "°",
                           "min": 0.0,
                           "max": 360,
@@ -104,6 +106,7 @@ class Polygon : public Element3d
                         {
                           "name": "scale",
                           "type": "scale",
+                          "scriptable": true,
                           "min": 0.001,
                           "max": 1000.0,
                           "precision": 3,
@@ -146,6 +149,7 @@ class Polygon : public Element3d
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "default": 0.5,
                           "name": "lineWidth",
                           "sublabel": "width"

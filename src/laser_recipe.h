@@ -79,6 +79,7 @@ class LaserPass
                 },
                 {
                     "type": "int",
+                    "scriptable": true,
                     "min": 1,
                     "max": 10000,
                     "default": 1,
@@ -104,6 +105,7 @@ class LaserPass
                     "cells": [
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "%",
                             "min": 0.0,
                             "max": 100.0,
@@ -113,6 +115,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "kHz",
                             "default": 40.0,
                             "name": "frequency",
@@ -126,6 +129,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm/s",
                             "min": 0.0,
                             "max": 100000.0,
@@ -147,6 +151,7 @@ class LaserPass
                             "name": "interval",
                             "sublabel": " ",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.001,
                             "max": 100.0,
@@ -155,12 +160,14 @@ class LaserPass
                         {
                             "name": "intervalLpi",
                             "sublabel": "Lpi",
-                            "type": "float"
+                            "type": "float",
+                            "scriptable": true
                         },
                         {
                             "name": "intervalLpmm",
                             "sublabel": "Lpmm",
-                            "type": "float"
+                            "type": "float",
+                            "scriptable": true
                         }
                       ]
                 },
@@ -169,6 +176,7 @@ class LaserPass
                     "cells": [
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "°",
                             "min": -360.0,
                             "max": 360.0,
@@ -178,6 +186,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "°",
                             "min": -360.0,
                             "max": 360.0,
@@ -198,6 +207,7 @@ class LaserPass
                         },
                         {
                             "type": "int",
+                            "scriptable": true,
                             "min": 1,
                             "max": 100,
                             "default": 1,
@@ -217,6 +227,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.0,
                             "max": 10.0,
@@ -226,6 +237,7 @@ class LaserPass
                         },
                         {
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.0,
                             "max": 10.0,
@@ -278,6 +290,7 @@ class LaserPass
                             "sublabel": "limit",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "mm",
                             "min": 0.0,
                             "max": 100.0,
@@ -288,6 +301,7 @@ class LaserPass
                             "sublabel": "minDelay",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -298,6 +312,7 @@ class LaserPass
                             "sublabel": "maxDelay",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -324,6 +339,7 @@ class LaserPass
                             "sublabel": "off",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -334,6 +350,7 @@ class LaserPass
                             "sublabel": "end",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -344,6 +361,7 @@ class LaserPass
                             "sublabel": "polygon",
                             "enabled": "overrideTimings",
                             "type": "float",
+                            "scriptable": true,
                             "unit": "µs",
                             "min": -9999.0,
                             "max": 9999.0,
@@ -354,7 +372,7 @@ class LaserPass
             ]
         }
     ]
-                                                      })"};
+                                                            })"};
 
       //      PROPV_GADGET(double, onDelay, 100.0)
       //      PROPV_GADGET(double, offDelay, 100.0)

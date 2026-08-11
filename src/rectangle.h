@@ -40,182 +40,188 @@ class Rectangle : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-    "class": "Rectangle",
-    "rows": [
-        {
-            "label": "State",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "show",
-                    "sublabel": "Show"
-                },
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "burn",
-                    "sublabel": "Burn"
-                }
-            ]
-        },
-        {
-            "label": "Mop",
-            "cells": [
-                {
-                    "name": "laserLayer",
-                    "type": "laserLayer",
-                    "default": ""
-                }
-            ]
-        },
-        {
-            "label": "Color",
-            "cells": [
-                {
-                    "name": "color",
-                    "type": "color",
-                    "default": "green"
-                }
-            ]
-        },
-        {
-            "label": "Pos.",
-            "cells": [
-                {
-                    "name": "pos",
-                    "type": "vector3d",
-                    "unit": "mm",
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Rot.",
-            "cells": [
-                {
-                    "name": "rot",
-                    "type": "vector3d",
-                    "unit": "°",
-                    "min": 0.0,
-                    "max": 360,
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Scale",
-            "cells": [
-                {
-                    "name": "scale",
-                    "type": "scale",
-                    "min": 0.001,
-                    "max": 1000,
-                    "default": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Lock",
-            "cells": [
-                {
-                    "name": "lockScale",
-                    "type": "lockScale",
-                    "default": 0
-                }
-            ]
-        },
-        {
-            "cells": [
-                {
-                    "name": "line",
-                    "type": "line"
-                }
-            ]
-        },
-        {
-            "label": "LineWidth",
-            "cells": [
-                {
-                    "name": "lineWidth",
-                    "type": "float",
-                    "default": 0.5
-                }
-            ]
-        },
-        {
-            "label": "Size",
-            "cells": [
-                {
-                    "name": "size",
-                    "type": "vector2d",
-                    "unit": "mm",
-                    "default": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ]
-                }
-            ]
-        },
-        {
-            "label": "Lock",
-            "cells": [
-                {
-                    "name": "lockSize",
-                    "type": "lockSize",
-                    "default": 2
-                }
-            ]
-        },
-        {
-            "label": " ",
-            "cells": [
-                {
-                    "type": "lineJoin",
-                    "default": 0,
-                    "name": "joinType",
-                    "sublabel": "Join"
-                },
-                {
-                    "type": "lineEnd",
-                    "default": 0,
-                    "name": "endType",
-                    "sublabel": "End"
-                }
-            ]
-        },
-        {
-            "label": " ",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "fill",
-                    "sublabel": "fill"
-                },
-                {
-                    "type": "float",
-                    "default": 5.0,
-                    "name": "corner",
-                    "sublabel": "corner"
-                }
-            ]
-        }
-    ]
-})json"};
+                  "class": "Rectangle",
+                  "rows": [
+                    {
+                      "label": "State",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "show",
+                          "sublabel": "Show"
+                        },
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "burn",
+                          "sublabel": "Burn"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Mop",
+                      "cells": [
+                        {
+                          "name": "laserLayer",
+                          "type": "laserLayer",
+                          "default": ""
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Color",
+                      "cells": [
+                        {
+                          "name": "color",
+                          "type": "color",
+                          "default": "green"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "scriptable": true,
+                          "min": 0.001,
+                          "max": 1000,
+                          "default": [
+                            1.0,
+                            1.0,
+                            1.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Lock",
+                      "cells": [
+                        {
+                          "name": "lockScale",
+                          "type": "lockScale",
+                          "default": 0
+                        }
+                      ]
+                    },
+                    {
+                      "cells": [
+                        {
+                          "name": "line",
+                          "type": "line"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Size",
+                      "cells": [
+                        {
+                          "name": "size",
+                          "type": "size",
+                          "scriptable": true,
+                          "unit": "mm",
+                          "default": [
+                            40.0,
+                            40.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Line",
+                      "cells": [
+                        {
+                          "name": "lineWidth",
+                          "type": "float",
+                          "scriptable": true,
+                          "sublabel": "width",
+                          "default": 0.0
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Lock",
+                      "cells": [
+                        {
+                          "name": "lockSize",
+                          "type": "lockSize",
+                          "default": 2
+                        }
+                      ]
+                    },
+                    {
+                      "label": " ",
+                      "cells": [
+                        {
+                          "type": "lineJoin",
+                          "default": 0,
+                          "name": "joinType",
+                          "sublabel": "Join"
+                        },
+                        {
+                          "type": "lineEnd",
+                          "default": 0,
+                          "name": "endType",
+                          "sublabel": "End"
+                        }
+                      ]
+                    },
+                    {
+                      "label": " ",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "fill",
+                          "sublabel": "fill"
+                        },
+                        {
+                          "type": "float",
+                          "scriptable": true,
+                          "default": 5.0,
+                          "name": "corner",
+                          "sublabel": "corner"
+                        }
+                      ]
+                    }
+                  ]
+                      })json"};
 
     public:
       Rectangle(ZCam*, Element* parent = nullptr);

@@ -12,6 +12,7 @@
 #include "element3d.h"
 #include "zcam.h"
 #include "logger.h"
+#include "scriptengine.h"
 #include "brepelement.h"
 #include "clipper2/clipper.h"
 #include "propertyjson.h"
@@ -97,6 +98,7 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
 //    MaterialTest::createChildren() recreates its children and a
 //    deleted child was the current hover or selection target.
 //---------------------------------------------------------
+
 Element3d::~Element3d() {
       if (zcam)
             zcam->forgetElement(this);
@@ -108,8 +110,9 @@ Element3d::~Element3d() {
 //    that require access to the ZCam instance for name resolution.
 //    Returns true if the property was handled.
 //---------------------------------------------------------
-static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, const std::string& name,
-                               const std::string& type) {
+
+static bool writeLayerOrRecipe(
+    nlohmann::json& data, const Element3d* element, const std::string& name, const std::string& type) {
       const QMetaObject* meta = element->metaObject();
       QByteArray propName     = QByteArray::fromStdString(name);
       int idx                 = meta->indexOfProperty(propName.constData());
@@ -130,7 +133,7 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
             }
       else if (type == "laserLayer") {
             LaserMop* recipe = value.value<LaserMop*>();
-            data[name]     = recipe ? recipe->name().toStdString() : "";
+            data[name]       = recipe ? recipe->name().toStdString() : "";
             return true;
             }
       else if (type == "machine") {
@@ -152,8 +155,9 @@ static bool writeLayerOrRecipe(nlohmann::json& data, const Element3d* element, c
 //    that require access to the ZCam instance for pointer resolution.
 //    Returns true if the property was handled.
 //---------------------------------------------------------
-static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, const std::string& name,
-                              const std::string& type) {
+
+static bool readLayerOrRecipe(
+    const nlohmann::json& data, Element3d* element, const std::string& name, const std::string& type) {
       if (!data.contains(name))
             return false;
       const nlohmann::json& jval = data.at(name);
@@ -194,7 +198,7 @@ static bool readLayerOrRecipe(const nlohmann::json& data, Element3d* element, co
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
-            LaserMop* ll     = element->zcamInstance()->laserLayerPtr(llName);
+            LaserMop* ll   = element->zcamInstance()->laserLayerPtr(llName);
             if (ll)
                   mp.write(element, QVariant::fromValue(ll));
             else if (!llName.isEmpty())
@@ -245,8 +249,8 @@ json Element3d::toJson() const {
             if (type == "layer" || type == "recipe" || type == "machine" || type == "laserLayer")
                   writeLayerOrRecipe(data, this, name, type);
             else
-                  propjson::writePropertyToJson(data, this, meta, false, name, type,
-                                              propjson::precisionForName(propStr, name));
+                  propjson::writePropertyToJson(
+                      data, this, meta, false, name, type, propjson::precisionForName(propStr, name));
 
       return data;
       }
@@ -304,6 +308,14 @@ void Element3d::fromJson(const json& json) {
                   else
                         propjson::readPropertyFromJson(json, this, meta, false, name, type);
                   }
+            // When an element has a "size" cell with a lockSize sibling,
+            // pass 1 may have distorted the stored value: for old files
+            // (no lockSize entry) the constructor default (Square) was
+            // still active when "size" was written.  Re-read "size"
+            // unconditionally so the exact serialized value wins.
+            for (const auto& [name, type] : propNames)
+                  if (type == "size")
+                        propjson::readPropertyFromJson(json, this, meta, false, name, type);
             }
       catch (const nlohmann::json::parse_error& err) {
             Warning("Element3d::fromJson: JSON parse error in properties: {}", err.what());
@@ -337,7 +349,7 @@ void Element3d::fixup() {
                               mp.write(this, QVariant::fromValue(ll));
                         else
                               Warning("Element3d::fixup: laserLayer '{}' not found for element '{}'",
-                                      ref.name.toStdString(), name().toStdString());
+                                  ref.name.toStdString(), name().toStdString());
                         }
                   else if (ref.refType == "layer") {
                         Group* layer = zcamInstance()->layerPtr(ref.name);
@@ -345,7 +357,7 @@ void Element3d::fixup() {
                               mp.write(this, QVariant::fromValue(layer));
                         else
                               Warning("Element3d::fixup: layer '{}' not found for element '{}'",
-                                      ref.name.toStdString(), name().toStdString());
+                                  ref.name.toStdString(), name().toStdString());
                         }
                   else if (ref.refType == "recipe") {
                         LaserRecipe* recipe = zcamInstance()->recipePtr(ref.name);
@@ -353,7 +365,7 @@ void Element3d::fixup() {
                               mp.write(this, QVariant::fromValue(recipe));
                         else
                               Warning("Element3d::fixup: recipe '{}' not found for element '{}'",
-                                      ref.name.toStdString(), name().toStdString());
+                                  ref.name.toStdString(), name().toStdString());
                         }
                   }
             _pendingRefs.clear();
@@ -383,6 +395,7 @@ bool Element3d::ancestorsShow() const {
 //    first non-null laserLayer reference found.  Returns nullptr
 //    if no ancestor (including self) has a laserLayer set.
 //---------------------------------------------------------
+
 LaserMop* Element3d::effectiveLaserLayer() const {
       const Element3d* e = this;
       while (e) {
@@ -522,12 +535,12 @@ void Element3d::worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
       boundingBox3D(lMin, lMax);
       QMatrix4x4 gm = globalMatrix();
       bMin          = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
-                                std::numeric_limits<float>::max());
+          std::numeric_limits<float>::max());
       bMax          = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
-                                std::numeric_limits<float>::lowest());
+          std::numeric_limits<float>::lowest());
       for (int i = 0; i < 8; ++i) {
-            QVector3D c((i & 1) ? lMax.x() : lMin.x(), (i & 2) ? lMax.y() : lMin.y(),
-                        (i & 4) ? lMax.z() : lMin.z());
+            QVector3D c(
+                (i & 1) ? lMax.x() : lMin.x(), (i & 2) ? lMax.y() : lMin.y(), (i & 4) ? lMax.z() : lMin.z());
             c = gm.map(c);
             bMin.setX(std::min(bMin.x(), c.x()));
             bMin.setY(std::min(bMin.y(), c.y()));
@@ -637,6 +650,7 @@ void Element3d::clearSnapMarkers() {
 //    toward white or black, which is clearly perceptible
 //    yet preserves the hue identity.
 //---------------------------------------------------------
+
 static QColor adjustColorTone(const QColor& c, double tone) {
       constexpr double blend = 0.2; // 20 % shift
       int r                  = c.red();
@@ -705,6 +719,18 @@ void Element3d::setColor(const QColor& c) {
 void Element3d::set_scaleAR(QVector3D v) {
       if (v == _scale)
             return;
+      // Skip lock enforcement when a script component binding is
+      // currently writing this property.  The binding controls
+      // individual components; lock enforcement would override it.
+      ScriptEngine* se = zcam ? zcam->scriptEngine() : nullptr;
+      if (se && se->isWritingComponentBinding(this, QStringLiteral("scale"))) {
+            set_scale(v);
+            if (!_batching) {
+                  ++_vertexRevision;
+                  emit vertexRevisionChanged();
+                  }
+            return;
+            }
       auto mode = static_cast<LockScaleMode>(lockScale());
       if (mode == LockScaleMode::Square) {
             // Determine which axis changed the most and use its
@@ -825,18 +851,18 @@ void Element3d::strokeAndFill() {
             bool f                  = fill();
 
             QPointer<Element3d> guard(this);
-            GeometryWorker::instance().requestStroke(cl, lw, jt, et, f,
-                                                     [this, guard](const GeometryWorker::StrokeResult& r) {
-                                                           if (!guard || !r.valid)
-                                                                 return;
-                                                           _pathList = r.pathList;
-                                                           _geometry->setPolygons(_pathList);
-                                                           // Update the selection (bounding box)
-                                                           // geometry now that the final path
-                                                           // list is available.
-                                                           updateSelectionGeometry();
-                                                           emit selectionGeometryChanged();
-                                                           });
+            GeometryWorker::instance().requestStroke(
+                cl, lw, jt, et, f, [this, guard](const GeometryWorker::StrokeResult& r) {
+                      if (!guard || !r.valid)
+                            return;
+                      _pathList = r.pathList;
+                      _geometry->setPolygons(_pathList);
+                      // Update the selection (bounding box)
+                      // geometry now that the final path
+                      // list is available.
+                      updateSelectionGeometry();
+                      emit selectionGeometryChanged();
+                      });
             }
       else {
             _pathList.setFill(fill());
@@ -862,8 +888,9 @@ void closePath(PathList& pl) {
 //   projectPathListToXY
 //    See declaration in element3d.h for full documentation.
 //---------------------------------------------------------
-Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective, double projectionHeight,
-                                        const QPointF& viewCenter) {
+
+Clipper2Lib::PathsD projectPathListToXY(
+    const Element3d* element, bool perspective, double projectionHeight, const QPointF& viewCenter) {
       Clipper2Lib::PathsD result;
       const auto& pl = element->pathList();
       if (pl.empty())

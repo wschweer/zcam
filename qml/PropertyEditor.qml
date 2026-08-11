@@ -5,10 +5,11 @@
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License version 2
-//  as published in the file LICENSE.GPL
+//  as published by the file LICENSE.GPL
 //=============================================================================
 
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Controls.Basic
 import QtQuick.Controls.Material
@@ -38,8 +39,15 @@ Item {
     // Optional label width
     property int labelWidth: 75
 
+    // Color for script-bound property values shown in the inspector.
+    readonly property string _boundColor: "#1565c0"  // dark blue
+
     // Signals forwarded from the model
     signal modelDataChanged()
+
+    // Exposed so child ScriptButtons can locate the shared popup
+    // without walking QML scoping trees.
+    property alias _scriptPopup: scriptPopup
 
     Material.theme: Material.Dark
 
@@ -182,7 +190,532 @@ Item {
         return v === true
         }
 
-    // ── Reusable borderless SpinBox ──────────────────────────────────────────
+    // ── Scripting helpers ────────────────────────────────────────────────
+    // True when the given property is driven by a JavaScript binding
+    // (read-only in the GUI, greyed out, f(x) button shows "active").
+    function isScriptBound(propName) {
+        const _ = root._dataChangeCounter   // re-evaluate on dataChanged
+        if (!root.model || !root.model.isScriptBound)
+            return false
+        return root.model.isScriptBound(propName)
+        }
+
+    function isScriptActive(propName) {
+        const _ = root._dataChangeCounter
+        if (!root.model || !root.model.isScriptActive)
+            return true
+        return root.model.isScriptActive(propName)
+        }
+
+    /// True when a script exists for this property (active or inactive).
+    /// Used by the f(x) button to show the "has script" icon even
+    /// when the binding is paused.
+    function hasScript(propName) {
+        const _ = root._dataChangeCounter
+        if (root.isScriptBound(propName))
+            return true
+        // Also check for inactive bindings: scriptFor returns the
+        // stored script text even when the binding is inactive.
+        if (scriptFor(propName, -1).length > 0)
+            return true
+        for (let c = 0; c < 3; ++c) {
+            if (scriptFor(propName, c).length > 0)
+                return true
+            }
+        return false
+        }
+
+    function boundComponents(propName) {
+        const _ = root._dataChangeCounter
+        if (!root.model || !root.model.boundComponents)
+            return ""
+        return root.model.boundComponents(propName)
+        }
+
+    function scriptFor(propName, comp) {
+        if (!root.model || !root.model.scriptFor)
+            return ""
+        return root.model.scriptFor(propName, comp)
+        }
+
+    function scriptError(propName, comp) {
+        if (!root.model || !root.model.scriptError)
+            return ""
+        return root.model.scriptError(propName, comp)
+        }
+
+    // ── Shared utility functions ────────────────────────────────────────
+    // Build a string list with a prefix entry (e.g. "(inherited)", "(none)").
+    function buildListWithPrefix(prefix, baseList) {
+        var list = [prefix]
+        if (baseList) {
+            for (var i = 0; i < baseList.length; ++i)
+                list.push(baseList[i])
+            }
+        return list
+        }
+
+    // Resolve a pointer to a display name, returning "" for null/undefined.
+    function resolvePointerName(toNameFn, ptr) {
+        if (ptr === undefined || ptr === null)
+            return ""
+        return toNameFn ? toNameFn(ptr) : ""
+        }
+
+    // Safely assign a property only if the target item defines it.
+    function safeSetProp(item, propName, value) {
+        if (item && item[propName] !== undefined)
+            item[propName] = value
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Unified delegate dispatch & setup helpers
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Central type → Component dispatch, replacing the three duplicated
+    // switch statements that existed in the top-level, sub, and column
+    // loaders.  Every type maps to a single unified delegate that handles
+    // both top-level (showLabel=true) and sub (showLabel=false) contexts.
+    function delegateForType(type) {
+        switch (type) {
+            case "bool":
+            case "fontStyle":   return boolDelegate
+            case "int":          return intDelegate
+            case "float":        return floatDelegate
+            case "vector3d":
+            case "scale":
+            case "vector2d":
+            case "size":         return vectorDelegate
+            case "font":          return fontDelegate
+            case "halign":        return halignDelegate
+            case "multiline":
+            case "singleline":
+            case "string":       return textDelegate
+            case "path":          return pathDelegate
+            case "line":          return lineDelegate
+            case "color":         return colorDelegate
+            case "layer":
+            case "laserLayer":
+            case "recipe":
+            case "machine":      return pointerComboDelegate
+            case "machineName":
+            case "machineType":
+            case "boardType":
+            case "ethDevice":    return stringComboDelegate
+            case "override":
+            case "lineJoin":
+            case "lineEnd":
+            case "framingType":  return enumComboDelegate
+            case "pulsewidth":   return pulsewidthDelegate
+            case "lockScale":
+            case "lockSize":      return lockDelegate
+            case "cameraName":
+            case "cameraResolution":
+            case "cameraFrameRate": return cameraComboDelegate
+            case "cameraView":    return cameraViewDelegate
+            case "cameraCapture": return cameraCaptureDelegate
+            case "empty":         return emptyDelegate
+            default:              return textDelegate
+            }
+        }
+
+    // Common setup for scalar property delegates (bool, int, float, combo, …).
+    // Called from every Loader's onLoaded to set the unified property
+    // interface with a single function call, replacing ~6 repeated
+    // assignment blocks.
+    function setupDelegate(item, name, valueFn, metaObj, index, setter, isTop) {
+        if (!item)
+            return
+        item.propName  = name
+        item.propValue = Qt.binding(valueFn)
+        item.meta       = metaObj
+        item.propIndex  = index
+        item.showLabel  = isTop
+        item.enabled    = Qt.binding(() => root.isPropEnabled(item.meta))
+        item.opacity    = Qt.binding(() => item ? (item.enabled ? 1.0 : 0.4) : 0.4)
+        item.bound      = Qt.binding(() => root.isScriptBound(name))
+        item.boundComponents = Qt.binding(() => root.boundComponents(name))
+        item.setValue   = setter
+        }
+
+    // Setup for row-type delegates (subProps / subValues / rowLabel).
+    function setupRowDelegate(item, propName, subProps, subValuesBinding, rowLabel, propIndex, setSubValueFn) {
+        if (!item)
+            return
+        item.propName   = propName
+        item.subProps   = subProps
+        item.subValues  = subValuesBinding
+        item.rowLabel   = rowLabel ?? ""
+        item.propIndex  = propIndex
+        item.setSubValue = setSubValueFn
+        }
+
+    // Setup for sub-delegates loaded inside row/colRow repeaters.
+    function setupSubDelegate(item, subName, subValueFn, subMeta, setSubFn) {
+        if (!item)
+            return
+        item.propName  = subName
+        item.propValue = Qt.binding(subValueFn)
+        item.meta       = subMeta
+        item.showLabel  = false
+        item.enabled    = Qt.binding(() => root.isPropEnabled(item.meta))
+        item.opacity    = Qt.binding(() => item ? (item.enabled ? 1.0 : 0.4) : 0.4)
+        item.bound      = Qt.binding(() => root.isScriptBound(subName))
+        item.boundComponents = Qt.binding(() => root.boundComponents(subName))
+        item.setValue   = setSubFn
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  ScriptButton: f(x) button shown next to every scriptable prop
+    // ══════════════════════════════════════════════════════════════════════
+    component ScriptButton: ToolButton {
+        id: scriptBtn
+
+        required property string propName
+        /// -1 → scalar binding; 0/1/2 → vector component x/y/z
+        property int component: -1
+        /// True when this button represents a vector property.
+        /// The popup will show a component selector (All/X/Y/Z).
+        property bool vectorMode: false
+        property bool vectorIs2d: false
+        property string boundComps: ""
+
+        Layout.preferredWidth: 22
+        Layout.preferredHeight: 22
+        Layout.minimumWidth: 22
+        padding: 0
+        checkable: false
+
+        property bool bound: {
+            if (vectorMode) {
+                // Bound if any component has a script (active or inactive).
+                return root.hasScript(propName)
+            }
+            return root.hasScript(propName)
+        }
+
+        icon.source: bound ? "qrc:/icons/bound-expression.svg"
+                           : "qrc:/icons/bound-expression-unset.svg"
+        icon.width: 32
+        icon.height: 32
+        icon.color: "transparent"
+
+        background: Rectangle {
+            color: scriptBtn.hovered ? "#4a4a4a" : "transparent"
+            radius: 3
+            }
+
+        ToolTip.visible: hovered
+        ToolTip.text: scriptBtn.bound ? qsTr("Edit script binding")
+                                      : qsTr("Create script binding")
+
+        onClicked: {
+            root._openScriptPopup(scriptBtn.propName, scriptBtn.component,
+                                  scriptBtn.vectorMode, scriptBtn.vectorIs2d,
+                                  scriptBtn.boundComps)
+            }
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  ScriptPopup: edit/evaluate/enable a script binding
+    // ══════════════════════════════════════════════════════════════════════
+    function _openScriptPopup(propName, component, vectorMode, vectorIs2d, boundComps) {
+        scriptPopup.targetProp = propName
+        scriptPopup.vectorMode = vectorMode ?? false
+        scriptPopup.vectorIs2d = vectorIs2d ?? false
+
+        // In vector mode, pick the component to show:
+        //   1. If _lastComponent has a non-empty script, reuse it.
+        //   2. Otherwise, if there are existing bindings, use the
+        //      first bound component so the script text is loaded.
+        //   3. Otherwise default to the passed component (-1 = scalar).
+        let comp = component
+        if (vectorMode) {
+            if (scriptPopup._lastComponent >= 0
+                && scriptFor(propName, scriptPopup._lastComponent).length > 0)
+                comp = scriptPopup._lastComponent
+            else if (boundComps && boundComps !== "") {
+                const parts = boundComps.split(",")
+                const first = parts[0]
+                if (first === "all")
+                    comp = -1
+                else
+                    comp = parseInt(first)
+                }
+            else {
+                // No active binding info (boundComps is empty for
+                // inactive bindings) — scan scriptFor to find the
+                // component that has a stored script.
+                if (scriptFor(propName, -1).length > 0)
+                    comp = -1
+                else {
+                    for (let c = 0; c < 3; ++c) {
+                        if (scriptFor(propName, c).length > 0) {
+                            comp = c
+                            break
+                            }
+                        }
+                    }
+                }
+            }
+        scriptPopup.component  = comp
+        scriptPopup._lastComponent = comp
+        scriptPopup.script     = scriptFor(propName, comp)
+        scriptPopup.error      = scriptError(propName, comp)
+        scriptPopup.result     = ""
+        scriptPopup.active     = root.isScriptActive(propName)
+        scriptPopup.open()
+        }
+
+    Popup {
+        id: scriptPopup
+        modal: true
+        width: 500
+        padding: 10
+        parent: root.Window.window ? root.Window.window.contentItem : root
+        anchors.centerIn: parent
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        property string targetProp: ""
+        property int component: -1
+        property string script: ""
+        property string result: ""
+        property string error: ""
+        property bool active: false
+        property bool _userDeactivated: false
+
+        // Vector mode: show a component selector (All/X/Y/Z) so the
+        // user can pick which component to bind.
+        property bool vectorMode: false
+        property bool vectorIs2d: false
+        property int _lastComponent: -1   // remembers last-used component
+
+        function _compLabel(c) {
+            if (vectorIs2d)
+                return ["All", "Width", "Height"][c + 1] ?? "All"
+            return ["All", "X", "Y", "Z"][c + 1] ?? "All"
+            }
+
+        onOpened: {
+            scriptTextArea.text = scriptPopup.script
+            activeCheck.checked = scriptPopup.active
+            scriptPopup._userDeactivated = false
+            scriptTextArea.forceActiveFocus()
+            scriptPopup.evaluate()
+            }
+
+        onClosed: {
+            if (scriptPopup._userDeactivated)
+                return
+            if (scriptTextArea.text.length > 0)
+                scriptPopup.apply()
+            else if (scriptPopup.active)
+                scriptPopup.deactivate()
+            }
+
+        function evaluate() {
+            if (!root.model || !root.model.testScript)
+                return
+            let r
+            if (root.model.testScriptWithContext)
+                r = root.model.testScriptWithContext(scriptTextArea.text)
+            else
+                r = root.model.testScript(scriptTextArea.text)
+            if (r === undefined || r === null) {
+                scriptPopup.result = "(undefined)"
+                scriptPopup.error  = ""
+                }
+            else if (typeof r === "string" && r.length > 0 && r.indexOf(":") >= 0 && r.indexOf("error") >= 0) {
+                // ScriptEngine returns the error string on failure
+                scriptPopup.result = ""
+                scriptPopup.error  = r
+                }
+            else {
+                scriptPopup.result = String(r)
+                scriptPopup.error  = ""
+                }
+            }
+
+        function apply() {
+            if (!root.model || !root.model.setScript)
+                return
+            root.model.setScript(scriptPopup.targetProp,
+                                 scriptPopup.component,
+                                 scriptTextArea.text)
+            scriptPopup.active = true
+            scriptPopup.error  = root.scriptError(scriptPopup.targetProp, scriptPopup.component)
+            scriptPopup.result = ""
+            }
+
+        function deactivate() {
+            if (!root.model || !root.model.setScriptActive)
+                return
+            root.model.setScriptActive(scriptPopup.targetProp, false)
+            scriptPopup.active = false
+            scriptPopup.error  = ""
+            scriptPopup.result = ""
+            }
+
+        function activate() {
+            if (!root.model || !root.model.setScriptActive)
+                return
+            root.model.setScriptActive(scriptPopup.targetProp, true)
+            scriptPopup.active = true
+            scriptPopup.error  = root.scriptError(scriptPopup.targetProp, scriptPopup.component)
+            scriptPopup.result = ""
+            }
+
+        contentItem: ColumnLayout {
+            spacing: 6
+
+            Label {
+                text: qsTr("Script for %1%2")
+                      .arg(scriptPopup.targetProp)
+                      .arg(scriptPopup.vectorMode ? "." + scriptPopup._compLabel(scriptPopup.component)
+                                                  : (scriptPopup.component >= 0 ? "." + ["x","y","z"][scriptPopup.component] : ""))
+                font.bold: true
+                color: Material.accentColor
+                Layout.fillWidth: true
+                }
+
+            // Component selector for vector properties
+            RowLayout {
+                visible: scriptPopup.vectorMode
+                Layout.fillWidth: true
+                spacing: 4
+
+                Label { text: qsTr("Component:"); opacity: 0.7 }
+
+                Repeater {
+                    model: scriptPopup.vectorIs2d
+                           ? ["All", "Width", "Height"]
+                           : ["All", "X", "Y", "Z"]
+
+                    delegate: Button {
+                        required property string modelData
+                        required property int index
+
+                        readonly property int compValue: index - 1  // All=-1, X=0, Y=1, Z=2
+
+                        text: modelData
+                        checkable: true
+                        checked: scriptPopup.component === compValue
+                        Layout.preferredHeight: 24
+                        flat: true
+                        onClicked: {
+                            scriptPopup._lastComponent = compValue
+                            scriptPopup.component = compValue
+                            scriptPopup.script = root.scriptFor(scriptPopup.targetProp, compValue)
+                            scriptPopup.error  = root.scriptError(scriptPopup.targetProp, compValue)
+                            scriptTextArea.text = scriptPopup.script
+                            scriptPopup.evaluate()
+                            }
+                        }
+                    }
+                }
+
+            // script input
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 100
+                color: "#2a2a2a"
+                radius: 4
+                border.color: scriptTextArea.activeFocus ? Material.accentColor : "#555555"
+
+                ScrollView {
+                    id: scriptScroll
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    TextArea {
+                        id: scriptTextArea
+                        width: Math.max(scriptScroll.width - 8, implicitWidth)
+                        wrapMode: TextArea.Wrap
+                        font.family: "monospace"
+                        color: "#ffffff"
+                        background: Item {}
+                        padding: 0
+                        onTextChanged: scriptPopup.evaluate()
+                        }
+                    }
+                }
+
+            // live evaluation
+            RowLayout {
+                spacing: 4
+                Layout.fillWidth: true
+
+                Label { text: qsTr("Result:"); opacity: 0.7 }
+
+                ToolButton {
+                    text: "="
+                    onClicked: scriptPopup.evaluate()
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Evaluate expression")
+                    }
+                Label {
+                    id: resultLabel
+                    text: scriptPopup.result
+                    Layout.fillWidth: true
+                    font.family: "monospace"
+                    color: "#aaffaa"
+                    wrapMode: Text.Wrap
+                    }
+                }
+
+            // error display
+            Label {
+                id: errorLabel
+                text: scriptPopup.error
+                visible: text.length > 0
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: "#ff8080"
+                font.pixelSize: 11
+                }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 1
+                color: Material.accentColor
+                opacity: 0.3
+                }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                CheckBox {
+                    id: activeCheck
+                    text: qsTr("Active")
+                    checked: scriptPopup.active
+                    onToggled: {
+                        if (checked) {
+                            scriptPopup.activate()
+                            scriptPopup._userDeactivated = false
+                            }
+                        else {
+                            scriptPopup.deactivate()
+                            scriptPopup._userDeactivated = true
+                            }
+                        }
+                    }
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    text: qsTr("Close")
+                    onClicked: scriptPopup.close()
+                    }
+                }
+            }
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Reusable borderless SpinBox
+    // ══════════════════════════════════════════════════════════════════════
     component BareSpinBox : SpinBox {
         id: _sb
         editable: true
@@ -199,7 +732,7 @@ Item {
 
         contentItem: TextInput {
             text: _sb.displayText
-            color: _sb.enabled ? "#ffffff" : "#888888"
+            color: _sb.boundColor.length > 0 ? _sb.boundColor : (_sb.enabled ? "#ffffff" : "#888888")
             font.bold: true
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -240,6 +773,10 @@ Item {
 
         property int resetValue: 0
 
+        // When non-empty, overrides the text color to indicate a
+        // script-bound (read-only) property value.
+        property string boundColor: ""
+
         // The surrounding ValueBox provides hover feedback, but its MouseArea
         // sits below this SpinBox's own MouseArea.  Bind the ValueBox's hover
         // state to this SpinBox's MouseArea so the highlight works uniformly.
@@ -259,7 +796,9 @@ Item {
             }
         }
 
-    // ── Reusable borderless DoubleSpinBox ────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+    //  Reusable borderless DoubleSpinBox
+    // ══════════════════════════════════════════════════════════════════════
     component BareDoubleSpinBox : DoubleSpinBox {
         id: _dsb
         editable: true
@@ -276,7 +815,7 @@ Item {
 
         contentItem: TextInput {
             text: _dsb.displayText
-            color: _dsb.enabled ? "#ffffff" : "#888888"
+            color: _dsb.boundColor.length > 0 ? _dsb.boundColor : (_dsb.enabled ? "#ffffff" : "#888888")
             font.bold: true
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -325,6 +864,10 @@ Item {
         property real bigStep
         property real minStep
 
+        // When non-empty, overrides the text color to indicate a
+        // script-bound (read-only) property value.
+        property string boundColor: ""
+
         property Item valueBox: {
             let p = parent
             while (p) {
@@ -341,7 +884,104 @@ Item {
             }
         }
 
-    // ── ValueBox ─────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+    //  BareComboBox — borderless styled ComboBox (eliminates ~30× duplication)
+    // ══════════════════════════════════════════════════════════════════════
+    component BareComboBox : ComboBox {
+        id: _combo
+
+        background: Item {}
+        padding: 2
+        indicator: Item {}
+
+        // Optional override for the display text.  When non-empty, this is
+        // used instead of the ComboBox's own displayText.
+        property string displayTextOverride: ""
+
+        // Text color for the content item.
+        property color textColor: "#ffffff"
+
+        contentItem: Text {
+            text: _combo.displayTextOverride.length > 0
+                  ? _combo.displayTextOverride
+                  : _combo.displayText
+            font.bold: true
+            color: _combo.textColor
+            horizontalAlignment: Text.AlignLeft
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            }
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  PropLabel — standard property label (eliminates ~20× duplication)
+    // ══════════════════════════════════════════════════════════════════════
+    component PropLabel : Label {
+        id: _lbl
+        Layout.preferredWidth: root.labelWidth
+        Layout.rightMargin: 2
+        elide: Text.ElideRight
+        horizontalAlignment: Text.AlignRight
+        verticalAlignment: _lbl.alignTop ? Text.AlignTop : Text.AlignVCenter
+        color: Material.foreground
+        opacity: 0.75
+
+        property bool alignTop: false
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  VectorComponentBox — one ValueBox+BareDoubleSpinBox for a single
+    //  vector component (X/Y/Z).  Eliminates the 3× repetition inside each
+    //  vector delegate and the 4× top/sub vector2d/vector3d duplication.
+    // ══════════════════════════════════════════════════════════════════════
+    component VectorComponentBox : ValueBox {
+        id: vecBox
+
+        property string compLabel: "X"
+        property int compIndex: 0
+        property var vectorValue
+        property var meta
+        property var boundComponents: ""
+        property var onComponentChange: function(newValue) {}
+
+        subLabelText: compLabel
+        unitText: meta ? meta.unit ?? "" : ""
+        Layout.fillWidth: true
+
+        BareDoubleSpinBox {
+            id: vecSpin
+            anchors.fill: parent
+            editable: !(vecBox.boundComponents === "all"
+                        || vecBox.boundComponents.split(",").indexOf(String(vecBox.compIndex)) >= 0)
+            boundColor: (vecBox.boundComponents === "all"
+                         || vecBox.boundComponents.split(",").indexOf(String(vecBox.compIndex)) >= 0)
+                        ? root._boundColor : ""
+            from: vecBox.meta && vecBox.meta.min !== undefined ? vecBox.meta.min : -1000000.0
+            to:   vecBox.meta && vecBox.meta.max !== undefined ? vecBox.meta.max : 1000000.0
+            stepSize: root.defaultStepSize(vecBox.meta)
+            bigStep:  root.defaultBigStep(vecBox.meta)
+            minStep:  root.defaultMinStep(vecBox.meta)
+            resetValue: root.defaultScalarFromMeta(vecBox.meta, vecBox.compIndex)
+            decimals: vecBox.meta && vecBox.meta.precision !== undefined ? vecBox.meta.precision : 2
+
+            property real modelValue: {
+                if (!vecBox.vectorValue)
+                    return 0.0
+                if (vecBox.compIndex === 0) return Number(vecBox.vectorValue.x) || 0.0
+                if (vecBox.compIndex === 1) return Number(vecBox.vectorValue.y) || 0.0
+                if (vecBox.compIndex === 2) return Number(vecBox.vectorValue.z) || 0.0
+                return 0.0
+                }
+            value: modelValue
+            onModelValueChanged: if (value !== modelValue) value = modelValue
+
+            onValueChanged: vecBox.onComponentChange(value)
+            }
+        }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  ValueBox
+    // ══════════════════════════════════════════════════════════════════════
     component ValueBox : Rectangle {
         id: vbox
         color: vbox.enabled ? (vbox.hovered ? "#c2c2c2" : "#a9a9a9") : "#5a5a5a"
@@ -415,7 +1055,9 @@ Item {
             }
         }
 
-    // ── Property ListView ────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+    //  Property ListView
+    // ══════════════════════════════════════════════════════════════════════
     ListView {
         id: listView
         anchors.fill: parent
@@ -424,12 +1066,13 @@ Item {
         spacing: 2
 
         ScrollBar.vertical: ScrollBar {
+            id: propScrollBar
             policy: ScrollBar.AsNeeded
         }
 
         delegate: Item {
             id: delegateRoot
-            width: ListView.view.width
+            width: ListView.view.width - (propScrollBar.visible && propScrollBar.width > 0 ? propScrollBar.width + 2 : 0)
             height: loader.item ? loader.item.implicitHeight : 0
 
             required property var model
@@ -450,58 +1093,22 @@ Item {
                         return lineDelegate
                     const m = root.metaFor(delegateRoot.model.propName)
                     if (!m) return null
-                    const t = m.type || "string"
-                    switch (t) {
-                        case "bool":      return boolDelegate
-                        case "int":       return intDelegate
-                        case "float":     return floatDelegate
-                        case "vector3d":  return vector3dDelegate
-                        case "scale":      return vector3dDelegate
-                        case "vector2d":  return vector2dDelegate
-                        case "font":      return fontDelegate
-                        case "halign":    return halignDelegate
-                        case "multiline": return multilineDelegate
-                        case "singleline":return singlelineDelegate
-                        case "path":      return pathDelegate
-                        case "line":      return lineDelegate
-                        case "color":     return colorDelegate
-                        case "layer":      return layerDelegate
-                        case "laserLayer": return laserLayerDelegate
-                        case "recipe":    return recipeDelegate
-                        case "machine":   return machineDelegate
-                        case "machineName": return machineNameDelegate
-                        case "machineType": return machineTypeDelegate
-                        case "boardType":  return boardTypeDelegate
-                        case "override":  return overrideDelegate
-                        case "pulsewidth": return pulsewidthDelegate
-                        case "lineJoin":  return lineJoinDelegate
-                        case "lineEnd":    return lineEndDelegate
-                        case "lockScale":  return lockScaleDelegate
-                        case "lockSize":   return lockSizeDelegate
-                        case "framingType": return framingTypeDelegate
-                        case "ethDevice":  return ethDeviceDelegate
-                        case "cameraName": return cameraNameDelegate
-                        case "cameraResolution": return cameraResolutionDelegate
-                        case "cameraFrameRate": return cameraFrameRateDelegate
-                        case "cameraView": return cameraViewDelegate
-                        case "cameraCapture": return cameraCaptureDelegate
-                        case "empty":      return emptyDelegate
-                        default:          return stringDelegate
-                        }
+                    return root.delegateForType(m.type || "string")
                     }
 
                 onLoaded: {
                     if (!item)
                         return
                     if (delegateRoot.model.isRow) {
-                        item.propName   = delegateRoot.model.propName
-                        item.subProps   = delegateRoot.model.subProps
-                        item.subValues  = Qt.binding(() => delegateRoot.model.subValues)
-                        item.rowLabel   = delegateRoot.model.rowLabel ?? ""
-                        item.propIndex  = delegateRoot.index
-                        item.setSubValue = function(subName, v) {
-                            root.model.setSubProperty(delegateRoot.index, subName, v)
-                            }
+                        root.setupRowDelegate(item,
+                            delegateRoot.model.propName,
+                            delegateRoot.model.subProps,
+                            Qt.binding(() => delegateRoot.model.subValues),
+                            delegateRoot.model.rowLabel,
+                            delegateRoot.index,
+                            function(subName, v) {
+                                root.model.setSubProperty(delegateRoot.index, subName, v)
+                                })
                         }
                     else if (delegateRoot.model.isColumns) {
                         item.propIndex   = delegateRoot.index
@@ -515,428 +1122,341 @@ Item {
                             }
                         }
                     else {
-                        item.propName  = delegateRoot.model.propName
-                        item.propValue = Qt.binding(() => delegateRoot.model.propValue)
-                        item.meta      = root.metaFor(delegateRoot.model.propName)
-                        item.rowLabel  = delegateRoot.model.rowLabel ?? ""
-                        item.propIndex = delegateRoot.index
-                        item.enabled  = Qt.binding(() => root.isPropEnabled(item.meta))
-                        item.opacity  = Qt.binding(() => loader.item ? (loader.item.enabled ? 1.0 : 0.4) : 0.4)
-                        item.setModelValue = function(v) {
-                            delegateRoot.model.propValue = v
-                            }
+                        root.setupDelegate(item,
+                            delegateRoot.model.propName,
+                            () => delegateRoot.model.propValue,
+                            root.metaFor(delegateRoot.model.propName),
+                            delegateRoot.index,
+                            function(v) { delegateRoot.model.propValue = v },
+                            true)
+                        root.safeSetProp(item, "rowLabel", delegateRoot.model.rowLabel ?? "")
                         }
                     }
                 }
             }
+        }
 
-        // ── line: horizontal separator (optionally with label text) ──
-        Component {
-            id: lineDelegate
+    // ══════════════════════════════════════════════════════════════════════
+    //  Structural delegates
+    // ══════════════════════════════════════════════════════════════════════
 
-            Item {
-                width: parent ? parent.width : 0
-                implicitHeight: lineLabel.text.length > 0 ? Math.max(lineLabel.implicitHeight, 8) + 4 : 8
+    // ── line: horizontal separator (optionally with label text) ──
+    // Unified: replaces both lineDelegate and colLineDelegate.
+    Component {
+        id: lineDelegate
 
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property string rowLabel
-                property var setModelValue: function(v) {}
+        Item {
+            width: parent ? parent.width : 0
+            implicitHeight: lineLabel.text.length > 0 ? Math.max(lineLabel.implicitHeight, 8) + 4 : 8
 
-                Label {
-                    id: lineLabel
-                    text: parent.rowLabel
-                    font.bold: true
-                    color: Material.foreground
-                    opacity: 0.75
-                    anchors.left: parent.left
-                    anchors.leftMargin: lineLabel.text.length > 0 ? 8 : 0
-                    anchors.top: parent.top
-                    anchors.topMargin: lineLabel.text.length > 0 ? 2 : 0
-                    }
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property string rowLabel
+            property bool showLabel: true
+            property bool bound: false
+            property var boundComponents: ""
+            property var setValue: function(v) {}
 
-                Rectangle {
-                    anchors.left: lineLabel.text.length > 0 ? lineLabel.right : parent.left
-                    anchors.leftMargin: lineLabel.text.length > 0 ? 6 : 0
-                    anchors.right: parent.right
-                    anchors.verticalCenter: lineLabel.text.length > 0 ? lineLabel.verticalCenter : parent.verticalCenter
-                    height: 1
-                    color: Material.accentColor
-                    opacity: 0.3
-                    }
+            Label {
+                id: lineLabel
+                text: parent.rowLabel
+                font.bold: true
+                color: Material.foreground
+                opacity: 0.75
+                anchors.left: parent.left
+                anchors.leftMargin: lineLabel.text.length > 0 ? 8 : 0
+                anchors.top: parent.top
+                anchors.topMargin: lineLabel.text.length > 0 ? 2 : 0
+                }
+
+            Rectangle {
+                anchors.left: lineLabel.text.length > 0 ? lineLabel.right : parent.left
+                anchors.leftMargin: lineLabel.text.length > 0 ? 6 : 0
+                anchors.right: parent.right
+                anchors.verticalCenter: lineLabel.text.length > 0 ? lineLabel.verticalCenter : parent.verticalCenter
+                height: 1
+                color: Material.accentColor
+                opacity: 0.3
                 }
             }
+        }
 
-        // ── empty: placeholder that takes space but renders nothing ────
-        Component {
-            id: emptyDelegate
+    // ── empty: placeholder that takes space but renders nothing ────
+    // Unified: replaces both emptyDelegate and subEmptyDelegate.
+    Component {
+        id: emptyDelegate
 
-            Item {
-                width: parent ? parent.width : 0
-                implicitHeight: 28
+        Item {
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            implicitHeight: 28
 
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-                }
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property bool showLabel: true
+            property bool bound: false
+            property var boundComponents: ""
+            property string rowLabel: ""
+            property var setValue: function(v) {}
             }
+        }
 
-        // ── subEmpty: empty placeholder for row entries ─────────────────
-        Component {
-            id: subEmptyDelegate
+    // ── row: multiple sub-properties on one line ──────────────────────
+    // Unified: replaces both rowDelegate and colRowDelegate.
+    Component {
+        id: rowDelegate
 
-            Item {
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                implicitHeight: 28
+        RowLayout {
+            id: rowContainer
+            width: parent ? parent.width : 0
+            spacing: 4
 
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
+            property string propName
+            property var subProps
+            property var subValues
+            property string rowLabel
+            property int propIndex
+            property var setSubValue
+
+            Label {
+                text: rowContainer.rowLabel
+                Layout.preferredWidth: root.labelWidth
+                Layout.rightMargin: 2
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                color: Material.foreground
+                opacity: 0.75
+                visible: rowContainer.rowLabel.length > 0
                 }
-            }
 
-        // ── row: multiple sub-properties on one line ──────────────────────
-        Component {
-            id: rowDelegate
+            Repeater {
+                model: rowContainer.subProps
 
-            RowLayout {
-                id: rowContainer
-                width: parent ? parent.width : 0
-                spacing: 4
+                delegate: Loader {
+                    id: subLoader
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: {
+                        const count = rowContainer.subProps ? rowContainer.subProps.length : 1
+                        if (count <= 1)
+                            return -1
+                        const gap = (count - 1) * rowContainer.spacing
+                        return Math.max(0, (rowContainer.width - gap) / count)
+                        }
 
-                property string propName
-                property var subProps
-                property var subValues
-                property string rowLabel
-                property int propIndex
-                property var setSubValue
+                    required property string modelData
+                    required property int index
 
-                Label {
-                    text: rowContainer.rowLabel
-                    Layout.preferredWidth: root.labelWidth
-                    Layout.rightMargin: 2
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    visible: rowContainer.rowLabel.length > 0
-                    }
+                    property string subName: modelData
+                    property var subMeta: root.metaForSub(rowContainer.propName, subName)
+                    property var subValue: rowContainer.subValues ? rowContainer.subValues[index] : undefined
 
-                Repeater {
-                    model: rowContainer.subProps
+                    sourceComponent: {
+                        if (subLoader.subName === "empty")
+                            return emptyDelegate
+                        const m = subLoader.subMeta
+                        if (!m) return null
+                        return root.delegateForType(m.type || "string")
+                        }
 
-                    delegate: Loader {
-                        id: subLoader
-                        Layout.fillWidth: true
-
-                        required property string modelData
-                        required property int index
-
-                        property string subName: modelData
-                        property var subMeta: root.metaForSub(rowContainer.propName, subName)
-                        property var subValue: rowContainer.subValues ? rowContainer.subValues[index] : undefined
-                        
-
-                        sourceComponent: {
-                            if (subLoader.subName === "empty")
-                                return subEmptyDelegate
-                            const m = subLoader.subMeta
-                            if (!m) return null
-                            const t = m.type || "string"
-                            switch (t) {
-                                case "bool":      return subBoolDelegate
-                                case "fontStyle": return subFontStyleDelegate
-                                case "int":       return subIntDelegate
-                                case "float":     return subFloatDelegate
-                                case "vector3d":  return subVector3dDelegate
-                                case "scale":     return subVector3dDelegate
-                                case "vector2d":  return subVector2dDelegate
-                                case "halign":    return subHalignDelegate
-                                case "laserLayer": return subLaserLayerDelegate
-                                case "recipe":    return subRecipeDelegate
-                                case "color":     return subColorDelegate
-                                case "machine": return subMachineDelegate
-                                case "machineName": return subMachineNameDelegate
-                                case "machineType": return subMachineTypeDelegate
-                                case "boardType":  return subBoardTypeDelegate
-                                case "override":  return subOverrideDelegate
-                                case "pulsewidth": return subPulsewidthDelegate
-                                case "lineJoin":  return subLineJoinDelegate
-                                case "lineEnd":    return subLineEndDelegate
-                                case "lockScale":  return subLockScaleDelegate
-                                case "lockSize":   return subLockSizeDelegate
-                                case "framingType": return subFramingTypeDelegate
-                                case "cameraName": return subCameraNameDelegate
-                                case "cameraResolution": return subCameraResolutionDelegate
-                                case "cameraFrameRate": return subCameraFrameRateDelegate
-                                case "ethDevice":  return subEthDeviceDelegate
-                                case "multiline":return subMultilineDelegate
-                                case "singleline":return subSinglelineDelegate
-                                case "cameraCapture": return subCameraCaptureDelegate
-                                case "empty":      return subEmptyDelegate
-                                case "string":    return subStringDelegate
-                                default:          return subStringDelegate
-                                }
-                            }
-
-                        onLoaded: {
-                            if (!item)
-                                return
-                            item.subName  = subLoader.subName
-                            item.subValue = Qt.binding(() => subLoader.subValue)
-                            item.subMeta   = subLoader.subMeta
-                            item.enabled  = Qt.binding(() => root.isPropEnabled(subLoader.subMeta))
-                            item.opacity  = Qt.binding(() => subLoader.item ? (subLoader.item.enabled ? 1.0 : 0.4) : 0.4)
-                            item.setSub    = function(v) {
+                    onLoaded: {
+                        if (!item)
+                            return
+                        root.setupSubDelegate(item,
+                            subLoader.subName,
+                            () => subLoader.subValue,
+                            subLoader.subMeta,
+                            function(v) {
                                 if (rowContainer.setSubValue)
                                     rowContainer.setSubValue(subLoader.subName, v)
-                                }
-                            }
+                                })
                         }
                     }
                 }
             }
+        }
 
-        // ── columns: multi-column layout for multiple properties ────────
-        //  Uses a Column of RowLayouts. Each item gets a fixed width
-        //  calculated from (parentWidth / columnCount * colSpan).
-        //  This avoids Layout.fillWidth issues where inner RowLayout
-        //  delegates override their width with parent.width.
-        Component {
-            id: columnsDelegate
+    // ── columns: multi-column layout for multiple properties ────────
+    Component {
+        id: columnsDelegate
 
-            Column {
-                id: colsContainer
-                width: parent ? parent.width : 0
-                spacing: 2
+        Column {
+            id: colsContainer
+            width: parent ? parent.width : 0
+            spacing: 2
 
-                property int propIndex
-                property int columnCount: 2
-                property var columnItems: []
-                property var setModelValue: function(propName, v) {}
-                property var setSubValue: function(rowItem, subName, v) {}
+            property int propIndex
+            property int columnCount: 2
+            property var columnItems: []
+            property var setModelValue: function(propName, v) {}
+            property var setSubValue: function(rowItem, subName, v) {}
 
-                // Structural key: changes only when items are added/removed/
-                // reordered or change type, NOT when property values change.
-                // This prevents the Repeater from rebuilding on value-only updates.
-                property string _rowsKey: {
-                    const items = colsContainer.columnItems
-                    if (!items || !items.length)
-                        return ""
-                    let key = ""
+            // Structural key: changes only when items are added/removed/
+            // reordered or change type, NOT when property values change.
+            property string _rowsKey: {
+                const items = colsContainer.columnItems
+                if (!items || !items.length)
+                    return ""
+                let key = ""
+                for (let i = 0; i < items.length; ++i) {
+                    const item = items[i]
+                    key += (item.name || "") + "|" + (item.colSpan || 1) + "|"
+                          + (item.isRow ? "1" : "0") + "|" + (item.isLine ? "1" : "0") + "|"
+                          + (item.isEmpty ? "1" : "0") + "|" + (item.rowLabel || "") + ";"
+                }
+                return key
+                }
+
+            property var _structItems: []
+
+            property var rows: {
+                const _k = colsContainer._rowsKey
+                const items = colsContainer._structItems
+                if (!items || !items.length)
+                    return []
+                const numCols = colsContainer.columnCount
+                const result = []
+                let currentRow = []
+                let currentCol = 0
+                for (let i = 0; i < items.length; ++i) {
+                    const item = items[i]
+                    const span = item.colSpan || 1
+                    if (currentCol + span > numCols && currentRow.length > 0) {
+                        result.push(currentRow)
+                        currentRow = []
+                        currentCol = 0
+                        }
+                    currentRow.push({
+                        name: item.name,
+                        isRow: item.isRow,
+                        isLine: item.isLine,
+                        isEmpty: item.isEmpty,
+                        colSpan: span,
+                        rowLabel: item.rowLabel || "",
+                        subProps: item.subProps || [],
+                        _idx: i
+                        })
+                    currentCol += span
+                    if (currentCol >= numCols) {
+                        result.push(currentRow)
+                        currentRow = []
+                        currentCol = 0
+                        }
+                    }
+                if (currentRow.length > 0)
+                    result.push(currentRow)
+                return result
+                }
+
+            on_RowsKeyChanged: {
+                const items = colsContainer.columnItems
+                const struct = []
+                if (items && items.length) {
                     for (let i = 0; i < items.length; ++i) {
                         const item = items[i]
-                        key += (item.name || "") + "|" + (item.colSpan || 1) + "|"
-                              + (item.isRow ? "1" : "0") + "|" + (item.isLine ? "1" : "0") + "|"
-                              + (item.isEmpty ? "1" : "0") + "|" + (item.rowLabel || "") + ";"
-                    }
-                    return key
-                    }
-
-                // Cache of structural item data, rebuilt only when _rowsKey changes.
-                property var _structItems: []
-
-                // Group flat columnItems into visual rows respecting
-                // columnCount and per-item colSpan.
-                // Only depends on _rowsKey + _structItems so that value-only
-                // changes don't cause the Repeater to rebuild (which would
-                // flicker other widgets like the FPK checkbox).
-                property var rows: {
-                    // Touch _rowsKey to set up the dependency
-                    const _k = colsContainer._rowsKey
-                    const items = colsContainer._structItems
-                    if (!items || !items.length)
-                        return []
-                    const numCols = colsContainer.columnCount
-                    const result = []
-                    let currentRow = []
-                    let currentCol = 0
-                    for (let i = 0; i < items.length; ++i) {
-                        const item = items[i]
-                        const span = item.colSpan || 1
-                        if (currentCol + span > numCols && currentRow.length > 0) {
-                            result.push(currentRow)
-                            currentRow = []
-                            currentCol = 0
-                            }
-                        currentRow.push({
+                        struct.push({
                             name: item.name,
                             isRow: item.isRow,
                             isLine: item.isLine,
                             isEmpty: item.isEmpty,
-                            colSpan: span,
+                            colSpan: item.colSpan || 1,
                             rowLabel: item.rowLabel || "",
-                            subProps: item.subProps || [],
-                            _idx: i
-                            })
-                        currentCol += span
-                        if (currentCol >= numCols) {
-                            result.push(currentRow)
-                            currentRow = []
-                            currentCol = 0
-                            }
-                        }
-                    if (currentRow.length > 0)
-                        result.push(currentRow)
-                    return result
+                            subProps: item.subProps || []
+                        })
                     }
+                }
+                colsContainer._structItems = struct
+                }
 
-                // Rebuild _structItems whenever _rowsKey changes
-                on_RowsKeyChanged: {
-                    const items = colsContainer.columnItems
-                    const struct = []
-                    if (items && items.length) {
-                        for (let i = 0; i < items.length; ++i) {
-                            const item = items[i]
-                            struct.push({
-                                name: item.name,
-                                isRow: item.isRow,
-                                isLine: item.isLine,
-                                isEmpty: item.isEmpty,
-                                colSpan: item.colSpan || 1,
-                                rowLabel: item.rowLabel || "",
-                                subProps: item.subProps || []
-                            })
-                        }
-                    }
-                    colsContainer._structItems = struct
-                    }
+            Repeater {
+                model: colsContainer.rows
 
-                Repeater {
-                    model: colsContainer.rows
+                delegate: Row {
+                    id: colsRow
+                    width: colsContainer.width
+                    spacing: 4
 
-                    delegate: Row {
-                        id: colsRow
-                        width: colsContainer.width
-                        spacing: 4
+                    required property var modelData
+                    required property int index
 
-                        required property var modelData
-                        required property int index
+                    Repeater {
+                        model: colsRow.modelData
 
-                        Repeater {
-                            model: colsRow.modelData
+                        delegate: Loader {
+                            id: colLoader
 
-                            delegate: Loader {
-                                id: colLoader
+                            required property var modelData
+                            required property int index
 
-                                required property var modelData
-                                required property int index
+                            property var itemData: modelData
 
-                                property var itemData: modelData
+                            width: {
+                                const numCols = colsContainer.columnCount
+                                const span = (colLoader.itemData ? (colLoader.itemData.colSpan || 1) : 1)
+                                const totalW = colsContainer.width
+                                const gap = (numCols - 1) * colsRow.spacing
+                                const colW = Math.max(0, (totalW - gap) / numCols)
+                                if (span >= numCols)
+                                    return totalW
+                                return colW * span + (span - 1) * colsRow.spacing
+                                }
 
-                                // Fixed width = (totalWidth - spacing) / numCols * colSpan
-                                width: {
-                                    const numCols = colsContainer.columnCount
-                                    const span = (colLoader.itemData ? (colLoader.itemData.colSpan || 1) : 1)
-                                    const totalW = colsContainer.width
-                                    const gap = (numCols - 1) * colsRow.spacing
-                                    const colW = Math.max(0, (totalW - gap) / numCols)
-                                    if (span >= numCols)
-                                        return totalW
-                                    return colW * span + (span - 1) * colsRow.spacing
+                            sourceComponent: {
+                                const d = colLoader.itemData
+                                if (!d)
+                                    return null
+                                if (d.isLine)
+                                    return lineDelegate
+                                if (d.isEmpty)
+                                    return emptyDelegate
+                                if (d.isRow)
+                                    return rowDelegate
+                                const m = root.metaFor(d.name)
+                                if (!m)
+                                    return null
+                                return root.delegateForType(m.type || "string")
+                                }
+
+                            onLoaded: {
+                                const d = colLoader.itemData
+                                if (!d || !item)
+                                    return
+                                if (d.isLine) {
+                                    item.rowLabel = d.rowLabel || ""
+                                    return
                                     }
-
-                                sourceComponent: {
-                                    const d = colLoader.itemData
-                                    if (!d)
-                                        return null
-                                    if (d.isLine)
-                                        return colLineDelegate
-                                    if (d.isEmpty)
-                                        return emptyDelegate
-                                    if (d.isRow)
-                                        return colRowDelegate
-                                    const m = root.metaFor(d.name)
-                                    if (!m)
-                                        return null
-                                    const t = m.type || "string"
-                                    switch (t) {
-                                        case "bool":      return boolDelegate
-                                        case "int":       return intDelegate
-                                        case "float":     return floatDelegate
-                                        case "vector3d":  return vector3dDelegate
-                                        case "scale":      return vector3dDelegate
-                                        case "vector2d":  return vector2dDelegate
-                                        case "font":      return fontDelegate
-                                        case "halign":    return halignDelegate
-                                        case "multiline": return multilineDelegate
-                                        case "singleline":return singlelineDelegate
-                                        case "path":      return pathDelegate
-                                        case "color":     return colorDelegate
-                                        case "layer":      return layerDelegate
-                                        case "laserLayer": return laserLayerDelegate
-                                        case "recipe":    return recipeDelegate
-                                        case "machine":   return machineDelegate
-                                        case "machineName": return machineNameDelegate
-                                        case "machineType": return machineTypeDelegate
-                                        case "boardType":  return boardTypeDelegate
-                                        case "override":  return overrideDelegate
-                                        case "pulsewidth": return pulsewidthDelegate
-                                        case "lineJoin":  return lineJoinDelegate
-                                        case "lineEnd":    return lineEndDelegate
-                                        case "lockScale":  return lockScaleDelegate
-                                        case "lockSize":   return lockSizeDelegate
-                                        case "framingType": return framingTypeDelegate
-                                        case "ethDevice":  return ethDeviceDelegate
-                                        case "cameraName": return cameraNameDelegate
-                                        case "cameraResolution": return cameraResolutionDelegate
-                                        case "cameraFrameRate": return cameraFrameRateDelegate
-                                        case "cameraView": return cameraViewDelegate
-                                        case "cameraCapture": return cameraCaptureDelegate
-                                        case "empty":      return emptyDelegate
-                                        default:          return stringDelegate
-                                        }
-                                    }
-
-                                onLoaded: {
-                                    const d = colLoader.itemData
-                                    if (!d || !item)
-                                        return
-                                    if (d.isLine) {
-                                        item.rowLabel = d.rowLabel || ""
-                                        return
-                                        }
-                                    if (d.isEmpty)
-                                        return
-                                    if (d.isRow) {
-                                        item.propName   = "row"
-                                        item.subProps   = d.subProps
-                                        item.subValues  = Qt.binding(() => {
-                                            // Read directly from the model's columnItems
-                                            // so value-only changes don't rebuild the Repeater.
+                                if (d.isEmpty)
+                                    return
+                                if (d.isRow) {
+                                    root.setupRowDelegate(item,
+                                        "row",
+                                        d.subProps,
+                                        Qt.binding(() => {
                                             const ci = colsContainer.columnItems
                                             if (!ci || d._idx >= ci.length) return undefined
                                             return ci[d._idx].subValues
-                                        })
-                                        item.rowLabel   = d.rowLabel || ""
-                                        item.propIndex  = colsContainer.propIndex
-                                        item.setSubValue = function(subName, v) {
+                                        }),
+                                        d.rowLabel,
+                                        colsContainer.propIndex,
+                                        function(subName, v) {
                                             colsContainer.setSubValue(d, subName, v)
-                                            }
-                                        }
-                                    else {
-                                        item.propName  = d.name
-                                        item.propValue = Qt.binding(() => {
-                                            // Read directly from the model's columnItems
-                                            // so value-only changes don't rebuild the Repeater.
+                                            })
+                                    }
+                                else {
+                                    root.setupDelegate(item,
+                                        d.name,
+                                        () => {
                                             const ci = colsContainer.columnItems
                                             if (!ci || d._idx >= ci.length) return undefined
                                             return ci[d._idx].propValue
-                                            })
-                                        item.meta = Qt.binding(() => root.metaFor(item.propName))
-                                        item.propIndex = colsContainer.propIndex
-                                        item.enabled = Qt.binding(() => root.isPropEnabled(item.meta))
-                                        item.opacity = Qt.binding(() => colLoader.item ? (colLoader.item.enabled ? 1.0 : 0.4) : 0.4)
-                                        item.setModelValue = function(v) {
-                                            colsContainer.setModelValue(d.name, v)
-                                            }
-                                        }
+                                        },
+                                        root.metaFor(d.name),
+                                        colsContainer.propIndex,
+                                        function(v) { colsContainer.setModelValue(d.name, v) },
+                                        true)
                                     }
                                 }
                             }
@@ -944,530 +1464,347 @@ Item {
                     }
                 }
             }
+        }
 
-        // ── colLineDelegate: horizontal separator inside columns ────────
-        Component {
-            id: colLineDelegate
+    // ══════════════════════════════════════════════════════════════════════
+    //  Type delegates — unified top/sub
+    //
+    //  Every delegate uses the same unified interface:
+    //    property string propName
+    //    property var propValue
+    //    property var meta
+    //    property int propIndex
+    //    property var setValue: function(v) {}
+    //    property bool bound
+    //    property var boundComponents
+    //    property bool showLabel   (true=top, false=sub)
+    //    property string rowLabel
+    //
+    //  When showLabel is true, a PropLabel is shown on the left.
+    //  When false, subLabelText is used on the ValueBox instead.
+    // ══════════════════════════════════════════════════════════════════════
 
-            Item {
-                width: parent ? parent.width : 0
-                implicitHeight: colLineLabel.text.length > 0 ? Math.max(colLineLabel.implicitHeight, 8) + 4 : 8
+    // ── bool / fontStyle: CheckBox ───────────────────────────────────
+    Component {
+        id: boolDelegate
 
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property string rowLabel
-                property var setModelValue: function(v) {}
+        RowLayout {
+            id: boolDel
+            Layout.fillWidth: !showLabel
+            width: parent ? parent.width : 0
+            spacing: 2
 
-                Label {
-                    id: colLineLabel
-                    text: parent.rowLabel
-                    font.bold: true
-                    color: Material.foreground
-                    opacity: 0.75
-                    anchors.left: parent.left
-                    anchors.leftMargin: colLineLabel.text.length > 0 ? 8 : 0
-                    anchors.top: parent.top
-                    anchors.topMargin: colLineLabel.text.length > 0 ? 2 : 0
-                    }
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-                Rectangle {
-                    anchors.left: colLineLabel.text.length > 0 ? colLineLabel.right : parent.left
-                    anchors.leftMargin: colLineLabel.text.length > 0 ? 6 : 0
-                    anchors.right: parent.right
-                    anchors.verticalCenter: colLineLabel.text.length > 0 ? colLineLabel.verticalCenter : parent.verticalCenter
-                    height: 1
-                    color: Material.accentColor
-                    opacity: 0.3
-                    }
-                }
+            PropLabel {
+                visible: boolDel.showLabel
+                text: boolDel.meta ? boolDel.meta.label ?? "" : ""
             }
-
-        // ── colRowDelegate: row of sub-properties inside columns ────────
-        Component {
-            id: colRowDelegate
-
-            RowLayout {
-                id: rowContainerCol
-                width: parent ? parent.width : 0
-                spacing: 4
-
-                property string propName
-                property var subProps
-                property var subValues
-                property string rowLabel
-                property int propIndex
-                property var setSubValue
-
-                Label {
-                    text: rowContainerCol.rowLabel
-                    Layout.preferredWidth: root.labelWidth
-                    Layout.rightMargin: 2
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    visible: rowContainerCol.rowLabel.length > 0
-                    }
-
-                Repeater {
-                    model: rowContainerCol.subProps
-
-                    delegate: Loader {
-                        id: subLoaderCol
-                        Layout.fillWidth: true
-
-                        required property string modelData
-                        required property int index
-
-                        property string subName: modelData
-                        property var subMeta: root.metaForSub(rowContainerCol.propName, subName)
-                        property var subValue: rowContainerCol.subValues ? rowContainerCol.subValues[index] : undefined
-
-                        sourceComponent: {
-                            if (subLoaderCol.subName === "empty")
-                                return subEmptyDelegate
-                            const m = subLoaderCol.subMeta
-                            if (!m) return null
-                            const t = m.type || "string"
-                            switch (t) {
-                                case "bool":      return subBoolDelegate
-                                case "fontStyle": return subFontStyleDelegate
-                                case "int":       return subIntDelegate
-                                case "float":     return subFloatDelegate
-                                case "vector3d":  return subVector3dDelegate
-                                case "scale":     return subVector3dDelegate
-                                case "vector2d":  return subVector2dDelegate
-                                case "halign":    return subHalignDelegate
-                                case "laserLayer": return subLaserLayerDelegate
-                                case "recipe":    return subRecipeDelegate
-                                case "color":     return subColorDelegate
-                                case "machine": return subMachineDelegate
-                                case "machineName": return subMachineNameDelegate
-                                case "machineType": return subMachineTypeDelegate
-                                case "boardType":  return subBoardTypeDelegate
-                                case "override":  return subOverrideDelegate
-                                case "pulsewidth": return subPulsewidthDelegate
-                                case "lineJoin":  return subLineJoinDelegate
-                                case "lineEnd":    return subLineEndDelegate
-                                case "lockScale":  return subLockScaleDelegate
-                                case "lockSize":   return subLockSizeDelegate
-                                case "framingType": return subFramingTypeDelegate
-                                case "cameraName": return subCameraNameDelegate
-                                case "cameraResolution": return subCameraResolutionDelegate
-                                case "cameraFrameRate": return subCameraFrameRateDelegate
-                                case "ethDevice":  return subEthDeviceDelegate
-                                case "multiline":return subMultilineDelegate
-                                case "singleline":return subSinglelineDelegate
-                                case "cameraCapture": return subCameraCaptureDelegate
-                                case "empty":      return subEmptyDelegate
-                                case "string":    return subStringDelegate
-                                default:          return subStringDelegate
-                                }
-                            }
-
-                        onLoaded: {
-                            if (!item)
-                                return
-                            item.subName  = subLoaderCol.subName
-                            item.subValue = Qt.binding(() => subLoaderCol.subValue)
-                            item.subMeta   = subLoaderCol.subMeta
-                            item.enabled  = Qt.binding(() => root.isPropEnabled(subLoaderCol.subMeta))
-                            item.opacity  = Qt.binding(() => subLoaderCol.item ? (subLoaderCol.item.enabled ? 1.0 : 0.4) : 0.4)
-                            item.setSub    = function(v) {
-                                if (rowContainerCol.setSubValue)
-                                    rowContainerCol.setSubValue(subLoaderCol.subName, v)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-        // ── Sub-delegates for row entries ─────────────────────────────────
-
-        Component {
-            id: subBoolDelegate
 
             ValueBox {
-                id: subBool
                 Layout.fillWidth: true
                 Layout.minimumWidth: 60
-                width: parent ? parent.width : 0
-                subLabelText: subBool.subMeta ? subBool.subMeta.sublabel ?? subBool.subMeta.label ?? "" : ""
+                unitText: boolDel.meta ? boolDel.meta.unit ?? "" : ""
+                subLabelText: !boolDel.showLabel ? (boolDel.meta ? boolDel.meta.sublabel ?? boolDel.meta.label ?? "" : "") : ""
 
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                CheckBox {
-                    anchors.centerIn: parent
-                    checked: subBool.subValue === true
-                    onToggled: if (subBool.setSub) subBool.setSub(checked)
-                    }
-                }
-            }
-
-        Component {
-            id: subFontStyleDelegate
-
-            ValueBox {
-                id: subFontStyle
-                Layout.fillWidth: true
-                Layout.minimumWidth: 60
-                width: parent ? parent.width : 0
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                // The subLabelText is rendered as a styled Text instead of
-                // the default sub-label, so the label reflects the font style:
-                //   bold      → bold "B"
-                //   italic    → italic "I"
-                //   underline → underlined "U"
+                // Custom styled label for fontStyle sub-properties
                 Text {
+                    visible: !boolDel.showLabel && boolDel.meta?.type === "fontStyle"
+                    text: boolDel.meta ? boolDel.meta.sublabel ?? boolDel.meta.label ?? "" : ""
+                    font.pixelSize: 13
+                    font.bold: boolDel.propName === "bold"
+                    font.italic: boolDel.propName === "italic"
+                    font.underline: boolDel.propName === "underline"
+                    color: "#333333"
                     anchors.left: parent.left
                     anchors.bottom: parent.bottom
                     anchors.leftMargin: 4
                     anchors.bottomMargin: 1
-                    text: subFontStyle.subMeta ? subFontStyle.subMeta.sublabel ?? subFontStyle.subMeta.label ?? "" : ""
-                    font.pixelSize: 13
-                    font.bold: subFontStyle.subName === "bold"
-                    font.italic: subFontStyle.subName === "italic"
-                    font.underline: subFontStyle.subName === "underline"
-                    color: "#333333"
                 }
 
                 CheckBox {
                     anchors.centerIn: parent
-                    checked: subFontStyle.subValue === true
-                    onToggled: if (subFontStyle.setSub) subFontStyle.setSub(checked)
+                    checked: boolDel.propValue === true
+                    enabled: !boolDel.bound
+                    onToggled: boolDel.setValue(checked)
                     }
                 }
             }
+        }
 
-        Component {
-            id: subIntDelegate
+    // ── int: SpinBox ──────────────────────────────────────────────────
+    Component {
+        id: intDelegate
+
+        RowLayout {
+            id: intDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            spacing: 2
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
+
+            PropLabel {
+                visible: intDel.showLabel
+                text: intDel.meta ? intDel.meta.label ?? "" : ""
+            }
 
             ValueBox {
-                id: subInt
                 Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                unitText: subInt.subMeta ? subInt.subMeta.unit ?? "" : ""
-                subLabelText: subInt.subMeta ? subInt.subMeta.sublabel ?? subInt.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
+                unitText: intDel.meta ? intDel.meta.unit ?? "" : ""
+                subLabelText: !intDel.showLabel ? (intDel.meta ? intDel.meta.sublabel ?? intDel.meta.label ?? "" : "") : ""
 
                 BareSpinBox {
-                    id: subIntSpin
                     anchors.fill: parent
-                    from: subInt.subMeta && subInt.subMeta.min !== undefined ? Math.round(subInt.subMeta.min) : -1000000
-                    to: subInt.subMeta && subInt.subMeta.max !== undefined ? Math.round(subInt.subMeta.max) : 1000000
-                    resetValue: root.defaultScalarFromMeta(subInt.subMeta, 0)
+                    editable: !intDel.bound
+                    boundColor: intDel.bound ? root._boundColor : ""
+                    from: intDel.meta && intDel.meta.min !== undefined ? Math.round(intDel.meta.min) : -1000000
+                    to:   intDel.meta && intDel.meta.max !== undefined ? Math.round(intDel.meta.max) : 1000000
+                    resetValue: root.defaultScalarFromMeta(intDel.meta, 0)
 
-                    property int modelValue: subInt.subValue !== undefined ? Number(subInt.subValue) : 0
+                    property int modelValue: intDel.propValue !== undefined ? Number(intDel.propValue) : 0
                     value: modelValue
                     onModelValueChanged: if (value !== modelValue) value = modelValue
 
                     onValueChanged: {
-                        if (subInt.setSub && subInt.subValue !== value)
-                            subInt.setSub(value);
+                        if (intDel.propValue !== value)
+                            intDel.setValue(value);
                         }
-
                     }
                 }
+
+            ScriptButton {
+                visible: intDel.meta ? ((intDel.meta.scriptable === true) || (intDel.meta.script !== undefined && intDel.meta.script.length > 0)) : false
+                propName: intDel.propName
+                component: -1
+                }
+            }
+        }
+
+    // ── float: DoubleSpinBox ──────────────────────────────────────────
+    Component {
+        id: floatDelegate
+
+        RowLayout {
+            id: floatDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            spacing: 2
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
+
+            PropLabel {
+                visible: floatDel.showLabel
+                text: floatDel.meta ? floatDel.meta.label ?? "" : ""
             }
 
-        Component {
-            id: subFloatDelegate
-
             ValueBox {
-                id: subFloat
                 Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                unitText: subFloat.subMeta ? subFloat.subMeta.unit ?? "" : ""
-                subLabelText: subFloat.subMeta ? subFloat.subMeta.sublabel ?? subFloat.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
+                unitText: floatDel.meta ? floatDel.meta.unit ?? "" : ""
+                subLabelText: !floatDel.showLabel ? (floatDel.meta ? floatDel.meta.sublabel ?? floatDel.meta.label ?? "" : "") : ""
 
                 BareDoubleSpinBox {
-                    id: subFloatSpin
                     anchors.fill: parent
-                    from: subFloat.subMeta && subFloat.subMeta.min !== undefined ? subFloat.subMeta.min : -1000000.0
-                    to: subFloat.subMeta && subFloat.subMeta.max !== undefined ? subFloat.subMeta.max : 1000000.0
-                    stepSize: root.defaultStepSize(subFloat.subMeta)
-                    bigStep: root.defaultBigStep(subFloat.subMeta)
-                    minStep: root.defaultMinStep(subFloat.subMeta)
-                    resetValue: root.defaultScalarFromMeta(subFloat.subMeta, 0)
-                    
-                    decimals: {
-                        const m = subFloat.subMeta || root.metaFor(subFloat.subName)
-                        return m && m.precision !== undefined ? m.precision : 2
-                    }
+                    editable: !floatDel.bound
+                    boundColor: floatDel.bound ? root._boundColor : ""
+                    from: floatDel.meta && floatDel.meta.min !== undefined ? floatDel.meta.min : -1000000.0
+                    to:   floatDel.meta && floatDel.meta.max !== undefined ? floatDel.meta.max : 1000000.0
+                    stepSize: root.defaultStepSize(floatDel.meta)
+                    bigStep:  root.defaultBigStep(floatDel.meta)
+                    minStep:  root.defaultMinStep(floatDel.meta)
+                    resetValue: root.defaultScalarFromMeta(floatDel.meta, 0)
+                    decimals: floatDel.meta && floatDel.meta.precision !== undefined ? floatDel.meta.precision : 2
 
-                    property real modelValue: subFloat.subValue !== undefined ? Number(subFloat.subValue) : 0.0
+                    property real modelValue: floatDel.propValue !== undefined ? Number(floatDel.propValue) : 0.0
                     value: modelValue
                     onModelValueChanged: if (value !== modelValue) value = modelValue
 
                     onValueChanged: {
-                        if (subFloat.setSub && subFloat.subValue !== value)
-                            subFloat.setSub(value);
-                        }
-
-                    }
-                }
-            }
-
-        Component {
-            id: subSinglelineDelegate
-
-            ValueBox {
-                id: subSingle
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelText: subSingle.subMeta ? subSingle.subMeta.sublabel ?? subSingle.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                TextInput {
-                    anchors.fill: parent
-                    text: subSingle.subValue !== undefined ? subSingle.subValue : ""
-                    onEditingFinished: if (subSingle.setSub) subSingle.setSub(text)
-                    horizontalAlignment: TextInput.AlignRight
-                    verticalAlignment: TextInput.AlignVCenter
-                    color: "#ffffff"
-                    clip: true
-                    }
-                }
-            }
-
-        // ── subVector3d: three ValueBox+BareDoubleSpinBox for vector3d in row entries ─
-        Component {
-            id: subVector3dDelegate
-
-            RowLayout {
-                id: subVec3
-                Layout.fillWidth: true
-                spacing: 2
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ValueBox {
-                    id: subVec3xBox
-                    Layout.fillWidth: true
-                    unitText: subVec3.subMeta ? subVec3.subMeta.unit ?? "" : ""
-                    subLabelText: "X"
-
-                    BareDoubleSpinBox {
-                        id: subVec3xSpin
-                        anchors.fill: parent
-                        from: subVec3.subMeta && subVec3.subMeta.min !== undefined ? subVec3.subMeta.min : -1000000.0
-                        to: subVec3.subMeta && subVec3.subMeta.max !== undefined ? subVec3.subMeta.max : 1000000.0
-                        stepSize: root.defaultStepSize(subVec3.subMeta)
-                        bigStep: root.defaultBigStep(subVec3.subMeta)
-                        minStep: root.defaultMinStep(subVec3.subMeta)
-                        resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 0)
-                        decimals: {
-                            const m = subVec3.subMeta || root.metaFor(subVec3.subName)
-                            return m && m.precision !== undefined ? m.precision : 2
-                        }
-
-                        property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.x !== undefined ? Number(subVec3.subValue.x) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-                        onValueChanged: {
-                            if (subVec3.subValue !== undefined && subVec3.subValue.x !== value) {
-                                let v = subVec3.subValue
-                                subVec3.setSub(Qt.vector3d(value, v.y, v.z))
-                            }
+                        if (floatDel.propValue !== value)
+                            floatDel.setValue(value);
                         }
                     }
                 }
-                ValueBox {
-                    id: subVec3yBox
-                    Layout.fillWidth: true
-                    unitText: subVec3.subMeta ? subVec3.subMeta.unit ?? "" : ""
-                    subLabelText: "Y"
 
-                    BareDoubleSpinBox {
-                        id: subVec3ySpin
-                        anchors.fill: parent
-                        from: subVec3.subMeta && subVec3.subMeta.min !== undefined ? subVec3.subMeta.min : -1000000.0
-                        to: subVec3.subMeta && subVec3.subMeta.max !== undefined ? subVec3.subMeta.max : 1000000.0
-                        stepSize: root.defaultStepSize(subVec3.subMeta)
-                        bigStep: root.defaultBigStep(subVec3.subMeta)
-                        minStep: root.defaultMinStep(subVec3.subMeta)
-                        resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 1)
-                        decimals: {
-                            const m = subVec3.subMeta || root.metaFor(subVec3.subName)
-                            return m && m.precision !== undefined ? m.precision : 2
-                        }
-
-                        property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.y !== undefined ? Number(subVec3.subValue.y) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-                        onValueChanged: {
-                            if (subVec3.subValue !== undefined && subVec3.subValue.y !== value) {
-                                let v = subVec3.subValue
-                                subVec3.setSub(Qt.vector3d(v.x, value, v.z))
-                            }
-                        }
-                    }
-                }
-                ValueBox {
-                    id: subVec3zBox
-                    Layout.fillWidth: true
-                    unitText: subVec3.subMeta ? subVec3.subMeta.unit ?? "" : ""
-                    subLabelText: "Z"
-
-                    BareDoubleSpinBox {
-                        id: subVec3zSpin
-                        anchors.fill: parent
-                        from: subVec3.subMeta && subVec3.subMeta.min !== undefined ? subVec3.subMeta.min : -1000000.0
-                        to: subVec3.subMeta && subVec3.subMeta.max !== undefined ? subVec3.subMeta.max : 1000000.0
-                        stepSize: root.defaultStepSize(subVec3.subMeta)
-                        bigStep: root.defaultBigStep(subVec3.subMeta)
-                        minStep: root.defaultMinStep(subVec3.subMeta)
-                        resetValue: root.defaultScalarFromMeta(subVec3.subMeta, 2)
-                        decimals: {
-                            const m = subVec3.subMeta || root.metaFor(subVec3.subName)
-                            return m && m.precision !== undefined ? m.precision : 2
-                        }
-
-                        property real modelValue: subVec3.subValue !== undefined && subVec3.subValue.z !== undefined ? Number(subVec3.subValue.z) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-                        onValueChanged: {
-                            if (subVec3.subValue !== undefined && subVec3.subValue.z !== value) {
-                                let v = subVec3.subValue
-                                subVec3.setSub(Qt.vector3d(v.x, v.y, value))
-                            }
-                        }
-                    }
+            ScriptButton {
+                visible: floatDel.meta ? ((floatDel.meta.scriptable === true) || (floatDel.meta.script !== undefined && floatDel.meta.script.length > 0)) : false
+                propName: floatDel.propName
+                component: -1
                 }
             }
         }
 
-        // ── subVector2d: two ValueBox+BareDoubleSpinBox for vector2d in row entries ─
-        Component {
-            id: subVector2dDelegate
+    // ── vector: 2D / 3D DoubleSpinBox in ValueBoxes ────────────────────
+    // Unified: replaces vector3dDelegate, vector2dDelegate,
+    //          subVector3dDelegate, subVector2dDelegate.
+    Component {
+        id: vectorDelegate
 
-            RowLayout {
-                id: subVec2
-                Layout.fillWidth: true
-                spacing: 2
+        RowLayout {
+            id: vecDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            spacing: 2
 
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-                ValueBox {
-                    id: subVec2xBox
-                    Layout.fillWidth: true
-                    unitText: subVec2.subMeta ? subVec2.subMeta.unit ?? "" : ""
-                    subLabelText: "X"
+            readonly property bool is2d: meta?.type === "vector2d" || meta?.type === "size"
+            readonly property bool isSize: meta?.type === "size"
 
-                    BareDoubleSpinBox {
-                        id: subVec2xSpin
-                        anchors.fill: parent
-                        from: subVec2.subMeta && subVec2.subMeta.min !== undefined ? subVec2.subMeta.min : -1000000.0
-                        to: subVec2.subMeta && subVec2.subMeta.max !== undefined ? subVec2.subMeta.max : 1000000.0
-                        stepSize: root.defaultStepSize(subVec2.subMeta)
-                        bigStep: root.defaultBigStep(subVec2.subMeta)
-                        minStep: root.defaultMinStep(subVec2.subMeta)
-                        resetValue: root.defaultScalarFromMeta(subVec2.subMeta, 0)
-                        decimals: {
-                            const m = subVec2.subMeta || root.metaFor(subVec2.subName)
-                            return m && m.precision !== undefined ? m.precision : 2
-                        }
+            function compLabel(index) {
+                if (isSize)
+                    return index === 0 ? qsTr("width") : qsTr("height")
+                return ["X", "Y", "Z"][index]
+                }
 
-                        property real modelValue: subVec2.subValue !== undefined && subVec2.subValue.x !== undefined ? Number(subVec2.subValue.x) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-                        onValueChanged: {
-                            if (subVec2.subValue !== undefined && subVec2.subValue.x !== value) {
-                                let v = subVec2.subValue
-                                subVec2.setSub(Qt.vector2d(value, v.y))
-                            }
-                        }
+            PropLabel {
+                visible: vecDel.showLabel
+                text: vecDel.meta ? vecDel.meta.label ?? "" : ""
+            }
+
+            // ── Component 0 (X / width) ──
+            VectorComponentBox {
+                compLabel: vecDel.compLabel(0)
+                compIndex: 0
+                vectorValue: vecDel.propValue
+                meta: vecDel.meta
+                boundComponents: vecDel.boundComponents
+                onComponentChange: v => {
+                    var cur = root.model ? root.model.elementProperty(vecDel.propName) : vecDel.propValue
+                    if (!cur) return
+                    if (vecDel.is2d)
+                        vecDel.setValue(Qt.vector2d(v, cur.y))
+                    else
+                        vecDel.setValue(Qt.vector3d(v, cur.y, cur.z))
                     }
                 }
-                ValueBox {
-                    id: subVec2yBox
-                    Layout.fillWidth: true
-                    unitText: subVec2.subMeta ? subVec2.subMeta.unit ?? "" : ""
-                    subLabelText: "Y"
 
-                    BareDoubleSpinBox {
-                        id: subVec2ySpin
-                        anchors.fill: parent
-                        from: subVec2.subMeta && subVec2.subMeta.min !== undefined ? subVec2.subMeta.min : -1000000.0
-                        to: subVec2.subMeta && subVec2.subMeta.max !== undefined ? subVec2.subMeta.max : 1000000.0
-                        stepSize: root.defaultStepSize(subVec2.subMeta)
-                        bigStep: root.defaultBigStep(subVec2.subMeta)
-                        minStep: root.defaultMinStep(subVec2.subMeta)
-                        resetValue: root.defaultScalarFromMeta(subVec2.subMeta, 1)
-                        decimals: {
-                            const m = subVec2.subMeta || root.metaFor(subVec2.subName)
-                            return m && m.precision !== undefined ? m.precision : 2
-                        }
-
-                        property real modelValue: subVec2.subValue !== undefined && subVec2.subValue.y !== undefined ? Number(subVec2.subValue.y) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-                        onValueChanged: {
-                            if (subVec2.subValue !== undefined && subVec2.subValue.y !== value) {
-                                let v = subVec2.subValue
-                                subVec2.setSub(Qt.vector2d(v.x, value))
-                            }
-                        }
+            // ── Component 1 (Y / height) ──
+            VectorComponentBox {
+                compLabel: vecDel.compLabel(1)
+                compIndex: 1
+                vectorValue: vecDel.propValue
+                meta: vecDel.meta
+                boundComponents: vecDel.boundComponents
+                onComponentChange: v => {
+                    var cur = root.model ? root.model.elementProperty(vecDel.propName) : vecDel.propValue
+                    if (!cur) return
+                    if (vecDel.is2d)
+                        vecDel.setValue(Qt.vector2d(cur.x, v))
+                    else
+                        vecDel.setValue(Qt.vector3d(cur.x, v, cur.z))
                     }
+                }
+
+            // ── Component 2 (Z) ──
+            VectorComponentBox {
+                visible: !vecDel.is2d
+                compLabel: vecDel.compLabel(2)
+                compIndex: 2
+                vectorValue: vecDel.propValue
+                meta: vecDel.meta
+                boundComponents: vecDel.boundComponents
+                onComponentChange: v => {
+                    var cur = root.model ? root.model.elementProperty(vecDel.propName) : vecDel.propValue
+                    if (!cur) return
+                    vecDel.setValue(Qt.vector3d(cur.x, cur.y, v))
+                    }
+                }
+
+            // ── Single script button for the whole vector ──
+            // The popup offers a component selector (All/X/Y/Z) so
+            // individual components can be bound independently.
+            ScriptButton {
+                visible: vecDel.meta ? ((vecDel.meta.scriptable === true) || (vecDel.meta.script !== undefined && vecDel.meta.script.length > 0)) : false
+                propName: vecDel.propName
+                component: -1
+                vectorMode: true
+                vectorIs2d: vecDel.is2d
+                boundComps: vecDel.boundComponents
                 }
             }
         }
 
-        // ── subMultiline: multi-line TextArea for row entries ────────────
-        Component {
-            id: subMultilineDelegate
+    // ── text: string / singleline / multiline TextInput ────────────────
+    // Unified: replaces stringDelegate, singlelineDelegate, multilineDelegate,
+    //          subStringDelegate, subSinglelineDelegate, subMultilineDelegate.
+    Component {
+        id: textDelegate
+
+        RowLayout {
+            id: textDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
+
+            readonly property bool isMultiline: meta?.type === "multiline"
+
+            PropLabel {
+                visible: textDel.showLabel
+                alignTop: textDel.isMultiline
+                text: textDel.meta ? textDel.meta.label ?? "" : ""
+            }
 
             ValueBox {
-                id: subMulti
                 Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                implicitHeight: 80
-                subLabelText: subMulti.subMeta ? subMulti.subMeta.sublabel ?? subMulti.subMeta.label ?? "" : ""
+                implicitHeight: textDel.isMultiline ? 80 : 28
+                unitText: textDel.meta ? textDel.meta.unit ?? "" : ""
+                subLabelText: !textDel.showLabel ? (textDel.meta ? textDel.meta.sublabel ?? textDel.meta.label ?? "" : "") : ""
 
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
+                // Multi-line: ScrollView + TextArea
                 ScrollView {
+                    visible: textDel.isMultiline
                     anchors.fill: parent
                     clip: true
 
                     TextArea {
-                        id: subMultiText
-                        text: subMulti.subValue !== undefined ? subMulti.subValue : ""
+                        id: multiText
+                        text: textDel.propValue !== undefined ? textDel.propValue : ""
+                        readOnly: textDel.bound
                         wrapMode: TextArea.Wrap
                         horizontalAlignment: {
+                            if (textDel.showLabel) return TextInput.AlignLeft
                             if (!root.model || !root.model.elementProperty)
                                 return TextInput.AlignLeft
                             let a = root.model.elementProperty("align")
@@ -1480,2354 +1817,590 @@ Item {
                             return TextInput.AlignLeft
                         }
                         onActiveFocusChanged: {
-                            if (!activeFocus && subMultiText._userEdited) {
-                                subMulti.setSub(text)
-                                subMultiText._userEdited = false
+                            if (!activeFocus && multiText._userEdited) {
+                                textDel.setValue(text)
+                                multiText._userEdited = false
                             }
                         }
                         onTextChanged: {
                             if (activeFocus)
-                                subMultiText._userEdited = true
+                                multiText._userEdited = true
                         }
                         property bool _userEdited: false
-                        color: "#ffffff"
+                        color: textDel.bound ? root._boundColor : "#ffffff"
                         background: Item {}
                         padding: 2
+                    }
+                }
+
+                // Single-line: TextInput
+                TextInput {
+                    visible: !textDel.isMultiline
+                    anchors.fill: parent
+                    text: textDel.propValue !== undefined ? textDel.propValue : ""
+                    readOnly: textDel.bound
+                    onEditingFinished: textDel.setValue(text)
+                    horizontalAlignment: textDel.showLabel ? TextInput.AlignLeft : TextInput.AlignRight
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: textDel.bound ? root._boundColor : "#ffffff"
+                    clip: true
                     }
                 }
             }
         }
 
-        // ── subLaserLayer: ComboBox for LaserLayer selection in row entries ─
-        Component {
-            id: subLaserLayerDelegate
+    // ── color: ColorDialog swatch + hex input ─────────────────────────
+    Component {
+        id: colorDelegate
 
-            ValueBox {
-                id: subLaserLayer
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelText: subLaserLayer.subMeta ? subLaserLayer.subMeta.sublabel ?? subLaserLayer.subMeta.label ?? "" : ""
-                subLabelAlignRight: true
+        RowLayout {
+            id: colorDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            spacing: 2
 
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-                ComboBox {
-                    id: subLaserLayerCombo
-                    anchors.fill: parent
-
-                    property var baseNames: root.model.laserLayerNames ? root.model.laserLayerNames() : []
-                    model: {
-                        var list = ["(inherited)"]
-                        for (var i = 0; i < subLaserLayerCombo.baseNames.length; ++i)
-                            list.push(subLaserLayerCombo.baseNames[i])
-                        return list
-                        }
-
-                    property string resolvedName: {
-                        if (subLaserLayer.subValue === undefined)
-                            return ""
-                        if (root.model.laserLayerToName)
-                            return root.model.laserLayerToName(subLaserLayer.subValue)
-                        return ""
-                        }
-                    property string currentName: resolvedName.length > 0 ? resolvedName : "(inherited)"
-
-                    currentIndex: {
-                        let idx = subLaserLayerCombo.find(subLaserLayerCombo.currentName)
-                        return idx >= 0 ? idx : 0
-                        }
-
-                    onActivated: index => {
-                        if (index === 0)
-                            subLaserLayer.setSub(null)
-                        else {
-                            let name = subLaserLayerCombo.model[index]
-                            let ptr = root.model.nameToLaserLayer ? root.model.nameToLaserLayer(name) : null
-                            subLaserLayer.setSub(ptr)
-                            }
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subLaserLayerCombo.currentName
-                        font.bold: true
-                        color: subLaserLayerCombo.currentName === "(inherited)" ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
+            function toColor(v) {
+                if (v === undefined || v === null)
+                    return Qt.rgba(0, 0, 0, 1)
+                if (typeof v === "string")
+                    return Qt.color(v)
+                return v
                 }
+
+            function toHex(c) {
+                if (!c)
+                    return "#000000"
+                let r = Math.round(c.r * 255).toString(16).padStart(2, '0')
+                let g = Math.round(c.g * 255).toString(16).padStart(2, '0')
+                let b = Math.round(c.b * 255).toString(16).padStart(2, '0')
+                return "#" + r + g + b
+                }
+
+            PropLabel {
+                visible: colorDel.showLabel
+                text: colorDel.meta ? colorDel.meta.label ?? "" : ""
             }
 
-        // ── subRecipe: ComboBox for Recipe selection in row entries ──
-        Component {
-            id: subRecipeDelegate
-
             ValueBox {
-                id: subRecipe
                 Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subRecipe.subMeta ? subRecipe.subMeta.sublabel ?? subRecipe.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subRecipeCombo
-                    parent: subRecipe
-                    anchors.left: parent.left
-                    anchors.right: subRecipeEditBtn.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.rightMargin: 2
-                    model: root.model.recipeNames ? root.model.recipeNames() : []
-
-                    property string currentName: {
-                        if (subRecipe.subValue === undefined || subRecipe.subValue === null)
-                            return ""
-                        return root.model.recipeToName ? root.model.recipeToName(subRecipe.subValue) : ""
-                        }
-
-                    currentIndex: {
-                        let idx = subRecipeCombo.find(subRecipeCombo.currentName)
-                        return idx >= 0 ? idx : -1
-                        }
-
-                    onActivated: index => {
-                        let name = subRecipeCombo.model[index]
-                        let ptr = root.model.nameToRecipe ? root.model.nameToRecipe(name) : null
-                        subRecipe.setSub(ptr)
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subRecipeCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-
-                // Edit button — opens the Recipe editor for the selected recipe
-                ToolButton {
-                    id: subRecipeEditBtn
-                    parent: subRecipe
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 28
-                    enabled: subRecipeCombo.currentName !== ""
-                    text: "✎"
-                    font.pixelSize: 14
-                    onClicked: ZCam.openRecipeEditor(subRecipeCombo.currentName)
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Edit recipe")
-                    background: Rectangle {
-                        color: subRecipeEditBtn.hovered ? Material.color(Material.Teal, Material.Shade700)
-                               : (subRecipeEditBtn.enabled ? "#3a3a3a" : "transparent")
-                        radius: 3
-                        }
-                    }
-                }
-            }
-
-        // ── subColor: color swatch + hex input for row entries ──────────
-        Component {
-            id: subColorDelegate
-
-            ValueBox {
-                id: subColor
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelText: subColor.subMeta ? subColor.subMeta.sublabel ?? subColor.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                function toColor(v) {
-                    if (v === undefined || v === null)
-                        return Qt.rgba(0, 0, 0, 1)
-                    if (typeof v === "string")
-                        return Qt.color(v)
-                    return v
-                    }
-
-                function toHex(c) {
-                    if (!c)
-                        return "#000000"
-                    let r = Math.round(c.r * 255).toString(16).padStart(2, '0')
-                    let g = Math.round(c.g * 255).toString(16).padStart(2, '0')
-                    let b = Math.round(c.b * 255).toString(16).padStart(2, '0')
-                    return "#" + r + g + b
-                    }
+                subLabelText: !colorDel.showLabel ? (colorDel.meta ? colorDel.meta.sublabel ?? colorDel.meta.label ?? "" : "") : ""
 
                 RowLayout {
                     anchors.fill: parent
                     spacing: 2
 
                     Rectangle {
-                        id: subColorSwatch
-                        Layout.preferredWidth: 22
-                        Layout.preferredHeight: 22
+                        id: colorSwatch
+                        Layout.preferredWidth: colorDel.showLabel ? 32 : 22
+                        Layout.preferredHeight: colorDel.showLabel ? 28 : 22
                         radius: 3
-                        color: subColor.toColor(subColor.subValue)
+                        color: colorDel.toColor(colorDel.propValue)
                         border.width: 1
                         border.color: Material.accentColor
 
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                subColorDialog.selectedColor = subColor.toColor(subColor.subValue)
-                                subColorDialog.open()
+                                colorDialog.selectedColor = colorDel.toColor(colorDel.propValue)
+                                colorDialog.open()
                             }
                         }
 
                         ColorDialog {
-                            id: subColorDialog
+                            id: colorDialog
                             options: ColorDialog.DontUseNativeDialog
-                            onAccepted: {
-                                subColor.setSub(selectedColor)
-                            }
+                            onAccepted: colorDel.setValue(selectedColor)
                         }
                     }
-
-                    TextInput {
-                        id: subHexInput
-                        Layout.fillWidth: true
-                        text: subColor.toHex(subColor.toColor(subColor.subValue))
-                        font.family: "monospace"
-                        font.bold: true
-                        onEditingFinished: {
-                            let c = subColor.toColor(text)
-                            if (c)
-                                subColor.setSub(c)
-                        }
-                        horizontalAlignment: TextInput.AlignRight
-                        verticalAlignment: TextInput.AlignVCenter
-                        color: "#ffffff"
-                        clip: true
-
-                        Connections {
-                            target: subColor
-                            function onSubValueChanged() {
-                                let c = subColor.toColor(subColor.subValue)
-                                let h = subColor.toHex(c)
-                                if (subHexInput.text.toLowerCase() !== h.toLowerCase())
-                                    subHexInput.text = h
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Component {
-            id: subStringDelegate
-
-            ValueBox {
-                id: subString
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelText: subString.subMeta ? subString.subMeta.sublabel ?? subString.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                TextInput {
-                    anchors.fill: parent
-                    text: subString.subValue !== undefined ? subString.subValue : ""
-                    onEditingFinished: if (subString.setSub) subString.setSub(text)
-                    horizontalAlignment: TextInput.AlignRight
-                    verticalAlignment: TextInput.AlignVCenter
-                    color: "#ffffff"
-                    clip: true
-                    }
-                }
-            }
-
-        Component {
-            id: subHalignDelegate
-
-            ValueBox {
-                id: subHalign
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subHalign.subMeta ? subHalign.subMeta.sublabel ?? subHalign.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                readonly property var alignMap: [
-                    { value: Qt.AlignLeft,    text: "Left"    },
-                    { value: Qt.AlignRight,   text: "Right"   },
-                    { value: Qt.AlignHCenter, text: "HCenter" },
-                    { value: Qt.AlignJustify, text: "Justify" }
-                    ]
-
-                function indexOfValue(val) {
-                    for (let i = 0; i < alignMap.length; ++i) {
-                        if (alignMap[i].value === val)
-                            return i;
-                        }
-                    return 0;
-                    }
-
-                ComboBox {
-                    id: subAlignCombo
-                    anchors.fill: parent
-                    model: subHalign.alignMap
-                    textRole: "text"
-                    valueRole: "value"
-                    currentIndex: subHalign.indexOfValue(subHalign.subValue)
-                    onActivated: index => {
-                        subHalign.setSub(subHalign.alignMap[index].value);
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subAlignCombo.displayText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-                }
-            }
-
-        // ── Sub-delegate for machine (Machine* pointer) in row entries ──
-        Component {
-            id: subMachineDelegate
-
-            ValueBox {
-                id: subMachine
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subMachine.subMeta ? subMachine.subMeta.sublabel ?? subMachine.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subMachineCombo
-                    anchors.fill: parent
-                    model: root.model.machineNames ? root.model.machineNames() : []
-
-                    property string currentName: {
-                        if (subMachine.subValue === undefined || subMachine.subValue === null)
-                            return ""
-                        return root.model.machineToName ? root.model.machineToName(subMachine.subValue) : ""
-                        }
-
-                    currentIndex: {
-                        let idx = subMachineCombo.find(subMachineCombo.currentName)
-                        return idx >= 0 ? idx : -1
-                    }
-
-                    onActivated: index => {
-                        let name = subMachineCombo.model[index]
-                        let ptr = root.model.nameToMachine ? root.model.nameToMachine(name) : null
-                        subMachine.setSub(ptr)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subMachineCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for machineName (string) in row entries ─────────
-        Component {
-            id: subMachineNameDelegate
-
-            ValueBox {
-                id: subMachineName
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subMachineName.subMeta ? subMachineName.subMeta.sublabel ?? subMachineName.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subMachineNameCombo
-                    anchors.fill: parent
-                    model: root.model.machineNames ? root.model.machineNames() : []
-
-                    property string currentName: subMachineName.subValue !== undefined ? subMachineName.subValue : ""
-                    currentIndex: {
-                        let idx = subMachineNameCombo.find(subMachineNameCombo.currentName)
-                        return idx >= 0 ? idx : -1
-                    }
-
-                    onActivated: index => {
-                        subMachineName.setSub(subMachineNameCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subMachineNameCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for machineType in row entries ─────────────────
-        Component {
-            id: subMachineTypeDelegate
-
-            ValueBox {
-                id: subMachineType
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subMachineType.subMeta ? subMachineType.subMeta.sublabel ?? subMachineType.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subTypeCombo
-                    anchors.fill: parent
-                    model: root.model.machineTypes ? root.model.machineTypes() : []
-
-                    property string currentName: subMachineType.subValue !== undefined ? subMachineType.subValue : ""
-                    currentIndex: {
-                        let idx = subTypeCombo.find(subTypeCombo.currentName)
-                        return idx >= 0 ? idx : -1
-                    }
-
-                    onActivated: index => {
-                        subMachineType.setSub(subTypeCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subTypeCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for boardType in row entries ─────────────────
-        Component {
-            id: subBoardTypeDelegate
-
-            ValueBox {
-                id: subBoardType
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subBoardType.subMeta ? subBoardType.subMeta.sublabel ?? subBoardType.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subBoardTypeCombo
-                    anchors.fill: parent
-                    model: root.model.boardTypes ? root.model.boardTypes() : []
-
-                    property string currentName: subBoardType.subValue !== undefined ? subBoardType.subValue : ""
-                    currentIndex: {
-                        let idx = subBoardTypeCombo.find(subBoardTypeCombo.currentName)
-                        return idx >= 0 ? idx : -1
-                    }
-
-                    onActivated: index => {
-                        subBoardType.setSub(subBoardTypeCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subBoardTypeCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for override type in row entries ───────────────────
-        Component {
-            id: subOverrideDelegate
-
-            ValueBox {
-                id: subOverride
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subOverride.subMeta ? subOverride.subMeta.sublabel ?? subOverride.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subOverrideCombo
-                    anchors.fill: parent
-                    model: root.model.overrideTypeNames ? root.model.overrideTypeNames() : []
-
-                    property int modelValue: subOverride.subValue !== undefined ? Number(subOverride.subValue) : 0
-                    currentIndex: {
-                        if (subOverrideCombo.modelValue >= 0 && subOverrideCombo.modelValue < subOverrideCombo.model.length)
-                            return subOverrideCombo.modelValue
-                        return 0
-                    }
-
-                    onActivated: index => {
-                        subOverride.setSub(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subOverrideCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for pulsewidth type in row entries ───────────────
-        Component {
-            id: subPulsewidthDelegate
-
-            ValueBox {
-                id: subPulsewidth
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                unitText: subPulsewidth.subMeta ? subPulsewidth.subMeta.unit ?? "" : ""
-                subLabelAlignRight: true
-                subLabelText: subPulsewidth.subMeta ? subPulsewidth.subMeta.sublabel ?? subPulsewidth.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                function freqModel() {
-                    if (root.model.pulsewidthNames)
-                        return root.model.pulsewidthNames()
-                    if (ZCam.project?.machine?.laserPulseList)
-                        return ZCam.project.machine.laserPulseList()
-                    return []
-                    }
-
-                ComboBox {
-                    id: subFreqCombo
-                    anchors.fill: parent
-                    model: subPulsewidth.freqModel()
-
-                    property string freqValue: subPulsewidth.subValue !== undefined ? String(Math.round(Number(subPulsewidth.subValue))) : ""
-                    currentIndex: {
-                        let idx = subFreqCombo.find(subFreqCombo.freqValue)
-                        return idx >= 0 ? idx : -1
-                        }
-
-                    onActivated: index => {
-                        subPulsewidth.setSub(Number(subFreqCombo.model[index]))
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subFreqCombo.freqValue.length > 0 ? subFreqCombo.freqValue : ""
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-                }
-            }
-
-        // ── Sub-delegate for lineJoin type in row entries ────────────────
-        Component {
-            id: subLineJoinDelegate
-
-            ValueBox {
-                id: subLineJoin
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subLineJoin.subMeta ? subLineJoin.subMeta.sublabel ?? subLineJoin.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subLineJoinCombo
-                    anchors.fill: parent
-                    model: root.model.joinTypeNames ? root.model.joinTypeNames() : []
-
-                    property int modelValue: subLineJoin.subValue !== undefined ? Number(subLineJoin.subValue) : 0
-                    currentIndex: {
-                        if (subLineJoinCombo.modelValue >= 0 && subLineJoinCombo.modelValue < subLineJoinCombo.model.length)
-                            return subLineJoinCombo.modelValue
-                        return 0
-                    }
-
-                    onActivated: index => {
-                        subLineJoin.setSub(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subLineJoinCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for lineEnd type in row entries ─────────────────
-        Component {
-            id: subLineEndDelegate
-
-            ValueBox {
-                id: subLineEnd
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subLineEnd.subMeta ? subLineEnd.subMeta.sublabel ?? subLineEnd.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subLineEndCombo
-                    anchors.fill: parent
-                    model: root.model.endTypeNames ? root.model.endTypeNames() : []
-
-                    property int modelValue: subLineEnd.subValue !== undefined ? Number(subLineEnd.subValue) : 0
-                    currentIndex: {
-                        if (subLineEndCombo.modelValue >= 0 && subLineEndCombo.modelValue < subLineEndCombo.model.length)
-                            return subLineEndCombo.modelValue
-                        return 0
-                    }
-
-                    onActivated: index => {
-                        subLineEnd.setSub(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subLineEndCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── bool: CheckBox ────────────────────────────────────────────────
-        Component {
-            id: boolDelegate
-
-            RowLayout {
-                id: rowBool
-                width: parent ? parent.width : 0
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowBool.meta ? rowBool.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: 60
-                    unitText: rowBool.meta ? rowBool.meta.unit ?? "" : ""
-
-                    CheckBox {
-                        anchors.centerIn: parent
-                        checked: rowBool.propValue === true
-                        onToggled: rowBool.setModelValue(checked)
-                        }
-                    }
-                }
-            }
-
-        // ── int: SpinBox ──────────────────────────────────────────────────
-        Component {
-            id: intDelegate
-
-            RowLayout {
-                id: rowInt
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowInt.meta ? rowInt.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    id: intVBox
-                    Layout.fillWidth: true
-                    unitText: rowInt.meta ? rowInt.meta.unit ?? "" : ""
-
-                    BareSpinBox {
-                        id: intSpinBox
-                        anchors.fill: parent
-                        from: rowInt.meta && rowInt.meta.min !== undefined ? Math.round(rowInt.meta.min) : -1000000
-                        to: rowInt.meta && rowInt.meta.max !== undefined ? Math.round(rowInt.meta.max) : 1000000
-                        resetValue: root.defaultScalar(rowInt.propName, 0)
-
-                        property int modelValue: rowInt.propValue !== undefined ? Number(rowInt.propValue) : 0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-
-                        onValueChanged: {
-                            if (rowInt.propValue !== value)
-                                rowInt.setModelValue(value);
-                            }
-
-                        }
-                    }
-                }
-            }
-
-        // ── float: DoubleSpinBox ──────────────────────────────────────────
-        Component {
-            id: floatDelegate
-
-            RowLayout {
-                id: rowFloat
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta: root.metaFor(propName)
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowFloat.meta ? rowFloat.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    id: floatVBox
-                    Layout.fillWidth: true
-                    unitText: rowFloat.meta ? rowFloat.meta.unit ?? "" : ""
-
-                    BareDoubleSpinBox {
-                        id: floatSpinBox
-                        anchors.fill: parent
-                        from: rowFloat.meta && rowFloat.meta.min !== undefined ? rowFloat.meta.min : -1000000.0
-                        to: rowFloat.meta && rowFloat.meta.max !== undefined ? rowFloat.meta.max : 1000000.0
-                        stepSize: root.defaultStepSize(rowFloat.meta)
-                        bigStep: root.defaultBigStep(rowFloat.meta)
-                        minStep: root.defaultMinStep(rowFloat.meta)
-                        resetValue: root.defaultScalar(rowFloat.propName, 0)
-
-                        decimals: rowFloat.meta && rowFloat.meta.precision !== undefined ? rowFloat.meta.precision : 2
-
-                        property real modelValue: rowFloat.propValue !== undefined ? Number(rowFloat.propValue) : 0.0
-                        value: modelValue
-                        onModelValueChanged: {
-                            if (value !== modelValue) value = modelValue
-                        }
-
-                        onValueChanged: {
-                            if (rowFloat.propValue !== value)
-                                rowFloat.setModelValue(value);
-                            }
-
-                        }
-                    }
-                }
-            }
-
-        // ── vector3d: three DoubleSpinBox in ValueBoxes ────────────────────
-        Component {
-            id: vector3dDelegate
-
-            RowLayout {
-                id: rowVec3
-                width: parent ? parent.width : 0
-                spacing: 4
-
-                property string propName
-                property var propValue
-                property var meta: root.metaFor(propName)
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowVec3.meta ? rowVec3.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    id: vec3xVBox
-                    Layout.fillWidth: true
-                    unitText: rowVec3.meta ? rowVec3.meta.unit ?? "" : ""
-                    subLabelText: "X"
-
-                    BareDoubleSpinBox {
-                        id: vec3xSpinBox
-                        anchors.fill: parent
-                        from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
-                        to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
-                        stepSize: root.defaultStepSize(rowVec3.meta)
-                        bigStep: root.defaultBigStep(rowVec3.meta)
-                        minStep: root.defaultMinStep(rowVec3.meta)
-                        resetValue: root.defaultScalar(rowVec3.propName, 0)
-
-                        decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
-
-                        property real modelValue: rowVec3.propValue !== undefined && rowVec3.propValue.x !== undefined ? Number(rowVec3.propValue.x) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-
-                        onValueChanged: {
-                            if (rowVec3.propValue !== undefined && rowVec3.propValue.x !== value) {
-                                let v = rowVec3.propValue;
-                                rowVec3.setModelValue(Qt.vector3d(value, v.y, v.z));
-                                }
-                            }
-
-                        }
-                    }
-
-                ValueBox {
-                    id: vec3yVBox
-                    Layout.fillWidth: true
-                    unitText: rowVec3.meta ? rowVec3.meta.unit ?? "" : ""
-                    subLabelText: "Y"
-
-                    BareDoubleSpinBox {
-                        id: vec3ySpinBox
-                        anchors.fill: parent
-                        from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
-                        to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
-                        stepSize: root.defaultStepSize(rowVec3.meta)
-                        bigStep: root.defaultBigStep(rowVec3.meta)
-                        minStep: root.defaultMinStep(rowVec3.meta)
-                        resetValue: root.defaultScalar(rowVec3.propName, 1)
-
-                        decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
-
-                        property real modelValue: rowVec3.propValue !== undefined && rowVec3.propValue.y !== undefined ? Number(rowVec3.propValue.y) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-
-                        onValueChanged: {
-                            if (rowVec3.propValue !== undefined && rowVec3.propValue.y !== value) {
-                                let v = rowVec3.propValue;
-                                rowVec3.setModelValue(Qt.vector3d(v.x, value, v.z));
-                                }
-                            }
-
-                        }
-                    }
-
-                ValueBox {
-                    id: vec3zVBox
-                    Layout.fillWidth: true
-                    unitText: rowVec3.meta ? rowVec3.meta.unit ?? "" : ""
-                    subLabelText: "Z"
-
-                    BareDoubleSpinBox {
-                        id: vec3zSpinBox
-                        anchors.fill: parent
-                        from: rowVec3.meta && rowVec3.meta.min !== undefined ? rowVec3.meta.min : -1000000.0
-                        to: rowVec3.meta && rowVec3.meta.max !== undefined ? rowVec3.meta.max : 1000000.0
-                        stepSize: root.defaultStepSize(rowVec3.meta)
-                        bigStep: root.defaultBigStep(rowVec3.meta)
-                        minStep: root.defaultMinStep(rowVec3.meta)
-                        resetValue: root.defaultScalar(rowVec3.propName, 2)
-
-                        decimals: rowVec3.meta && rowVec3.meta.precision !== undefined ? rowVec3.meta.precision : 2
-
-                        property real modelValue: rowVec3.propValue !== undefined && rowVec3.propValue.z !== undefined ? Number(rowVec3.propValue.z) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-
-                        onValueChanged: {
-                            if (rowVec3.propValue !== undefined && rowVec3.propValue.z !== value) {
-                                let v = rowVec3.propValue;
-                                rowVec3.setModelValue(Qt.vector3d(v.x, v.y, value));
-                                }
-                            }
-
-                        }
-                    }
-                }
-            }
-
-        // ── vector2d: two DoubleSpinBox in ValueBoxes ────────────────────
-        Component {
-            id: vector2dDelegate
-
-            RowLayout {
-                id: rowVec2
-                width: parent ? parent.width : 0
-                spacing: 4
-
-                property string propName
-                property var propValue
-                property var meta: root.metaFor(propName)
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowVec2.meta ? rowVec2.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    id: vec2xVBox
-                    Layout.fillWidth: true
-                    unitText: rowVec2.meta ? rowVec2.meta.unit ?? "" : ""
-                    subLabelText: "X"
-
-                    BareDoubleSpinBox {
-                        id: vec2xSpinBox
-                        anchors.fill: parent
-                        from: rowVec2.meta && rowVec2.meta.min !== undefined ? rowVec2.meta.min : -1000000.0
-                        to: rowVec2.meta && rowVec2.meta.max !== undefined ? rowVec2.meta.max : 1000000.0
-                        stepSize: root.defaultStepSize(rowVec2.meta)
-                        bigStep: root.defaultBigStep(rowVec2.meta)
-                        minStep: root.defaultMinStep(rowVec2.meta)
-                        resetValue: root.defaultScalar(rowVec2.propName, 0)
-
-                        decimals: rowVec2.meta && rowVec2.meta.precision !== undefined ? rowVec2.meta.precision : 2
-
-                        property real modelValue: rowVec2.propValue !== undefined && rowVec2.propValue.x !== undefined ? Number(rowVec2.propValue.x) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-
-                        onValueChanged: {
-                            if (rowVec2.propValue !== undefined && rowVec2.propValue.x !== value) {
-                                let v = rowVec2.propValue;
-                                rowVec2.setModelValue(Qt.vector2d(value, v.y));
-                                }
-                            }
-
-                        }
-                    }
-
-                ValueBox {
-                    id: vec2yVBox
-                    Layout.fillWidth: true
-                    unitText: rowVec2.meta ? rowVec2.meta.unit ?? "" : ""
-                    subLabelText: "Y"
-
-                    BareDoubleSpinBox {
-                        id: vec2ySpinBox
-                        anchors.fill: parent
-                        from: rowVec2.meta && rowVec2.meta.min !== undefined ? rowVec2.meta.min : -1000000.0
-                        to: rowVec2.meta && rowVec2.meta.max !== undefined ? rowVec2.meta.max : 1000000.0
-                        stepSize: root.defaultStepSize(rowVec2.meta)
-                        bigStep: root.defaultBigStep(rowVec2.meta)
-                        minStep: root.defaultMinStep(rowVec2.meta)
-                        resetValue: root.defaultScalar(rowVec2.propName, 1)
-
-                        decimals: rowVec2.meta && rowVec2.meta.precision !== undefined ? rowVec2.meta.precision : 2
-
-                        property real modelValue: rowVec2.propValue !== undefined && rowVec2.propValue.y !== undefined ? Number(rowVec2.propValue.y) : 0.0
-                        value: modelValue
-                        onModelValueChanged: if (value !== modelValue) value = modelValue
-
-                        onValueChanged: {
-                            if (rowVec2.propValue !== undefined && rowVec2.propValue.y !== value) {
-                                let v = rowVec2.propValue;
-                                rowVec2.setModelValue(Qt.vector2d(v.x, value));
-                                }
-                            }
-
-                        }
-                    }
-                }
-            }
-
-        // ── font: FontFamilyButton ────────────────────────────────────────
-        Component {
-            id: fontDelegate
-
-            RowLayout {
-                id: rowFont
-                width: parent ? parent.width : 0
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowFont.meta ? rowFont.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    FontFamilyButton {
-                        anchors.fill: parent
-                        family: rowFont.propValue !== undefined ? rowFont.propValue : ""
-                        onFamilySelected: fam => {
-                            rowFont.setModelValue(fam);
-                            }
-                        }
-                    }
-                }
-            }
-
-        // ── halign: ComboBox for horizontal alignment ──────────────────────
-        Component {
-            id: halignDelegate
-
-            RowLayout {
-                id: rowHalign
-                width: parent ? parent.width : 0
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                readonly property var alignMap: [
-                    { value: Qt.AlignLeft,     text: "Left"     },
-                    { value: Qt.AlignRight,    text: "Right"    },
-                    { value: Qt.AlignHCenter,  text: "HCenter"  },
-                    { value: Qt.AlignJustify,  text: "Justify"  }
-                    ]
-
-                function indexOfValue(val) {
-                    for (let i = 0; i < alignMap.length; ++i) {
-                        if (alignMap[i].value === val)
-                            return i;
-                        }
-                    return 0;
-                    }
-
-                Label {
-                    text: rowHalign.meta ? rowHalign.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: alignCombo
-                        anchors.fill: parent
-                        model: rowHalign.alignMap
-                        textRole: "text"
-                        valueRole: "value"
-                        currentIndex: rowHalign.indexOfValue(rowHalign.propValue)
-                        onActivated: index => {
-                            rowHalign.setModelValue(rowHalign.alignMap[index].value);
-                            }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: alignCombo.displayText
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            }
-                        indicator: Item {}
-                        }
-                    }
-                }
-            }
-
-        // ── color: ColorDialog swatch + hex input ─────────────────────────
-        Component {
-            id: colorDelegate
-
-            RowLayout {
-                id: rowColor
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                function toColor(v) {
-                    if (v === undefined || v === null)
-                        return Qt.rgba(0, 0, 0, 1)
-                    if (typeof v === "string")
-                        return Qt.color(v)
-                    return v
-                    }
-
-                function toHex(c) {
-                    if (!c)
-                        return "#000000"
-                    let r = Math.round(c.r * 255).toString(16).padStart(2, '0')
-                    let g = Math.round(c.g * 255).toString(16).padStart(2, '0')
-                    let b = Math.round(c.b * 255).toString(16).padStart(2, '0')
-                    return "#" + r + g + b
-                    }
-
-                Label {
-                    text: rowColor.meta ? rowColor.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                Rectangle {
-                    id: swatch
-                    Layout.preferredWidth: 32
-                    Layout.preferredHeight: 28
-                    radius: 4
-                    color: rowColor.toColor(rowColor.propValue)
-                    border.width: 1
-                    border.color: Material.accentColor
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            colorDialog.selectedColor = rowColor.toColor(rowColor.propValue)
-                            colorDialog.open()
-                        }
-                    }
-
-                    ColorDialog {
-                        id: colorDialog
-                        options: ColorDialog.DontUseNativeDialog
-                        onAccepted: {
-                            rowColor.setModelValue(selectedColor)
-                        }
-                    }
-                }
-
-                ValueBox {
-                    Layout.fillWidth: true
 
                     TextInput {
                         id: hexInput
-                        anchors.fill: parent
-                        text: rowColor.toHex(rowColor.toColor(rowColor.propValue))
+                        Layout.fillWidth: true
+                        text: colorDel.toHex(colorDel.toColor(colorDel.propValue))
+                        readOnly: colorDel.bound
                         font.family: "monospace"
                         font.bold: true
                         onEditingFinished: {
-                            let c = rowColor.toColor(text)
+                            let c = colorDel.toColor(text)
                             if (c)
-                                rowColor.setModelValue(c)
-                            }
+                                colorDel.setValue(c)
+                        }
                         horizontalAlignment: TextInput.AlignRight
                         verticalAlignment: TextInput.AlignVCenter
-                        color: "#ffffff"
+                        color: colorDel.bound ? root._boundColor : "#ffffff"
                         clip: true
 
                         Connections {
-                            target: rowColor
+                            target: colorDel
                             function onPropValueChanged() {
-                                let c = rowColor.toColor(rowColor.propValue)
-                                let h = rowColor.toHex(c)
+                                let c = colorDel.toColor(colorDel.propValue)
+                                let h = colorDel.toHex(c)
                                 if (hexInput.text.toLowerCase() !== h.toLowerCase())
                                     hexInput.text = h
                             }
                         }
                     }
                 }
-            }
-            }
-
-        // ── multiline: ScrollView + TextArea ──────────────────────────────
-        Component {
-            id: multilineDelegate
-
-            RowLayout {
-                id: rowMulti
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowMulti.meta ? rowMulti.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    Layout.alignment: Qt.AlignTop
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignTop
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-                    implicitHeight: 80
-
-                    ScrollView {
-                        anchors.fill: parent
-                        clip: true
-
-                        TextArea {
-                            id: multiText
-                            text: rowMulti.propValue !== undefined ? rowMulti.propValue : ""
-                            wrapMode: TextArea.Wrap
-                            onActiveFocusChanged: {
-                                if (!activeFocus && multiText._userEdited) {
-                                    rowMulti.setModelValue(text)
-                                    multiText._userEdited = false
-                                    }
-                                }
-                            onTextChanged: {
-                                if (activeFocus)
-                                    multiText._userEdited = true
-                                }
-                            property bool _userEdited: false
-                            color: "#ffffff"
-                            background: Item {}
-                            padding: 2
-                            }
-                        }
-                    }
                 }
             }
+        }
 
-        // ── singleline: TextInput ────────────────────────────────────────
-        Component {
-            id: singlelineDelegate
+    // ── halign: ComboBox for horizontal alignment ──────────────────────
+    Component {
+        id: halignDelegate
 
-            RowLayout {
-                id: rowSingle
-                width: parent ? parent.width : 0
+        RowLayout {
+            id: halignDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
 
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-                Label {
-                    text: rowSingle.meta ? rowSingle.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignTop
-                    color: Material.foreground
-                    opacity: 0.75
+            readonly property var alignMap: [
+                { value: Qt.AlignLeft,     text: "Left"     },
+                { value: Qt.AlignRight,    text: "Right"    },
+                { value: Qt.AlignHCenter,  text: "HCenter"  },
+                { value: Qt.AlignJustify,  text: "Justify"  }
+                ]
+
+            function indexOfValue(val) {
+                for (let i = 0; i < alignMap.length; ++i) {
+                    if (alignMap[i].value === val)
+                        return i;
                     }
-
-                ValueBox {
-                    Layout.fillWidth: true
-                    unitText: rowSingle.meta ? rowSingle.meta.unit ?? "" : ""
-
-                    TextInput {
-                        anchors.fill: parent
-                        text: rowSingle.propValue !== undefined ? rowSingle.propValue : ""
-                        onEditingFinished: rowSingle.setModelValue(text)
-                        horizontalAlignment: TextInput.AlignLeft
-                        verticalAlignment: TextInput.AlignVCenter
-                        color: "#ffffff"
-                        clip: true
-                        }
-                    }
+                return 0;
                 }
+
+            PropLabel {
+                visible: halignDel.showLabel
+                text: halignDel.meta ? halignDel.meta.label ?? "" : ""
             }
 
-        // ── path: TextInput + folder button with FolderDialog ────────────
-        Component {
-            id: pathDelegate
+            ValueBox {
+                Layout.fillWidth: true
+                subLabelAlignRight: !halignDel.showLabel
+                subLabelText: !halignDel.showLabel ? (halignDel.meta ? halignDel.meta.sublabel ?? halignDel.meta.label ?? "" : "") : ""
 
-            RowLayout {
-                id: rowPath
-                width: parent ? parent.width : 0
-                spacing: 4
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowPath.meta ? rowPath.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    TextInput {
-                        id: pathInput
-                        anchors.fill: parent
-                        text: rowPath.propValue !== undefined ? rowPath.propValue : ""
-                        onEditingFinished: rowPath.setModelValue(text)
-                        horizontalAlignment: TextInput.AlignLeft
-                        verticalAlignment: TextInput.AlignVCenter
-                        color: "#ffffff"
-                        clip: true
-
-                        Connections {
-                            target: rowPath
-                            function onPropValueChanged() {
-                                if (pathInput.activeFocus)
-                                    return
-                                let v = rowPath.propValue !== undefined ? rowPath.propValue : ""
-                                if (pathInput.text !== v)
-                                    pathInput.text = v
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 28
-                    color: "#a9a9a9"
-                    radius: 4
-
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        source: "qrc:/icons/folder-browse.svg"
-                        fillMode: Image.PreserveAspectFit
-                        sourceSize.width: 28
-                        sourceSize.height: 28
-                    }
-
-                    MouseArea {
-                        id: pathBrowseMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        ToolTip.text: qsTr("Browse...")
-                        ToolTip.visible: containsMouse
-                        onClicked: {
-                            let cur = rowPath.propValue !== undefined ? rowPath.propValue : ""
-                            if (cur.length > 0)
-                                folderDialog.currentFolder = "file://" + ZCam.expandPath(cur)
-                            folderDialog.open()
-                        }
-                    }
-
-                    FolderDialog {
-                        id: folderDialog
-                        title: rowPath.meta ? rowPath.meta.label ?? qsTr("Select Directory") : qsTr("Select Directory")
-                        onAccepted: {
-                            let f = folderDialog.selectedFolder.toString()
-                            if (f.startsWith("file://"))
-                                f = f.substring(7)
-                            pathInput.text = f
-                            rowPath.setModelValue(f)
-                        }
+                BareComboBox {
+                    id: alignCombo
+                    enabled: !halignDel.bound
+                    anchors.fill: parent
+                    model: halignDel.alignMap
+                    textRole: "text"
+                    valueRole: "value"
+                    currentIndex: halignDel.indexOfValue(halignDel.propValue)
+                    textColor: halignDel.bound ? root._boundColor : "#ffffff"
+                    onActivated: index => halignDel.setValue(halignDel.alignMap[index].value)
                     }
                 }
             }
         }
 
-        // ── string: generic single-line TextInput ─────────────────────────
-        Component {
-            id: stringDelegate
+    // ── font: FontFamilyButton (top-level only) ────────────────────────
+    Component {
+        id: fontDelegate
 
-            RowLayout {
-                id: rowString
-                width: parent ? parent.width : 0
-                spacing: 6
+        RowLayout {
+            id: fontDel
+            width: parent ? parent.width : 0
 
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-                Label {
-                    text: rowString.meta ? rowString.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignTop
-                    color: Material.foreground
-                    opacity: 0.75
+            PropLabel {
+                visible: fontDel.showLabel
+                text: fontDel.meta ? fontDel.meta.label ?? "" : ""
+            }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                FontFamilyButton {
+                    anchors.fill: parent
+                    enabled: !fontDel.bound
+                    family: fontDel.propValue !== undefined ? fontDel.propValue : ""
+                    onFamilySelected: fam => fontDel.setValue(fam)
                     }
+                }
+            }
+        }
 
-                ValueBox {
-                    Layout.fillWidth: true
-                    unitText: rowString.meta ? rowString.meta.unit ?? "" : ""
+    // ── path: TextInput + folder button (top-level only) ──────────────
+    Component {
+        id: pathDelegate
 
-                    TextInput {
-                        anchors.fill: parent
-                        text: rowString.propValue !== undefined ? rowString.propValue : ""
-                        onEditingFinished: rowString.setModelValue(text)
-                        horizontalAlignment: TextInput.AlignLeft
-                        verticalAlignment: TextInput.AlignVCenter
-                        color: "#ffffff"
-                        clip: true
+        RowLayout {
+            id: pathDel
+            width: parent ? parent.width : 0
+            spacing: 4
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
+
+            PropLabel {
+                visible: pathDel.showLabel
+                text: pathDel.meta ? pathDel.meta.label ?? "" : ""
+            }
+
+            ValueBox {
+                Layout.fillWidth: true
+
+                TextInput {
+                    id: pathInput
+                    anchors.fill: parent
+                    text: pathDel.propValue !== undefined ? pathDel.propValue : ""
+                    readOnly: pathDel.bound
+                    onEditingFinished: pathDel.setValue(text)
+                    horizontalAlignment: TextInput.AlignLeft
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: pathDel.bound ? root._boundColor : "#ffffff"
+                    clip: true
+
+                    Connections {
+                        target: pathDel
+                        function onPropValueChanged() {
+                            if (pathInput.activeFocus)
+                                return
+                            let v = pathDel.propValue !== undefined ? pathDel.propValue : ""
+                            if (pathInput.text !== v)
+                                pathInput.text = v
                         }
                     }
                 }
             }
 
-        // ── layer: ComboBox for Layer selection ────────────────────────────
-        Component {
-            id: layerDelegate
+            Rectangle {
+                Layout.preferredWidth: 36
+                Layout.preferredHeight: 28
+                color: "#a9a9a9"
+                radius: 4
 
-            RowLayout {
-                id: rowLayer
-                width: parent ? parent.width : 0
-                spacing: 6
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    source: "qrc:/icons/folder-browse.svg"
+                    fillMode: Image.PreserveAspectFit
+                    sourceSize.width: 28
+                    sourceSize.height: 28
+                }
 
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowLayer.meta ? rowLayer.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
+                MouseArea {
+                    id: pathBrowseMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    ToolTip.text: qsTr("Browse...")
+                    ToolTip.visible: containsMouse
+                    onClicked: {
+                        let cur = pathDel.propValue !== undefined ? pathDel.propValue : ""
+                        if (cur.length > 0)
+                            folderDialog.currentFolder = "file://" + ZCam.expandPath(cur)
+                        folderDialog.open()
                     }
+                }
 
-                ValueBox {
-                    Layout.fillWidth: true
+                FolderDialog {
+                    id: folderDialog
+                    title: pathDel.meta ? pathDel.meta.label ?? qsTr("Select Directory") : qsTr("Select Directory")
+                    onAccepted: {
+                        let f = folderDialog.selectedFolder.toString()
+                        if (f.startsWith("file://"))
+                            f = f.substring(7)
+                        pathInput.text = f
+                        pathDel.setValue(f)
+                    }
+                }
+            }
+        }
+    }
 
-                    ComboBox {
-                        id: layerCombo
-                        anchors.fill: parent
-                        model: root.model.layerNames ? root.model.layerNames() : []
+    // ── pointerCombo: ComboBox for pointer-type selection ─────────────
+    // Unified: replaces layerDelegate, laserLayerDelegate, recipeDelegate,
+    //          machineDelegate, and all their sub-variants.
+    // Branches on meta.type to select the correct model/name functions.
+    Component {
+        id: pointerComboDelegate
 
-                        property string currentName: {
-                            if (rowLayer.propValue === undefined || rowLayer.propValue === null)
-                                return ""
-                            return root.model.layerToName ? root.model.layerToName(rowLayer.propValue) : ""
+        RowLayout {
+            id: ptrDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            spacing: 2
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
+
+            readonly property string type: meta?.type ?? ""
+
+            PropLabel {
+                visible: ptrDel.showLabel
+                text: ptrDel.meta ? ptrDel.meta.label ?? "" : ""
+            }
+
+            ValueBox {
+                Layout.fillWidth: true
+                subLabelAlignRight: !ptrDel.showLabel
+                subLabelText: !ptrDel.showLabel ? (ptrDel.meta ? ptrDel.meta.sublabel ?? ptrDel.meta.label ?? "" : "") : ""
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 2
+
+                    BareComboBox {
+                        id: ptrCombo
+                        Layout.fillWidth: true
+
+                        // Build model based on type
+                        model: {
+                            switch (ptrDel.type) {
+                                case "layer":
+                                    return root.model.layerNames ? root.model.layerNames() : []
+                                case "laserLayer":
+                                    return root.buildListWithPrefix(
+                                        "(inherited)",
+                                        root.model.laserLayerNames ? root.model.laserLayerNames() : [])
+                                case "recipe":
+                                    return root.model.recipeNames ? root.model.recipeNames() : []
+                                case "machine":
+                                    return root.model.machineNames ? root.model.machineNames() : []
+                                default:
+                                    return []
+                                }
+                            }
+
+                        // Resolve current value to display name
+                        displayTextOverride: {
+                            if (ptrDel.type === "laserLayer") {
+                                const name = root.resolvePointerName(
+                                    root.model.laserLayerToName, ptrDel.propValue)
+                                return name.length > 0 ? name : "(inherited)"
+                                }
+                            return root.resolvePointerName(
+                                ptrDel.type === "layer"    ? root.model.layerToName :
+                                ptrDel.type === "recipe"   ? root.model.recipeToName :
+                                ptrDel.type === "machine"  ? root.model.machineToName :
+                                null, ptrDel.propValue)
+                            }
+
+                        textColor: {
+                            if (ptrDel.type === "laserLayer" && ptrCombo.displayTextOverride === "(inherited)")
+                                return "#888888"
+                            return "#ffffff"
                             }
 
                         currentIndex: {
-                            let idx = layerCombo.find(layerCombo.currentName)
+                            let idx = ptrCombo.find(ptrCombo.displayTextOverride)
+                            if (ptrDel.type === "laserLayer")
+                                return idx >= 0 ? idx : 0
                             return idx >= 0 ? idx : -1
                             }
 
                         onActivated: index => {
-                            let name = layerCombo.model[index]
-                            let ptr = root.model.nameToLayer ? root.model.nameToLayer(name) : null
-                            rowLayer.setModelValue(ptr)
-                            }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: layerCombo.currentName
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            }
-                        indicator: Item {}
-                        }
-                    }
-                }
-            }
-
-
-        // ── laserLayer: ComboBox for LaserLayer selection ──────────────────
-        //    Shows "(inherited)" when the property is null (i.e. the
-        //    element inherits the LaserLayer from its parent).
-        Component {
-            id: laserLayerDelegate
-
-            RowLayout {
-                id: rowLaserLayer
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowLaserLayer.meta ? rowLaserLayer.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: laserLayerCombo
-                        anchors.fill: parent
-
-                        // Build model: prepend "(inherited)" so the user can
-                        // set the property back to null.
-                        property var baseNames: root.model.laserLayerNames ? root.model.laserLayerNames() : []
-                        model: {
-                            var list = ["(inherited)"]
-                            for (var i = 0; i < laserLayerCombo.baseNames.length; ++i)
-                                list.push(laserLayerCombo.baseNames[i])
-                            return list
-                            }
-
-                        // Resolve the pointer to a name.  A null pointer
-                        // (QVariant(LaserLayer*, 0x0)) yields an empty string
-                        // from laserLayerToName(), which we map to "(inherited)".
-                        property string resolvedName: {
-                            if (rowLaserLayer.propValue === undefined)
-                                return ""
-                            if (root.model.laserLayerToName)
-                                return root.model.laserLayerToName(rowLaserLayer.propValue)
-                            return ""
-                            }
-                        property string currentName: resolvedName.length > 0 ? resolvedName : "(inherited)"
-
-                        currentIndex: {
-                            let idx = laserLayerCombo.find(laserLayerCombo.currentName)
-                            return idx >= 0 ? idx : 0
-                            }
-
-                        onActivated: index => {
-                            if (index === 0) {
-                                // Setting to null: pass a null LaserLayer* so
-                                // the PROPV setter accepts it (QVariant(nullptr)
-                                // maps to a null pointer for Q_DECLARE_OPAQUE_POINTER types).
-                                rowLaserLayer.setModelValue(null)
+                            if (ptrDel.type === "laserLayer") {
+                                if (index === 0)
+                                    ptrDel.setValue(null)
+                                else {
+                                    let name = ptrCombo.model[index]
+                                    ptrDel.setValue(root.model.nameToLaserLayer ? root.model.nameToLaserLayer(name) : null)
+                                    }
                                 }
                             else {
-                                let name = laserLayerCombo.model[index]
-                                let ptr = root.model.nameToLaserLayer ? root.model.nameToLaserLayer(name) : null
-                                rowLaserLayer.setModelValue(ptr)
+                                let name = ptrCombo.model[index]
+                                let ptr = null
+                                switch (ptrDel.type) {
+                                    case "layer":
+                                        ptr = root.model.nameToLayer ? root.model.nameToLayer(name) : null
+                                        break
+                                    case "recipe":
+                                        ptr = root.model.nameToRecipe ? root.model.nameToRecipe(name) : null
+                                        break
+                                    case "machine":
+                                        ptr = root.model.nameToMachine ? root.model.nameToMachine(name) : null
+                                        break
+                                    }
+                                ptrDel.setValue(ptr)
                                 }
                             }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: laserLayerCombo.currentName
-                            font.bold: true
-                            color: laserLayerCombo.currentName === "(inherited)" ? "#888888" : "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            }
-                        indicator: Item {}
                         }
-                    }
-                }
-            }
-        // ── recipe: ComboBox for Recipe selection ───────────────────────────
-        Component {
-            id: recipeDelegate
 
-            RowLayout {
-                id: rowRecipe
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowRecipe.meta ? rowRecipe.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    id: recipeVBox
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: recipeCombo
-                        parent: recipeVBox
-                        anchors.left: parent.left
-                        anchors.right: recipeEditBtn.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        anchors.rightMargin: 2
-                        model: root.model.recipeNames ? root.model.recipeNames() : []
-
-                        property string currentName: {
-                            if (rowRecipe.propValue === undefined || rowRecipe.propValue === null)
-                                return ""
-                            return root.model.recipeToName ? root.model.recipeToName(rowRecipe.propValue) : ""
-                            }
-
-                        currentIndex: {
-                            let idx = recipeCombo.find(recipeCombo.currentName)
-                            return idx >= 0 ? idx : -1
-                            }
-
-                        onActivated: index => {
-                            let name = recipeCombo.model[index]
-                            let ptr = root.model.nameToRecipe ? root.model.nameToRecipe(name) : null
-                            rowRecipe.setModelValue(ptr)
-                            }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: recipeCombo.currentName
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            }
-                        indicator: Item {}
-                        }
-                    }
-
-                    // Edit button — opens the Recipe editor for the selected recipe
+                    // Edit button for recipe type
                     ToolButton {
-                        id: recipeEditBtn
-                        parent: recipeVBox
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 28
-                        enabled: recipeCombo.currentName !== ""
+                        visible: ptrDel.type === "recipe"
+                        Layout.preferredWidth: 28
+                        enabled: ptrCombo.displayTextOverride !== ""
                         text: "✎"
                         font.pixelSize: 14
-                        onClicked: ZCam.openRecipeEditor(recipeCombo.currentName)
+                        onClicked: ZCam.openRecipeEditor(ptrCombo.displayTextOverride)
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Edit recipe")
                         background: Rectangle {
-                            color: recipeEditBtn.hovered ? Material.color(Material.Teal, Material.Shade700)
-                                   : (recipeEditBtn.enabled ? "#3a3a3a" : "transparent")
+                            color: parent.hovered ? Material.color(Material.Teal, Material.Shade700)
+                                   : (parent.enabled ? "#3a3a3a" : "transparent")
                             radius: 3
                             }
                         }
-                }
-            }
-
-        // ── machineType: ComboBox for machine type selection ───────────────
-        Component {
-            id: machineTypeDelegate
-
-            RowLayout {
-                id: rowMachineType
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowMachineType.meta ? rowMachineType.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: typeCombo
-                        anchors.fill: parent
-                        model: root.model.machineTypes ? root.model.machineTypes() : []
-
-                        property string currentName: rowMachineType.propValue !== undefined ? rowMachineType.propValue : ""
-                        currentIndex: {
-                            let idx = typeCombo.find(typeCombo.currentName)
-                            return idx >= 0 ? idx : -1
-                        }
-
-                        onActivated: index => {
-                            rowMachineType.setModelValue(typeCombo.model[index])
-                        }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: typeCombo.currentName
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
-                        indicator: Item {}
                     }
                 }
             }
         }
 
-        // ── boardType: ComboBox for board type selection ────────────────
-        Component {
-            id: boardTypeDelegate
-
-            RowLayout {
-                id: rowBoardType
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowBoardType.meta ? rowBoardType.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: boardTypeCombo
-                        anchors.fill: parent
-                        model: root.model.boardTypes ? root.model.boardTypes() : []
-
-                        property string currentName: rowBoardType.propValue !== undefined ? rowBoardType.propValue : ""
-                        currentIndex: {
-                            let idx = boardTypeCombo.find(boardTypeCombo.currentName)
-                            return idx >= 0 ? idx : -1
-                        }
-
-                        onActivated: index => {
-                            rowBoardType.setModelValue(boardTypeCombo.model[index])
-                        }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: boardTypeCombo.currentName
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
-                        indicator: Item {}
-                    }
-                }
-            }
-        }
-
-        // ── ethDevice: ComboBox for Ethernet device selection ────────────
-        Component {
-            id: ethDeviceDelegate
-
-            RowLayout {
-                id: rowEthDevice
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowEthDevice.meta ? rowEthDevice.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: ethDeviceCombo
-                        anchors.fill: parent
-                        model: root.model.ethDevices ? root.model.ethDevices() : []
-
-                        property string currentName: rowEthDevice.propValue !== undefined ? rowEthDevice.propValue : ""
-                        currentIndex: {
-                            let idx = ethDeviceCombo.find(ethDeviceCombo.currentName)
-                            return idx >= 0 ? idx : -1
-                        }
-
-                        onActivated: index => {
-                            rowEthDevice.setModelValue(ethDeviceCombo.model[index])
-                        }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: ethDeviceCombo.currentName
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
-                        indicator: Item {}
-                    }
-                }
-            }
-        }
-
-        // ── Sub-delegate for cameraName in row entries ─────────────────
-        Component {
-            id: subCameraNameDelegate
-
-            ValueBox {
-                id: subCameraName
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subCameraName.subMeta ? subCameraName.subMeta.sublabel ?? subCameraName.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subCameraNameCombo
-                    anchors.fill: parent
-
-                    // Model = available cameras with an optional "(none)"
-                    // entry so the camera can be disabled.
-                    property var camNames: root.model.cameraNames ? root.model.cameraNames() : []
-                    model: {
-                        var list = ["(none)"]
-                        for (var i = 0; i < subCameraNameCombo.camNames.length; ++i)
-                            list.push(subCameraNameCombo.camNames[i])
-                        return list
-                        }
-
-                    property string currentName: {
-                        if (subCameraName.subValue === undefined || subCameraName.subValue === null)
-                            return "(none)"
-                        const s = String(subCameraName.subValue)
-                        return s.length > 0 ? s : "(none)"
-                        }
-
-                    currentIndex: {
-                        let idx = subCameraNameCombo.find(subCameraNameCombo.currentName)
-                        return idx >= 0 ? idx : 0
-                        }
-
-                    onActivated: index => {
-                        if (index === 0)
-                            subCameraName.setSub("")
-                        else
-                            subCameraName.setSub(subCameraNameCombo.model[index])
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subCameraNameCombo.currentName
-                        font.bold: true
-                        color: subCameraNameCombo.currentName === "(none)" ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-                }
-            }
-
-        // ── Sub-delegate for cameraResolution in row entries ─────────
-        Component {
-            id: subCameraResolutionDelegate
-
-            ValueBox {
-                id: subCameraResolution
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subCameraResolution.subMeta ? subCameraResolution.subMeta.sublabel ?? subCameraResolution.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subCameraResolutionCombo
-                    anchors.fill: parent
-
-                    property var camElement: root.model.element
-                    model: {
-                        var list = ["(default)"]
-                        if (camElement && camElement.resolutionNames)
-                            list = list.concat(camElement.resolutionNames())
-                        return list
-                    }
-
-                    property string currentVal: subCameraResolution.subValue !== undefined ? String(subCameraResolution.subValue) : ""
-                    currentIndex: {
-                        if (currentVal.length === 0)
-                            return 0
-                        let idx = subCameraResolutionCombo.find(currentVal)
-                        return idx >= 0 ? idx : 0
-                    }
-
-                    onActivated: index => {
-                        if (index === 0)
-                            subCameraResolution.setSub("")
-                        else
-                            subCameraResolution.setSub(subCameraResolutionCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subCameraResolutionCombo.currentVal.length > 0 ? subCameraResolutionCombo.currentVal : "(default)"
-                        font.bold: true
-                        color: subCameraResolutionCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── Sub-delegate for cameraFrameRate in row entries ───────────
-        Component {
-            id: subCameraFrameRateDelegate
-
-            ValueBox {
-                id: subCameraFrameRate
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subCameraFrameRate.subMeta ? subCameraFrameRate.subMeta.sublabel ?? subCameraFrameRate.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subCameraFrameRateCombo
-                    anchors.fill: parent
-
-                    property var camElement: root.model.element
-                    model: {
-                        var list = ["(default)"]
-                        if (camElement && camElement.frameRateNames)
-                            list = list.concat(camElement.frameRateNames())
-                        return list
-                    }
-
-                    property string currentVal: subCameraFrameRate.subValue !== undefined ? String(subCameraFrameRate.subValue) : ""
-                    currentIndex: {
-                        if (currentVal.length === 0)
-                            return 0
-                        let idx = subCameraFrameRateCombo.find(currentVal)
-                        return idx >= 0 ? idx : 0
-                    }
-
-                    onActivated: index => {
-                        if (index === 0)
-                            subCameraFrameRate.setSub("")
-                        else
-                            subCameraFrameRate.setSub(subCameraFrameRateCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subCameraFrameRateCombo.currentVal.length > 0 ? subCameraFrameRateCombo.currentVal : "(default)"
-                        font.bold: true
-                        color: subCameraFrameRateCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── subEthDevice: ComboBox for Ethernet device in row entries ───
-        Component {
-            id: subEthDeviceDelegate
-
-            ValueBox {
-                id: subEthDevice
-                Layout.fillWidth: true
-                width: parent ? parent.width : 0
-                subLabelAlignRight: true
-                subLabelText: subEthDevice.subMeta ? subEthDevice.subMeta.sublabel ?? subEthDevice.subMeta.label ?? "" : ""
-
-                property string subName
-                property var subValue
-                property var subMeta
-                property var setSub: function(v) {}
-
-                ComboBox {
-                    id: subEthDeviceCombo
-                    anchors.fill: parent
-                    model: root.model.ethDevices ? root.model.ethDevices() : []
-
-                    property string currentName: subEthDevice.subValue !== undefined ? subEthDevice.subValue : ""
-                    currentIndex: {
-                        let idx = subEthDeviceCombo.find(subEthDeviceCombo.currentName)
-                        return idx >= 0 ? idx : -1
-                    }
-
-                    onActivated: index => {
-                        subEthDevice.setSub(subEthDeviceCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: subEthDeviceCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-
-        // ── machine: ComboBox for Machine selection ───────────────────────
-        Component {
-            id: machineDelegate
-
-            RowLayout {
-                id: rowMachine
-                width: parent ? parent.width : 0
-                spacing: 6
-
-                property string propName
-                property var propValue
-                property var meta
-                property int propIndex
-                property var setModelValue: function(v) {}
-
-                Label {
-                    text: rowMachine.meta ? rowMachine.meta.label ?? "" : ""
-                    Layout.preferredWidth: root.labelWidth
-                    elide: Text.ElideRight
-                    horizontalAlignment: Text.AlignRight
-                    color: Material.foreground
-                    opacity: 0.75
-                    }
-
-                ValueBox {
-                    Layout.fillWidth: true
-
-                    ComboBox {
-                        id: machineCombo
-                        anchors.fill: parent
-                        model: root.model.machineNames ? root.model.machineNames() : []
-
-                        property string currentName: {
-                            if (rowMachine.propValue === undefined || rowMachine.propValue === null)
-                                return ""
-                            // For "machine" type, the value is a Machine* pointer
-                            return root.model.machineToName ? root.model.machineToName(rowMachine.propValue) : ""
-                            }
-
-                        currentIndex: {
-                            let idx = machineCombo.find(machineCombo.currentName)
-                            return idx >= 0 ? idx : -1
-                            }
-
-                        onActivated: index => {
-                            let name = machineCombo.model[index]
-                            let ptr = root.model.nameToMachine ? root.model.nameToMachine(name) : null
-                            rowMachine.setModelValue(ptr)
-                            }
-
-                        background: Item {}
-                        padding: 2
-                        contentItem: Text {
-                            text: machineCombo.currentName
-                            font.bold: true
-                            color: "#ffffff"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            }
-                        indicator: Item {}
-                        }
-                    }
-                }
-            }
-        }
-
-    // ── machineName: ComboBox for machine name (string) selection ────
+    // ── stringCombo: ComboBox for string-type selection ───────────────
+    // Unified: replaces machineNameDelegate, machineTypeDelegate,
+    //          boardTypeDelegate, ethDeviceDelegate, and all sub-variants.
+    // The value is a string that directly maps to a model entry.
     Component {
-        id: machineNameDelegate
+        id: stringComboDelegate
 
         RowLayout {
-            id: rowMachineName
-            width: parent ? parent.width : 0
-            spacing: 6
+            id: strDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
 
             property string propName
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-            Label {
-                text: rowMachineName.meta ? rowMachineName.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
+            readonly property string type: meta?.type ?? ""
+
+            PropLabel {
+                visible: strDel.showLabel
+                text: strDel.meta ? strDel.meta.label ?? "" : ""
+            }
 
             ValueBox {
                 Layout.fillWidth: true
+                subLabelAlignRight: !strDel.showLabel
+                subLabelText: !strDel.showLabel ? (strDel.meta ? strDel.meta.sublabel ?? strDel.meta.label ?? "" : "") : ""
 
-                ComboBox {
-                    id: machineNameCombo
+                BareComboBox {
+                    id: strCombo
                     anchors.fill: parent
-                    model: root.model.machineNames ? root.model.machineNames() : []
 
-                    property string currentName: rowMachineName.propValue !== undefined ? rowMachineName.propValue : ""
+                    model: {
+                        switch (strDel.type) {
+                            case "machineName": return root.model.machineNames ? root.model.machineNames() : []
+                            case "machineType": return root.model.machineTypes ? root.model.machineTypes() : []
+                            case "boardType":   return root.model.boardTypes   ? root.model.boardTypes()   : []
+                            case "ethDevice":   return root.model.ethDevices   ? root.model.ethDevices()   : []
+                            default: return []
+                            }
+                        }
+
+                    displayTextOverride: strDel.propValue !== undefined ? strDel.propValue : ""
+
                     currentIndex: {
-                        let idx = machineNameCombo.find(machineNameCombo.currentName)
+                        let idx = strCombo.find(strCombo.displayTextOverride)
                         return idx >= 0 ? idx : -1
                         }
 
-                    onActivated: index => {
-                        rowMachineName.setModelValue(machineNameCombo.model[index])
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: machineNameCombo.currentName
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
+                    onActivated: index => strDel.setValue(strCombo.model[index])
                     }
                 }
             }
         }
 
-    // ── override: ComboBox for ParameterType selection ────────────────
+    // ── enumCombo: ComboBox for enum/int selection ────────────────────
+    // Unified: replaces overrideDelegate, lineJoinDelegate, lineEndDelegate,
+    //          framingTypeDelegate, and all sub-variants.
+    // The value is an int index into the model list.
     Component {
-        id: overrideDelegate
+        id: enumComboDelegate
 
         RowLayout {
-            id: rowOverride
-            width: parent ? parent.width : 0
-            spacing: 6
+            id: enumDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
 
             property string propName
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-            Label {
-                text: rowOverride.meta ? rowOverride.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
+            readonly property string type: meta?.type ?? ""
+            readonly property int defaultIdx: type === "framingType" ? 1 : 0
+
+            PropLabel {
+                visible: enumDel.showLabel
+                text: enumDel.meta ? enumDel.meta.label ?? "" : ""
+            }
 
             ValueBox {
                 Layout.fillWidth: true
+                subLabelAlignRight: !enumDel.showLabel
+                subLabelText: !enumDel.showLabel ? (enumDel.meta ? enumDel.meta.sublabel ?? enumDel.meta.label ?? "" : "") : ""
 
-                ComboBox {
-                    id: overrideCombo
+                BareComboBox {
+                    id: enumCombo
                     anchors.fill: parent
-                    model: root.model.overrideTypeNames ? root.model.overrideTypeNames() : []
 
-                    property int modelValue: rowOverride.propValue !== undefined ? Number(rowOverride.propValue) : 0
-                    currentIndex: {
-                        if (overrideCombo.modelValue >= 0 && overrideCombo.modelValue < overrideCombo.model.length)
-                            return overrideCombo.modelValue
-                        return 0
-                    }
-
-                    onActivated: index => {
-                        rowOverride.setModelValue(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: overrideCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
+                    model: {
+                        switch (enumDel.type) {
+                            case "override":     return root.model.overrideTypeNames  ? root.model.overrideTypeNames()  : []
+                            case "lineJoin":     return root.model.joinTypeNames      ? root.model.joinTypeNames()      : []
+                            case "lineEnd":      return root.model.endTypeNames        ? root.model.endTypeNames()       : []
+                            case "framingType":  return root.model.framingTypeNames    ? root.model.framingTypeNames()   : ["BoundingBox", "ConvexHull"]
+                            default: return []
+                            }
                         }
-                    indicator: Item {}
+
+                    property int modelValue: enumDel.propValue !== undefined ? Number(enumDel.propValue) : enumDel.defaultIdx
+                    currentIndex: {
+                        if (enumCombo.modelValue >= 0 && enumCombo.modelValue < enumCombo.model.length)
+                            return enumCombo.modelValue
+                        return enumDel.defaultIdx
+                        }
+
+                    onActivated: index => enumDel.setValue(index)
                     }
                 }
             }
@@ -3838,15 +2411,19 @@ Item {
         id: pulsewidthDelegate
 
         RowLayout {
-            id: rowPulsewidth
-            width: parent ? parent.width : 0
-            spacing: 6
+            id: pwDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
 
             property string propName
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
             function freqModel() {
                 if (root.model.pulsewidthNames)
@@ -3856,302 +2433,71 @@ Item {
                 return []
                 }
 
-            Label {
-                text: rowPulsewidth.meta ? rowPulsewidth.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
+            PropLabel {
+                visible: pwDel.showLabel
+                text: pwDel.meta ? pwDel.meta.label ?? "" : ""
+            }
 
             ValueBox {
                 Layout.fillWidth: true
-                unitText: rowPulsewidth.meta ? rowPulsewidth.meta.unit ?? "" : ""
+                unitText: pwDel.meta ? pwDel.meta.unit ?? "" : ""
+                subLabelAlignRight: !pwDel.showLabel
+                subLabelText: !pwDel.showLabel ? (pwDel.meta ? pwDel.meta.sublabel ?? pwDel.meta.label ?? "" : "") : ""
 
-                ComboBox {
+                BareComboBox {
                     id: freqCombo
                     anchors.fill: parent
-                    model: rowPulsewidth.freqModel()
+                    model: pwDel.freqModel()
 
-                    property string freqValue: rowPulsewidth.propValue !== undefined ? String(Math.round(Number(rowPulsewidth.propValue))) : ""
+                    property string freqValue: pwDel.propValue !== undefined ? String(Math.round(Number(pwDel.propValue))) : ""
+                    displayTextOverride: freqValue
                     currentIndex: {
                         let idx = freqCombo.find(freqCombo.freqValue)
                         return idx >= 0 ? idx : -1
                         }
 
-                    onActivated: index => {
-                        rowPulsewidth.setModelValue(Number(freqCombo.model[index]))
-                        }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: freqCombo.freqValue.length > 0 ? freqCombo.freqValue : ""
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
+                    onActivated: index => pwDel.setValue(Number(freqCombo.model[index]))
                     }
                 }
             }
         }
 
-    // ── lineJoin: ComboBox for Clipper2Lib::JoinType selection ────────
+    // ── lock: three CheckBoxes (Off / Lock / Square) ──────────────────
+    // Unified: replaces lockScaleDelegate, lockSizeDelegate,
+    //          subLockScaleDelegate, subLockSizeDelegate.
     Component {
-        id: lineJoinDelegate
+        id: lockDelegate
 
         RowLayout {
-            id: rowLineJoin
-            width: parent ? parent.width : 0
-            spacing: 6
-
-            property string propName
-            property var propValue
-            property var meta
-            property int propIndex
-            property var setModelValue: function(v) {}
-
-            Label {
-                text: rowLineJoin.meta ? rowLineJoin.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
-
-            ValueBox {
-                Layout.fillWidth: true
-
-                ComboBox {
-                    id: lineJoinCombo
-                    anchors.fill: parent
-                    model: root.model.joinTypeNames ? root.model.joinTypeNames() : []
-
-                    property int modelValue: rowLineJoin.propValue !== undefined ? Number(rowLineJoin.propValue) : 0
-                    currentIndex: {
-                        if (lineJoinCombo.modelValue >= 0 && lineJoinCombo.modelValue < lineJoinCombo.model.length)
-                            return lineJoinCombo.modelValue
-                        return 0
-                    }
-
-                    onActivated: index => {
-                        rowLineJoin.setModelValue(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: lineJoinCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-                }
-            }
-        }
-
-    // ── lineEnd: ComboBox for Clipper2Lib::EndType selection ──────────
-    Component {
-        id: lineEndDelegate
-
-        RowLayout {
-            id: rowLineEnd
-            width: parent ? parent.width : 0
-            spacing: 6
-
-            property string propName
-            property var propValue
-            property var meta
-            property int propIndex
-            property var setModelValue: function(v) {}
-
-            Label {
-                text: rowLineEnd.meta ? rowLineEnd.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
-
-            ValueBox {
-                Layout.fillWidth: true
-
-                ComboBox {
-                    id: lineEndCombo
-                    anchors.fill: parent
-                    model: root.model.endTypeNames ? root.model.endTypeNames() : []
-
-                    property int modelValue: rowLineEnd.propValue !== undefined ? Number(rowLineEnd.propValue) : 0
-                    currentIndex: {
-                        if (lineEndCombo.modelValue >= 0 && lineEndCombo.modelValue < lineEndCombo.model.length)
-                            return lineEndCombo.modelValue
-                        return 0
-                    }
-
-                    onActivated: index => {
-                        rowLineEnd.setModelValue(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: lineEndCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-                }
-            }
-        }
-
-    // ── framingType: ComboBox for FramingType selection ────────────────
-    Component {
-        id: framingTypeDelegate
-
-        RowLayout {
-            id: rowFramingType
-            width: parent ? parent.width : 0
-            spacing: 6
-
-            property string propName
-            property var propValue
-            property var meta
-            property int propIndex
-            property var setModelValue: function(v) {}
-
-            Label {
-                text: rowFramingType.meta ? rowFramingType.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
-
-            ValueBox {
-                Layout.fillWidth: true
-
-                ComboBox {
-                    id: framingTypeCombo
-                    anchors.fill: parent
-                    model: root.model.framingTypeNames ? root.model.framingTypeNames() : ["BoundingBox", "ConvexHull"]
-
-                    property int modelValue: rowFramingType.propValue !== undefined ? Number(rowFramingType.propValue) : 1
-                    currentIndex: {
-                        if (framingTypeCombo.modelValue >= 0 && framingTypeCombo.modelValue < framingTypeCombo.model.length)
-                            return framingTypeCombo.modelValue
-                        return 1
-                    }
-
-                    onActivated: index => {
-                        rowFramingType.setModelValue(index)
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: framingTypeCombo.currentText
-                        font.bold: true
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
-                    }
-                }
-            }
-        }
-
-    // ── subFramingType: ComboBox for FramingType in row entries ──────
-    Component {
-        id: subFramingTypeDelegate
-
-        ValueBox {
-            id: subFramingType
-            Layout.fillWidth: true
-            width: parent ? parent.width : 0
-                subLabelAlignRight: true
-            subLabelText: subFramingType.subMeta ? subFramingType.subMeta.sublabel ?? subFramingType.subMeta.label ?? "" : ""
-
-            property string subName
-            property var subValue
-            property var subMeta
-            property var setSub: function(v) {}
-
-            ComboBox {
-                id: subFramingTypeCombo
-                anchors.fill: parent
-                model: root.model.framingTypeNames ? root.model.framingTypeNames() : ["BoundingBox", "ConvexHull"]
-
-                property int modelValue: subFramingType.subValue !== undefined ? Number(subFramingType.subValue) : 1
-                currentIndex: {
-                    if (subFramingTypeCombo.modelValue >= 0 && subFramingTypeCombo.modelValue < subFramingTypeCombo.model.length)
-                        return subFramingTypeCombo.modelValue
-                    return 1
-                }
-
-                onActivated: index => {
-                    subFramingType.setSub(index)
-                }
-
-                background: Item {}
-                padding: 2
-                contentItem: Text {
-                    text: subFramingTypeCombo.currentText
-                    font.bold: true
-                    color: "#ffffff"
-                    horizontalAlignment: Text.AlignLeft
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    }
-                indicator: Item {}
-                }
-            }
-        }
-
-// ── lockScale: three CheckBoxes (Off / Lock / Square) ──────────
-    Component {
-        id: lockScaleDelegate
-
-        RowLayout {
-            id: rowLockScale
-            width: parent ? parent.width : 0
+            id: lockDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
             spacing: 4
 
             property string propName
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-            readonly property var modeNames: root.model.lockScaleNames ? root.model.lockScaleNames() : ["Off", "Lock", "Square"]
-
-            Label {
-                text: rowLockScale.meta ? rowLockScale.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
+            readonly property string type: meta?.type ?? ""
+            readonly property var modeNames: {
+                if (type === "lockSize")
+                    return root.model.lockSizeNames ? root.model.lockSizeNames() : ["Off", "Lock", "Square"]
+                return root.model.lockScaleNames ? root.model.lockScaleNames() : ["Off", "Lock", "Square"]
                 }
 
+            PropLabel {
+                visible: lockDel.showLabel
+                text: lockDel.meta ? lockDel.meta.label ?? "" : ""
+            }
+
             Repeater {
-                model: rowLockScale.modeNames
+                model: lockDel.modeNames
 
                 delegate: ValueBox {
                     required property string modelData
@@ -4162,351 +2508,113 @@ Item {
 
                     LockCheckBox {
                         modeIndex: index
-                        modeValue: rowLockScale.propValue
-                        onActivated: idx => rowLockScale.setModelValue(idx)
+                        modeValue: lockDel.propValue
+                        onActivated: idx => lockDel.setValue(idx)
                     }
                     }
                 }
             }
         }
 
-    // ── subLockScale: three CheckBoxes for row entries ─────────────
+    // ── cameraCombo: ComboBox for camera-related string selection ─────
+    // Unified: replaces cameraNameDelegate, cameraResolutionDelegate,
+    //          cameraFrameRateDelegate, and all sub-variants.
     Component {
-        id: subLockScaleDelegate
+        id: cameraComboDelegate
 
         RowLayout {
-            id: subLockScaleRow
-            Layout.fillWidth: true
-            spacing: 4
-
-            property string subName
-            property var subValue
-            property var subMeta
-            property var setSub: function(v) {}
-
-            readonly property var modeNames: root.model.lockScaleNames ? root.model.lockScaleNames() : ["Off", "Lock", "Square"]
-
-            Repeater {
-                model: subLockScaleRow.modeNames
-
-                delegate: ValueBox {
-                    required property string modelData
-                    required property int index
-
-                    Layout.fillWidth: true
-                    subLabelText: modelData
-
-                    LockCheckBox {
-                        modeIndex: index
-                        modeValue: subLockScaleRow.subValue
-                        onActivated: idx => subLockScaleRow.setSub(idx)
-                    }
-                    }
-                }
-            }
-        }
-
-    // ── lockSize: three CheckBoxes (Off / Lock / Square) ──────────
-    //    Analogous to lockScale but for the 2D size property.
-    Component {
-        id: lockSizeDelegate
-
-        RowLayout {
-            id: rowLockSize
-            width: parent ? parent.width : 0
-            spacing: 4
+            id: camDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
 
             property string propName
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
-            readonly property var modeNames: root.model.lockSizeNames ? root.model.lockSizeNames() : ["Off", "Lock", "Square"]
+            readonly property string type: meta?.type ?? ""
+            property var camElement: root.model.element
 
-            Label {
-                text: rowLockSize.meta ? rowLockSize.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
-
-            Repeater {
-                model: rowLockSize.modeNames
-
-                delegate: ValueBox {
-                    required property string modelData
-                    required property int index
-
-                    Layout.fillWidth: true
-                    subLabelText: modelData
-
-                    LockCheckBox {
-                        modeIndex: index
-                        modeValue: rowLockSize.propValue
-                        onActivated: idx => rowLockSize.setModelValue(idx)
-                    }
-                    }
-                }
+            PropLabel {
+                visible: camDel.showLabel
+                text: camDel.meta ? camDel.meta.label ?? "" : ""
             }
-        }
-
-    // ── subLockSize: three CheckBoxes for row entries ─────────────
-    //    Analogous to subLockScale but for the 2D size property.
-    Component {
-        id: subLockSizeDelegate
-
-        RowLayout {
-            id: subLockSizeRow
-            Layout.fillWidth: true
-            spacing: 4
-
-            property string subName
-            property var subValue
-            property var subMeta
-            property var setSub: function(v) {}
-
-            readonly property var modeNames: root.model.lockSizeNames ? root.model.lockSizeNames() : ["Off", "Lock", "Square"]
-
-            Repeater {
-                model: subLockSizeRow.modeNames
-
-                delegate: ValueBox {
-                    required property string modelData
-                    required property int index
-
-                    Layout.fillWidth: true
-                    subLabelText: modelData
-
-                    LockCheckBox {
-                        modeIndex: index
-                        modeValue: subLockSizeRow.subValue
-                        onActivated: idx => subLockSizeRow.setSub(idx)
-                    }
-                    }
-                }
-            }
-        }
-
-    // ── cameraName: ComboBox listing the available video input devices ─────
-    Component {
-        id: cameraNameDelegate
-
-        RowLayout {
-            id: rowCameraName
-            width: parent ? parent.width : 0
-            spacing: 6
-
-            property string propName
-            property var propValue
-            property var meta
-            property int propIndex
-            property var setModelValue: function(v) {}
-
-            Label {
-                text: rowCameraName.meta ? rowCameraName.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
 
             ValueBox {
                 Layout.fillWidth: true
+                subLabelAlignRight: !camDel.showLabel
+                subLabelText: !camDel.showLabel ? (camDel.meta ? camDel.meta.sublabel ?? camDel.meta.label ?? "" : "") : ""
 
-                ComboBox {
-                    id: cameraNameCombo
+                BareComboBox {
+                    id: camCombo
                     anchors.fill: parent
 
-                    // Model = available cameras with an optional "(none)"
-                    // entry so the camera can be disabled.
-                    property var camNames: root.model.cameraNames ? root.model.cameraNames() : []
                     model: {
-                        var list = ["(none)"]
-                        for (var i = 0; i < cameraNameCombo.camNames.length; ++i)
-                            list.push(cameraNameCombo.camNames[i])
-                        return list
+                        switch (camDel.type) {
+                            case "cameraName":
+                                return root.buildListWithPrefix(
+                                    "(none)",
+                                    root.model.cameraNames ? root.model.cameraNames() : [])
+                            case "cameraResolution":
+                                var resList = ["(default)"]
+                                if (camDel.camElement && camDel.camElement.resolutionNames)
+                                    resList = resList.concat(camDel.camElement.resolutionNames())
+                                return resList
+                            case "cameraFrameRate":
+                                var frList = ["(default)"]
+                                if (camDel.camElement && camDel.camElement.frameRateNames)
+                                    frList = frList.concat(camDel.camElement.frameRateNames())
+                                return frList
+                            default:
+                                return []
+                            }
                         }
 
                     property string currentName: {
-                        if (rowCameraName.propValue === undefined || rowCameraName.propValue === null)
-                            return "(none)"
-                        const s = String(rowCameraName.propValue)
-                        return s.length > 0 ? s : "(none)"
+                        if (camDel.type === "cameraName") {
+                            if (!camDel.propValue || camDel.propValue === null)
+                                return "(none)"
+                            const s = String(camDel.propValue)
+                            return s.length > 0 ? s : "(none)"
+                            }
+                        // cameraResolution / cameraFrameRate
+                        return camDel.propValue !== undefined ? String(camDel.propValue) : ""
+                        }
+
+                    displayTextOverride: {
+                        if (camCombo.currentName.length === 0)
+                            return "(default)"
+                        return camCombo.currentName
+                        }
+
+                    textColor: {
+                        if (camCombo.currentName === "(none)" || camCombo.currentName === "(default)" || camCombo.currentName.length === 0)
+                            return "#888888"
+                        return "#ffffff"
                         }
 
                     currentIndex: {
-                        let idx = cameraNameCombo.find(cameraNameCombo.currentName)
+                        let idx = camCombo.find(camCombo.currentName)
                         return idx >= 0 ? idx : 0
                         }
 
                     onActivated: index => {
                         if (index === 0)
-                            rowCameraName.setModelValue("")
+                            camDel.setValue("")
                         else
-                            rowCameraName.setModelValue(cameraNameCombo.model[index])
+                            camDel.setValue(camCombo.model[index])
                         }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: cameraNameCombo.currentName
-                        font.bold: true
-                        color: cameraNameCombo.currentName === "(none)" ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        }
-                    indicator: Item {}
                     }
                 }
             }
         }
 
-    // ── cameraResolution: ComboBox listing available camera resolutions ──
-    Component {
-        id: cameraResolutionDelegate
-
-        RowLayout {
-            id: rowCameraResolution
-            width: parent ? parent.width : 0
-            spacing: 6
-
-            property string propName
-            property var propValue
-            property var meta
-            property int propIndex
-            property var setModelValue: function(v) {}
-
-            Label {
-                text: rowCameraResolution.meta ? rowCameraResolution.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
-
-            ValueBox {
-                Layout.fillWidth: true
-
-                ComboBox {
-                    id: cameraResolutionCombo
-                    anchors.fill: parent
-
-                    property var camElement: root.model.element
-                    model: {
-                        var list = ["(default)"]
-                        if (camElement && camElement.resolutionNames)
-                            list = list.concat(camElement.resolutionNames())
-                        return list
-                    }
-
-                    property string currentVal: rowCameraResolution.propValue !== undefined ? String(rowCameraResolution.propValue) : ""
-                    currentIndex: {
-                        if (currentVal.length === 0)
-                            return 0
-                        let idx = cameraResolutionCombo.find(currentVal)
-                        return idx >= 0 ? idx : 0
-                    }
-
-                    onActivated: index => {
-                        if (index === 0)
-                            rowCameraResolution.setModelValue("")
-                        else
-                            rowCameraResolution.setModelValue(cameraResolutionCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: cameraResolutionCombo.currentVal.length > 0 ? cameraResolutionCombo.currentVal : "(default)"
-                        font.bold: true
-                        color: cameraResolutionCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-    }
-
-    // ── cameraFrameRate: ComboBox listing available frame rates ────────
-    Component {
-        id: cameraFrameRateDelegate
-
-        RowLayout {
-            id: rowCameraFrameRate
-            width: parent ? parent.width : 0
-            spacing: 6
-
-            property string propName
-            property var propValue
-            property var meta
-            property int propIndex
-            property var setModelValue: function(v) {}
-
-            Label {
-                text: rowCameraFrameRate.meta ? rowCameraFrameRate.meta.label ?? "" : ""
-                Layout.preferredWidth: root.labelWidth
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                color: Material.foreground
-                opacity: 0.75
-                }
-
-            ValueBox {
-                Layout.fillWidth: true
-
-                ComboBox {
-                    id: cameraFrameRateCombo
-                    anchors.fill: parent
-
-                    property var camElement: root.model.element
-                    model: {
-                        var list = ["(default)"]
-                        if (camElement && camElement.frameRateNames)
-                            list = list.concat(camElement.frameRateNames())
-                        return list
-                    }
-
-                    property string currentVal: rowCameraFrameRate.propValue !== undefined ? String(rowCameraFrameRate.propValue) : ""
-                    currentIndex: {
-                        if (currentVal.length === 0)
-                            return 0
-                        let idx = cameraFrameRateCombo.find(currentVal)
-                        return idx >= 0 ? idx : 0
-                    }
-
-                    onActivated: index => {
-                        if (index === 0)
-                            rowCameraFrameRate.setModelValue("")
-                        else
-                            rowCameraFrameRate.setModelValue(cameraFrameRateCombo.model[index])
-                    }
-
-                    background: Item {}
-                    padding: 2
-                    contentItem: Text {
-                        text: cameraFrameRateCombo.currentVal.length > 0 ? cameraFrameRateCombo.currentVal : "(default)"
-                        font.bold: true
-                        color: cameraFrameRateCombo.currentVal.length === 0 ? "#888888" : "#ffffff"
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    indicator: Item {}
-                }
-            }
-        }
-    }
-
-    // ── cameraView: live camera image, zoomable (wheel) and pannable (drag) ──
+    // ── cameraView: live camera image, zoomable/pannable (top only) ──
     Component {
         id: cameraViewDelegate
 
@@ -4519,7 +2627,11 @@ Item {
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
             property var camElement: (ZCam.project && ZCam.project.cameraElement) ? ZCam.project.cameraElement : null
             // zoom factor and pan offset for the preview image
@@ -4625,83 +2737,55 @@ Item {
         }
 
     // ── cameraCapture: button that adopts the live 3D canvas camera ──
-    //    Shown next to "Perspective" in the Cam inspector.  Clicking calls
-    //    Cam::grabCameraView(), which copies the current perspective camera's
-    //    foot point (viewCenter) and height (projectionHeight), marks the cam
-    //    data dirty and triggers a recalculation so the laser projection
-    //    matches the canvas view.
-    Component {
-        id: subCameraCaptureDelegate
-
-        ValueBox {
-            id: subGrabCam
-            Layout.fillWidth: true
-            Layout.minimumWidth: 60
-            width: parent ? parent.width : 0
-            subLabelText: subGrabCam.subMeta ? subGrabCam.subMeta.sublabel ?? subGrabCam.subMeta.label ?? "" : ""
-
-            property string subName
-            property var subValue
-            property var subMeta
-            property var setSub: function(v) {}
-
-            property var camElement: (ZCam.project && ZCam.project.cam) ? ZCam.project.cam : null
-
-            Button {
-                id: grabCamSubBtn
-                anchors.centerIn: parent
-                enabled: subGrabCam.camElement !== null
-                flat: true
-                text: qsTr("Grab")
-                onClicked: {
-                    if (subGrabCam.camElement)
-                        subGrabCam.camElement.grabCameraView()
-                    }
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Adopt the current 3D canvas camera as the projection viewpoint")
-                ToolTip.delay: 800
-                ToolTip.timeout: 4000
-                }
-            }
-        }
-
-    // ── cameraCapture: button that adopts the live 3D canvas camera ──
-    //    Shown next to "Perspective" in the Cam inspector.  Clicking calls
-    //    Cam::grabCameraView(), which copies the current perspective camera's
-    //    foot point (viewCenter) and height (projectionHeight), marks the cam
-    //    data dirty and triggers a recalculation so the laser projection
-    //    matches the canvas view.
+    // Unified: replaces cameraCaptureDelegate and subCameraCaptureDelegate.
     Component {
         id: cameraCaptureDelegate
 
-        Item {
-            width: parent ? parent.width : 0
-            implicitHeight: grabCamButton.implicitHeight + 4
+        RowLayout {
+            id: capDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
 
             property string propName
             property var propValue
             property var meta
             property int propIndex
-            property var setModelValue: function(v) {}
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
 
             property var camElement: (ZCam.project && ZCam.project.cam) ? ZCam.project.cam : null
 
-            Button {
-                id: grabCamButton
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                enabled: parent.camElement !== null
-                flat: true
-                text: parent.camElement ? qsTr("Grab Camera View") : qsTr("No Cam")
-                onClicked: {
-                    if (parent.camElement)
-                        parent.camElement.grabCameraView()
+            PropLabel {
+                visible: capDel.showLabel
+                text: capDel.meta ? capDel.meta.label ?? "" : ""
+            }
+
+            ValueBox {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 60
+                subLabelText: !capDel.showLabel ? (capDel.meta ? capDel.meta.sublabel ?? capDel.meta.label ?? "" : "") : ""
+
+                Button {
+                    anchors.centerIn: parent
+                    enabled: capDel.camElement !== null
+                    flat: true
+                    text: {
+                        if (!capDel.camElement)
+                            return capDel.showLabel ? qsTr("No Cam") : qsTr("No Cam")
+                        return capDel.showLabel ? qsTr("Grab Camera View") : qsTr("Grab")
+                        }
+                    onClicked: {
+                        if (capDel.camElement)
+                            capDel.camElement.grabCameraView()
+                        }
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Adopt the current 3D canvas camera as the projection viewpoint")
+                    ToolTip.delay: 800
+                    ToolTip.timeout: 4000
                     }
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Adopt the current 3D canvas camera as the projection viewpoint")
-                ToolTip.delay: 800
-                ToolTip.timeout: 4000
                 }
             }
         }

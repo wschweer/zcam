@@ -64,7 +64,14 @@ class InspectorModel : public QAbstractListModel
             RowLabelRole,
             IsColumnsRole,
             ColumnCountRole,
-            ColumnItemsRole
+            ColumnItemsRole,
+            // Scripting: true when the property of the current row
+            // is driven by a JavaScript binding (greyed out in the
+            // inspector, not editable by the user).
+            ScriptBoundRole,
+            SubScriptBoundRole,
+            ScriptTextRole,
+            ScriptErrorRole,
             };
       int rowCount(const QModelIndex& parent = QModelIndex()) const override;
       QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -80,6 +87,37 @@ class InspectorModel : public QAbstractListModel
 
       // Called from QML to set a property inside a "columns" block.
       Q_INVOKABLE bool setColumnProperty(int modelRow, const QString& propName, const QVariant& value);
+
+      // ── Scripting ──────────────────────────────────────────────────
+      /// Returns true if the property propName of the current element
+      /// has an active script binding (scalar or any component).
+      Q_INVOKABLE bool isScriptBound(const QString& propName) const;
+      /// Returns a comma-separated list of bound vector components
+      /// ("0,2") or "all" for scalar bindings, "" when unbound.
+      Q_INVOKABLE QString boundComponents(const QString& propName) const;
+      /// Returns the script text for (propName, comp) or "".
+      Q_INVOKABLE QString scriptFor(const QString& propName, int comp) const;
+      /// Returns the current evaluation error for (propName, comp) or "".
+      Q_INVOKABLE QString scriptError(const QString& propName, int comp) const;
+      /// Create/activate a script binding for the scalar property or,
+      /// when comp >= 0, for the given vector component.
+      Q_INVOKABLE void setScript(const QString& propName, int comp, const QString& script);
+      /// Evaluate an expression without creating a binding (popup preview).
+      Q_INVOKABLE QVariant testScript(const QString& script) const;
+
+      /// Evaluate an expression with element context: the script is
+      /// evaluated via ScriptEngine::evalWithContext() so short names
+      /// are resolved through the JS scope chain.  Returns the
+      /// result value or an error string (same convention as testScript).
+      Q_INVOKABLE QVariant testScriptWithContext(const QString& script) const;
+      /// Remove the script binding(s) for propName and restore the
+      /// property to the last evaluated value.
+      Q_INVOKABLE void removeScript(const QString& propName);
+      /// Activate or deactivate a script binding without deleting it.
+      /// When deactivated the script text is kept but not evaluated.
+      Q_INVOKABLE void setScriptActive(const QString& propName, bool active);
+      /// Check whether the binding for propName is currently active.
+      Q_INVOKABLE bool isScriptActive(const QString& propName) const;
 
       // Called from QML delegates for "layer" type properties: returns
       // the list of available Layer names in the current project.
@@ -218,6 +256,14 @@ class InspectorModel : public QAbstractListModel
       QMetaObject::Connection _undoChangedConnection;
 
       void updateTitle();
+
+      // For a vector property with only some components bound by a
+      // script (e.g. size.x bound, size.y free), merge the user-entered
+      // value with the current value so bound components keep their
+      // script-controlled value.  Returns true when the value may be
+      // written (mergedValue holds the value to write); false when the
+      // write must be blocked (fully bound or a scalar binding exists).
+      bool mergeBoundComponents(const QString& propName, const QVariant& value, QVariant& mergedValue) const;
 
     private slots:
       void propertyChangedSlot();

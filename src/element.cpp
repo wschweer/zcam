@@ -30,6 +30,8 @@
 #include "imageelement.h"
 #include "treemodel.h"
 #include "zcam.h"
+#include "scriptengine.h"
+#include <QRegularExpression>
 
 QHash<QString, Element*> Element::names;
 
@@ -44,10 +46,31 @@ Element::Element(ZCam* zc, Element* parent) : QObject(parent) {
 
 Element::~Element() {
       bool rv = names.remove(name());
+      if (auto* se = ScriptEngine::instance())
+            se->removeBindingsFor(this);
       }
 
 void Element::clearProject() {
       names.clear();
+      }
+
+//---------------------------------------------------------
+//   addChild
+//    Add a child element and apply default scripts from the
+//    properties() JSON when the element is newly created (not
+//    loaded from a project file).  During project loading the
+//    ScriptEngine sets _rebuilding and handles default scripts
+//    centrally in rebuildRegistry().
+//---------------------------------------------------------
+void Element::addChild(Element* e) {
+      _children.push_back(e);
+      e->_parent = this;
+      e->setParent(this);
+      emit childAdded(e);
+      if (auto* se = ScriptEngine::instance()) {
+            if (!se->_rebuilding)
+                  se->applyDefaultScripts(e);
+            }
       }
 
 //---------------------------------------------------------
@@ -67,6 +90,28 @@ json Element::toJson() const {
       data["name"]     = name().toStdString();
       data["expanded"] = _expanded;
       data["children"] = childList;
+
+      // ── Scripting ────────────────────────────────────────────────
+      if (hasScript()) {
+            json s;
+            s["prop"]    = _scriptProp.toStdString();
+            s["script"]  = _script.toStdString();
+            s["active"]  = _scriptActive;
+            data["script"] = s;
+            }
+      json comps = json::array();
+      for (int i = 0; i < 3; ++i) {
+            if (hasScriptComp(i)) {
+                  json s;
+                  s["prop"]    = _scriptCompProp[i].toStdString();
+                  s["comp"]    = i;
+                  s["script"]  = _scriptComp[i].toStdString();
+                  s["active"]  = _scriptCompActive[i];
+                  comps.push_back(s);
+                  }
+            }
+      if (!comps.empty())
+            data["scriptComp"] = comps;
       return data;
       }
 
@@ -79,6 +124,30 @@ void Element::fromJson(const json& data) {
             setName(QString::fromStdString(data.at("name").get<std::string>()));
       if (data.contains("expanded"))
             _expanded = data.at("expanded").get<bool>();
+
+      // ── Scripting ────────────────────────────────────────────────
+      if (data.contains("script")) {
+            const json& s = data.at("script");
+            if (s.contains("prop") && s.contains("script")) {
+                  _scriptProp = QString::fromStdString(s.at("prop").get<std::string>());
+                  _script     = QString::fromStdString(s.at("script").get<std::string>());
+                  _scriptActive = s.value("active", true);
+                  }
+            }
+      if (data.contains("scriptComp")) {
+            for (const auto& s : data.at("scriptComp")) {
+                  if (!s.contains("prop") || !s.contains("script") || !s.contains("comp"))
+                        continue;
+                  int comp = s.at("comp").get<int>();
+                  if (comp >= 0 && comp < 3) {
+                        _scriptCompProp[comp] =
+                            QString::fromStdString(s.at("prop").get<std::string>());
+                        _scriptComp[comp] =
+                            QString::fromStdString(s.at("script").get<std::string>());
+                        _scriptCompActive[comp] = s.value("active", true);
+                        }
+                  }
+            }
       if (data.contains("children")) {
             const json& children = data.at("children");
             for (const auto& child : children) {
@@ -172,6 +241,11 @@ void Element::setName(QString v) {
       names.remove(name()); // in case setName is called twice
       QString n  = v == "" ? typeName() : v;
       int i      = 1;
+      // Sanitize the name so it is always a valid JavaScript identifier:
+      // scripts reference elements by name via project.<path>.<name>.
+      n.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_$]")), QStringLiteral("_"));
+      if (n.isEmpty() || !(n[0].isLetter() || n[0] == u'_'))
+            n.prepend(u'_');
       QString nn = n;
       while (names.contains(nn)) {
             nn = QString("%1-%2").arg(n).arg(i);
@@ -184,6 +258,11 @@ void Element::setName(QString v) {
       names[nn] = this;
       _name     = nn;
       emit nameChanged();
+
+      // Register in the script namespace tree so scripts can refer to
+      // this element by name (project.cad.myLayer.myElement ...).
+      if (auto* se = ScriptEngine::instance())
+            se->addElementToTree(this);
 
       // notify the TreeModel so the TreeView updates its display
       if (zcam) {

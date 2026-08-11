@@ -97,124 +97,140 @@ class ImageElement : public Element3d
 
       inline static constexpr std::string_view _properties {
          R"json({
-    "class": "ImageElement",
-    "rows": [
-        {
-            "label": "State",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "show",
-                    "sublabel": "Show"
-                },
-                {
-                    "type": "bool",
-                    "default": true,
-                    "name": "burn",
-                    "sublabel": "Burn"
-                }
-            ]
-        },
-        {
-            "label": "Mops",
-            "cells": [
-                {
-                    "name": "laserLayer",
-                    "type": "laserLayer",
-                    "default": ""
-                }
-            ]
-        },
-        {
-            "label": "File",
-            "cells": [
-                {
-                    "name": "filePath",
-                    "type": "string",
-                    "sublabel": "Path",
-                    "readOnly": true
-                }
-            ]
-        },
-        {
-            "label": "Pos.",
-            "cells": [
-                {
-                    "name": "pos",
-                    "type": "vector3d",
-                    "unit": "mm",
-                    "default": [0.0, 0.0, 0.0]
-                }
-            ]
-        },
-        {
-            "label": "Rot.",
-            "cells": [
-                {
-                    "name": "rot",
-                    "type": "vector3d",
-                    "unit": "°",
-                    "min": 0.0,
-                    "max": 360,
-                    "default": [0.0, 0.0, 0.0]
-                }
-            ]
-        },
-        {
-            "label": "Scale",
-            "cells": [
-                {
-                    "name": "scale",
-                    "type": "scale",
-                    "min": 0.001,
-                    "max": 10000,
-                    "default": [100.0, 100.0, 1.0]
-                }
-            ]
-        },
-        {
-            "label": "Lock",
-            "cells": [
-                {
-                    "name": "lockScale",
-                    "type": "lockScale",
-                    "default": 1
-                }
-            ]
-        },
-        {
-            "label": "Mirror",
-            "cells": [
-                {
-                    "type": "bool",
-                    "default": false,
-                    "name": "mirrorX",
-                    "sublabel": "X"
-                },
-                {
-                    "type": "bool",
-                    "default": false,
-                    "name": "mirrorY",
-                    "sublabel": "Y"
-                }
-            ]
-        },
-        {
-            "label": "Opacity",
-            "cells": [
-                {
-                    "type": "float",
-                    "min": 0.0,
-                    "max": 1.0,
-                    "precision": 2,
-                    "default": 1.0,
-                    "name": "opacity"
-                }
-            ]
-        }
-    ]
-})json"};
+                  "class": "ImageElement",
+                  "rows": [
+                    {
+                      "label": "State",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "show",
+                          "sublabel": "Show"
+                        },
+                        {
+                          "type": "bool",
+                          "default": true,
+                          "name": "burn",
+                          "sublabel": "Burn"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Mops",
+                      "cells": [
+                        {
+                          "name": "laserLayer",
+                          "type": "laserLayer",
+                          "default": ""
+                        }
+                      ]
+                    },
+                    {
+                      "label": "File",
+                      "cells": [
+                        {
+                          "name": "filePath",
+                          "type": "string",
+                          "sublabel": "Path",
+                          "readOnly": true
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Pos.",
+                      "cells": [
+                        {
+                          "name": "pos",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "mm",
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Rot.",
+                      "cells": [
+                        {
+                          "name": "rot",
+                          "type": "vector3d",
+                          "scriptable": true,
+                          "unit": "°",
+                          "min": 0.0,
+                          "max": 360,
+                          "default": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Scale",
+                      "cells": [
+                        {
+                          "name": "scale",
+                          "type": "scale",
+                          "scriptable": true,
+                          "min": 0.001,
+                          "max": 10000,
+                          "default": [
+                            100.0,
+                            100.0,
+                            1.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Lock",
+                      "cells": [
+                        {
+                          "name": "lockScale",
+                          "type": "lockScale",
+                          "default": 1
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Mirror",
+                      "cells": [
+                        {
+                          "type": "bool",
+                          "default": false,
+                          "name": "mirrorX",
+                          "sublabel": "X"
+                        },
+                        {
+                          "type": "bool",
+                          "default": false,
+                          "name": "mirrorY",
+                          "sublabel": "Y"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "Opacity",
+                      "cells": [
+                        {
+                          "type": "float",
+                          "scriptable": true,
+                          "min": 0.0,
+                          "max": 1.0,
+                          "precision": 2,
+                          "default": 1.0,
+                          "name": "opacity"
+                        }
+                      ]
+                    }
+                  ]
+                      })json"};
 
       ImageTextureData* _textureData {nullptr};
       ImagePlaneGeometry* _planeGeometry {nullptr};
@@ -226,24 +242,19 @@ class ImageElement : public Element3d
     public:
       explicit ImageElement(ZCam* zcam, Element* parent = nullptr);
       ~ImageElement() override;
-
       virtual QString typeName() override { return QStringLiteral("image"); }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool visible() const override { return true; }
       Q_INVOKABLE bool draggable() const override { return true; }
       Q_INVOKABLE bool deletable() const override { return true; }
       Q_INVOKABLE bool nameEditable() const override { return true; }
-
       virtual json toJson() const override;
       virtual void fromJson(const json& data) override;
       virtual void fixup() override;
-
       ImageTextureData* textureData() const { return _textureData; }
       ImagePlaneGeometry* planeGeometry() const { return _planeGeometry; }
-
       bool loadFile(const QString& path);
       bool imageLoaded() const { return _imageLoaded; }
-
       virtual QRectF contentBoundingBox() const override;
       Q_INVOKABLE virtual void update(int flags = -1) override;
       };

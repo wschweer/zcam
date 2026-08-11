@@ -887,6 +887,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "maxTravel",
                 "label": "Travel",
                 "type": "vector3d",
+                "scriptable": true,
                 "unit": "mm",
                 "default": [
                   100.0,
@@ -898,6 +899,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "travelSpeed",
                 "label": "Travel Speed",
                 "type": "float",
+                "scriptable": true,
                 "unit": "mm/s",
                 "min": 0.0,
                 "max": 100000.0,
@@ -907,6 +909,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "framingSpeed",
                 "label": "Framing Speed",
                 "type": "float",
+                "scriptable": true,
                 "unit": "mm/s",
                 "min": 0.0,
                 "max": 100000.0,
@@ -916,6 +919,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "maxFeed",
                 "label": "Max Feed",
                 "type": "vector3d",
+                "scriptable": true,
                 "unit": "mm/s",
                 "default": [
                   0.0,
@@ -927,6 +931,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "maxAcceleration",
                 "label": "Max Accel",
                 "type": "vector3d",
+                "scriptable": true,
                 "unit": "mm/s²",
                 "default": [
                   0.0,
@@ -944,6 +949,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -954,6 +960,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -968,6 +975,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "circlePrecision",
                 "label": "Circle Prec",
                 "type": "float",
+                "scriptable": true,
                 "unit": "mm",
                 "min": 0.001,
                 "max": 10.0,
@@ -984,6 +992,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 10.0,
                     "default": 0.0,
@@ -993,6 +1002,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 10.0,
                     "precision": 4,
@@ -1002,6 +1012,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 10.0,
                     "precision": 4,
@@ -1017,6 +1028,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   {
                     "name": "galvoBulge",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -5.0,
                     "max": 5.0,
                     "default": 0.0,
@@ -1030,6 +1042,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   {
                     "name": "galvoBulge4",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -5.0,
                     "max": 5.0,
                     "default": 0.0,
@@ -1043,6 +1056,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   {
                     "name": "galvoOffset",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -10.0,
                     "max": 10.0,
                     "default": 0.0,
@@ -1055,6 +1069,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "galvoScale",
                 "label": "Galvo Scale",
                 "type": "vector2d",
+                "scriptable": true,
                 "default": [
                   1.0,
                   1.0
@@ -1066,6 +1081,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1075,6 +1091,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1089,6 +1106,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1098,6 +1116,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1111,6 +1130,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
                 "name": "galvoRotate",
                 "label": "Galvo Rotate",
                 "type": "float",
+                "scriptable": true,
                 "unit": "°",
                 "min": 0.0,
                 "max": 360.0,
@@ -1187,6 +1207,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "name": "maxTravel",
                 "label": "Travel",
                 "type": "vector3d",
+                "scriptable": true,
                 "unit": "mm",
                 "default": [
                   100.0,
@@ -1199,6 +1220,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm/s",
                     "min": 0.0,
                     "max": 100000.0,
@@ -1208,6 +1230,7 @@ static constexpr std::string_view _propertiesMOPA =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm/s",
                     "min": 0.0,
                     "max": 100000.0,
@@ -1227,6 +1250,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -1237,6 +1261,7 @@ static constexpr std::string_view _propertiesMOPA =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -1247,6 +1272,7 @@ static constexpr std::string_view _propertiesMOPA =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -1269,6 +1295,7 @@ static constexpr std::string_view _propertiesMOPA =
                   {
                     "name": "galvoOffset",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -10.0,
                     "max": 10.0,
                     "default": 0.0,
@@ -1281,6 +1308,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "name": "galvoScale",
                 "label": "Scale",
                 "type": "vector2d",
+                "scriptable": true,
                 "default": [
                   1.0,
                   1.0
@@ -1293,6 +1321,7 @@ static constexpr std::string_view _propertiesMOPA =
                   {
                     "name": "galvoBulge",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -5.0,
                     "max": 5.0,
                     "default": 0.0,
@@ -1306,6 +1335,7 @@ static constexpr std::string_view _propertiesMOPA =
                   {
                     "name": "galvoBulge4",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -5.0,
                     "max": 5.0,
                     "default": 0.0,
@@ -1318,6 +1348,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1327,6 +1358,7 @@ static constexpr std::string_view _propertiesMOPA =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1341,6 +1373,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1350,6 +1383,7 @@ static constexpr std::string_view _propertiesMOPA =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1365,6 +1399,7 @@ static constexpr std::string_view _propertiesMOPA =
                   {
                     "name": "galvoRotate",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "°",
                     "min": 0.0,
                     "max": 360.0,
@@ -1386,12 +1421,14 @@ static constexpr std::string_view _propertiesMOPA =
                     "name": "jumpSpeed",
                     "sublabel": "speed",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm/s"
                   },
                   {
                     "name": "jumpDistanceLimit",
                     "sublabel": "limit",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm"
                   }
                 ]
@@ -1403,12 +1440,14 @@ static constexpr std::string_view _propertiesMOPA =
                     "name": "minJumpDelay",
                     "sublabel": "min",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "µs"
                   },
                   {
                     "name": "maxJumpDelay",
                     "sublabel": "max",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "µs"
                   }
                 ]
@@ -1426,6 +1465,7 @@ static constexpr std::string_view _propertiesMOPA =
                     "name": "minFreq",
                     "sublabel": "min",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "kHz",
                     "default": "1.000"
                   },
@@ -1433,6 +1473,7 @@ static constexpr std::string_view _propertiesMOPA =
                     "name": "maxFreq",
                     "sublabel": "max",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "kHz",
                     "default": "4000.000"
                   }
@@ -1445,24 +1486,28 @@ static constexpr std::string_view _propertiesMOPA =
                     "name": "onDelay",
                     "sublabel": "on",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "µs"
                   },
                   {
                     "name": "offDelay",
                     "sublabel": "off",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "µs"
                   },
                   {
                     "name": "endDelay",
                     "sublabel": "end",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "µs"
                   },
                   {
                     "name": "polygon",
                     "sublabel": "polygon",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "µs"
                   }
                 ]
@@ -1492,6 +1537,7 @@ static constexpr std::string_view _propertiesMOPA =
                 "cells": [
                   {
                     "type": "int",
+                    "scriptable": true,
                     "sublabel": "RedLight",
                     "name": "lightPin",
                     "min": -1,
@@ -1506,6 +1552,7 @@ static constexpr std::string_view _propertiesMOPA =
                   },
                   {
                     "type": "int",
+                    "scriptable": true,
                     "sublabel": "FootPedal",
                     "name": "footPin",
                     "min": -1,
@@ -1577,6 +1624,7 @@ static constexpr std::string_view _propertiesUV =
                 "name": "maxTravel",
                 "label": "Travel",
                 "type": "vector3d",
+                "scriptable": true,
                 "unit": "mm",
                 "default": [
                   100.0,
@@ -1589,6 +1637,7 @@ static constexpr std::string_view _propertiesUV =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm/s",
                     "min": 0.0,
                     "max": 100000.0,
@@ -1598,6 +1647,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm/s",
                     "min": 0.0,
                     "max": 100000.0,
@@ -1617,6 +1667,7 @@ static constexpr std::string_view _propertiesUV =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -1627,6 +1678,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -1637,6 +1689,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.001,
                     "max": 10.0,
@@ -1657,6 +1710,7 @@ static constexpr std::string_view _propertiesUV =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 10.0,
                     "default": 0.0,
@@ -1666,6 +1720,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 10.0,
                     "precision": 4,
@@ -1675,6 +1730,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": 0.0,
                     "max": 10.0,
                     "precision": 4,
@@ -1690,6 +1746,7 @@ static constexpr std::string_view _propertiesUV =
                   {
                     "name": "galvoBulge",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -5.0,
                     "max": 5.0,
                     "default": 0.0,
@@ -1703,6 +1760,7 @@ static constexpr std::string_view _propertiesUV =
                   {
                     "name": "galvoBulge4",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -5.0,
                     "max": 5.0,
                     "default": 0.0,
@@ -1716,6 +1774,7 @@ static constexpr std::string_view _propertiesUV =
                   {
                     "name": "galvoOffset",
                     "type": "vector2d",
+                    "scriptable": true,
                     "min": -10.0,
                     "max": 10.0,
                     "default": 0.0,
@@ -1728,6 +1787,7 @@ static constexpr std::string_view _propertiesUV =
                 "name": "galvoScale",
                 "label": "Galvo Scale",
                 "type": "vector2d",
+                "scriptable": true,
                 "default": [
                   1.0,
                   1.0
@@ -1739,6 +1799,7 @@ static constexpr std::string_view _propertiesUV =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1748,6 +1809,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1762,6 +1824,7 @@ static constexpr std::string_view _propertiesUV =
                 "cells": [
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1771,6 +1834,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "min": -100.0,
                     "max": 100.0,
                     "precision": 3,
@@ -1784,6 +1848,7 @@ static constexpr std::string_view _propertiesUV =
                 "name": "galvoRotate",
                 "label": "Rotate",
                 "type": "float",
+                "scriptable": true,
                 "unit": "°",
                 "min": 0.0,
                 "max": 360.0,
@@ -1808,6 +1873,7 @@ static constexpr std::string_view _propertiesUV =
                     "name": "minFreq",
                     "sublabel": "min",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "kHz",
                     "default": "1.000"
                   },
@@ -1815,6 +1881,7 @@ static constexpr std::string_view _propertiesUV =
                     "name": "maxFreq",
                     "sublabel": "max",
                     "type": "float",
+                    "scriptable": true,
                     "unit": "kHz",
                     "default": "4000.000"
                   }
@@ -1827,6 +1894,7 @@ static constexpr std::string_view _propertiesUV =
                     "name": "ticklePulse",
                     "sublabel": "pulse",
                     "type": "float",
+                    "scriptable": true,
                     "default": "1.0",
                     "unit": "µsec"
                   },
@@ -1834,6 +1902,7 @@ static constexpr std::string_view _propertiesUV =
                     "name": "tickleFreq",
                     "sublabel": "freq.",
                     "type": "float",
+                    "scriptable": true,
                     "default": "5.0",
                     "unit": "kHz"
                   }
@@ -1850,6 +1919,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "precision": 2,
                     "default": 10.0,
                     "name": "fpkStartPower",
@@ -1857,6 +1927,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "float",
+                    "scriptable": true,
                     "precision": 2,
                     "default": 10.0,
                     "name": "fpkIncrement",
@@ -1874,6 +1945,7 @@ static constexpr std::string_view _propertiesUV =
                 "cells": [
                   {
                     "type": "int",
+                    "scriptable": true,
                     "sublabel": "RedLight",
                     "name": "lightPin",
                     "min": -1,
@@ -1882,6 +1954,7 @@ static constexpr std::string_view _propertiesUV =
                   },
                   {
                     "type": "int",
+                    "scriptable": true,
                     "sublabel": "FootPedal",
                     "name": "footPin",
                     "min": -1,

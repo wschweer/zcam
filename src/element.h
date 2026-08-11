@@ -21,6 +21,7 @@ using json = nlohmann::json;
 // #include "macros.h"
 
 class ZCam;
+class ScriptEngine;
 
 //---------------------------------------------------------
 //   Element
@@ -38,13 +39,34 @@ class Element : public QObject
       Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
       Q_PROPERTY(bool expanded READ expanded WRITE setExpanded NOTIFY expandedChanged)
 
+      // ── Scripting ──────────────────────────────────────────────────
+      //   A property whose value is computed by a JavaScript expression
+      //   is shown in the inspector with an f(x) button.  The scripts
+      //   are stored per element and persisted in the project file.
+      Q_PROPERTY(QString script READ script WRITE setScript NOTIFY scriptChanged)
+      Q_PROPERTY(QString scriptProp READ scriptProp WRITE setScriptProp NOTIFY scriptPropChanged)
+
       QList<Element*> _children;
       Element* _parent {nullptr};
       QString _name;
       bool _expanded = false; ///< persistent expand state in TreeView
 
+      // Scripting state (see ScriptEngine).  _script/_scriptProp describe
+      // the scalar binding ("<propName>" → script text).  _scriptComp/
+      // _scriptCompProp hold the optional component bindings for
+      // vector2d/vector3d properties: index 0..2 maps to x/y/z.
+      QString _script;
+      QString _scriptProp;
+      bool _scriptActive {true}; ///< scalar binding active state
+      QStringList _scriptComp       = {QString(), QString(), QString()};
+      QStringList _scriptCompProp   = {QString(), QString(), QString()};
+      QList<bool> _scriptCompActive = {true, true, true}; ///< component binding active states
+
       // this is a global list of all elements, accessible by name
       static QHash<QString, Element*> names;
+
+      friend class ScriptEngine;
+      friend class PropertyBinding;
 
     protected:
       ZCam* zcam;
@@ -54,6 +76,8 @@ class Element : public QObject
       void expandedChanged();
       void childAdded(Element*);
       void childRemoved(Element*);
+      void scriptChanged();
+      void scriptPropChanged();
 
     public:
       bool _saveChildren {true};
@@ -65,12 +89,7 @@ class Element : public QObject
       Q_INVOKABLE Element* parent() const { return _parent; }
       virtual json toJson() const;
       virtual void fromJson(const json&);
-      void addChild(Element* e) {
-            _children.push_back(e);
-            e->_parent = this;
-            e->setParent(this);
-            emit childAdded(e);
-            }
+      void addChild(Element* e);
       void removeChild(Element* e) {
             _children.removeAll(e);
             if (e->_parent == this)
@@ -79,6 +98,10 @@ class Element : public QObject
             }
       static void clearProject();
       static Element* byName(const QString& name) { return names.value(name); }
+      /// The global element name registry (used by the script
+      /// engine's dependency scan).  Names are unique and sanitized
+      /// to valid JS identifiers by setName().
+      static const QHash<QString, Element*>& namesMap() { return names; }
       void setName(QString v);
       QString name() const { return _name; }
       Q_INVOKABLE virtual bool nameEditable() const { return false; }
@@ -92,6 +115,65 @@ class Element : public QObject
       ZCam* zcamInstance() const { return zcam; }
       virtual bool saveChildren() const { return _saveChildren; }
       virtual void fixup() {}
+      // ── Scripting accessors ────────────────────────────────────────
+      QString script() const { return _script; }
+      void setScript(const QString& s) {
+            if (s != _script) {
+                  _script = s;
+                  emit scriptChanged();
+                  }
+            }
+      QString scriptProp() const { return _scriptProp; }
+      void setScriptProp(const QString& p) {
+            if (p != _scriptProp) {
+                  _scriptProp = p;
+                  emit scriptPropChanged();
+                  }
+            }
+      bool hasScript() const { return !_script.isEmpty() && !_scriptProp.isEmpty(); }
+      QString scriptComp(int comp) const {
+            return (comp >= 0 && comp < _scriptComp.size()) ? _scriptComp[comp] : QString();
+            }
+      void setScriptComp(int comp, const QString& s) {
+            if (comp >= 0 && comp < _scriptComp.size() && s != _scriptComp[comp])
+                  _scriptComp[comp] = s;
+            }
+      QString scriptCompProp(int comp) const {
+            return (comp >= 0 && comp < _scriptCompProp.size()) ? _scriptCompProp[comp] : QString();
+            }
+      void setScriptCompProp(int comp, const QString& p) {
+            if (comp >= 0 && comp < _scriptCompProp.size() && p != _scriptCompProp[comp])
+                  _scriptCompProp[comp] = p;
+            }
+      bool hasScriptComp(int comp) const {
+            return comp >= 0 && comp < _scriptComp.size() && !_scriptComp[comp].isEmpty() &&
+                   !_scriptCompProp[comp].isEmpty();
+            }
+      /// Clear all stored scripts (called when a binding is removed).
+      void clearScripts() {
+            _script.clear();
+            _scriptProp.clear();
+            _scriptActive = true;
+            for (int i = 0; i < _scriptComp.size(); ++i) {
+                  _scriptComp[i].clear();
+                  _scriptCompProp[i].clear();
+                  _scriptCompActive[i] = true;
+                  }
+            }
+      /// Clear only the stored scripts for the given base property
+      /// (scalar binding and vector-component bindings).
+      void clearScriptsFor(const QString& prop) {
+            if (_scriptProp == prop) {
+                  _script.clear();
+                  _scriptProp.clear();
+                  }
+            for (int i = 0; i < _scriptComp.size(); ++i) {
+                  if (_scriptCompProp[i] == prop) {
+                        _scriptComp[i].clear();
+                        _scriptCompProp[i].clear();
+                        }
+                  }
+            }
       };
 
 //---------------------------------------------------------

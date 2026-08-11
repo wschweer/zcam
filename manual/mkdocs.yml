@@ -40,6 +40,7 @@ nav:
   - de:
       - Startseite: index.de.md
       - Handbuch: manual.de.md
+      - Scripting: scripting.de.md
       - Installation: install.de.md
       - Entwicklung: development.de.md
       - Projektion: projection.de.md
@@ -47,6 +48,7 @@ nav:
   - en:
       - Home: index.en.md
       - Manual: manual.en.md
+      - Scripting: scripting.en.md
       - Installation: install.en.md
       - Development: development.en.md
       - Projection: projection.en.md

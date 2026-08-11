@@ -67,6 +67,7 @@ class Grid : public Element3d
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "unit": "mm",
                           "min": 0.1,
                           "max": 1000.0,
@@ -76,6 +77,7 @@ class Grid : public Element3d
                         },
                         {
                           "type": "int",
+                          "scriptable": true,
                           "min": 1,
                           "max": 100,
                           "default": 5,
@@ -122,8 +124,8 @@ class Grid : public Element3d
       /// zooms.  Stores the visible area and the canvas size in real
       /// pixels plus the camera view direction, then rebuilds the
       /// grid geometry at the correct on-screen line width.
-      void setViewport(double left, double top, double right, double bottom,
-                       const QVector3D& viewDir, double canvasW, double canvasH);
+      void setViewport(double left, double top, double right, double bottom, const QVector3D& viewDir,
+          double canvasW, double canvasH);
       /// Overload kept for legacy calls that do not pass the canvas
       /// size — falls back to the nominal 1000 px width.
       void setViewport(double left, double top, double right, double bottom, const QVector3D& viewDir);

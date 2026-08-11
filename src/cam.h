@@ -30,8 +30,8 @@ class Cam : public Element3d
       PROPV(double, panelHDistance, 0.0)
       PROPV(double, panelVDistance, 0.0)
       PROPV(Stock*, stock, nullptr)
-      PROPV(bool, perspective, false)         ///< project with central (perspective) projection
-      PROPV(double, projectionHeight, 1000.0) ///< viewpoint height [mm] above the z=0 plane
+      PROPV(bool, perspective, false)                   ///< project with central (perspective) projection
+      PROPV(double, projectionHeight, 1000.0)           ///< viewpoint height [mm] above the z=0 plane
       PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0)) ///< foot point (x,y) [mm] of the viewpoint on z=0
 
       inline static constexpr std::string_view _properties {R"({
@@ -60,6 +60,7 @@ class Cam : public Element3d
                 {
                     "name": "pos",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "mm",
                     "default": [
                         0.0,
@@ -75,6 +76,7 @@ class Cam : public Element3d
                 {
                     "name": "rot",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "°",
                     "min": 0.0,
                     "max": 360,
@@ -92,6 +94,7 @@ class Cam : public Element3d
                 {
                     "name": "scale",
                     "type": "scale",
+                    "scriptable": true,
                     "min": 0.001,
                     "max": 1000,
                     "default": [
@@ -125,6 +128,7 @@ class Cam : public Element3d
             "cells": [
                 {
                     "type": "int",
+                    "scriptable": true,
                     "min": 1,
                     "max": 100,
                     "default": 1,
@@ -133,6 +137,7 @@ class Cam : public Element3d
                 },
                 {
                     "type": "int",
+                    "scriptable": true,
                     "min": 1,
                     "max": 100,
                     "default": 1,
@@ -146,6 +151,7 @@ class Cam : public Element3d
             "cells": [
                 {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.0,
                     "max": 50.0,
@@ -155,6 +161,7 @@ class Cam : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 0.0,
                     "max": 50.0,
@@ -188,6 +195,7 @@ class Cam : public Element3d
                 },
                 {
                     "type": "float",
+                    "scriptable": true,
                     "unit": "mm",
                     "min": 1.0,
                     "max": 100000.0,
@@ -203,6 +211,7 @@ class Cam : public Element3d
                 {
                     "name": "viewCenter",
                     "type": "vector2d",
+                    "scriptable": true,
                     "unit": "mm",
                     "default": [
                         0.0,
@@ -212,7 +221,7 @@ class Cam : public Element3d
             ]
         }
     ]
-      })"};
+            })"};
 
     signals:
       void panelChanged();

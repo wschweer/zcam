@@ -58,6 +58,7 @@ class Stock : public Element3d
                 {
                     "name": "pos",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "mm",
                     "default": [
                         0.0,
@@ -73,6 +74,7 @@ class Stock : public Element3d
                 {
                     "name": "rot",
                     "type": "vector3d",
+                    "scriptable": true,
                     "unit": "°",
                     "min": 0.0,
                     "max": 360,
@@ -90,6 +92,7 @@ class Stock : public Element3d
                 {
                     "name": "scale",
                     "type": "scale",
+                    "scriptable": true,
                     "min": 0.001,
                     "max": 1000,
                     "default": [
@@ -111,7 +114,7 @@ class Stock : public Element3d
             ]
         }
     ]
-})"};
+      })"};
 
     public slots:
       void update(int flags = -1) override;

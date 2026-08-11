@@ -16,6 +16,7 @@
 #include "tessgeometry.h"
 #include "types.h"
 #include "rectangle.h"
+#include "scriptengine.h"
 #include <QMatrix4x4>
 
 //---------------------------------------------------------
@@ -27,9 +28,25 @@
 //               that changed the most drives the other proportionally
 //      Square – force width == height using the most-changed axis
 //---------------------------------------------------------
+
 void Rectangle::set_size(QVector2D v) {
       if (v == _size)
             return;
+      // Skip lock enforcement when a script binding for "size" is
+      // involved — either a component binding is currently writing
+      // this property, or an active binding (scalar or component)
+      // will be re-evaluated because of this change (e.g. size.x
+      // bound to "size.y * 0.5" while the user edits size.y).
+      // In both cases the script controls the value; lock
+      // enforcement would override the scripted value (or square
+      // the user value so nothing visually changes).
+      ScriptEngine* se = zcam ? zcam->scriptEngine() : nullptr;
+      if (se && (se->isWritingComponentBinding(this, QStringLiteral("size")) ||
+                 se->bindingFor(this, QStringLiteral("size")))) {
+            _size = v;
+            emit sizeChanged();
+            return;
+            }
       auto mode = static_cast<LockScaleMode>(lockSize());
       if (mode == LockScaleMode::Square) {
             double s = std::max(v.x(), v.y());
@@ -60,6 +77,13 @@ Rectangle::Rectangle(ZCam* w, Element* parent) : Element3d(w, parent) {
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
       if (w->config())
             setColor(w->config()->rectangleColor());
+      // Apply the GUI default declared in the properties JSON:
+      // lockSize defaults to Square (2), the member initializer is
+      // only a C++-level fallback.  NOTE: files saved before this
+      // default existed have no lockSize entry; fromJson() re-reads
+      // the stored size after the first pass, so the constructor
+      // default must not distort loaded values (see fromJson).
+      _lockSize = static_cast<int>(LockScaleMode::Square);
 
       connect(this, &Rectangle::cornerChanged, [this] {
             if (!_suppressUpdate)

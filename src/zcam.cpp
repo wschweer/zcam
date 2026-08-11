@@ -18,6 +18,7 @@
 #include "project.h"
 #include "cad.h"
 #include "cameraelement.h"
+#include "scriptengine.h"
 #include "text.h"
 #include "group.h"
 #include "recipe.h"
@@ -75,6 +76,15 @@ ZCam::ZCam(QObject* parent) : QObject(parent) {
       _recipes  = new Recipe(this);
 
       _galvoCalibration = new GalvoCalibration(this, this);
+
+      // Script engine for property bindings (TODO.md “Scripting”).
+      // The ScriptEngine is a child of ZCam so its lifetime spans all
+      // projects.  The global ScriptEngine::instance() pointer is set
+      // here so elements can register/remove bindings without having
+      // access to the ZCam singleton.
+      _scriptEngine = new ScriptEngine(this);
+      _scriptEngine->setZcam(this);
+      ScriptEngine::setInstance(_scriptEngine);
 
       loadAssets();
 
@@ -2948,6 +2958,12 @@ void ZCam::startNewProject(bool clearPersistedPath) {
       cam->addChild(fixture);
       cam->addChild(framing);
       connect(top, &Project::updateFraming, framing, &Framing::update);
+
+      // Register all named elements in the script engine namespace
+      // (project.cad ...) so scripts can reference them.  Bindings
+      // from the previous project are dropped.
+      if (_scriptEngine)
+            _scriptEngine->rebuildRegistry(false);
       }
 
 //---------------------------------------------------------
@@ -3227,6 +3243,12 @@ bool ZCam::readProjectFile(const std::string& path, bool skipCamUpdate) {
                         }
                   };
             func(project());
+
+            // Register all loaded elements in the script engine and
+            // re-create script bindings from the elements' stored
+            // script JSON.
+            if (_scriptEngine)
+                  _scriptEngine->rebuildRegistry(false);
             }
       catch (const nlohmann::json::parse_error& err) {
             Warning("JSON parse error:", err.what());

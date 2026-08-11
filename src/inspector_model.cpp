@@ -11,6 +11,8 @@
 
 #include "inspector_model.h"
 #include <QMetaProperty>
+#include <QVector2D>
+#include <QVector3D>
 #include <QtMultimedia/qcameradevice.h>
 #include <QtMultimedia/qmediadevices.h>
 #include "zcam.h"
@@ -21,6 +23,7 @@
 #include "group.h"
 #include "recipe.h"
 #include "laser.h"
+#include "scriptengine.h"
 #include <nlohmann/json.hpp>
 
 //---------------------------------------------------------
@@ -227,8 +230,8 @@ void InspectorModel::connectPropertySignals() {
                                     if (slotIdx < 0)
                                           continue;
                                     _signalToPropIdx[signalIdx] = i;
-                                    auto conn = QMetaObject::connect(_element, signalIdx, this, slotIdx,
-                                                                     Qt::AutoConnection);
+                                    auto conn                   = QMetaObject::connect(
+                                        _element, signalIdx, this, slotIdx, Qt::AutoConnection);
                                     _propertyConnections.append(conn);
                                     }
                               }
@@ -246,8 +249,8 @@ void InspectorModel::connectPropertySignals() {
                               if (slotIdx < 0)
                                     continue;
                               _signalToPropIdx[signalIdx] = i;
-                              auto conn = QMetaObject::connect(_element, signalIdx, this, slotIdx,
-                                                               Qt::AutoConnection);
+                              auto conn                   = QMetaObject::connect(
+                                  _element, signalIdx, this, slotIdx, Qt::AutoConnection);
                               _propertyConnections.append(conn);
                               }
                         }
@@ -337,7 +340,6 @@ void InspectorModel::propertyChangedSlot() {
 
 //---------------------------------------------------------
 //   parseProperties
-
 void InspectorModel::parseProperties() {
       beginResetModel();
       _propertyNames.clear();
@@ -421,7 +423,8 @@ void InspectorModel::parseProperties() {
                                                       ci.isLine = true;
                                                       ci.name   = "line";
                                                       if (cell.contains("label") && cell["label"].is_string())
-                                                            ci.rowLabel = QString::fromStdString(cell["label"].get<std::string>());
+                                                            ci.rowLabel = QString::fromStdString(
+                                                                cell["label"].get<std::string>());
                                                       }
                                                 else if (cell.contains("cells") && cell["cells"].is_array()) {
                                                       // Row cell: has sub-cells instead of a name
@@ -480,7 +483,8 @@ void InspectorModel::parseProperties() {
                                           if (type == "line") {
                                                 hasLine = true;
                                                 if (cell.contains("label") && cell["label"].is_string())
-                                                      lineLabel = QString::fromStdString(cell["label"].get<std::string>());
+                                                      lineLabel = QString::fromStdString(
+                                                          cell["label"].get<std::string>());
                                                 continue;
                                                 }
                                           if (type == "empty") {
@@ -597,6 +601,15 @@ QVariant InspectorModel::data(const QModelIndex& index, int role) const {
                         list.append(_element->property(s.toUtf8().constData()));
                   return list;
                   }
+            case ScriptBoundRole: return isScriptBound(name);
+            case SubScriptBoundRole: {
+                  QVariantList list;
+                  for (const QString& s : _subPropNames[index.row()])
+                        list.append(isScriptBound(s));
+                  return list;
+                  }
+            case ScriptTextRole: return scriptFor(name, -1);
+            case ScriptErrorRole: return scriptError(name, -1);
             case RowLabelRole:
                   if (index.row() < _rowLabels.size())
                         return _rowLabels[index.row()];
@@ -664,6 +677,15 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
       if (_propertyIsRow[index.row()])
             return false;
 
+      // Script-bound properties are read-only in the inspector.
+      // However, for vector properties with only some components bound
+      // (e.g. size.x bound but size.y free), we allow the write but
+      // preserve the bound components from the current value.
+      const QString& propName = _propertyNames[index.row()];
+      QVariant effectiveValue;
+      if (!mergeBoundComponents(propName, value, effectiveValue))
+            return false;
+
       // For empty entries, setData is not used.
       if (_propertyNames[index.row()] == "empty")
             return false;
@@ -675,7 +697,7 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
 
       const QString& name = _propertyNames[index.row()];
       QVariant oldValue   = _element->property(name.toUtf8().constData());
-      if (oldValue == value)
+      if (oldValue == effectiveValue)
             return false;
       // Route through the Project undo system so that every
       // property edit is recorded for undo/redo and marks the project dirty.
@@ -684,7 +706,7 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
       if (el)
             zc = el->zcamInstance();
       if (zc && zc->project()) {
-            zc->project()->changeProperty(_element, name, value);
+            zc->project()->changeProperty(_element, name, effectiveValue);
             // changeProperty() triggers the element's NOTIFY signal,
             // which propertyChangedSlot() catches and defers a
             // dataChanged emission.  We must NOT emit dataChanged
@@ -693,7 +715,7 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
             return true;
             }
       else {
-            if (_element->setProperty(name.toUtf8().constData(), value)) {
+            if (_element->setProperty(name.toUtf8().constData(), effectiveValue)) {
                   QVariant newValue = _element->property(name.toUtf8().constData());
                   if (oldValue != newValue)
                         emit dataChanged(index, index, {role});
@@ -701,6 +723,60 @@ bool InspectorModel::setData(const QModelIndex& index, const QVariant& value, in
                   }
             return false;
             }
+      }
+
+//---------------------------------------------------------
+//   mergeBoundComponents
+//    Decide whether a user edit of property *propName* may be
+//    written, given the script bindings of that property:
+//      • no binding             → accept the value as-is
+//      • scalar binding ("all") → block the write
+//      • partial vector binding (e.g. "0") → accept the write but
+//        keep the script-bound components from the current value
+//        (the binding re-evaluates on the change and rewrites its
+//        component; accepting the free components lets the user
+//        edit e.g. size.y while size.x is bound to "size.y * 0.5").
+//    Returns false when the write must be blocked or is a no-op.
+//---------------------------------------------------------
+
+bool InspectorModel::mergeBoundComponents(
+    const QString& propName, const QVariant& value, QVariant& mergedValue) const {
+      QString comps = boundComponents(propName);
+      if (comps.isEmpty()) {
+            mergedValue = value;
+            return true;
+            }
+      if (comps == QStringLiteral("all"))
+            return false;
+
+      // Partial binding: only vector properties can proceed.
+      QVariant curVal = _element->property(propName.toUtf8().constData());
+      QStringList cl  = comps.split(u',');
+      if (curVal.metaType().id() == QMetaType::QVector2D && value.metaType().id() == QMetaType::QVector2D) {
+            QVector2D cur = curVal.value<QVector2D>();
+            QVector2D neu = value.value<QVector2D>();
+            if (cl.contains(QStringLiteral("0")))
+                  neu.setX(cur.x());
+            if (cl.contains(QStringLiteral("1")))
+                  neu.setY(cur.y());
+            mergedValue = QVariant::fromValue(neu);
+            }
+      else if (curVal.metaType().id() == QMetaType::QVector3D &&
+               value.metaType().id() == QMetaType::QVector3D) {
+            QVector3D cur = curVal.value<QVector3D>();
+            QVector3D neu = value.value<QVector3D>();
+            if (cl.contains(QStringLiteral("0")))
+                  neu.setX(cur.x());
+            if (cl.contains(QStringLiteral("1")))
+                  neu.setY(cur.y());
+            if (cl.contains(QStringLiteral("2")))
+                  neu.setZ(cur.z());
+            mergedValue = QVariant::fromValue(neu);
+            }
+      else
+            // Non-vector partial binding: block.
+            return false;
+      return mergedValue != curVal;
       }
 
 //---------------------------------------------------------
@@ -724,8 +800,15 @@ bool InspectorModel::setSubProperty(int row, const QString& subName, const QVari
       if (_suppressWriteback)
             return false;
 
+      // Script-bound properties are read-only in the inspector.
+      // For vector properties with only some components bound, allow
+      // the write but keep the bound components from the current value.
+      QVariant effectiveValue;
+      if (!mergeBoundComponents(subName, value, effectiveValue))
+            return false;
+
       QVariant oldValue = _element->property(subName.toUtf8().constData());
-      if (oldValue == value)
+      if (oldValue == effectiveValue)
             return false;
 
       ZCam* zc    = nullptr;
@@ -733,11 +816,11 @@ bool InspectorModel::setSubProperty(int row, const QString& subName, const QVari
       if (el)
             zc = el->zcamInstance();
       if (zc && zc->project()) {
-            zc->project()->changeProperty(_element, subName, value);
+            zc->project()->changeProperty(_element, subName, effectiveValue);
             return true;
             }
       else {
-            if (_element->setProperty(subName.toUtf8().constData(), value)) {
+            if (_element->setProperty(subName.toUtf8().constData(), effectiveValue)) {
                   QVariant newValue = _element->property(subName.toUtf8().constData());
                   if (oldValue != newValue) {
                         QModelIndex idx = index(row, 0);
@@ -785,8 +868,15 @@ bool InspectorModel::setColumnProperty(int modelRow, const QString& propName, co
       if (_suppressWriteback)
             return false;
 
+      // Script-bound properties are read-only in the inspector.
+      // For vector properties with only some components bound, allow
+      // the write but keep the bound components from the current value.
+      QVariant effectiveValue;
+      if (!mergeBoundComponents(propName, value, effectiveValue))
+            return false;
+
       QVariant oldValue = _element->property(propName.toUtf8().constData());
-      if (oldValue == value)
+      if (oldValue == effectiveValue)
             return false;
 
       ZCam* zc    = nullptr;
@@ -794,11 +884,11 @@ bool InspectorModel::setColumnProperty(int modelRow, const QString& propName, co
       if (el)
             zc = el->zcamInstance();
       if (zc && zc->project()) {
-            zc->project()->changeProperty(_element, propName, value);
+            zc->project()->changeProperty(_element, propName, effectiveValue);
             return true;
             }
       else {
-            if (_element->setProperty(propName.toUtf8().constData(), value)) {
+            if (_element->setProperty(propName.toUtf8().constData(), effectiveValue)) {
                   QModelIndex idx = index(modelRow, 0);
                   emit dataChanged(idx, idx, {ColumnItemsRole});
                   return true;
@@ -813,15 +903,19 @@ bool InspectorModel::setColumnProperty(int modelRow, const QString& propName, co
 
 QHash<int, QByteArray> InspectorModel::roleNames() const {
       QHash<int, QByteArray> roles;
-      roles[PropNameRole]    = "propName";
-      roles[PropValueRole]   = "propValue";
-      roles[IsRowRole]       = "isRow";
-      roles[SubPropsRole]    = "subProps";
-      roles[SubValuesRole]   = "subValues";
-      roles[RowLabelRole]    = "rowLabel";
-      roles[IsColumnsRole]   = "isColumns";
-      roles[ColumnCountRole] = "columnCount";
-      roles[ColumnItemsRole] = "columnItems";
+      roles[PropNameRole]       = "propName";
+      roles[PropValueRole]      = "propValue";
+      roles[IsRowRole]          = "isRow";
+      roles[SubPropsRole]       = "subProps";
+      roles[SubValuesRole]      = "subValues";
+      roles[RowLabelRole]       = "rowLabel";
+      roles[IsColumnsRole]      = "isColumns";
+      roles[ColumnCountRole]    = "columnCount";
+      roles[ColumnItemsRole]    = "columnItems";
+      roles[ScriptBoundRole]    = "scriptBound";
+      roles[SubScriptBoundRole] = "subScriptBound";
+      roles[ScriptTextRole]     = "scriptText";
+      roles[ScriptErrorRole]    = "scriptError";
       return roles;
       }
 
@@ -971,9 +1065,9 @@ LaserRecipe* InspectorModel::nameToRecipe(const QString& name) const {
 //---------------------------------------------------------
 
 QStringList InspectorModel::overrideTypeNames() const {
-      return {QStringLiteral("None"),     QStringLiteral("Speed"),     QStringLiteral("Power"),
-              QStringLiteral("Interval"), QStringLiteral("Frequency"), QStringLiteral("Count"),
-              QStringLiteral("Pulse")};
+      return {
+         QStringLiteral("None"), QStringLiteral("Speed"), QStringLiteral("Power"), QStringLiteral("Interval"),
+         QStringLiteral("Frequency"), QStringLiteral("Count"), QStringLiteral("Pulse")};
       }
 
 //---------------------------------------------------------
@@ -1010,8 +1104,8 @@ QStringList InspectorModel::pulsewidthNames() const {
 //---------------------------------------------------------
 
 QStringList InspectorModel::joinTypeNames() const {
-      return {QStringLiteral("Square"), QStringLiteral("Bevel"), QStringLiteral("Round"),
-              QStringLiteral("Miter")};
+      return {
+         QStringLiteral("Square"), QStringLiteral("Bevel"), QStringLiteral("Round"), QStringLiteral("Miter")};
       }
 
 //---------------------------------------------------------
@@ -1022,8 +1116,9 @@ QStringList InspectorModel::joinTypeNames() const {
 //---------------------------------------------------------
 
 QStringList InspectorModel::endTypeNames() const {
-      return {QStringLiteral("Polygon"), QStringLiteral("Joined"), QStringLiteral("Butt"),
-              QStringLiteral("Square"), QStringLiteral("Round")};
+      return {
+         QStringLiteral("Polygon"), QStringLiteral("Joined"), QStringLiteral("Butt"),
+         QStringLiteral("Square"), QStringLiteral("Round")};
       }
 
 //---------------------------------------------------------
@@ -1120,4 +1215,186 @@ QStringList InspectorModel::cameraNames() const {
       for (const auto& dev : inputs)
             names << dev.description();
       return names;
+      }
+
+//---------------------------------------------------------
+//   isScriptBound
+//---------------------------------------------------------
+
+bool InspectorModel::isScriptBound(const QString& propName) const {
+      if (!_element)
+            return false;
+      return !boundComponents(propName).isEmpty();
+      }
+
+//---------------------------------------------------------
+//   boundComponents
+//---------------------------------------------------------
+
+QString InspectorModel::boundComponents(const QString& propName) const {
+      if (!_element)
+            return {};
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->boundComponentsQml(_element, propName);
+      }
+
+//---------------------------------------------------------
+//   scriptFor
+//---------------------------------------------------------
+
+QString InspectorModel::scriptFor(const QString& propName, int comp) const {
+      if (!_element)
+            return {};
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->scriptForQml(_element, propName, comp);
+      }
+
+//---------------------------------------------------------
+//   scriptError
+//---------------------------------------------------------
+
+QString InspectorModel::scriptError(const QString& propName, int comp) const {
+      if (!_element)
+            return {};
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->scriptErrorQml(_element, propName, comp);
+      }
+
+//---------------------------------------------------------
+//   setScript
+//---------------------------------------------------------
+
+void InspectorModel::setScript(const QString& propName, int comp, const QString& script) {
+      if (!_element)
+            return;
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return;
+
+      // Determine the old script text so the undo command can
+      // restore it.  For a scalar binding (comp < 0) the old
+      // text is stored in _script; for a component binding it
+      // is in _scriptComp[comp].
+      QString oldScript;
+      if (comp < 0)
+            oldScript = _element->scriptProp() == propName ? _element->script() : QString();
+      else
+            oldScript = _element->scriptCompProp(comp) == propName ? _element->scriptComp(comp) : QString();
+
+      // Route through the project undo stack so the change is
+      // recorded and the project is marked dirty.  This ensures
+      // that script bindings are saved when the user saves the
+      // project, and that the unsaved-changes dialog appears
+      // when the user quits without saving.
+      Project* proj = _element->zcamInstance() ? _element->zcamInstance()->project() : nullptr;
+      if (proj && proj->undo()) {
+            proj->undo()->beginMacro();
+            proj->undo()->push(new ScriptBindingCommand(
+                _element->zcamInstance(), _element, propName, comp, oldScript, script));
+            proj->undo()->endMacro();
+            }
+      else
+            se->createBindingQml(_element, propName, comp, script);
+      refreshAll();
+      }
+
+//---------------------------------------------------------
+//   testScript
+//---------------------------------------------------------
+
+QVariant InspectorModel::testScript(const QString& script) const {
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->testScript(script);
+      }
+
+//--------------------------------------------------------------------
+//     InspectorModel::testScriptWithContext
+//--------------------------------------------------------------------
+
+QVariant InspectorModel::testScriptWithContext(const QString& script) const {
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      if (!_element)
+            return se->testScript(script);
+      return se->testScriptWithContext(script, _element);
+      }
+
+//---------------------------------------------------------
+//   removeScript
+//---------------------------------------------------------
+
+void InspectorModel::removeScript(const QString& propName) {
+      if (!_element)
+            return;
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return;
+
+      // Collect all bindings (scalar + component) for this property
+      // so the undo command can restore them.
+      // For a scalar binding (comp < 0) the script text is in
+      // _script; for component bindings it is in _scriptComp[comp].
+      Project* proj = _element->zcamInstance() ? _element->zcamInstance()->project() : nullptr;
+      if (proj && proj->undo()) {
+            proj->undo()->beginMacro();
+            // Scalar binding
+            if (_element->scriptProp() == propName && !_element->script().isEmpty())
+                  proj->undo()->push(new ScriptBindingCommand(
+                      _element->zcamInstance(), _element, propName, -1,
+                      _element->script(), QString()));
+            // Component bindings (x/y/z)
+            for (int comp = 0; comp < 3; ++comp) {
+                  if (_element->scriptCompProp(comp) == propName && !_element->scriptComp(comp).isEmpty())
+                        proj->undo()->push(new ScriptBindingCommand(
+                            _element->zcamInstance(), _element, propName, comp,
+                            _element->scriptComp(comp), QString()));
+                  }
+            proj->undo()->endMacro();
+            }
+      else
+            se->removeBindingQml(_element, propName);
+      refreshAll();
+      }
+
+//--------------------------------------------------------------------
+//     InspectorModel::setScriptActive / isScriptActive
+//--------------------------------------------------------------------
+
+void InspectorModel::setScriptActive(const QString& propName, bool active) {
+      if (!_element)
+            return;
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return;
+      se->setBindingActive(_element, propName, active);
+      // Mark project dirty so the active state is saved.
+      Project* proj = _element->zcamInstance() ? _element->zcamInstance()->project() : nullptr;
+      if (proj && proj->undo())
+            proj->undo()->markDirty();
+      refreshAll();
+      }
+
+bool InspectorModel::isScriptActive(const QString& propName) const {
+      if (!_element)
+            return false;
+      ScriptEngine* se =
+          _element->zcamInstance() ? _element->zcamInstance()->scriptEngine() : ScriptEngine::instance();
+      if (!se)
+            return false;
+      return se->isBindingActive(_element, propName);
       }

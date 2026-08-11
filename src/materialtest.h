@@ -17,6 +17,7 @@
 //---------------------------------------------------------
 //   MaterialTest
 //---------------------------------------------------------
+
 class MaterialTest : public Group
       {
       Q_OBJECT
@@ -96,6 +97,7 @@ class MaterialTest : public Group
                         {
                           "name": "pos",
                           "type": "vector3d",
+                          "scriptable": true,
                           "unit": "mm",
                           "default": [
                             0.0,
@@ -111,6 +113,7 @@ class MaterialTest : public Group
                         {
                           "name": "rot",
                           "type": "vector3d",
+                          "scriptable": true,
                           "unit": "°",
                           "min": 0.0,
                           "max": 360,
@@ -128,6 +131,7 @@ class MaterialTest : public Group
                         {
                           "name": "scale",
                           "type": "scale",
+                          "scriptable": true,
                           "min": 0.001,
                           "max": 1000,
                           "default": [
@@ -151,6 +155,7 @@ class MaterialTest : public Group
                       "cells": [
                         {
                           "type": "int",
+                          "scriptable": true,
                           "min": 1,
                           "max": 100,
                           "default": 5,
@@ -159,6 +164,7 @@ class MaterialTest : public Group
                         },
                         {
                           "type": "int",
+                          "scriptable": true,
                           "min": 1,
                           "max": 100,
                           "default": 5,
@@ -172,6 +178,7 @@ class MaterialTest : public Group
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "unit": "mm",
                           "min": 1.0,
                           "max": 100.0,
@@ -182,6 +189,7 @@ class MaterialTest : public Group
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "unit": "mm",
                           "min": 1.0,
                           "max": 100.0,
@@ -222,6 +230,7 @@ class MaterialTest : public Group
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
@@ -231,6 +240,7 @@ class MaterialTest : public Group
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
@@ -245,6 +255,7 @@ class MaterialTest : public Group
                       "cells": [
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
@@ -254,6 +265,7 @@ class MaterialTest : public Group
                         },
                         {
                           "type": "float",
+                          "scriptable": true,
                           "min": -1000000.0,
                           "max": 1000000.0,
                           "precision": 2,
