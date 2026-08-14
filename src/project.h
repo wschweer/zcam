@@ -152,7 +152,7 @@ class Project : public Element3d
 
       /// Add a new LaserLayer as child of the given Fixture element.
       /// The operation is undoable via the undo stack.
-      Q_INVOKABLE void addLaserLayerCmd(Fixture* fixture);
+      Q_INVOKABLE void addLaserMopCmd(Fixture* fixture);
 
       /// Remove an element (e.g. a Layer) from the project tree.
       /// The operation is undoable via the undo stack.

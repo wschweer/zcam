@@ -46,6 +46,14 @@ Model {
 
         shadingMode: CustomMaterial.Unshaded
         cullMode: CustomMaterial.NoCulling
+        // Alpha blending must be enabled explicitly — the default
+        // (NoBlend) would discard the anti-aliased alpha produced
+        // in the fragment shader and the transparent minor lines.
+        // The fragment shader outputs PREMULTIPLIED colors
+        // (rgb already multiplied by alpha), hence One /
+        // OneMinusSrcAlpha instead of SrcAlpha / OneMinusSrcAlpha.
+        sourceBlend: CustomMaterial.One
+        destinationBlend: CustomMaterial.OneMinusSrcAlpha
         // Absolute qrc paths:  vertexShader/fragmentShader are read
         // via QQmlFile::urlToLocalFileOrQrc() — the most reliable
         // form is the full "qrc:" url instead of a relative one.
@@ -62,16 +70,16 @@ Model {
         property real uViewportHeight: vpSize.y
     }
 
-    // Major (raster) lines: darker, wider (2 px full width).
+    // Major (raster) lines: brighter, wider (2 px full width).
     materials: [
         GridMaterial {
-            lineColor: Qt.rgba(0.42, 0.42, 0.42, 1.0)
+            lineColor: Qt.rgba(0.60, 0.60, 0.60, 0.9)
             halfWidthPx: 1.0
             vpSize: Qt.vector2d(backgroundView.width, backgroundView.height)
         }
     ]
 
-    // Minor (subraster) lines: lighter, finer (1 px full width).
+    // Minor (subraster) lines: darker, transparent, finer (1 px full width).
     Model {
         id: minorModel
         parent: model
@@ -80,7 +88,7 @@ Model {
         pickable: false
         materials: [
             GridMaterial {
-                lineColor: Qt.rgba(0.70, 0.70, 0.70, 1.0)
+                lineColor: Qt.rgba(0.58, 0.58, 0.58, 0.6)
                 halfWidthPx: 0.5
                 vpSize: Qt.vector2d(backgroundView.width, backgroundView.height)
             }

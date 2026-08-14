@@ -71,8 +71,6 @@ Polygon::Polygon(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("");
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
-      if (w->config())
-            setColor(w->config()->polygonColor());
       }
 
 Polygon::~Polygon() {

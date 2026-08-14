@@ -18,7 +18,7 @@ import QtQuick.Dialogs
 import QtCore
 import ZCam
 
-Window {
+ApplicationWindow {
     id: mainWindow
 
     width: settings.windowWidth
@@ -28,6 +28,13 @@ Window {
     visible: true
     title: ZCam.project ? ZCam.project.projectName + (ZCam.project.undo ? (ZCam.project.undo.dirty ? " *" : "") : "") + " – ZCam" : "--"
 
+    // ── Application-wide font from Config ────────────────────────────────────
+    //   All child Controls (Labels, Buttons, TextFields, ...) inherit this
+    //   font via Qt Quick Controls' font propagation.  Individual components
+    //   must NOT hardcode font.pixelSize so the configured size is uniform.
+    font.family: ZCam.config ? ZCam.config.font : "NotoSans"
+    font.pointSize: ZCam.config ? ZCam.config.fontSize : 12
+
     Material.theme: Material.Dark
     Material.accent: Material.Teal
     Material.primary: Material.BlueGrey
@@ -36,8 +43,8 @@ Window {
     Settings {
         id: settings
         category: "MainWindow"
-        property int windowWidth: 1024
-        property int windowHeight: 700
+        property int windowWidth: 1280
+        property int windowHeight: 850
         property int windowX: -1
         property int windowY: -1
         property bool mediaBrowserVisible: false
@@ -60,13 +67,14 @@ Window {
     onClosing: function (close) {
         if (ZCam.project && ZCam.project.dirty && !closeConfirmed) {
             close.accepted = false;
-            checkUnsavedAndProceed(
-                qsTr("The current project has unsaved changes.\nDo you want to save before quitting?"),
-                function () { Qt.quit() },
-                function () { closeConfirmed = false })
+            checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before quitting?"), function () {
+                Qt.quit();
+                }, function () {
+                closeConfirmed = false;
+                });
             // closeConfirmed must be set before proceeding so that the
             // subsequent onClosing from Qt.quit() does not re-popup
-            closeConfirmed = true
+            closeConfirmed = true;
             }
         }
 
@@ -119,13 +127,15 @@ Window {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            // Escape clears any selection — both lasso multi-selection
-            // and single currentElement.  Text editing and polygon
-            // drawing are handled by their own key handlers in View3DPanel.
+            // Escape is a two-step action:
+            //   1st ESC — clear selection / currentElement
+            //   2nd ESC — reset the current tool to Pointer
             if (ZCam.selectedElements && ZCam.selectedElements.length > 0)
-                ZCam.clearSelection()
+                ZCam.clearSelection();
             else if (ZCam.currentElement)
-                ZCam.currentElement = null
+                ZCam.currentElement = null;
+            else
+                ZCam.currentTool = "pointer";
             }
         }
 
@@ -138,9 +148,9 @@ Window {
         text: qsTr("&New")
         icon.source: "qrc:/icons/dark/file-new.svg"
         shortcut: StandardKey.New
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a new project?"),
-            function () { ZCam.newProject() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before creating a new project?"), function () {
+            ZCam.newProject();
+            })
         }
 
     Action {
@@ -148,9 +158,9 @@ Window {
         text: qsTr("&Open…")
         icon.source: "qrc:/icons/dark/file-open.svg"
         shortcut: StandardKey.Open
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before opening another project?"),
-            function () { openFileDialog.open() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before opening another project?"), function () {
+            openFileDialog.open();
+            })
         }
 
     Action {
@@ -201,7 +211,8 @@ Window {
         icon.source: "qrc:/icons/dark/edit-undo.svg"
         shortcut: StandardKey.Undo
         enabled: ZCam.project ? ZCam.project.undo.canUndo : false
-        onTriggered: if (ZCam.project) ZCam.project.undo.undo()
+        onTriggered: if (ZCam.project)
+            ZCam.project.undo.undo()
         }
 
     Action {
@@ -210,7 +221,8 @@ Window {
         icon.source: "qrc:/icons/dark/edit-redo.svg"
         shortcut: StandardKey.Redo
         enabled: ZCam.project ? ZCam.project.undo.canRedo : false
-        onTriggered: if (ZCam.project) ZCam.project.undo.redo()
+        onTriggered: if (ZCam.project)
+            ZCam.project.undo.redo()
         }
 
     Action {
@@ -222,32 +234,32 @@ Window {
     Action {
         id: actionMaterialTest
         text: qsTr("Material Test")
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Material Test?"),
-            function () { ZCam.createMaterialTest() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before creating a Material Test?"), function () {
+            ZCam.createMaterialTest();
+            })
         }
 
     Action {
         id: actionGalvoTest
         text: qsTr("Galvo Test 9")
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 9?"),
-            function () { ZCam.createGalvoTest() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 9?"), function () {
+            ZCam.createGalvoTest();
+            })
         }
 
     Action {
         id: actionGalvoTest64
         text: qsTr("Galvo Test 64")
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 64?"),
-            function () { ZCam.createGalvoTest64() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test 64?"), function () {
+            ZCam.createGalvoTest64();
+            })
         }
     Action {
         id: actionCalibrationScan
         text: qsTr("Interpret Calibration Scan")
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"),
-            function () { ZCam.calibrationScan() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before creating a Galvo Test?"), function () {
+            ZCam.calibrationScan();
+            })
         }
 
     Action {
@@ -259,9 +271,9 @@ Window {
     Action {
         id: actionTestProject
         text: qsTr("Test Project")
-        onTriggered: checkUnsavedAndProceed(
-            qsTr("The current project has unsaved changes.\nDo you want to save before creating a Test Project?"),
-            function () { ZCam.createTestProject() })
+        onTriggered: checkUnsavedAndProceed(qsTr("The current project has unsaved changes.\nDo you want to save before creating a Test Project?"), function () {
+            ZCam.createTestProject();
+            })
         }
 
     Action {
@@ -286,19 +298,28 @@ Window {
         }
 
     // =========================================================================
-    //  File dialogs  (platform-native via Qt Labs)
+    //  File dialogs  (ZFileDialog — wraps FileDialog with sidebar color fix)
+    //
+    //  Qt 6.12 removed the explicit `color: Material.foreground` binding
+    //  from the Material SideBar.qml buttonDelegate's IconLabel, causing
+    //  the sidebar text to default to black (unreadable on dark background).
+    //  ZFileDialog walks the dialog tree after opening and sets the
+    //  IconLabel color to white.
     // =========================================================================
 
-    FileDialog {
+    ZFileDialog {
         id: openFileDialog
+        Material.theme: Material.Dark
         title: qsTr("Open Project")
         nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
+        currentFolder: ZCam.config ? "file://" + ZCam.expandPath(ZCam.config.projectsDirectory) : currentFolder
         onAccepted: ZCam.openProject(selectedFile.toString().replace("file://", ""))
         }
 
-    FileDialog {
+    ZFileDialog {
         id: saveAsFileDialog
+        Material.theme: Material.Dark
         title: qsTr("Save Project As")
         nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
         fileMode: FileDialog.SaveFile
@@ -306,23 +327,18 @@ Window {
         onAccepted: ZCam.saveAs(selectedFile.toString().replace("file://", ""))
         }
 
-    FileDialog {
+    ZFileDialog {
         id: importFileDialog
+        Material.theme: Material.Dark
         title: qsTr("Import File")
-        nameFilters: [
-            qsTr("All supported formats (*.svg *.dxf *.dwg *.brep *.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp *.xml *.cvg)"),
-            qsTr("Vector graphics (*.svg *.dxf *.dwg)"),
-            qsTr("BREP CAD (*.brep)"),
-            qsTr("Pixel images (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp)"),
-            qsTr("IPC-2581 (*.xml *.cvg)"),
-            qsTr("All files (*)")
-            ]
+        nameFilters: [qsTr("All supported formats (*.svg *.dxf *.dwg *.brep *.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp *.xml *.cvg)"), qsTr("Vector graphics (*.svg *.dxf *.dwg)"), qsTr("BREP CAD (*.brep)"), qsTr("Pixel images (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp)"), qsTr("IPC-2581 (*.xml *.cvg)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile
         onAccepted: ZCam.importFile(selectedFile.toString().replace("file://", ""))
         }
 
-    FileDialog {
+    ZFileDialog {
         id: exportSvgFileDialog
+        Material.theme: Material.Dark
         title: qsTr("Export SVG")
         nameFilters: [qsTr("SVG (*.svg)"), qsTr("All files (*)")]
         fileMode: FileDialog.SaveFile
@@ -342,12 +358,12 @@ Window {
 
     function checkUnsavedAndProceed(message, action, onCancel) {
         if (ZCam.project && ZCam.project.dirty) {
-            unsavedChangesGuard.messageText = message
-            unsavedChangesGuard.proceedAction = action
-            unsavedChangesGuard.onCancelHandler = onCancel !== undefined ? onCancel : null
-            unsavedChangesGuard.open()
+            unsavedChangesGuard.messageText = message;
+            unsavedChangesGuard.proceedAction = action;
+            unsavedChangesGuard.onCancelHandler = onCancel !== undefined ? onCancel : null;
+            unsavedChangesGuard.open();
             } else {
-            action()
+            action();
             }
         }
 
@@ -369,37 +385,38 @@ Window {
             }
         onAccepted: {   // Save
             if (ZCam.project.projectPath === "")
-                guardSaveAsFileDialog.open()
+                guardSaveAsFileDialog.open();
             else {
-                ZCam.save()
+                ZCam.save();
                 if (unsavedChangesGuard.proceedAction)
-                    unsavedChangesGuard.proceedAction()
+                    unsavedChangesGuard.proceedAction();
                 }
             }
         onDiscarded: Qt.callLater(function () {
             if (unsavedChangesGuard.proceedAction)
-                unsavedChangesGuard.proceedAction()
+                unsavedChangesGuard.proceedAction();
             })
         onRejected: {
             if (unsavedChangesGuard.onCancelHandler)
-                unsavedChangesGuard.onCancelHandler()
+                unsavedChangesGuard.onCancelHandler();
             }
         }
 
-    FileDialog {
+    ZFileDialog {
         id: guardSaveAsFileDialog
+        Material.theme: Material.Dark
         title: qsTr("Save Project As")
         nameFilters: [qsTr("ZCam project (*.zcam)"), qsTr("All files (*)")]
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zcam"
         onAccepted: {
-            ZCam.saveAs(selectedFile.toString().replace("file://", ""))
+            ZCam.saveAs(selectedFile.toString().replace("file://", ""));
             if (unsavedChangesGuard.proceedAction)
-                unsavedChangesGuard.proceedAction()
+                unsavedChangesGuard.proceedAction();
             }
         onRejected: {
             if (unsavedChangesGuard.onCancelHandler)
-                unsavedChangesGuard.onCancelHandler()
+                unsavedChangesGuard.onCancelHandler();
             }
         }
 
@@ -421,7 +438,7 @@ Window {
             Label {
                 text: "ZCam"
                 font.bold: true
-                font.pixelSize: 20
+                font.pointSize: (ZCam.config ? ZCam.config.fontSize : 12) + 8
                 Layout.alignment: Qt.AlignHCenter
                 }
             Label {
@@ -437,7 +454,7 @@ Window {
             Label {
                 text: qsTr("Copyright (C) 2026 Werner Schweer")
                 Layout.alignment: Qt.AlignHCenter
-                font.pixelSize: 10
+                font.pointSize: (ZCam.config ? ZCam.config.fontSize : 12) - 2
                 }
             }
         }
@@ -454,209 +471,198 @@ Window {
     //  Layout: MenuBar / ToolBar / TabBar / StackLayout
     // =========================================================================
 
+    menuBar: MenuBar {
+        // File menu
+        Menu {
+            title: qsTr("&File")
+            MenuItem {
+                action: actionNew
+                }
+            MenuItem {
+                action: actionOpen
+                }
+            MenuSeparator {}
+            MenuItem {
+                action: actionSave
+                }
+            MenuItem {
+                action: actionSaveAs
+                }
+            MenuSeparator {}
+            MenuItem {
+                action: actionImport
+                }
+            MenuItem {
+                action: actionExportSvg
+                }
+            MenuSeparator {}
+            MenuItem {
+                action: actionQuit
+                }
+            }
+
+        // Edit menu
+        Menu {
+            title: qsTr("&Edit")
+            MenuItem {
+                action: actionUndo
+                }
+            MenuItem {
+                action: actionRedo
+                }
+            MenuItem {
+                action: actionConfig
+                }
+            }
+
+        // Tools menu
+        Menu {
+            title: qsTr("&Tools")
+            MenuItem {
+                action: actionMaterialTest
+                }
+            MenuItem {
+                action: actionGalvoTest
+                }
+            MenuItem {
+                action: actionGalvoTest64
+                }
+            MenuItem {
+                action: actionCalibrationScan
+                }
+            MenuItem {
+                action: actionGalvoCalibration
+                }
+            MenuSeparator {}
+            MenuItem {
+                action: actionTestProject
+                }
+            }
+
+        // Help menu
+        Menu {
+            title: qsTr("&Help")
+            MenuItem {
+                action: actionAbout
+                }
+            }
+        }
+
+    header: ToolBar {
+        RowLayout {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+            width: parent.width
+
+            // File operations
+            ToolButton {
+                action: actionNew
+                display: AbstractButton.IconOnly
+                icon.color: "transparent"
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("New project (Ctrl+N)")
+                }
+            ToolButton {
+                action: actionOpen
+                display: AbstractButton.IconOnly
+                icon.color: "transparent"
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Open project (Ctrl+O)")
+                }
+            ToolButton {
+                action: actionSave
+                display: AbstractButton.IconOnly
+                icon.color: "transparent"
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Save project (Ctrl+S)")
+                }
+            ToolButton {
+                action: actionSaveAs
+                display: AbstractButton.IconOnly
+                icon.color: "transparent"
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Save project as…")
+                }
+            ToolButton {
+                action: actionImport
+                display: AbstractButton.IconOnly
+                icon.color: "transparent"
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Import file…")
+                }
+
+            // Separator
+            Rectangle {
+                implicitWidth: 1
+                implicitHeight: 24
+                color: Material.color(Material.BlueGrey, Material.Shade500)
+                }
+
+            // Undo / Redo
+            ToolButton {
+                action: actionUndo
+                display: AbstractButton.IconOnly
+                icon.color: enabled ? Material.foreground : Material.color(Material.Grey, Material.Shade600)
+                opacity: enabled ? 1.0 : 0.4
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Undo (Ctrl+Z)")
+                }
+            ToolButton {
+                action: actionRedo
+                display: AbstractButton.IconOnly
+                icon.color: enabled ? Material.foreground : Material.color(Material.Grey, Material.Shade600)
+                opacity: enabled ? 1.0 : 0.4
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Redo (Ctrl+Y)")
+                }
+
+            // Spacer
+            Item {
+                Layout.fillWidth: true
+                }
+
+            // placed on the right side of the toolbar
+
+            // Media Browser toggle button — placed left of the Laser button
+            ToolButton {
+                id: mediaBrowserBtn
+                action: actionShowMediaBrowser
+                display: AbstractButton.TextOnly
+                text: "M"
+                font.bold: true
+                contentItem: Text {
+                    text: mediaBrowserBtn.text
+                    color: mediaBrowserBtn.checked ? "white" : "black"
+                    font: mediaBrowserBtn.font
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    }
+                background: Rectangle {
+                    color: mediaBrowserBtn.checked ? Material.color(Material.Teal, Material.Shade700) : (mediaBrowserBtn.hovered ? Material.color(Material.BlueGrey, Material.Shade600) : "transparent")
+                    radius: 4
+                    }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Show Media Browser")
+                Layout.rightMargin: 4
+                }
+            ToolButton {
+                id: laserPanelBtn
+                action: actionShowLaserPanel
+                display: AbstractButton.IconOnly
+                icon.color: "transparent"
+                background: Rectangle {
+                    color: laserPanelBtn.checked ? Material.color(Material.Teal, Material.Shade700) : "transparent"
+                    radius: 4
+                    }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Show Laser Panel")
+                }
+            }
+        }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
-
-        // ── Menu bar ──────────────────────────────────────────────────────────
-        MenuBar {
-            id: menuBar
-            Layout.fillWidth: true
-
-            // File menu
-            Menu {
-                title: qsTr("&File")
-                MenuItem {
-                    action: actionNew
-                    }
-                MenuItem {
-                    action: actionOpen
-                    }
-                MenuSeparator {}
-                MenuItem {
-                    action: actionSave
-                    }
-                MenuItem {
-                    action: actionSaveAs
-                    }
-                MenuSeparator {}
-                MenuItem {
-                    action: actionImport
-                    }
-                MenuItem {
-                    action: actionExportSvg
-                    }
-                MenuSeparator {}
-                MenuItem {
-                    action: actionQuit
-                    }
-                }
-
-            // Edit menu
-            Menu {
-                title: qsTr("&Edit")
-                MenuItem {
-                    action: actionUndo
-                    }
-                MenuItem {
-                    action: actionRedo
-                    }
-                MenuItem {
-                    action: actionConfig
-                    }
-                }
-
-            // Tools menu
-            Menu {
-                title: qsTr("&Tools")
-                MenuItem {
-                    action: actionMaterialTest
-                    }
-                MenuItem {
-                    action: actionGalvoTest
-                    }
-                MenuItem {
-                    action: actionGalvoTest64
-                    }
-                MenuItem {
-                    action: actionCalibrationScan
-                    }
-                MenuItem {
-                    action: actionGalvoCalibration
-                    }
-                MenuSeparator {}
-                MenuItem {
-                    action: actionTestProject
-                    }
-                }
-
-            // Help menu
-            Menu {
-                title: qsTr("&Help")
-                MenuItem {
-                    action: actionAbout
-                    }
-                }
-            }
-
-        // ── Tool bar ──────────────────────────────────────────────────────────
-        ToolBar {
-            id: toolBar
-            Layout.fillWidth: true
-
-            RowLayout {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-                width: parent.width
-
-                // File operations
-                ToolButton {
-                    action: actionNew
-                    display: AbstractButton.IconOnly
-                    icon.color: "transparent"
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("New project (Ctrl+N)")
-                    }
-                ToolButton {
-                    action: actionOpen
-                    display: AbstractButton.IconOnly
-                    icon.color: "transparent"
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Open project (Ctrl+O)")
-                    }
-                ToolButton {
-                    action: actionSave
-                    display: AbstractButton.IconOnly
-                    icon.color: "transparent"
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Save project (Ctrl+S)")
-                    }
-                ToolButton {
-                    action: actionSaveAs
-                    display: AbstractButton.IconOnly
-                    icon.color: "transparent"
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Save project as…")
-                    }
-                ToolButton {
-                    action: actionImport
-                    display: AbstractButton.IconOnly
-                    icon.color: "transparent"
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Import file…")
-                    }
-
-                // Separator
-                Rectangle {
-                    implicitWidth: 1
-                    implicitHeight: 24
-                    color: Material.color(Material.BlueGrey, Material.Shade500)
-                    }
-
-                // Undo / Redo
-                ToolButton {
-                    action: actionUndo
-                    display: AbstractButton.IconOnly
-                    icon.color: enabled ? Material.foreground : Material.color(Material.Grey, Material.Shade600)
-                    opacity: enabled ? 1.0 : 0.4
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Undo (Ctrl+Z)")
-                    }
-                ToolButton {
-                    action: actionRedo
-                    display: AbstractButton.IconOnly
-                    icon.color: enabled ? Material.foreground : Material.color(Material.Grey, Material.Shade600)
-                    opacity: enabled ? 1.0 : 0.4
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Redo (Ctrl+Y)")
-                    }
-
-                // Spacer
-                Item {
-                    Layout.fillWidth: true
-                    }
-
-                // placed on the right side of the toolbar
-
-                // Media Browser toggle button — placed left of the Laser button
-                ToolButton {
-                    id: mediaBrowserBtn
-                    action: actionShowMediaBrowser
-                    display: AbstractButton.TextOnly
-                    text: "M"
-                    font.bold: true
-                    contentItem: Text {
-                        text: mediaBrowserBtn.text
-                        color: mediaBrowserBtn.checked ? "white" : "black"
-                        font: mediaBrowserBtn.font
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        }
-                    background: Rectangle {
-                        color: mediaBrowserBtn.checked ? Material.color(Material.Teal, Material.Shade700)
-                               : (mediaBrowserBtn.hovered ? Material.color(Material.BlueGrey, Material.Shade600)
-                                  : "transparent")
-                        radius: 4
-                        }
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Show Media Browser")
-                    Layout.rightMargin: 4
-                    }
-                ToolButton {
-                    id: laserPanelBtn
-                    action: actionShowLaserPanel
-                    display: AbstractButton.IconOnly
-                    icon.color: "transparent"
-                    background: Rectangle {
-                        color: laserPanelBtn.checked ? Material.color(Material.Teal, Material.Shade700)
-                               : "transparent"
-                        radius: 4
-                        }
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Show Laser Panel")
-                    }
-                }
-            }
 
         // ── Tab bar with Cam refresh button ──────────────────────────────────
         // Light-grey bar behind tab buttons and Cam button.
@@ -671,31 +677,31 @@ Window {
 
                 TabBar {
                     id: tabBar
-                    background: Rectangle { color: "transparent" }
-
-                    component TabBtn: TabButton {
-                        width: 120
-                        background: Rectangle {
-                            color: "transparent"
-                            }
-                        contentItem: Text {
-                            text: parent.text
-                            color: "white"
-                            font: parent.font
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            }
+                    background: Rectangle {
+                        color: "transparent"
                         }
 
-                    TabBtn { text: qsTr("Main") }
-                    TabBtn { text: qsTr("Recipes") }
-                    TabBtn { text: qsTr("Machines") }
-                    TabBtn { text: qsTr("Config") }
-                    TabBtn { text: qsTr("Manual") }
+                    TabBtn {
+                        text: qsTr("Main")
+                        }
+                    TabBtn {
+                        text: qsTr("Recipes")
+                        }
+                    TabBtn {
+                        text: qsTr("Machines")
+                        }
+                    TabBtn {
+                        text: qsTr("Config")
+                        }
+                    TabBtn {
+                        text: qsTr("Manual")
+                        }
                     }
 
                 // Spacer pushes the Cam button to the right edge
-                Item { Layout.fillWidth: true }
+                Item {
+                    Layout.fillWidth: true
+                    }
 
                 // Fixture selector — choose the active fixture for Cam
                 ComboBox {
@@ -706,35 +712,39 @@ Window {
                     flat: true
                     // Model: prepend a "---" (no fixture) entry to the fixture list
                     model: {
-                        var fixtures = (ZCam.project ? ZCam.project.fixtures : [])
-                        var items = [{ "name": "---" }]
+                        var fixtures = (ZCam.project ? ZCam.project.fixtures : []);
+                        var items = [
+                                {
+                                "name": "---"
+                                }
+                        ];
                         for (var i = 0; i < fixtures.length; ++i)
-                            items.push(fixtures[i])
-                        return items
-                    }
+                            items.push(fixtures[i]);
+                        return items;
+                        }
                     textRole: "name"
                     currentIndex: {
                         if (!ZCam.project || !ZCam.project.fixture)
-                            return 0  // the "---" entry
-                        var idx = ZCam.project.fixtures.indexOf(ZCam.project.fixture)
-                        return idx >= 0 ? idx + 1 : 0  // +1 to account for "---"
-                    }
-                    onActivated: function(index) {
+                            return 0;  // the "---" entry
+                        var idx = ZCam.project.fixtures.indexOf(ZCam.project.fixture);
+                        return idx >= 0 ? idx + 1 : 0;  // +1 to account for "---"
+                        }
+                    onActivated: function (index) {
                         if (!ZCam.project)
-                            return
+                            return;
                         if (index === 0) {
                             // "---" selected — no fixture
                             // Only allow this if there are fixtures to deselect
                             // (otherwise there's nothing to change)
                             if (ZCam.project.fixture)
-                                ZCam.project.fixture = null
-                        } else {
-                            var fixtures = ZCam.project.fixtures
-                            var fi = index - 1  // offset for "---" entry
+                                ZCam.project.fixture = null;
+                            } else {
+                            var fixtures = ZCam.project.fixtures;
+                            var fi = index - 1;  // offset for "---" entry
                             if (fi >= 0 && fi < fixtures.length)
-                                ZCam.project.fixture = fixtures[fi]
+                                ZCam.project.fixture = fixtures[fi];
+                            }
                         }
-                    }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Select active fixture")
                     }
@@ -814,9 +824,9 @@ Window {
             property color messageColor: Material.foreground
 
             function show(text, color) {
-                statusBar.message = text
-                statusBar.messageColor = color !== undefined ? color : Material.foreground
-                statusTimer.restart()
+                statusBar.message = text;
+                statusBar.messageColor = color !== undefined ? color : Material.foreground;
+                statusTimer.restart();
                 }
 
             Timer {
@@ -831,9 +841,22 @@ Window {
                 anchors.leftMargin: 8
                 text: statusBar.message
                 color: statusBar.messageColor
-                font.pixelSize: 12
                 elide: Text.ElideRight
                 }
+            }
+        }
+
+    component TabBtn: TabButton {
+        width: 120
+        background: Rectangle {
+            color: "transparent"
+            }
+        contentItem: Text {
+            text: parent.text
+            color: "white"
+            font: parent.font
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
             }
         }
 
@@ -851,30 +874,30 @@ Window {
     Connections {
         target: ZCam
         function onShowFontMediaBrowserRequested() {
-            actionShowMediaBrowser.checked = true
+            actionShowMediaBrowser.checked = true;
             }
 
         // Switch to the Recipes tab and select the requested recipe.
         function onRecipeEditorRequested(name) {
-            tabBar.currentIndex = 1   // Recipes tab
-            configRecipes.selectRecipeByName(name)
+            tabBar.currentIndex = 1;   // Recipes tab
+            configRecipes.selectRecipeByName(name);
             }
 
         // Status bar: project saved
         function onProjectSaved(path) {
-            var name = path !== "" ? path.replace(/.*\//, "") : "project"
-            statusBar.show(qsTr("%1 saved").arg(name), Material.color(Material.Green, Material.Shade400))
+            var name = path !== "" ? path.replace(/.*\//, "") : "project";
+            statusBar.show(qsTr("%1 saved").arg(name), Material.color(Material.Green, Material.Shade400));
             }
 
         // Status bar: assets saved
         function onAssetsSaved() {
-            statusBar.show(qsTr("Assets saved"), Material.color(Material.Green, Material.Shade400))
+            statusBar.show(qsTr("Assets saved"), Material.color(Material.Green, Material.Shade400));
             }
 
         // Status bar: SVG exported
         function onSvgExported(path) {
-            var name = path !== "" ? path.replace(/.*\//, "") : "svg"
-            statusBar.show(qsTr("%1 exported").arg(name), Material.color(Material.Green, Material.Shade400))
+            var name = path !== "" ? path.replace(/.*\//, "") : "svg";
+            statusBar.show(qsTr("%1 exported").arg(name), Material.color(Material.Green, Material.Shade400));
             }
         }
     }

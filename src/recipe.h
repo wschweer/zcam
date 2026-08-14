@@ -12,13 +12,13 @@
 
 #pragma once
 
-#include "element3d.h"
+#include "mop.h"
 #include "laser.h"
 #include "laser_recipe.h"
 #include "clipper.h"
 
 //---------------------------------------------------------
-//   Recipe
+//   LaserMop
 //    - Contains the laser parameters (recipe, overrides, etc.)
 //    - Each Element3d in the project tree (from Cad
 //      downward) can reference a LaserLayer via its laserLayer
@@ -27,7 +27,7 @@
 //    - material test can override up to two parameters
 //---------------------------------------------------------
 
-class LaserMop : public Element3d
+class LaserMop : public Mop
       {
       Q_OBJECT
       QML_ELEMENT
@@ -66,6 +66,16 @@ class LaserMop : public Element3d
                     "default": true,
                     "name": "burn",
                     "sublabel": "Burn"
+                }
+            ]
+        },
+        {
+            "label": "Color",
+            "cells": [
+                {
+                    "name": "colorIndex",
+                    "type": "mopColor",
+                    "default": 1
                 }
             ]
         },

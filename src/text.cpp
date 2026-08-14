@@ -39,8 +39,6 @@ Text::Text(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill = true;
       set_geometry(new TessGeometry(this));
       QJSEngine::setObjectOwnership(geometry(), QJSEngine::CppOwnership);
-      if (w->config())
-            setColor(w->config()->textColor());
 
       connect(this, &Text::textChanged, [this]() { update(TEXT); });
       connect(this, &Text::fontFamilyChanged, [this]() { update(FONT); });
@@ -185,10 +183,10 @@ void Text::updateText() {
             geometry()->setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
       else
             geometry()->setPrimitiveType(QQuick3DGeometry::PrimitiveType::LineStrip);
-      geometry()->addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0,
-                               QQuick3DGeometry::Attribute::F32Type);
-      geometry()->addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0,
-                               QQuick3DGeometry::Attribute::U32Type);
+      geometry()->addAttribute(
+          QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
+      geometry()->addAttribute(
+          QQuick3DGeometry::Attribute::IndexSemantic, 0, QQuick3DGeometry::Attribute::U32Type);
       geometry()->setStride(3 * sizeof(float));
 
       QTextLayout layout;

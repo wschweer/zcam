@@ -8,9 +8,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(QT_QML_GENERATE_QMLLS_INI On)
 
 set(CMAKE_VERBOSE_MAKEFILE OFF)
-set(CMAKE_BUILD_TYPE Debug)
+# set(CMAKE_BUILD_TYPE Debug)
 # set(CMAKE_BUILD_TYPE Release)
-# set(CMAKE_BUILD_TYPE RelWithDebInfo)
+set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_AUTOMOC ON)
 
 # linuxdeploy handles library bundling; skip RPATH rewriting on install
@@ -94,9 +94,11 @@ qt_add_qml_module(zcam
         qml/MediaArtworkPanel.qml
         qml/MediaIconsPanel.qml
         qml/GalvoCalibrationDialog.qml
+        qml/ZFileDialog.qml
         qml/ManualPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
+        src/config.cpp src/config.h
         src/machine.cpp src/machine.h
         src/machines.cpp src/machines.h
         src/machinemodel.cpp src/machinemodel.h
@@ -104,6 +106,7 @@ qt_add_qml_module(zcam
         src/layersettingmodel.cpp src/layersettingmodel.h
         src/propertyjson.cpp src/propertyjson.h
         src/recipe.cpp src/recipe.h
+        src/mop.cpp src/mop.h
         src/laser_recipe.cpp src/laser_recipe.h
         src/spacemouse.cpp
         src/spacemouse.h
@@ -112,6 +115,7 @@ qt_add_qml_module(zcam
         src/painterpath.cpp src/painterpath.h
         src/element.cpp src/element.h
         src/element3d.cpp src/element3d.h
+        src/sidebarcolorfixer.h
         src/text.cpp src/text.h
         src/polygon.cpp src/polygon.h
         src/rectangle.cpp src/rectangle.h
@@ -245,8 +249,17 @@ qt_add_resources(zcam icons FILES
 # Bundle the QtQuickControls2 style configuration so Material/Dark is active
 qt_add_resources(zcam conf
     PREFIX "/"
-    FILES qtquickcontrols2.conf
     )
+
+# ---------------------------------------------------------------------------
+# Note: The dialogstyle/ directory contains copies of Qt's +Material QML files
+# with a modified SideBar.qml (color: "white" on IconLabel delegates).
+# However, Qt 6.12 embeds these QML files inside the .so, and the resource
+# override does NOT take effect at QML loading time. The sidebar text color
+# is instead fixed at runtime by SideBarColorFixer (C++ event filter in
+# main.cpp) which walks the dialog tree and sets IconLabel colors to white.
+# The dialogstyle files are kept for reference but NOT compiled as resources.
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Embed all files under data/ZCam/ as a Qt resource so they can be copied

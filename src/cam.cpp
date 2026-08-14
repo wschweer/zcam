@@ -21,6 +21,8 @@
 #include <QPointer>
 #include <QVector2D>
 #include <QVector3D>
+#include <QList>
+#include <QColor>
 #include <future>
 #include <limits>
 #include <memory>
@@ -207,17 +209,35 @@ void Cam::updateCam() {
             GeometryWorker::CamInput::Layer layerData;
             layerData.tileLines = std::move(tileLines);
             layerData.burn      = ll->burn();
+            layerData.color     = ll->mopColor();
             input.layers.push_back(std::move(layerData));
             }
 
       // Offload panel-grid replication and line merging to a background thread.
       QPointer<Cam> guard(this);
-      GeometryWorker::instance().requestCamData(std::move(input),
-                                                [this, guard](const GeometryWorker::CamResult& r) {
-                                                      if (!guard || !r.valid)
-                                                            return;
-                                                      _geometry->setLines(r.combinedLines);
-                                                      });
+      GeometryWorker::instance().requestCamData(
+          std::move(input), [this, guard](const GeometryWorker::CamResult& r) {
+                if (!guard || !r.valid)
+                      return;
+                // Build geometry with one subset per layer
+                // (alternating marks and moves per layer).
+                // Each layer contributes two subsets:
+                //   marks (in the layer's Mop colour)
+                //   moves (in a dimmed version of that colour)
+                //
+                // The corresponding material list in
+                // CamShape.qml is built dynamically.
+                Clipper2Lib::PathsD geometryPaths;
+                QList<QColor> layerColors;
+                for (const auto& lr : r.layers) {
+                      geometryPaths.push_back(lr.markLines);
+                      geometryPaths.push_back(lr.moveLines);
+                      layerColors.append(lr.color);
+                      }
+                _geometry->setLines(geometryPaths);
+                _layerColors = std::move(layerColors);
+                emit layerColorsChanged();
+                });
       }
 
 //---------------------------------------------------------

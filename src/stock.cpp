@@ -18,8 +18,6 @@
 
 Stock::Stock(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("stock");
-      if (w->config())
-            setColor(w->config()->stockColor());
 #if 0
       auto colors = new osg::Vec4Array;
       colors->push_back(osgColor(zcam->colorStock()));

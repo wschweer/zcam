@@ -18,7 +18,7 @@
 #include "propertyjson.h"
 #include "group.h"
 #include "recipe.h"
-#include "recipe.h"
+#include "mop.h"
 #include "machine.h"
 #include "machines.h"
 #include "geometryworker.h"
@@ -29,10 +29,12 @@
 #include <QVector3D>
 #include <QQuaternion>
 #include <QPointer>
+#include <functional>
 
 //---------------------------------------------------------
 //   Element3d
 //---------------------------------------------------------
+
 Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
       _selectionGeometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_selectionGeometry, QJSEngine::CppOwnership);
@@ -83,10 +85,42 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
                   emit vertexRevisionChanged();
                   }
             });
+      // When show changes, invalidate ancestorsShow for all descendants
+      // and world bounding boxes since visibility affects childrenBoundingBox().
+      connect(this, &Element3d::showChanged, this, [this] {
+            invalidateWorldBBoxUp();
+            // Mark descendants' ancestorsShow cache dirty so they recompute.
+            std::function<void(Element*)> walk = [&](Element* e) {
+                  if (!e)
+                        return;
+                  if (auto* e3d = qobject_cast<Element3d*>(e))
+                        e3d->_ancestorsShowDirty = true;
+                  for (auto* c : e->children())
+                        walk(c);
+                  };
+            walk(this);
+            });
       connect(this, &Element3d::fillChanged, [this] { update(); });
       connect(this, &Element3d::lineWidthChanged, [this] { update(); });
       connect(this, &Element3d::endTypeChanged, [this] { update(); });
       connect(this, &Element3d::joinTypeChanged, [this] { update(); });
+
+      // When this element's laserLayer reference changes, its effective
+      // Mop (and that of all descendants that inherit the Mop from this
+      // element) changes, so emit curColorChanged on the entire subtree.
+      // Descendants that have their own laserLayer set are unaffected —
+      // their curColor is still derived from their own Mop.
+      connect(this, &Element3d::laserLayerChanged, this, [this] {
+            std::function<void(Element*)> walk = [&](Element* e) {
+                  if (!e)
+                        return;
+                  if (auto* e3d = qobject_cast<Element3d*>(e))
+                        emit e3d->curColorChanged();
+                  for (auto* c : e->children())
+                        walk(c);
+                  };
+            walk(this);
+            });
       }
 
 //---------------------------------------------------------
@@ -102,6 +136,47 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
 Element3d::~Element3d() {
       if (zcam)
             zcam->forgetElement(this);
+      }
+
+//---------------------------------------------------------
+//   invalidateGlobalMatrix
+//    Recursively mark the cached global matrix and world bounding
+//    boxes of this element and all Element3d descendants as dirty.
+//    Called when pos/rot/scale/mirror changes — the global matrix
+//    of this element and all descendants changes.
+//---------------------------------------------------------
+
+void Element3d::invalidateGlobalMatrix() {
+      _globalMatrixDirty = true;
+      _worldBBoxDirty    = true;
+      _worldBBox3DDirty  = true;
+      for (auto* child : children())
+            if (auto* e3d = qobject_cast<Element3d*>(child))
+                  e3d->invalidateGlobalMatrix();
+      // Also invalidate ancestors' world bounding boxes since their
+      // childrenBoundingBox() depends on this element's box.
+      invalidateWorldBBoxUp();
+      }
+
+//---------------------------------------------------------
+//   invalidateWorldBBoxUp
+//    Invalidate the cached world bounding boxes of this element
+//    and all Element3d ancestors (whose childrenBoundingBox()
+//    depends on this element's box).  Called when content or
+//    visibility changes.
+//---------------------------------------------------------
+
+void Element3d::invalidateWorldBBoxUp() {
+      _worldBBoxDirty   = true;
+      _worldBBox3DDirty = true;
+      Element* p        = parent();
+      while (p) {
+            if (auto* e3d = qobject_cast<Element3d*>(p)) {
+                  e3d->_worldBBoxDirty   = true;
+                  e3d->_worldBBox3DDirty = true;
+                  }
+            p = p->parent();
+            }
       }
 
 //---------------------------------------------------------
@@ -132,8 +207,8 @@ static bool writeLayerOrRecipe(
             return true;
             }
       else if (type == "laserLayer") {
-            LaserMop* recipe = value.value<LaserMop*>();
-            data[name]       = recipe ? recipe->name().toStdString() : "";
+            Mop* mop   = value.value<Mop*>();
+            data[name] = mop ? mop->name().toStdString() : "";
             return true;
             }
       else if (type == "machine") {
@@ -198,7 +273,7 @@ static bool readLayerOrRecipe(
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
-            LaserMop* ll   = element->zcamInstance()->laserLayerPtr(llName);
+            Mop* ll        = element->zcamInstance()->laserLayerPtr(llName);
             if (ll)
                   mp.write(element, QVariant::fromValue(ll));
             else if (!llName.isEmpty())
@@ -228,6 +303,7 @@ static bool readLayerOrRecipe(
 //    Uses the shared propjson utilities for common types, with
 //    Element3d-specific handling for "layer" and "recipe" types.
 //---------------------------------------------------------
+
 json Element3d::toJson() const {
       nlohmann::json data = Element::toJson();
 
@@ -261,6 +337,7 @@ json Element3d::toJson() const {
 //    propjson utilities, with Element3d-specific handling
 //    for "layer" and "recipe" types.
 //---------------------------------------------------------
+
 void Element3d::fromJson(const json& json) {
       // Process children in their own try-catch block so that an
       // exception in a child does NOT prevent this element's own
@@ -333,6 +410,7 @@ void Element3d::fromJson(const json& json) {
 //    had not yet been created (e.g. laserLayer references from
 //    Cad elements loaded before the Fixture/LaserLayer elements).
 //---------------------------------------------------------
+
 void Element3d::fixup() {
       if (!_pendingRefs.empty()) {
             const QMetaObject* meta = this->metaObject();
@@ -344,7 +422,7 @@ void Element3d::fixup() {
                   QMetaProperty mp = meta->property(idx);
 
                   if (ref.refType == "laserLayer") {
-                        LaserMop* ll = zcamInstance()->laserLayerPtr(ref.name);
+                        Mop* ll = zcamInstance()->laserLayerPtr(ref.name);
                         if (ll)
                               mp.write(this, QVariant::fromValue(ll));
                         else
@@ -377,26 +455,34 @@ void Element3d::fixup() {
 //    Returns true when every ancestor Element3d has show == true.
 //    The element's own show flag is NOT considered here.
 //---------------------------------------------------------
+
 bool Element3d::ancestorsShow() const {
-      Element* p = parent();
+      if (!_ancestorsShowDirty)
+            return _cachedAncestorsShow;
+      _ancestorsShowDirty = false;
+      bool result         = true;
+      Element* p          = parent();
       while (p) {
             if (auto* e3d = qobject_cast<Element3d*>(p)) {
-                  if (!e3d->show())
-                        return false;
+                  if (!e3d->show()) {
+                        result = false;
+                        break;
+                        }
                   }
             p = p->parent();
             }
-      return true;
+      _cachedAncestorsShow = result;
+      return result;
       }
 
 //---------------------------------------------------------
-//   effectiveLaserLayer
+//   effectiveMop
 //    Walk up the parent chain from this element and return the
 //    first non-null laserLayer reference found.  Returns nullptr
 //    if no ancestor (including self) has a laserLayer set.
 //---------------------------------------------------------
 
-LaserMop* Element3d::effectiveLaserLayer() const {
+Mop* Element3d::effectiveMop() const {
       const Element3d* e = this;
       while (e) {
             if (e->_laserLayer)
@@ -413,6 +499,7 @@ LaserMop* Element3d::effectiveLaserLayer() const {
 //    If the element has no own path data but has children, the
 //    bounding box is computed from the children's bounding boxes.
 //---------------------------------------------------------
+
 QRectF Element3d::boundingBox() const {
       // Prefer the element-specific content box (BREP mesh, DXF
       // import) — a BREP element has no pathList but a cached mesh
@@ -447,6 +534,7 @@ QRectF Element3d::boundingBox() const {
 //    own boundingBox() is transformed through the child's local
 //    matrix() and the results are unioned.
 //---------------------------------------------------------
+
 QRectF Element3d::childrenBoundingBox() const {
       bool hasValidChild = false;
       double minX        = std::numeric_limits<double>::max();
@@ -486,10 +574,16 @@ QRectF Element3d::childrenBoundingBox() const {
 //    coordinates by transforming the local bounding box corners
 //    through globalMatrix() and taking the AABB of the result.
 //---------------------------------------------------------
+
 QRectF Element3d::worldBoundingBox() const {
-      QRectF local = boundingBox();
-      if (local.isNull() || local.isEmpty())
-            return {};
+      if (!_worldBBoxDirty)
+            return _cachedWorldBBox;
+      _worldBBoxDirty = false;
+      QRectF local    = boundingBox();
+      if (local.isNull() || local.isEmpty()) {
+            _cachedWorldBBox = {};
+            return _cachedWorldBBox;
+            }
       QMatrix4x4 gm = globalMatrix();
       // Transform all four corners
       QVector3D corners[4] = {
@@ -506,7 +600,8 @@ QRectF Element3d::worldBoundingBox() const {
             minY = std::min(minY, double(corners[i].y()));
             maxY = std::max(maxY, double(corners[i].y()));
             }
-      return QRectF(minX, minY, maxX - minX, maxY - minY);
+      _cachedWorldBBox = QRectF(minX, minY, maxX - minX, maxY - minY);
+      return _cachedWorldBBox;
       }
 
 //---------------------------------------------------------
@@ -515,6 +610,7 @@ QRectF Element3d::worldBoundingBox() const {
 //    the 2D path bounding box with z = 0; elements with real
 //    volume override this.
 //---------------------------------------------------------
+
 void Element3d::boundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
       QRectF bb = boundingBox();
       bMin      = QVector3D(float(bb.left()), float(bb.top()), 0.0f);
@@ -530,25 +626,34 @@ void Element3d::boundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
 //    volumetric elements (BREP) are picked where they are
 //    actually rendered instead of at a z = 0 slice.
 //---------------------------------------------------------
+
 void Element3d::worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
+      if (!_worldBBox3DDirty) {
+            bMin = _cachedWorldBBox3DMin;
+            bMax = _cachedWorldBBox3DMax;
+            return;
+            }
+      _worldBBox3DDirty = false;
       QVector3D lMin, lMax;
       boundingBox3D(lMin, lMax);
-      QMatrix4x4 gm = globalMatrix();
-      bMin          = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+      QMatrix4x4 gm         = globalMatrix();
+      _cachedWorldBBox3DMin = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
           std::numeric_limits<float>::max());
-      bMax          = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
-          std::numeric_limits<float>::lowest());
+      _cachedWorldBBox3DMax = QVector3D(std::numeric_limits<float>::lowest(),
+          std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
       for (int i = 0; i < 8; ++i) {
             QVector3D c(
                 (i & 1) ? lMax.x() : lMin.x(), (i & 2) ? lMax.y() : lMin.y(), (i & 4) ? lMax.z() : lMin.z());
             c = gm.map(c);
-            bMin.setX(std::min(bMin.x(), c.x()));
-            bMin.setY(std::min(bMin.y(), c.y()));
-            bMin.setZ(std::min(bMin.z(), c.z()));
-            bMax.setX(std::max(bMax.x(), c.x()));
-            bMax.setY(std::max(bMax.y(), c.y()));
-            bMax.setZ(std::max(bMax.z(), c.z()));
+            _cachedWorldBBox3DMin.setX(std::min(_cachedWorldBBox3DMin.x(), c.x()));
+            _cachedWorldBBox3DMin.setY(std::min(_cachedWorldBBox3DMin.y(), c.y()));
+            _cachedWorldBBox3DMin.setZ(std::min(_cachedWorldBBox3DMin.z(), c.z()));
+            _cachedWorldBBox3DMax.setX(std::max(_cachedWorldBBox3DMax.x(), c.x()));
+            _cachedWorldBBox3DMax.setY(std::max(_cachedWorldBBox3DMax.y(), c.y()));
+            _cachedWorldBBox3DMax.setZ(std::max(_cachedWorldBBox3DMax.z(), c.z()));
             }
+      bMin = _cachedWorldBBox3DMin;
+      bMax = _cachedWorldBBox3DMax;
       }
 
 //---------------------------------------------------------
@@ -556,6 +661,7 @@ void Element3d::worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const {
 //    Returns true if the given world-space point (x, y) lies
 //    inside this element's world bounding box.
 //---------------------------------------------------------
+
 bool Element3d::containsWorldPoint(double x, double y) const {
       QRectF wb = worldBoundingBox();
       if (wb.isNull() || wb.isEmpty())
@@ -569,6 +675,7 @@ bool Element3d::containsWorldPoint(double x, double y) const {
 //    so a QML binding never sees a stale null when the element was
 //    created before its bounding box / pathList data existed.
 //---------------------------------------------------------
+
 TessGeometry* Element3d::selectionGeometry() {
       // Return the pre-built selection geometry without side effects.
       // The content is updated proactively in strokeAndFill() and
@@ -584,6 +691,7 @@ TessGeometry* Element3d::selectionGeometry() {
 //    Rebuild the line rectangle around boundingBox() so the QML
 //    layer can render it when this element is selected.
 //---------------------------------------------------------
+
 void Element3d::updateSelectionGeometry() {
       if (!_selectionGeometry)
             return;
@@ -614,6 +722,7 @@ void Element3d::updateSelectionGeometry() {
 //    Set the grid-snap marker flags and refresh the selection
 //    geometry so the reference-point cross appears/disappears.
 //---------------------------------------------------------
+
 void Element3d::setSnapMarkers(bool snapX, bool snapY) {
       bool wasActive = _snapActiveX || _snapActiveY;
       _snapActiveX   = snapX;
@@ -627,6 +736,7 @@ void Element3d::setSnapMarkers(bool snapX, bool snapY) {
 //    Clear the grid-snap marker flags and refresh the selection
 //    geometry so the reference-point cross disappears.
 //---------------------------------------------------------
+
 void Element3d::clearSnapMarkers() {
       if (_snapActiveX || _snapActiveY) {
             _snapActiveX = false;
@@ -674,31 +784,39 @@ static QColor adjustColorTone(const QColor& c, double tone) {
 
 //---------------------------------------------------------
 //   curColor
-//    Returns the element's colour, adjusted for hover or
-//    current-selection state.  Light colours are darkened,
-//    dark colours are lightened so the element stands out.
+//    Returns the element's colour, derived from its effective
+//    Mop's colour index (adjusted for hover or current-selection
+//    state).  Light colours are darkened, dark colours are
+//    lightened so the element stands out.
 //---------------------------------------------------------
+
 QColor Element3d::curColor() const {
+      QColor baseColor = _color;
+      // If this element has an effective Mop, derive the colour
+      // from the Mop's colour index instead of the stored colour.
+      Mop* mop = effectiveMop();
+      if (mop)
+            baseColor = mop->mopColor();
+
       if (zcam->hoverElement() == this) {
-            // Light colours → darken, dark colours → lighten
-            double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
-            return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
+            double lum = 0.299 * baseColor.redF() + 0.587 * baseColor.greenF() + 0.114 * baseColor.blueF();
+            return adjustColorTone(baseColor, lum >= 0.5 ? -1.0 : 1.0);
             }
       if (zcam->currentElement() == this) {
-            double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
-            return adjustColorTone(_color, lum >= 0.5 ? -1.0 : 1.0);
+            double lum = 0.299 * baseColor.redF() + 0.587 * baseColor.greenF() + 0.114 * baseColor.blueF();
+            return adjustColorTone(baseColor, lum >= 0.5 ? -1.0 : 1.0);
             }
       if (zcam->isSelected(this)) {
-            // Lasso-selected elements get a subtle highlight
-            double lum = 0.299 * _color.redF() + 0.587 * _color.greenF() + 0.114 * _color.blueF();
-            return adjustColorTone(_color, lum >= 0.5 ? -0.5 : 0.5);
+            double lum = 0.299 * baseColor.redF() + 0.587 * baseColor.greenF() + 0.114 * baseColor.blueF();
+            return adjustColorTone(baseColor, lum >= 0.5 ? -0.5 : 0.5);
             }
-      return _color;
+      return baseColor;
       }
 
 //---------------------------------------------------------
 //   setColor
 //---------------------------------------------------------
+
 void Element3d::setColor(const QColor& c) {
       if (_color != c) {
             _color = c;
@@ -716,6 +834,7 @@ void Element3d::setColor(const QColor& c) {
 //               that changed the most drives the others
 //      Square – force x == y == z using the most-changed axis
 //---------------------------------------------------------
+
 void Element3d::set_scaleAR(QVector3D v) {
       if (v == _scale)
             return;
@@ -788,6 +907,7 @@ void Element3d::set_scaleAR(QVector3D v) {
 //    whenever the matrixDirty flag is set (i.e. after any
 //    change to position, rotation or scale).
 //---------------------------------------------------------
+
 const QMatrix4x4& Element3d::matrix() const {
       if (_matrixDirty) {
             _matrix.setToIdentity();
@@ -821,21 +941,26 @@ const QMatrix4x4& Element3d::matrix() const {
 //    the outermost (parent) transform is applied last:
 //       v_root = rootMatrix * ... * parentMatrix * localMatrix * v_local
 //---------------------------------------------------------
+
 QMatrix4x4 Element3d::globalMatrix() const {
-      QMatrix4x4 result = matrix();
-      Element* p        = parent();
+      if (!_globalMatrixDirty)
+            return _cachedGlobalMatrix;
+      _globalMatrixDirty  = false;
+      _cachedGlobalMatrix = matrix();
+      Element* p          = parent();
       while (p) {
             if (auto* e3d = qobject_cast<Element3d*>(p))
-                  result = e3d->matrix() * result;
+                  _cachedGlobalMatrix = e3d->matrix() * _cachedGlobalMatrix;
             p = p->parent();
             }
-      return result;
+      return _cachedGlobalMatrix;
       }
 
 //---------------------------------------------------------
 //   strokeAndFill
 //    if lineWidth != 0 then stroke _pathList
 //---------------------------------------------------------
+
 void Element3d::strokeAndFill() {
       double lw     = lineWidth();
       bool doStroke = !qFuzzyCompare(lw, 0.0);
@@ -857,6 +982,9 @@ void Element3d::strokeAndFill() {
                             return;
                       _pathList = r.pathList;
                       _geometry->setPolygons(_pathList);
+                      // Invalidate cached bounding boxes since the
+                      // path data changed.
+                      invalidateWorldBBoxUp();
                       // Update the selection (bounding box)
                       // geometry now that the final path
                       // list is available.
@@ -867,6 +995,9 @@ void Element3d::strokeAndFill() {
       else {
             _pathList.setFill(fill());
             _geometry->setPolygons(_pathList);
+            // Invalidate cached bounding boxes since the
+            // path data changed.
+            invalidateWorldBBoxUp();
             // Update the selection (bounding box) geometry so
             // selected polygons, ellipses and rectangles show
             // their bounding box like text elements do.
@@ -878,6 +1009,7 @@ void Element3d::strokeAndFill() {
 //---------------------------------------------------------
 //   closePath
 //---------------------------------------------------------
+
 void closePath(PathList& pl) {
       for (auto& p : pl)
             if (p.size() > 2 && p.front() != p.back())

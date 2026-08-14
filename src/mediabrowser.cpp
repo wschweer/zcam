@@ -143,11 +143,11 @@ QStringList FontModel::stylesForFamily(const QString& family) const {
 
 QStringList FontModel::weightsForFamily(const QString& family) const {
       QStringList weights;
-      static const QStringList weightNames = {"Thin",     "ExtraLight", "Light",     "Normal", "Medium",
-                                              "DemiBold", "Bold",       "ExtraBold", "Black"};
-      static const QList<int> weightValues = {QFont::Thin,   QFont::ExtraLight, QFont::Light,
-                                              QFont::Normal, QFont::Medium,     QFont::DemiBold,
-                                              QFont::Bold,   QFont::ExtraBold,  QFont::Black};
+      static const QStringList weightNames = {
+         "Thin", "ExtraLight", "Light", "Normal", "Medium", "DemiBold", "Bold", "ExtraBold", "Black"};
+      static const QList<int> weightValues = {
+         QFont::Thin, QFont::ExtraLight, QFont::Light, QFont::Normal, QFont::Medium, QFont::DemiBold,
+         QFont::Bold, QFont::ExtraBold, QFont::Black};
 
       QStringList styles = QFontDatabase::styles(family);
       QSet<int> availableWeights;
@@ -295,9 +295,8 @@ void ArtworkTreeModel::rebuildTree() {
       if (!_rootPath.isEmpty() && QDir(_rootPath).exists()) {
             loadChildren(_root.get());
             // Only keep children that have images (recursively)
-            _root->children.erase(
-                std::remove_if(_root->children.begin(), _root->children.end(),
-                               [](const std::unique_ptr<ArtworkNode>& c) { return !c->hasImages; }),
+            _root->children.erase(std::remove_if(_root->children.begin(), _root->children.end(),
+                                      [](const std::unique_ptr<ArtworkNode>& c) { return !c->hasImages; }),
                 _root->children.end());
             for (auto& c : _root->children) {
                   c->parent = _root.get();
@@ -371,9 +370,8 @@ void ArtworkTreeModel::loadChildren(ArtworkNode* node) {
             node->children.push_back(std::move(child));
             }
       // Remove children without images
-      node->children.erase(
-          std::remove_if(node->children.begin(), node->children.end(),
-                         [](const std::unique_ptr<ArtworkNode>& c) { return !c->hasImages; }),
+      node->children.erase(std::remove_if(node->children.begin(), node->children.end(),
+                               [](const std::unique_ptr<ArtworkNode>& c) { return !c->hasImages; }),
           node->children.end());
       node->hasChildren = !node->children.empty();
       // Mark all children as not-yet-loaded so they can be lazily expanded.
@@ -531,6 +529,7 @@ void ArtworkTreeModel::fetchMore(const QModelIndex& parent) {
 
 QVariantList ArtworkTreeModel::imageFiles(const QString& dirPath) const {
       QVariantList result;
+      QSet<QString> seenPaths;
       QDir dir(dirPath);
       if (!dir.exists())
             return result;
@@ -539,9 +538,13 @@ QVariantList ArtworkTreeModel::imageFiles(const QString& dirPath) const {
             dir.setFilter(QDir::Files);
             for (const QString& file : dir.entryList(QDir::Files, QDir::Name)) {
                   QFileInfo fi(dir.filePath(file));
+                  QString absPath = fi.absoluteFilePath();
+                  if (seenPaths.contains(absPath))
+                        continue; // already added (case-insensitive filesystem)
+                  seenPaths.insert(absPath);
                   QVariantMap entry;
                   entry["fileName"] = fi.fileName();
-                  entry["filePath"] = fi.absoluteFilePath();
+                  entry["filePath"] = absPath;
                   entry["fileType"] = ext.toLower();
                   result.append(entry);
                   }
@@ -624,7 +627,6 @@ QModelIndex ArtworkTreeModel::findIndexForPath(const QString& dirPath) const {
 //    Implements DRW_Interface to collect all DXF entities
 //    and convert them into an SVG string for preview display.
 //=========================================================
-
 class DxfToSvgConverter final : public DRW_Interface
       {
       double m_unitScale {1.0};
@@ -730,7 +732,7 @@ class DxfToSvgConverter final : public DRW_Interface
             m_svgBody << "\" fill=\"none\" stroke=\"#333333\" stroke-width=\"0.3\"/>\n";
             }
       void emitEllipseArc(double cx, double cy, double majorR, double minorR, double rotation, double sa,
-                          double ea, bool ccw) {
+          double ea, bool ccw) {
             if (!ccw)
                   std::swap(sa, ea);
             if (sa > ea)
@@ -764,8 +766,8 @@ class DxfToSvgConverter final : public DRW_Interface
             }
 
     public:
-      explicit DxfToSvgConverter(double dxfScale = 72.0, int circleResolution = 360,
-                                 int curveResolution = 100)
+      explicit DxfToSvgConverter(
+          double dxfScale = 72.0, int circleResolution = 360, int curveResolution = 100)
           : m_dxfScale(dxfScale > 0.0 ? dxfScale : 72.0),
             m_circleResolution(std::clamp(circleResolution, 8, 2048)),
             m_curveResolution(std::clamp(curveResolution, 4, 1024)) {}
@@ -1001,8 +1003,8 @@ class DxfToSvgConverter final : public DRW_Interface
                         double ey = minorR * std::sin(t);
                         expandBBox(ex * cosR - ey * sinR + cx, ex * sinR + ey * cosR + cy);
                         }
-                  emitEllipseArc(cx, cy, majorR, minorR, rotation, data.staparam, data.endparam,
-                                 data.isccw != 0);
+                  emitEllipseArc(
+                      cx, cy, majorR, minorR, rotation, data.staparam, data.endparam, data.isccw != 0);
                   }
             }
       void addLWPolyline(const DRW_LWPolyline& data) override {
@@ -1133,12 +1135,12 @@ class DxfToSvgConverter final : public DRW_Interface
                               expandBBox(c.first - majorR, c.second - majorR);
                               expandBBox(c.first + majorR, c.second + majorR);
                               emitEllipseArc(c.first, c.second, majorR, minorR, rotation, e.staparam,
-                                             e.endparam, e.isccw != 0);
+                                  e.endparam, e.isccw != 0);
                               break;
                               }
                         case BlockEntity::Type::Spline: {
-                              auto pts = DxfTess::evaluateSpline(e.degree, e.controlPoints, e.knots,
-                                                                 m_curveResolution);
+                              auto pts = DxfTess::evaluateSpline(
+                                  e.degree, e.controlPoints, e.knots, m_curveResolution);
                               if (pts.empty())
                                     break;
                               std::vector<std::pair<double, double>> svgPts;
@@ -1214,8 +1216,8 @@ class DxfToSvgConverter final : public DRW_Interface
 //    for preview display in the media browser.
 //---------------------------------------------------------
 
-QString ArtworkTreeModel::dxfToSvg(const QString& filePath, double dxfScale, int circleResolution,
-                                   int curveResolution) const {
+QString ArtworkTreeModel::dxfToSvg(
+    const QString& filePath, double dxfScale, int circleResolution, int curveResolution) const {
       DxfToSvgConverter converter(dxfScale, circleResolution, curveResolution);
       dxfRW dxf(filePath.toUtf8().constData());
       if (!dxf.read(&converter, false)) {
@@ -1232,8 +1234,8 @@ QString ArtworkTreeModel::dxfToSvg(const QString& filePath, double dxfScale, int
 //    suitable for use as an Image source in QML.
 //---------------------------------------------------------
 
-QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale, int circleResolution,
-                                       int curveResolution) const {
+QString ArtworkTreeModel::dxfToSvgFile(
+    const QString& filePath, double dxfScale, int circleResolution, int curveResolution) const {
       QString svg = dxfToSvg(filePath, dxfScale, circleResolution, curveResolution);
       if (svg.isEmpty())
             return {};
@@ -1248,13 +1250,11 @@ QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale,
       // the 255-byte filesystem limit even when the source path contains
       // long Unicode directory names.
       QFileInfo fi(filePath);
-      const QByteArray hash = QCryptographicHash::hash(
-          fi.absoluteFilePath().toUtf8(), QCryptographicHash::Sha256);
+      const QByteArray hash =
+          QCryptographicHash::hash(fi.absoluteFilePath().toUtf8(), QCryptographicHash::Sha256);
       const QString hashHex = QString::fromLatin1(hash.left(8).toHex());
       const QString base =
-          QStringLiteral("zcam_%1_%2_dxfpreview.svg")
-              .arg(hashHex)
-              .arg(fi.lastModified().toMSecsSinceEpoch());
+          QStringLiteral("zcam_%1_%2_dxfpreview.svg").arg(hashHex).arg(fi.lastModified().toMSecsSinceEpoch());
       QString tempPath = QDir::tempPath() + "/" + base;
       if (!QFile::remove(tempPath)) {
             // remove may legitimately fail when the file does not exist yet
@@ -1262,7 +1262,7 @@ QString ArtworkTreeModel::dxfToSvgFile(const QString& filePath, double dxfScale,
       QFile f(tempPath);
       if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             Warning("dxfToSvgFile: cannot write temp file: {} ({})", tempPath.toUtf8().constData(),
-                    f.errorString().toUtf8().constData());
+                f.errorString().toUtf8().constData());
             return {};
             }
       f.write(svg.toUtf8());

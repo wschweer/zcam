@@ -78,6 +78,7 @@ class ScriptEngine : public QObject
       void registerElement(Element*, QJSValue ns);
       void addElementToTree(Element*);
       void refreshVectorSnapshots(Element* depElement);
+      void buildAndSetSnapshot(QJSValue& cur, Element* depElement);
 
       /// Evaluate a script expression and return its result.
       EvalResult eval(const QString& script);
@@ -100,6 +101,12 @@ class ScriptEngine : public QObject
       /// Called for newly created elements and during project loading
       /// when no stored script exists for that property.
       void applyDefaultScripts(Element*);
+
+      /// Register an element and all its descendants in the JS
+      /// namespace tree and apply default scripts.  Used after
+      /// batch operations (e.g. DXF import) that bypass the
+      /// per-element addChild/setName hooks.
+      void registerSubtree(Element* root);
 
       /// Re-evaluate this binding and write the result to the
       /// target property (unless the value did not change).

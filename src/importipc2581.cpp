@@ -312,8 +312,9 @@ static void lineDescFromDict(const DictEntry& de, PcbPath& path) {
 void PcbLayer::addPath(const PcbPath& p, bool polarityNegative) {
       if (polarityNegative)
             cutouts.push_back(p);
-      else if (checkDoublette(paths, p))
+      else if (checkDoublette(paths, p)) {
             Debug("IPC2581: duplicate path <{}> skipped", p.name.toUtf8().constData());
+            }
       else
             paths.push_back(p);
       }

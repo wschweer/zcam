@@ -25,6 +25,8 @@
 #include "undo.h"
 #include "logger.h"
 #include "types.h"
+#include "scriptengine.h"
+#include "treemodel.h"
 
 #include <QFileInfo>
 #include <QString>
@@ -35,6 +37,7 @@
 #include <numbers>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "libdxfrw.h"
@@ -42,6 +45,7 @@
 #include "drw_base.h"
 #include "drw_entities.h"
 #include "drw_header.h"
+#include "config.h"
 
 //---------------------------------------------------------
 //   DxfReaderInterface
@@ -70,6 +74,7 @@ class DxfReaderInterface final : public DRW_Interface
           m_dxfLayerMap; ///< dxf layer name -> Group inside the import layer
       std::unordered_map<std::string, Group*>
           m_blockGroupMap; ///< block name -> Group inside the import layer
+      std::unordered_set<const Group*> m_blockGroupSet; ///< fast O(1) lookup for isBlockGroup()
       // Block support: collect entities per block, then replicate on INSERT
       struct BlockEntity {
             enum class Type {
@@ -552,10 +557,19 @@ class DxfReaderInterface final : public DRW_Interface
       void writeObjects() override {}
       void writeAppId() override {}
 
+      bool m_batch {false};  ///< batch mode: direct addChild, no per-entity undo command
+
     private:
       //---------------------------------------------------------
       //   insertElement
-      //    Push a new element into the layer via the undo stack.
+      //    Push a new element into the layer.  In batch mode
+      //    (m_batch == true) the element is added directly to
+      //    the parent without creating an InsertElementCommand
+      //    per entity.  The undo stack still records a single
+      //    macro containing one InsertElementCommand per top-
+      //    level child of the import layer, pushed at the end
+      //    of the import.  This avoids O(N²) TreeModel index
+      //    lookups and O(N²) QML searchBase() calls.
       //    Elements expanded into a block definition group are
       //    shared by all INSERTs of that block: identical copies
       //    created while expanding further instances are skipped.
@@ -570,8 +584,16 @@ class DxfReaderInterface final : public DRW_Interface
                   delete el;
                   return;
                   }
-            auto cmd = new InsertElementCommand(m_zcam, parent, el, -1);
-            m_zcam->project()->undo()->push(cmd);
+            if (m_batch) {
+                  // Direct insertion without per-entity undo command
+                  // or TreeModel notifications.  The undo macro and
+                  // TreeModel reset are handled centrally in import().
+                  parent->addChild(el);
+                  }
+            else {
+                  auto cmd = new InsertElementCommand(m_zcam, parent, el, -1);
+                  m_zcam->project()->undo()->push(cmd);
+                  }
             }
 
       //---------------------------------------------------------
@@ -579,11 +601,7 @@ class DxfReaderInterface final : public DRW_Interface
       //---------------------------------------------------------
 
       bool isBlockGroup(const Group* g) const {
-            for (const auto& [name, grp] : m_blockGroupMap) {
-                  if (grp == g)
-                        return true;
-                  }
-            return false;
+            return m_blockGroupSet.contains(g);
             }
 
       //---------------------------------------------------------
@@ -683,6 +701,7 @@ class DxfReaderInterface final : public DRW_Interface
             g->setName(QString::fromUtf8(kBlockPrefix.data(), kBlockPrefix.size()) + name);
             insertElement(g, m_defaultLayer);
             m_blockGroupMap[name.toStdString()] = g;
+            m_blockGroupSet.insert(g);
             return g;
             }
       //---------------------------------------------------------
@@ -1179,10 +1198,44 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
             zcam->project()->undo()->push(cmd);
             }
 
-      // Read the DXF file using libdxfrw
+      // Read the DXF file using libdxfrw in batch mode: entities are
+      // added directly to the tree without per-entity undo commands,
+      // TreeModel notifications, or script-engine namespace updates.
+      // After the read, the TreeModel is reset once, the script namespace
+      // is rebuilt once, and a single add3dElement signal is emitted for
+      // the import layer so QML recursively builds the entire subtree.
       DxfReaderInterface reader(zcam, layer, fi.baseName());
+      reader.m_batch = true;
+
+      // Suppress per-entity script-engine overhead (applyDefaultScripts
+      // and addElementToTree) during the batch read.
+      ScriptEngine* se = ScriptEngine::instance();
+      bool savedRebuilding = se ? se->_rebuilding : false;
+      if (se)
+            se->_rebuilding = true;
+
       dxfRW dxf(path.toUtf8().constData());
       bool ok = dxf.read(&reader, false);
+
+      // Restore script-engine state and rebuild the namespace once.
+      if (se) {
+            se->_rebuilding = savedRebuilding;
+            if (ok)
+                  se->registerSubtree(layer);
+            }
+
+      // Reset the TreeModel once so the view picks up all new
+      // children in a single O(N) pass instead of O(N²) per-entity
+      // beginInsertRows/endInsertRows calls.
+      if (ok && zcam->treeModel())
+            zcam->treeModel()->resetModel();
+
+      // Emit a single add3dElement for the import layer.  QML's
+      // addElement() recursively creates Shape components for the
+      // layer and all its children, so individual per-entity signals
+      // are not needed.
+      if (ok)
+            emit zcam->add3dElement(layer);
 
       zcam->project()->undo()->endMacro();
 
@@ -1600,31 +1653,31 @@ QRectF DxfImport::boundingBox(ZCam* zcam, const QString& path) {
 //---------------------------------------------------------
 
 bool DxfImport::importAt(ZCam* zcam, const QString& path, double x, double y) {
-      QRectF bbox = boundingBox(zcam, path);
-      if (bbox.isNull() || bbox.isEmpty())
-            return import(zcam, path);
-
-      // Import normally, then shift the layer position.
+      // Import normally, then shift the layer position using the
+      // bounding box computed from the imported elements — this
+      // avoids reading the DXF file a second time (boundingBox()
+      // would parse it again via DxfBBoxCollector).
       bool ok = import(zcam, path);
       if (!ok)
             return false;
 
       // The import creates a new layer as the last child of CAD.
-      // Offset that layer so the DXF bbox bottom-left lands at (x, y).
       Cad* cad = zcam->project()->cad();
       if (!cad || cad->children().isEmpty())
             return true;
-      // The import always inserts at the end (-1), so the last child
-      // is the layer we just created.
       auto& kids         = cad->children();
       Element* lastChild = kids.last();
       if (!lastChild)
             return true;
+      auto* lastGroup = qobject_cast<Group*>(lastChild);
+      if (!lastGroup)
+            return true;
+      // Compute the bounding box from the imported elements.
+      QRectF bbox = lastGroup->childrenBoundingBox();
+      if (bbox.isNull() || bbox.isEmpty())
+            return true;
       double offX = x - bbox.left();
       double offY = y - bbox.top();
-      // The DXF import creates a Group (which is an Element3d) so it has set_pos.
-      auto* lastGroup = qobject_cast<Group*>(lastChild);
-      if (lastGroup)
-            lastGroup->set_pos(QVector3D(offX, offY, 0));
+      lastGroup->set_pos(QVector3D(offX, offY, 0));
       return true;
       }

@@ -35,17 +35,17 @@
 //    at any depth are found, as long as they resolve to this LaserLayer.
 //---------------------------------------------------------
 
-static void collectBurnElementsForLaserLayer(Element* parent, const LaserMop* ll,
-                                             std::vector<const Element3d*>& out) {
+static void collectBurnElementsForLaserLayer(
+    Element* parent, const Mop* ll, std::vector<const Element3d*>& out) {
       for (Element* child : parent->children()) {
             auto* ce = qobject_cast<Element3d*>(child);
             if (!ce)
                   continue;
             // Skip LaserLayer elements themselves — they are not geometry.
-            if (isType<LaserMop>(ce))
+            if (isType<Mop>(ce))
                   continue;
-            // Check if this element's effective LaserLayer is the one we're looking for.
-            if (ce->effectiveLaserLayer() == ll && ce->burn() && !ce->pathList().empty())
+            // Check if this element's effective Mop is the one we're looking for.
+            if (ce->effectiveMop() == ll && ce->burn() && !ce->pathList().empty())
                   out.push_back(ce);
             // Recurse into children regardless — a child may resolve to a
             // different LaserLayer or to this one via inheritance.
@@ -86,16 +86,17 @@ static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& c
 //   LaserLayer
 //---------------------------------------------------------
 
-LaserMop::LaserMop(ZCam* w, Element* parent) : Element3d(w, parent) {
+LaserMop::LaserMop(ZCam* w, Element* parent) : Mop(w, parent) {
       setName("");
       // LaserLayer no longer creates its own _geometry.
       // Display geometry is collected and rendered by Cam.
       set_model("LaserLayer1.qml");
-      setColor(w->config()->markColor());
-      // Keep the element color in sync with Config::markColor so that
-      // ProjectTree's curColor binding shows the correct color for hover/selection.
-      connect(w->config(), &Config::markColorChanged, this,
-              [this, w]() { setColor(w->config()->markColor()); });
+      // Assign the next free colour index from the project tree.
+      // Index 0 is reserved for NopMop; LaserMops get 1..31.
+      if (w && w->rootElement())
+            set_colorIndex(Mop::nextFreeColorIndex(w->rootElement()));
+      else
+            set_colorIndex(1);
       }
 
 //---------------------------------------------------------
@@ -111,8 +112,8 @@ PathsD LaserMop::collectLayerPath() {
       auto elements = collectElements();
 
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool    persp = false;
-      double  h     = 0.0;
+      bool persp = false;
+      double h   = 0.0;
       QPointF vc;
       if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
             persp = cam->perspective();
@@ -146,8 +147,8 @@ Clipper2Lib::PathsD LaserMop::processTileLines() const {
       auto elements = collectElements();
 
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool    persp = false;
-      double  h     = 0.0;
+      bool persp = false;
+      double h   = 0.0;
       QPointF vc;
       if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
             persp = cam->perspective();
@@ -272,9 +273,9 @@ LaserPath LaserMop::collectLaserPath() const {
       double panelHD = cam->panelHDistance();
       double panelVD = cam->panelVDistance();
       // Projection settings of the active Cam (perspective vs. orthographic).
-      bool persp   = cam->perspective();
-      double prjH  = cam->projectionHeight();
-      QPointF vc   = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
+      bool persp  = cam->perspective();
+      double prjH = cam->projectionHeight();
+      QPointF vc  = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
       double w, h;
       zcam->project()->fixture()->size(w, h);
 
@@ -359,8 +360,8 @@ struct EndPointRef {
       int endPointIdx; // 0 or 1
       };
 
-static std::unique_ptr<KDNode> buildKDTree(std::vector<EndPointRef>::iterator begin,
-                                           std::vector<EndPointRef>::iterator end, int depth) {
+static std::unique_ptr<KDNode> buildKDTree(
+    std::vector<EndPointRef>::iterator begin, std::vector<EndPointRef>::iterator end, int depth) {
       if (begin == end)
             return nullptr;
 
@@ -369,9 +370,8 @@ static std::unique_ptr<KDNode> buildKDTree(std::vector<EndPointRef>::iterator be
       const size_t n = static_cast<size_t>(std::distance(begin, end));
       auto mid       = begin + static_cast<long>(n / 2);
 
-      std::nth_element(begin, mid, end, [axis](const EndPointRef& a, const EndPointRef& b) {
-            return axis == 0 ? a.x < b.x : a.y < b.y;
-            });
+      std::nth_element(begin, mid, end,
+          [axis](const EndPointRef& a, const EndPointRef& b) { return axis == 0 ? a.x < b.x : a.y < b.y; });
 
       auto node         = std::make_unique<KDNode>();
       node->point[0]    = mid->x;
@@ -388,7 +388,7 @@ static std::unique_ptr<KDNode> buildKDTree(std::vector<EndPointRef>::iterator be
 /// \param bestDist    squared distance to best candidate (output)
 /// \param used        flags which lines have already been consumed
 static void kdNearest(const KDNode* node, double qx, double qy, int depth, const std::vector<bool>& used,
-                      const KDNode*& best, double& bestDist) {
+    const KDNode*& best, double& bestDist) {
       if (!node)
             return;
 
@@ -518,8 +518,8 @@ Clipper2Lib::PathsD LaserMop::createFill(Clipper2Lib::PathsD& spdi) const {
       const LaserPasses* fll = &recipe()->passes();
 
       if (kerfOffset())
-            spdi = InflatePaths(spdi, kerfOffset(), Clipper2Lib::JoinType::Miter,
-                                Clipper2Lib::EndType::Polygon, 2, 3);
+            spdi = InflatePaths(
+                spdi, kerfOffset(), Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon, 2, 3);
       Clipper clipper;
       PathsD spd;
       clipper.AddSubject(spdi);
@@ -596,7 +596,7 @@ LaserPath LineSegments::toLaserPath() {
       lp.moveTo(currentPosition.x(), currentPosition.y());
       for (const auto& l : *this) {
             if (!(qFuzzyCompare(currentPosition.x(), l.p1.x()) &&
-                  qFuzzyCompare(currentPosition.y(), l.p1.y())))
+                    qFuzzyCompare(currentPosition.y(), l.p1.y())))
                   lp.moveTo(l.p1.x(), l.p1.y());
             lp.markTo(l.p2.x(), l.p2.y());
             currentPosition = l.p2;

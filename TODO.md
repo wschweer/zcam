@@ -46,3 +46,38 @@ Umsetzung:
   sind und vom Benutzer nicht geändert werden können.
   (InspectorModel::isScriptBound → Delegate disabled; setData/setSubProperty/
   setColumnProperty blockieren Schreibzugriffe auf gebundene Properties.)
+
+# MOP Colors
+
+Das aktuelle konzept der Element Farben ist falsch.
+
+Ich möchte auf dem 3D-Canvas anhand der Farben der Elemente sehen können,
+welchem Mop (Machine Operation) sie zugeordnet sind. Z.Z. ist nur ein Mop,
+der LaserMop implementiert. Es gibt in einem Projekt normalerweise mehrere
+LaserMop. Die Farben der Mop sollen automatisch aus einer Liste zugewiesen
+werden. Es gibt maximal 32 verschiedene Mop Farben. Die Mop Farbe ist also
+ein int (dem Farb-Index in die Farb-Konfigtabelle) Property von
+Mop (LaserMop). Elemente werden nun in der Farbe des zugeordneten Mop
+dargestellt. Die Konfiguration der Farbe für sichtbare Elemente entfällt.
+Dafür kann der Farbindex der Mop (der normalerweise automatisch fortlaufend
+zugewiesen wird, verändert werden). Dies wird dem Benutzer in der Inspector
+Gui als speziellen Color-Dialog, der diese 32 Farben als kleine Kästchen
+in zwei Reihen dargstellt, zur Auswahh gegeben.
+
+Aktionen:
+
+- [x] Farbauswahl für sichtbare Elemente entfernen
+- [x] Farbconfiguration der verschiedenen Element Typen entfernen
+- [x] ColorDialog zur Auswahl aus den 32 Mop Farben erstellen
+- [x] LaserMop um Color Index erweitern (neuer property typ)
+- [x] Sichtbare Elemente haben aus Sicht der qml gui immer noch eine Farbe,
+  die jedoch nicht mehr statisch sonder dynamisch aus dem zugeordneten
+  Mop (LaserMop) ermittelt wird.
+- [x] Erstelle eine Basisklasse Mop
+- [x] LaserMop soll von Mop abgeleitet werden
+- [x] Erstelle eine Klasse NopMop die von Mop abgeleitet wird
+  NopMop macht gar nichts und wird als Default für Cad eingesetzt. Alle
+  Elemente erben Mop von Cad so das für alle Elemente immer ein Mop gesetzt
+  ist.
+- [x] Als initiale Farbpalette für unsere 32 Mop Farben orientieren wir uns
+  an den Layer Farben von LightBurn

@@ -27,475 +27,20 @@
 #include "machines.h"
 #include "logger.h"
 #include "group.h"
+#include "macros.h"
 
 class Project;
 class Element3d;
+class Mop;
 class TreeModel;
 class GalvoCalibration;
 class ScriptEngine;
-
-//---------------------------------------------------------
-//   Config
-//---------------------------------------------------------
-class Config : public QObject
-      {
-      Q_OBJECT
-      QML_ELEMENT
-      QML_UNCREATABLE("no")
-
-      PROPV(int, iconSize, 32)
-      PROPV(int, navCubeSize, 200)
-      PROPV(double, handleSize, 0.02)
-      PROPV(double, dragThreshold, 0.5)
-      PROPV(QString, font, QStringLiteral("NotoSans"))
-      PROPV(int, fontSize, 12)
-      PROPV(QColor, panelBG, QColor("darkGray"))
-      PROPV(QColor, canvasBG, QColor("#37474F"))
-      PROPV(QColor, accentColor, QColor("teal"))
-      PROPV(QColor, gridColor, QColor("#808080"))
-      PROPV(QColor, markColor, QColor("#000000"))
-      PROPV(QColor, moveColor, QColor("#0000ff"))
-      PROPV(QColor, framingColor, QColor("#00ff00"))
-      // Default colours for displayable elements
-      PROPV(QColor, rectangleColor, QColor("cyan"))
-      PROPV(QColor, polygonColor, QColor("cyan"))
-      PROPV(QColor, ellipseColor, QColor("cyan"))
-      PROPV(QColor, textColor, QColor("green"))
-      PROPV(QColor, stockColor, QColor("green"))
-      PROPV(QColor, brepColor, QColor(120, 150, 180))
-      PROPV(QColor, imageColor, QColor(180, 180, 180))
-      PROPV(QColor, fixtureColor, QColor("green"))
-      PROPV(QColor, materialTestColor, QColor("gray"))
-      PROPV(QColor, cameraColor, QColor("green"))
-      PROPV(bool, showGrid, true)
-      PROPV(double, gridSpacing, 10.0)
-      PROPV(double, smPanX, 4.0)
-      PROPV(double, smPanY, 4.0)
-      PROPV(double, smZoom, 12.0)
-      PROPV(double, smPitch, 1.0)
-      PROPV(double, smYaw, 1.0)
-      PROPV(double, smRoll, 1.0)
-      PROPV(QString, defaultMachine, QString())
-      PROPV(QString, artworkDirectory, QString())
-      PROPV(QString, iconDirectory, QString::fromUtf8("/usr/share/icons"))
-      PROPV(QString, machinesDirectory, QString())
-      PROPV(QString, recipesDirectory, QString())
-
-      PROPV(double, dxfScale, 72.0)
-      PROPV(int, dxfCircleResolution, 360)
-      PROPV(int, dxfCurveResolution, 100)
-
-      inline static constexpr std::string_view _properties {
-         R"json({
-                  "class": "Config",
-                  "rows": [
-                    {
-                      "columns": 2,
-                      "cat": "GUI",
-                      "cells": [
-                        {
-                          "name": "iconSize",
-                          "label": "Icon Size",
-                          "type": "int",
-                          "scriptable": true,
-                          "cat": "GUI",
-                          "min": 16,
-                          "max": 128,
-                          "default": 32
-                        },
-                        {
-                          "name": "navCubeSize",
-                          "label": "Nav Cube Size",
-                          "type": "int",
-                          "scriptable": true,
-                          "cat": "GUI",
-                          "min": 80,
-                          "max": 400,
-                          "default": 200
-                        },
-                        {
-                          "name": "handleSize",
-                          "label": "Handle Size",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "GUI",
-                          "min": 0.01,
-                          "max": 1.0,
-                          "default": 0.2,
-                          "precision": 2,
-                          "step": 0.05,
-                          "bigStep": 0.5
-                        },
-                        {
-                          "name": "dragThreshold",
-                          "label": "Drag Threshold",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "GUI",
-                          "unit": "mm",
-                          "min": 0.0,
-                          "max": 10.0,
-                          "default": 0.5,
-                          "precision": 2,
-                          "step": 0.1,
-                          "bigStep": 1.0
-                        },
-                        {
-                          "label": "Font",
-                          "colSpan": 2,
-                          "cells": [
-                            {
-                              "type": "font",
-                              "cat": "GUI",
-                              "default": "NotoSans",
-                              "name": "font",
-                              "sublabel": "Font"
-                            },
-                            {
-                              "type": "int",
-                              "scriptable": true,
-                              "cat": "GUI",
-                              "min": 6,
-                              "max": 72,
-                              "default": 12,
-                              "name": "fontSize",
-                              "sublabel": "Font Size"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "columns": 2,
-                      "cat": "View",
-                      "cells": [
-                        {
-                          "name": "showGrid",
-                          "label": "Show Grid",
-                          "type": "bool",
-                          "cat": "View",
-                          "default": true
-                        },
-                        {
-                          "name": "gridSpacing",
-                          "label": "Grid Spacing",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "View",
-                          "unit": "mm",
-                          "min": 1.0,
-                          "max": 100.0,
-                          "default": 10.0,
-                          "precision": 1,
-                          "step": 0.5,
-                          "bigStep": 5.0
-                        }
-                      ]
-                    },
-                    {
-                      "columns": 2,
-                      "cat": "Colors",
-                      "cells": [
-                        {
-                          "name": "panelBG",
-                          "label": "Panel BG",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "canvasBG",
-                          "label": "Canvas BG",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "accentColor",
-                          "label": "Accent Color",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "gridColor",
-                          "label": "Grid Color",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "framingColor",
-                          "label": "Framing Color",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "markColor",
-                          "label": "Mark Color",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "moveColor",
-                          "label": "Move Color",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "type": "line",
-                          "name": "line",
-                          "colSpan": 2
-                        },
-                        {
-                          "name": "rectangleColor",
-                          "label": "Rectangle",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "polygonColor",
-                          "label": "Polygon",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "ellipseColor",
-                          "label": "Ellipse",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "textColor",
-                          "label": "Text",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "stockColor",
-                          "label": "Stock",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "brepColor",
-                          "label": "BREP",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "imageColor",
-                          "label": "Image",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "fixtureColor",
-                          "label": "Fixture",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "materialTestColor",
-                          "label": "Material Test",
-                          "type": "color",
-                          "cat": "Colors"
-                        },
-                        {
-                          "name": "cameraColor",
-                          "label": "Camera",
-                          "type": "color",
-                          "cat": "Colors"
-                        }
-                      ]
-                    },
-                    {
-                      "columns": 2,
-                      "cat": "Project",
-                      "cells": [
-                        {
-                          "name": "defaultMachine",
-                          "label": "Default Machine",
-                          "type": "machineName",
-                          "cat": "Project",
-                          "default": ""
-                        },
-                        {
-                          "type": "empty"
-                        },
-                        {
-                          "type": "line",
-                          "name": "line",
-                          "colSpan": 2
-                        },
-                        {
-                          "name": "artworkDirectory",
-                          "label": "Artwork Path",
-                          "type": "path",
-                          "cat": "Project",
-                          "default": ""
-                        },
-                        {
-                          "name": "iconDirectory",
-                          "label": "Icon Path",
-                          "type": "path",
-                          "cat": "Project",
-                          "default": "~/ZCam/icons"
-                        },
-                        {
-                          "name": "machinesDirectory",
-                          "label": "Machines Path",
-                          "type": "path",
-                          "cat": "Project",
-                          "default": ""
-                        },
-                        {
-                          "name": "recipesDirectory",
-                          "label": "Recipes Path",
-                          "type": "path",
-                          "cat": "Project",
-                          "default": ""
-                        },
-                        {
-                          "type": "line",
-                          "name": "line",
-                          "colSpan": 2
-                        },
-                        {
-                          "name": "dxfScale",
-                          "label": "DXF Scale",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "Project",
-                          "unit": "dpmm",
-                          "min": 0.001,
-                          "max": 1000.0,
-                          "default": 72.0,
-                          "precision": 3,
-                          "step": 0.1,
-                          "bigStep": 1.0
-                        },
-                        {
-                          "name": "dxfCircleResolution",
-                          "label": "DXF Circle Resolution",
-                          "type": "int",
-                          "scriptable": true,
-                          "cat": "Project",
-                          "unit": "segments",
-                          "min": 8,
-                          "max": 2048,
-                          "default": 360,
-                          "step": 8,
-                          "bigStep": 90
-                        },
-                        {
-                          "name": "dxfCurveResolution",
-                          "label": "DXF Curve Resolution",
-                          "type": "int",
-                          "scriptable": true,
-                          "cat": "Project",
-                          "unit": "segments",
-                          "min": 4,
-                          "max": 1024,
-                          "default": 100,
-                          "step": 4,
-                          "bigStep": 25
-                        }
-                      ]
-                    },
-                    {
-                      "columns": 2,
-                      "cat": "SpaceMouse",
-                      "cells": [
-                        {
-                          "name": "smPanX",
-                          "label": "Pan Left/Right",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "SpaceMouse",
-                          "min": 0.1,
-                          "max": 50.0,
-                          "default": 4.0,
-                          "precision": 1,
-                          "step": 0.5,
-                          "bigStep": 2.0
-                        },
-                        {
-                          "name": "smPanY",
-                          "label": "Pan Up/Down",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "SpaceMouse",
-                          "min": 0.1,
-                          "max": 50.0,
-                          "default": 4.0,
-                          "precision": 1,
-                          "step": 0.5,
-                          "bigStep": 2.0
-                        },
-                        {
-                          "name": "smZoom",
-                          "label": "Zoom",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "SpaceMouse",
-                          "min": 0.1,
-                          "max": 50.0,
-                          "default": 12.0,
-                          "precision": 1,
-                          "step": 0.5,
-                          "bigStep": 2.0
-                        },
-                        {
-                          "name": "smPitch",
-                          "label": "Tilt Up/Down",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "SpaceMouse",
-                          "min": 0.1,
-                          "max": 10.0,
-                          "default": 1.0,
-                          "precision": 1,
-                          "step": 0.1,
-                          "bigStep": 0.5
-                        },
-                        {
-                          "name": "smYaw",
-                          "label": "Turn Left/Right",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "SpaceMouse",
-                          "min": 0.1,
-                          "max": 10.0,
-                          "default": 1.0,
-                          "precision": 1,
-                          "step": 0.1,
-                          "bigStep": 0.5
-                        },
-                        {
-                          "name": "smRoll",
-                          "label": "Twist",
-                          "type": "float",
-                          "scriptable": true,
-                          "cat": "SpaceMouse",
-                          "min": 0.1,
-                          "max": 10.0,
-                          "default": 1.0,
-                          "precision": 1,
-                          "step": 0.1,
-                          "bigStep": 0.5
-                        }
-                      ]
-                    }
-                  ]
-                      })json"};
-
-    public:
-      explicit Config(QObject* parent = nullptr) : QObject(parent) {}
-      const std::string_view properties() const { return _properties; }
-      nlohmann::json toJson() const;
-      bool fromJson(const nlohmann::json&);
-      };
+class Config;
 
 //---------------------------------------------------------
 //   ZCam
 //---------------------------------------------------------
+
 class ZCam : public QObject
       {
       Q_OBJECT
@@ -678,6 +223,10 @@ class ZCam : public QObject
       explicit ZCam(QObject* parent = nullptr);
       static ZCam* create(QQmlEngine*, QJSEngine*);
       void undoChangeProperty(Element*, const char*, QVariant) {}
+    public slots:
+      void onMopColorChanged();
+
+    public:
       // ── Project lifecycle (moved from ProjectManager) ───────────────────
       /// Start a fresh, unnamed project.  Returns false if user cancelled.
       Q_INVOKABLE void newProject(bool clearPersistedPath = true);
@@ -737,6 +286,11 @@ class ZCam : public QObject
       QString recipesDirectory() const;
       /// Expand a leading '~' to the user's home directory.
       Q_INVOKABLE static QString expandPath(const QString& path);
+
+      /// Add the configured projectsDirectory as a favorite to the
+      /// Qt Quick FileDialog sidebar (QSettings: QtProject/qquickfiledialog).
+      /// Called once at startup after assets are loaded.
+      void setupFileDialogFavorites();
 
       /// Called from QML when an element is dragged in the 3D viewport.
       /// When the project's Grid has snap enabled, grid lines act
@@ -892,8 +446,8 @@ class ZCam : public QObject
 
       /// Returns a list of all LaserLayer element names in the current project.
       Q_INVOKABLE QStringList laserLayerNames() const;
-      /// Returns the LaserLayer* pointer for a given name, or nullptr.
-      Q_INVOKABLE LaserMop* laserLayerPtr(const QString& name) const;
+      /// Returns the Mop* pointer for a given name, or nullptr.
+      Q_INVOKABLE Mop* laserLayerPtr(const QString& name) const;
 
       /// Returns a list of all Recipe names from ZCam::recipes.
       Q_INVOKABLE QStringList recipeNames() const;

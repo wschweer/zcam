@@ -71,6 +71,7 @@ void MachineModel::parseProperties() {
       _propertyIsRow.clear();
       _propertyIsColumns.clear();
       _columnCounts.clear();
+      _rowLabelWidths.clear();
       _columnItems.clear();
       _subPropNames.clear();
       _rowLabels.clear();
@@ -109,6 +110,11 @@ void MachineModel::parseProperties() {
                         int rowColumns = row.contains("columns") && row["columns"].is_number_integer()
                                              ? row["columns"].get<int>()
                                              : 1;
+
+                        // Optional per-row label width override (-1 = use default)
+                        int rowLabelWidth = row.contains("labelWidth") && row["labelWidth"].is_number_integer()
+                                             ? row["labelWidth"].get<int>()
+                                             : -1;
 
                         if (rowColumns > 1) {
                               QList<MachineColumnItem> cols;
@@ -168,6 +174,7 @@ void MachineModel::parseProperties() {
                                     _propertyIsRow.append(false);
                                     _propertyIsColumns.append(true);
                                     _columnCounts.append(rowColumns);
+                              _rowLabelWidths.append(rowLabelWidth);
                                     _columnItems.append(cols);
                                     _subPropNames.append(QStringList {});
                                     _rowLabels.append(QString());
@@ -201,6 +208,7 @@ void MachineModel::parseProperties() {
                                     _propertyIsRow.append(true);
                                     _propertyIsColumns.append(false);
                                     _columnCounts.append(0);
+                                    _rowLabelWidths.append(-1);
                                     _columnItems.append(QList<MachineColumnItem> {});
                                     _subPropNames.append(subs);
                                     QString rowLabel;
@@ -214,6 +222,7 @@ void MachineModel::parseProperties() {
                                     _propertyIsRow.append(false);
                                     _propertyIsColumns.append(false);
                                     _columnCounts.append(0);
+                                    _rowLabelWidths.append(-1);
                                     _columnItems.append(QList<MachineColumnItem> {});
                                     _subPropNames.append(QStringList {});
                                     _rowLabels.append(lineLabel);
@@ -223,6 +232,7 @@ void MachineModel::parseProperties() {
                                     _propertyIsRow.append(false);
                                     _propertyIsColumns.append(false);
                                     _columnCounts.append(0);
+                                    _rowLabelWidths.append(-1);
                                     _columnItems.append(QList<MachineColumnItem> {});
                                     _subPropNames.append(QStringList {});
                                     _rowLabels.append(QString());
@@ -233,6 +243,7 @@ void MachineModel::parseProperties() {
                               _propertyIsRow.append(false);
                               _propertyIsColumns.append(false);
                               _columnCounts.append(0);
+                              _rowLabelWidths.append(-1);
                               _columnItems.append(QList<MachineColumnItem> {});
                               _subPropNames.append(QStringList {});
                               _rowLabels.append(QString());
@@ -314,6 +325,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                   return QString();
             case IsColumnsRole: return _propertyIsColumns.value(index.row(), false);
             case ColumnCountRole: return _columnCounts.value(index.row(), 0);
+            case LabelWidthRole: return _rowLabelWidths.value(index.row(), -1);
             case ColumnItemsRole: {
                   QVariantList list;
                   if (index.row() < _columnItems.size() && _machine) {

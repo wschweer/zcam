@@ -435,8 +435,9 @@ Dialog {
         }
     }
 
-    FileDialog {
+    ZFileDialog {
         id: saveParamsDialog
+        Material.theme: Material.Dark
         title: qsTr("Save Galvo Calibration Parameters")
         nameFilters: [qsTr("Galvo calibration parameters (*.galvocal)"), qsTr("All files (*)")]
         fileMode: FileDialog.SaveFile
@@ -453,8 +454,9 @@ Dialog {
         }
     }
 
-    FileDialog {
+    ZFileDialog {
         id: loadParamsDialog
+        Material.theme: Material.Dark
         title: qsTr("Load Galvo Calibration Parameters")
         nameFilters: [qsTr("Galvo calibration parameters (*.galvocal)"), qsTr("All files (*)")]
         fileMode: FileDialog.OpenFile

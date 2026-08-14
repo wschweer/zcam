@@ -23,6 +23,7 @@
 //   ColumnItem
 //    Describes a single item inside a "columns" block.
 //---------------------------------------------------------
+
 struct MachineColumnItem {
       QString name;
       bool isRow   = false;
@@ -30,7 +31,8 @@ struct MachineColumnItem {
       bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
-      int colSpan = 1;
+      int colSpan    = 1;
+      int labelWidth = -1; ///< per-row override; -1 = use default
       };
 
 //---------------------------------------------------------
@@ -41,6 +43,7 @@ struct MachineColumnItem {
 //    uses the Machine::properties() JSON to determine which
 //    properties to show and how to render each one.
 //---------------------------------------------------------
+
 class MachineModel : public QAbstractListModel
       {
       Q_OBJECT
@@ -64,7 +67,8 @@ class MachineModel : public QAbstractListModel
             RowLabelRole,
             IsColumnsRole,
             ColumnCountRole,
-            ColumnItemsRole
+            ColumnItemsRole,
+            LabelWidthRole
             };
       int rowCount(const QModelIndex& parent = QModelIndex()) const override;
       QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -112,6 +116,7 @@ class MachineModel : public QAbstractListModel
       QList<bool> _propertyIsRow;
       QList<bool> _propertyIsColumns;
       QList<int> _columnCounts;
+      QList<int> _rowLabelWidths;
       QList<QList<MachineColumnItem>> _columnItems;
       QList<QStringList> _subPropNames;
       QStringList _rowLabels;

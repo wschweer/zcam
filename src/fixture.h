@@ -45,16 +45,6 @@ class Fixture : public Element3d
             ]
         },
         {
-            "label": "Color",
-            "cells": [
-                {
-                    "name": "color",
-                    "type": "color",
-                    "default": "green"
-                }
-            ]
-        },
-        {
             "label": "Pos.",
             "cells": [
                 {
@@ -116,7 +106,7 @@ class Fixture : public Element3d
             ]
         }
     ]
-            })"};
+                  })"};
 
     signals:
       void transformChanged();

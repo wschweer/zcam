@@ -42,7 +42,7 @@ void Rectangle::set_size(QVector2D v) {
       // the user value so nothing visually changes).
       ScriptEngine* se = zcam ? zcam->scriptEngine() : nullptr;
       if (se && (se->isWritingComponentBinding(this, QStringLiteral("size")) ||
-                 se->bindingFor(this, QStringLiteral("size")))) {
+                    se->bindingFor(this, QStringLiteral("size")))) {
             _size = v;
             emit sizeChanged();
             return;
@@ -75,8 +75,6 @@ Rectangle::Rectangle(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill     = true;
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
-      if (w->config())
-            setColor(w->config()->rectangleColor());
       // Apply the GUI default declared in the properties JSON:
       // lockSize defaults to Square (2), the member initializer is
       // only a C++-level fallback.  NOTE: files saved before this

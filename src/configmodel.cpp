@@ -11,6 +11,8 @@
 
 #include "configmodel.h"
 #include "zcam.h"
+#include "config.h"
+#include "scriptengine.h"
 #include <QMetaProperty>
 #include <nlohmann/json.hpp>
 #include "logger.h"
@@ -191,6 +193,12 @@ void ConfigModel::parseProperties() {
                         int rowColumns = row.contains("columns") && row["columns"].is_number_integer()
                                              ? row["columns"].get<int>()
                                              : 1;
+
+                        // Optional per-row label width override (-1 = use default)
+                        int rowLabelWidth =
+                            row.contains("labelWidth") && row["labelWidth"].is_number_integer()
+                                ? row["labelWidth"].get<int>()
+                                : -1;
                         QString rowCat;
                         if (row.contains("cat") && row["cat"].is_string())
                               rowCat = QString::fromStdString(row["cat"].get<std::string>());
@@ -211,7 +219,8 @@ void ConfigModel::parseProperties() {
                                                 ci.isLine = true;
                                                 ci.name   = "line";
                                                 if (cell.contains("label") && cell["label"].is_string())
-                                                      ci.rowLabel = QString::fromStdString(cell["label"].get<std::string>());
+                                                      ci.rowLabel = QString::fromStdString(
+                                                          cell["label"].get<std::string>());
                                                 }
                                           else if (cell.contains("cells") && cell["cells"].is_array()) {
                                                 // Row cell: has sub-cells instead of a name
@@ -252,6 +261,7 @@ void ConfigModel::parseProperties() {
                                     entry.name        = "columns";
                                     entry.isColumns   = true;
                                     entry.columnCount = rowColumns;
+                                    entry.labelWidth  = rowLabelWidth;
                                     entry.columnItems = cols;
                                     entry.cat         = rowCat;
                                     for (const auto& ci : cols)
@@ -271,7 +281,8 @@ void ConfigModel::parseProperties() {
                                     if (type == "line") {
                                           hasLine = true;
                                           if (cell.contains("label") && cell["label"].is_string())
-                                                lineLabel = QString::fromStdString(cell["label"].get<std::string>());
+                                                lineLabel =
+                                                    QString::fromStdString(cell["label"].get<std::string>());
                                           continue;
                                           }
                                     if (type == "empty") {
@@ -387,6 +398,7 @@ QVariant ConfigModel::data(const QModelIndex& index, int role) const {
             case RowLabelRole: return entry.rowLabel;
             case IsColumnsRole: return entry.isColumns;
             case ColumnCountRole: return entry.columnCount;
+            case LabelWidthRole: return entry.labelWidth;
             case ColumnItemsRole: {
                   QVariantList list;
                   if (index.row() < _visibleIndices.size() && _config) {
@@ -500,6 +512,136 @@ bool ConfigModel::setColumnProperty(int modelRow, const QString& propName, const
       }
 
 //---------------------------------------------------------
+//   elementProperty
+//    Read any property value from the current config by name.
+//    Used by the QML PropertyEditor for the "enabled" keyword.
+//---------------------------------------------------------
+
+QVariant ConfigModel::elementProperty(const QString& name) const {
+      if (!_config)
+            return {};
+      return _config->property(name.toUtf8().constData());
+      }
+
+//---------------------------------------------------------
+//   isScriptBound / boundComponents / scriptFor / scriptError
+//---------------------------------------------------------
+
+bool ConfigModel::isScriptBound(const QString& propName) const {
+      if (!_config)
+            return false;
+      return !boundComponents(propName).isEmpty();
+      }
+
+QString ConfigModel::boundComponents(const QString& propName) const {
+      if (!_config)
+            return {};
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->boundComponentsQml(_config, propName);
+      }
+
+QString ConfigModel::scriptFor(const QString& propName, int comp) const {
+      if (!_config)
+            return {};
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->scriptForQml(_config, propName, comp);
+      }
+
+QString ConfigModel::scriptError(const QString& propName, int comp) const {
+      if (!_config)
+            return {};
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->scriptErrorQml(_config, propName, comp);
+      }
+
+//---------------------------------------------------------
+//   setScript
+//---------------------------------------------------------
+
+void ConfigModel::setScript(const QString& propName, int comp, const QString& script) {
+      if (!_config)
+            return;
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return;
+      se->createBindingQml(_config, propName, comp, script);
+      // Refresh displayed values.
+      int n = rowCount();
+      if (n > 0)
+            emit dataChanged(index(0, 0), index(n - 1, 0), {PropValueRole, SubValuesRole});
+      emit configDataChanged();
+      }
+
+//---------------------------------------------------------
+//   testScript / testScriptWithContext
+//---------------------------------------------------------
+
+QVariant ConfigModel::testScript(const QString& script) const {
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      return se->testScript(script);
+      }
+
+QVariant ConfigModel::testScriptWithContext(const QString& script) const {
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return {};
+      if (!_config)
+            return se->testScript(script);
+      return se->testScriptWithContext(script, _config);
+      }
+
+//---------------------------------------------------------
+//   removeScript
+//---------------------------------------------------------
+
+void ConfigModel::removeScript(const QString& propName) {
+      if (!_config)
+            return;
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return;
+      se->removeBindingQml(_config, propName);
+      int n = rowCount();
+      if (n > 0)
+            emit dataChanged(index(0, 0), index(n - 1, 0), {PropValueRole, SubValuesRole});
+      emit configDataChanged();
+      }
+
+//---------------------------------------------------------
+//   setScriptActive / isScriptActive
+//---------------------------------------------------------
+
+void ConfigModel::setScriptActive(const QString& propName, bool active) {
+      if (!_config)
+            return;
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return;
+      se->setBindingActive(_config, propName, active);
+      int n = rowCount();
+      if (n > 0)
+            emit dataChanged(index(0, 0), index(n - 1, 0), {PropValueRole, SubValuesRole});
+      emit configDataChanged();
+      }
+
+bool ConfigModel::isScriptActive(const QString& propName) const {
+      if (!_config)
+            return false;
+      ScriptEngine* se = ScriptEngine::instance();
+      if (!se)
+            return false;
+      return se->isBindingActive(_config, propName);
+      }
+
+//---------------------------------------------------------
 //   machineNames
 //    Return all Machine names from ZCam::machines.
 //---------------------------------------------------------
@@ -507,7 +649,7 @@ bool ConfigModel::setColumnProperty(int modelRow, const QString& propName, const
 QStringList ConfigModel::machineNames() const {
       if (!_config)
             return {};
-      ZCam* zc = qobject_cast<ZCam*>(_config->parent());
+      ZCam* zc = _config->zcamInstance();
       if (!zc || !zc->machines())
             return {};
       return zc->machines()->machinesModel();
@@ -529,5 +671,6 @@ QHash<int, QByteArray> ConfigModel::roleNames() const {
       roles[ColumnCountRole] = "columnCount";
       roles[ColumnItemsRole] = "columnItems";
       roles[CatRole]         = "cat";
+      roles[LabelWidthRole]  = "labelWidth";
       return roles;
       }

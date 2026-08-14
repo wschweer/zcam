@@ -33,8 +33,6 @@
 //---------------------------------------------------------
 
 MaterialTest::MaterialTest(ZCam* zcam, Element* parent) : Group(zcam, parent) {
-      if (zcam->config())
-            setColor(zcam->config()->materialTestColor());
       createChildren();
       connect(this, &MaterialTest::rowsChanged, [this] { createChildren(); });
       connect(this, &MaterialTest::columnsChanged, [this] { createChildren(); });
@@ -267,7 +265,7 @@ void MaterialTest::createChildren() {
       // filters by burn() && !pathList().empty() and checks parent()==this,
       // which never matches: the burnable elements (Rectangles, Text) have the
       // Group layer as parent, not this MaterialTest.
-      QSet<LaserMop*> childLaserLayers;
+      QSet<Mop*> childLaserLayers;
       for (Element* c : children()) {
             auto* e3d = qobject_cast<Element3d*>(c);
             if (e3d && e3d->laserLayer())
@@ -508,7 +506,7 @@ void MaterialTest::createChildren() {
       // created child Groups — collectElements() would fail because the
       // children's pathList may not be populated yet.
       if (fixture) {
-            QSet<LaserMop*> newChildLaserLayers;
+            QSet<Mop*> newChildLaserLayers;
             for (Element* c : children()) {
                   auto* e3d = qobject_cast<Element3d*>(c);
                   if (e3d && e3d->laserLayer())

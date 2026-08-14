@@ -16,6 +16,7 @@
 #include <QStringList>
 #include <QVariantList>
 #include "element3d.h"
+#include "mop.h"
 #include "text.h"
 #include "group.h"
 #include "recipe.h"
@@ -34,7 +35,8 @@ struct ColumnItem {
       bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
-      int colSpan = 1;
+      int colSpan    = 1;
+      int labelWidth = -1;   ///< per-row override; -1 = use default
       };
 
 //---------------------------------------------------------
@@ -72,6 +74,7 @@ class InspectorModel : public QAbstractListModel
             SubScriptBoundRole,
             ScriptTextRole,
             ScriptErrorRole,
+            LabelWidthRole,
             };
       int rowCount(const QModelIndex& parent = QModelIndex()) const override;
       QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -140,8 +143,8 @@ class InspectorModel : public QAbstractListModel
       // Resolve a LaserLayer* pointer to its name (for display in ComboBox).
       Q_INVOKABLE QString laserLayerToName(QVariant ll) const;
 
-      // Resolve a name back to a LaserLayer* pointer.
-      Q_INVOKABLE LaserMop* nameToLaserLayer(const QString& name) const;
+      // Resolve a name back to a Mop* pointer.
+      Q_INVOKABLE Mop* nameToLaserLayer(const QString& name) const;
 
       // Resolve a Recipe* pointer to its name (for display in ComboBox).
       Q_INVOKABLE QString recipeToName(QVariant recipe) const;
@@ -246,6 +249,7 @@ class InspectorModel : public QAbstractListModel
       QList<bool> _propertyIsRow;
       QList<bool> _propertyIsColumns;
       QList<int> _columnCounts;
+      QList<int> _rowLabelWidths;
       QList<QList<ColumnItem>> _columnItems;
       QList<QStringList> _subPropNames;
       QStringList _rowLabels; // label for row entries (empty for non-row entries)

@@ -50,7 +50,8 @@ Item {
         if (event.key === Qt.Key_Escape) {
             _editingText.setEditing(false);
             _editingText = null;
-            ZCam.currentTool = "pointer";
+            // Don't reset tool here — a second ESC will do that
+            // when nothing else is selected/active.
             event.accepted = true;
             return true;
             }
@@ -420,6 +421,9 @@ Item {
                 event.accepted = true;
                 }
             if (event.key === Qt.Key_Escape) {
+                // Escape is a two-step action:
+                //   1st ESC — clear lasso / selection / polygon drawing
+                //   2nd ESC — reset the current tool to Pointer
                 if (lassoActive) {
                     lassoActive = false;
                     lassoPoints = [];
@@ -428,13 +432,22 @@ Item {
                     event.accepted = true;
                     return;
                     }
-                // If a lasso selection is active, Escape clears it.
                 if (ZCam.selectedElements && ZCam.selectedElements.length > 0) {
                     ZCam.clearSelection();
                     event.accepted = true;
                     return;
                     }
-                finishPolygonDrawing();
+                if (_drawingPolygon) {
+                    finishPolygonDrawing();
+                    event.accepted = true;
+                    return;
+                    }
+                if (ZCam.currentElement) {
+                    ZCam.currentElement = null;
+                    event.accepted = true;
+                    return;
+                    }
+                // Nothing left to clear — reset the tool.
                 ZCam.currentTool = "pointer";
                 event.accepted = true;
                 }

@@ -202,7 +202,6 @@ Rectangle {
                                 text: modelData
                                 color: "white"
                                 font.bold: true
-                                font.pixelSize: 10
                                 }
                             }
                         }
@@ -242,7 +241,6 @@ Rectangle {
                                 text: modelData + 8
                                 color: "white"
                                 font.bold: true
-                                font.pixelSize: 10
                                 }
                             }
                         }
@@ -290,7 +288,6 @@ Rectangle {
                                 text: modelData
                                 color: "white"
                                 font.bold: true
-                                font.pixelSize: 10
                                 }
                             }
                         }
@@ -321,7 +318,6 @@ Rectangle {
                                 text: modelData + 8
                                 color: "white"
                                 font.bold: true
-                                font.pixelSize: 10
                                 }
                             }
                         }

@@ -26,7 +26,6 @@
 //=========================================================
 //   Singleton access
 //=========================================================
-
 GeometryWorker& GeometryWorker::instance() {
       static GeometryWorker instance;
       return instance;
@@ -58,7 +57,6 @@ void GeometryWorker::shutdown() {
 //=========================================================
 //   Helper: minMax for float vertex arrays
 //=========================================================
-
 static void minMaxFloat(const float* vert, int len, QVector3D& min, QVector3D& max) {
       if (len <= 0) {
             min = QVector3D();
@@ -86,7 +84,6 @@ static void minMaxByteArray(const QByteArray& vertices, QVector3D& min, QVector3
 //=========================================================
 //   requestTesselation
 //=========================================================
-
 void GeometryWorker::requestTesselation(PathList pathList, TessCallback callback) {
       enqueue<TessResult>(
           [pl = std::move(pathList)]() -> TessResult {
@@ -161,7 +158,6 @@ void GeometryWorker::requestTesselation(PathList pathList, TessCallback callback
 //=========================================================
 //   requestLines
 //=========================================================
-
 void GeometryWorker::requestLines(Clipper2Lib::PathsD lines, LineCallback callback) {
       enqueue<LineResult>(
           [lines = std::move(lines)]() -> LineResult {
@@ -209,9 +205,8 @@ void GeometryWorker::requestLines(Clipper2Lib::PathsD lines, LineCallback callba
 //=========================================================
 //   requestStroke
 //=========================================================
-
 void GeometryWorker::requestStroke(Clipper2Lib::PathsD paths, double halfLineWidth, int joinType, int endType,
-                                   bool fill, StrokeCallback callback) {
+    bool fill, StrokeCallback callback) {
       enqueue<StrokeResult>(
           [paths = std::move(paths), halfLineWidth, joinType, endType, fill]() -> StrokeResult {
                 StrokeResult result;
@@ -222,8 +217,8 @@ void GeometryWorker::requestStroke(Clipper2Lib::PathsD paths, double halfLineWid
                       double arcTolerance = 0.0;
                       auto et             = Clipper2Lib::EndType::Round;
                       auto jt             = Clipper2Lib::JoinType(joinType);
-                      auto l = Clipper2Lib::InflatePaths(paths, halfLineWidth, jt, et, miterLim, precision,
-                                                         arcTolerance);
+                      auto l              = Clipper2Lib::InflatePaths(
+                          paths, halfLineWidth, jt, et, miterLim, precision, arcTolerance);
                       if (!l.empty()) {
                             PathList pl(l);
                             // Close the path list
@@ -250,7 +245,6 @@ void GeometryWorker::requestStroke(Clipper2Lib::PathsD paths, double halfLineWid
 //=========================================================
 //   requestCamData
 //=========================================================
-
 void GeometryWorker::requestCamData(CamInput input, CamCallback callback) {
       enqueue<CamResult>(
           [input = std::move(input)]() -> CamResult {
@@ -266,6 +260,10 @@ void GeometryWorker::requestCamData(CamInput input, CamCallback callback) {
                       const auto& tileMarks = layer.tileLines[0];
                       const auto& tileMoves = layer.tileLines[1];
 
+                      // Per-layer merged lines
+                      CamResult::LayerResult lr;
+                      lr.color = layer.color;
+
                       for (int row = 0; row < input.panelRows; ++row) {
                             for (int col = 0; col < input.panelColumns; ++col) {
                                   double xo = (input.panelHDistance + input.fixtureW) * col;
@@ -276,6 +274,7 @@ void GeometryWorker::requestCamData(CamInput input, CamCallback callback) {
                                         offsetMarks.reserve(tileMarks.size());
                                         for (const auto& pt : tileMarks)
                                               offsetMarks.push_back({pt.x + xo, pt.y + yo});
+                                        lr.markLines.append_range(offsetMarks);
                                         allMarkLines.push_back(std::move(offsetMarks));
                                         }
                                   if (!tileMoves.empty()) {
@@ -283,10 +282,13 @@ void GeometryWorker::requestCamData(CamInput input, CamCallback callback) {
                                         offsetMoves.reserve(tileMoves.size());
                                         for (const auto& pt : tileMoves)
                                               offsetMoves.push_back({pt.x + xo, pt.y + yo});
+                                        lr.moveLines.append_range(offsetMoves);
                                         allMoveLines.push_back(std::move(offsetMoves));
                                         }
                                   }
                             }
+
+                      result.layers.push_back(std::move(lr));
                       }
 
                 Clipper2Lib::PathsD combined;
@@ -321,7 +323,6 @@ void GeometryWorker::requestCamData(CamInput input, CamCallback callback) {
 //=========================================================
 //   requestConvexHull
 //=========================================================
-
 void GeometryWorker::requestConvexHull(Clipper2Lib::PathD points, ConvexHullCallback callback) {
       enqueue<ConvexHullResult>(
           [points = std::move(points)]() mutable -> ConvexHullResult {
@@ -335,11 +336,11 @@ void GeometryWorker::requestConvexHull(Clipper2Lib::PathD points, ConvexHullCall
 
                 // Sort by x, then y
                 std::sort(points.begin(), points.end(),
-                          [](const Clipper2Lib::PointD& a, const Clipper2Lib::PointD& b) {
-                                if (a.x != b.x)
-                                      return a.x < b.x;
-                                return a.y < b.y;
-                                });
+                    [](const Clipper2Lib::PointD& a, const Clipper2Lib::PointD& b) {
+                          if (a.x != b.x)
+                                return a.x < b.x;
+                          return a.y < b.y;
+                          });
 
                 Clipper2Lib::PathD hull;
 

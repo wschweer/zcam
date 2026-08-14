@@ -34,6 +34,7 @@ static double roundToPrecision(double value, int precision) {
 //    Extract (name, type) pairs from a single cell.
 //    Handles nested cells (row within columns).
 //---------------------------------------------------------
+
 static void collectCellPropertyNames(const nlohmann::json& cell, PropNameList& out) {
       // Check for nested cells (row within columns)
       if (cell.contains("cells") && cell["cells"].is_array()) {
@@ -61,6 +62,7 @@ static void collectCellPropertyNames(const nlohmann::json& cell, PropNameList& o
 //    (propertyName, type) pairs.
 //    Uses the "rows"/"cells" format.
 //---------------------------------------------------------
+
 PropNameList parseAllPropertyNames(std::string_view propStr) {
       PropNameList propNames;
       nlohmann::json j = nlohmann::json::parse(propStr);
@@ -81,6 +83,7 @@ PropNameList parseAllPropertyNames(std::string_view propStr) {
 //    Read a property from obj using the Qt meta-object system,
 //    supporting both QObject (read) and Q_GADGET (readOnGadget).
 //---------------------------------------------------------
+
 static QVariant readPropertyRaw(const void* obj, const QMetaObject* meta, bool gadget, int idx) {
       QMetaProperty mp = meta->property(idx);
       if (gadget)
@@ -105,6 +108,7 @@ static bool writePropertyRaw(
 //---------------------------------------------------------
 //   writePropertyToJson
 //---------------------------------------------------------
+
 bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObject* meta, bool gadget,
     const std::string& name, const std::string& type, int precision) {
       QByteArray propName = QByteArray::fromStdString(name);
@@ -140,7 +144,8 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
       else if (type == "bool" || type == "fontStyle") {
             data[name] = value.toBool();
             }
-      else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize") {
+      else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize" ||
+               type == "mopColor") {
             int tid = static_cast<QMetaType::Type>(value.typeId());
             if (tid == QMetaType::Double || tid == QMetaType::Float)
                   data[name] = value.toDouble();
@@ -169,6 +174,7 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
 //---------------------------------------------------------
 //   readPropertyFromJson
 //---------------------------------------------------------
+
 bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObject* meta, bool gadget,
     const std::string& name, const std::string& type) {
       if (!data.contains(name))
@@ -203,7 +209,8 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
       else if (type == "bool" || type == "fontStyle") {
             return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<bool>()));
             }
-      else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize") {
+      else if (type == "int" || type == "halign" || type == "lockScale" || type == "lockSize" ||
+               type == "mopColor") {
             int tid = mp.metaType().id();
             if (tid == QMetaType::Double || tid == QMetaType::Float)
                   return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<double>()));
@@ -343,6 +350,47 @@ std::vector<DefaultScript> allDefaultScripts(std::string_view propStr) {
             Warning("allDefaultScripts: JSON parse error: {}", err.what());
             }
       return scripts;
+      }
+
+//---------------------------------------------------------
+//   collectCellTooltip
+//    Walk a cell (and any nested sub-cells) looking for the
+//    "tooltip" metadata for the given property name.
+//---------------------------------------------------------
+
+static void collectCellTooltip(const nlohmann::json& cell, const std::string& name, std::string& out) {
+      if (!out.empty())
+            return;
+      if (cell.contains("name") && cell["name"].is_string() && cell["name"].get<std::string>() == name &&
+          cell.contains("tooltip") && cell["tooltip"].is_string()) {
+            out = cell["tooltip"].get<std::string>();
+            return;
+            }
+      if (cell.contains("cells") && cell["cells"].is_array())
+            for (const auto& subCell : cell["cells"])
+                  collectCellTooltip(subCell, name, out);
+      }
+
+//---------------------------------------------------------
+//   tooltipForName
+//---------------------------------------------------------
+
+std::string tooltipForName(std::string_view propStr, const std::string& name) {
+      std::string tooltip;
+      try {
+            nlohmann::json j = nlohmann::json::parse(propStr);
+            if (j.contains("rows") && j["rows"].is_array()) {
+                  for (const auto& row : j["rows"]) {
+                        if (row.contains("cells") && row["cells"].is_array())
+                              for (const auto& cell : row["cells"])
+                                    collectCellTooltip(cell, name, tooltip);
+                        }
+                  }
+            }
+      catch (const nlohmann::json::parse_error& err) {
+            Warning("tooltipForName: JSON parse error: {}", err.what());
+            }
+      return tooltip;
       }
 
       } // namespace propjson

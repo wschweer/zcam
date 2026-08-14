@@ -24,11 +24,6 @@
 Framing::Framing(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("framing");
       _geometry = new TessGeometry(this);
-      setColor(w->config()->framingColor());
-      // React to config framingColor changes so the 3D canvas
-      // updates immediately when the user picks a new color.
-      connect(w->config(), &Config::framingColorChanged, this,
-              [this, w]() { setColor(w->config()->framingColor()); });
       connect(w->project(), &Project::updateFraming, [this] { update(); });
       // Rebuild the framing contour when the framing type changes.
       connect(this, &Framing::framingTypeChanged, this, [this] { update(); });

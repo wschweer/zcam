@@ -62,10 +62,15 @@ void Element::clearProject() {
 //    ScriptEngine sets _rebuilding and handles default scripts
 //    centrally in rebuildRegistry().
 //---------------------------------------------------------
+
 void Element::addChild(Element* e) {
       _children.push_back(e);
       e->_parent = this;
       e->setParent(this);
+      // Invalidate the new child's cached global matrix and world
+      // bounding boxes since the parent chain changed.
+      if (auto* e3d = qobject_cast<Element3d*>(e))
+            e3d->invalidateGlobalMatrix();
       emit childAdded(e);
       if (auto* se = ScriptEngine::instance()) {
             if (!se->_rebuilding)
@@ -93,20 +98,24 @@ json Element::toJson() const {
 
       // ── Scripting ────────────────────────────────────────────────
       if (hasScript()) {
-            json s;
-            s["prop"]    = _scriptProp.toStdString();
-            s["script"]  = _script.toStdString();
-            s["active"]  = _scriptActive;
-            data["script"] = s;
+            json scripts = json::array();
+            for (auto it = _scripts.constBegin(); it != _scripts.constEnd(); ++it) {
+                  json s;
+                  s["prop"]   = it.key().toStdString();
+                  s["script"] = it.value().script.toStdString();
+                  s["active"] = it.value().active;
+                  scripts.push_back(s);
+                  }
+            data["scripts"] = scripts;
             }
       json comps = json::array();
       for (int i = 0; i < 3; ++i) {
             if (hasScriptComp(i)) {
                   json s;
-                  s["prop"]    = _scriptCompProp[i].toStdString();
-                  s["comp"]    = i;
-                  s["script"]  = _scriptComp[i].toStdString();
-                  s["active"]  = _scriptCompActive[i];
+                  s["prop"]   = _scriptCompProp[i].toStdString();
+                  s["comp"]   = i;
+                  s["script"] = _scriptComp[i].toStdString();
+                  s["active"] = _scriptCompActive[i];
                   comps.push_back(s);
                   }
             }
@@ -126,12 +135,27 @@ void Element::fromJson(const json& data) {
             _expanded = data.at("expanded").get<bool>();
 
       // ── Scripting ────────────────────────────────────────────────
-      if (data.contains("script")) {
+      // New format: "scripts" is an array of {prop, script, active}.
+      if (data.contains("scripts") && data.at("scripts").is_array()) {
+            for (const auto& s : data.at("scripts")) {
+                  if (!s.contains("prop") || !s.contains("script"))
+                        continue;
+                  QString prop = QString::fromStdString(s.at("prop").get<std::string>());
+                  ScriptEntry entry;
+                  entry.script = QString::fromStdString(s.at("script").get<std::string>());
+                  entry.active = s.value("active", true);
+                  _scripts.insert(prop, entry);
+                  }
+            }
+      // Legacy format: single "script" object with {prop, script, active}.
+      else if (data.contains("script")) {
             const json& s = data.at("script");
             if (s.contains("prop") && s.contains("script")) {
-                  _scriptProp = QString::fromStdString(s.at("prop").get<std::string>());
-                  _script     = QString::fromStdString(s.at("script").get<std::string>());
-                  _scriptActive = s.value("active", true);
+                  QString prop = QString::fromStdString(s.at("prop").get<std::string>());
+                  ScriptEntry entry;
+                  entry.script = QString::fromStdString(s.at("script").get<std::string>());
+                  entry.active = s.value("active", true);
+                  _scripts.insert(prop, entry);
                   }
             }
       if (data.contains("scriptComp")) {
@@ -140,10 +164,8 @@ void Element::fromJson(const json& data) {
                         continue;
                   int comp = s.at("comp").get<int>();
                   if (comp >= 0 && comp < 3) {
-                        _scriptCompProp[comp] =
-                            QString::fromStdString(s.at("prop").get<std::string>());
-                        _scriptComp[comp] =
-                            QString::fromStdString(s.at("script").get<std::string>());
+                        _scriptCompProp[comp]   = QString::fromStdString(s.at("prop").get<std::string>());
+                        _scriptComp[comp]       = QString::fromStdString(s.at("script").get<std::string>());
                         _scriptCompActive[comp] = s.value("active", true);
                         }
                   }
@@ -194,7 +216,7 @@ void Element::fromJson(const json& data) {
                               element = new CameraElement(zcam, this);
                               element->fromJson(value);
                               }
-                        else if (key == "laserLayer" || key == "recipe") {
+                        else if (key == "laserLayer" || key == "recipe" || key == "laserMop") {
                               element = new LaserMop(zcam, this);
                               element->fromJson(value);
                               }
@@ -239,8 +261,8 @@ void Element::fromJson(const json& data) {
 
 void Element::setName(QString v) {
       names.remove(name()); // in case setName is called twice
-      QString n  = v == "" ? typeName() : v;
-      int i      = 1;
+      QString n = v == "" ? typeName() : v;
+      int i     = 1;
       // Sanitize the name so it is always a valid JavaScript identifier:
       // scripts reference elements by name via project.<path>.<name>.
       n.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_$]")), QStringLiteral("_"));
@@ -261,13 +283,18 @@ void Element::setName(QString v) {
 
       // Register in the script namespace tree so scripts can refer to
       // this element by name (project.cad.myLayer.myElement ...).
-      if (auto* se = ScriptEngine::instance())
-            se->addElementToTree(this);
+      ScriptEngine* se = ScriptEngine::instance();
+      if (se) {
+            if (!se->_rebuilding)
+                  se->addElementToTree(this);
+            }
 
-      // notify the TreeModel so the TreeView updates its display
+      // notify the TreeModel so the TreeView updates its display.
+      // Skip during batch operations (e.g. DXF import) — the
+      // TreeModel is reset once at the end.
       if (zcam) {
             TreeModel* tm = zcam->treeModel();
-            if (tm)
+            if (tm && !(se && se->_rebuilding))
                   tm->notifyElementRenamed(this);
             }
       }

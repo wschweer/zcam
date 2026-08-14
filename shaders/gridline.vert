@@ -33,10 +33,18 @@
 // the XY plane (the model's 1 mm offset still wins the depth
 // test).
 
+// VARYING passes the signed side (-1 .. +1) of the stroke edge from
+// the vertex to the fragment shader.  The rasterizer interpolates
+// it linearly across the expanded quad, so the fragment shader can
+// use |vSide| as the distance from the line CENTRE (0 = centre,
+// 1 = edge) for analytic (smoothstep) anti-aliasing.
+VARYING float vSide;
+
 void MAIN()
       {
-      vec4 pos    = vec4(VERTEX, 1.0);
-      vec4 clipPos = MODELVIEWPROJECTION_MATRIX * pos;
+      vSide          = UV0.x;
+      vec4 pos       = vec4(VERTEX, 1.0);
+      vec4 clipPos   = MODELVIEWPROJECTION_MATRIX * pos;
 
       // World-space line axis:  the geometry builder tags the quad
       // with uv.y = 0 for an X-running line (dir = e_x), 1 for a

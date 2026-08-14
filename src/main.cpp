@@ -28,6 +28,7 @@
 #include "rectangle.h"
 #include "group.h"
 #include "element3d.h"
+#include "sidebarcolorfixer.h"
 
 //---------------------------------------------------------
 //   firstInstall
@@ -83,6 +84,16 @@ static void firstInstall() {
 //---------------------------------------------------------
 
 int main(int argc, char* argv[]) {
+      // Use the Qt Quick implementation of FileDialog / MessageDialog etc.
+      // instead of native dialogs, so the Material Dark palette is applied
+      // consistently and the sidebar text stays light-on-dark.
+      // On KDE Plasma the "native" dialog is provided via the
+      // xdg-desktop-portal / KDEPlasmaPlatformTheme and shows unreadable
+      // black-on-dark sidebar text;  setting AA_DontUseNativeDialogs
+      // forces Qt Quick Dialogs' quickimpl everywhere.
+      qputenv("QT_QUICK_DIALOGS_USE_QT_QUICK_IMPL", "1");
+      QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+
       // Initialize WebEngine before creating the application object
       QtWebEngineQuick::initialize();
 
@@ -92,6 +103,13 @@ int main(int argc, char* argv[]) {
       QCoreApplication::setApplicationVersion("0.0.1");
 
       QGuiApplication app(argc, argv);
+
+      // ── Fix FileDialog sidebar text color (Qt 6.12 regression) ───────
+      //    Install an event filter that sets IconLabel colors to white
+      //    after a file dialog window is exposed.
+      SideBarColorFixer sidebarColorFixer;
+
+
 
       // ── Scripting self-test (--script-test) ─────────────────────────
       //    Loads /tmp/script-test.zcam and verifies:
@@ -149,7 +167,7 @@ int main(int argc, char* argv[]) {
             Q_ASSERT(qAbs(r1->pos().x() - (r2->size().x() + 5.0)) < 1e-6);
             Q_ASSERT(qAbs(r2->corner() - 15.0) < 1e-6);
             Q_ASSERT(r1->scriptCompProp(0) == QStringLiteral("pos"));
-            Q_ASSERT(r2->scriptProp() == QStringLiteral("corner"));
+            Q_ASSERT(r2->hasScriptFor(QStringLiteral("corner")));
 
             // 5) removing the binding keeps the last value
             se->removeBindingQml(r2, QStringLiteral("corner"));
@@ -220,8 +238,7 @@ int main(int argc, char* argv[]) {
             im.setElement(r2);
             int sizeRow = -1;
             for (int i = 0; i < im.rowCount(); ++i) {
-                  const QVariantList subs =
-                      im.data(im.index(i, 0), InspectorModel::SubPropsRole).toList();
+                  const QVariantList subs = im.data(im.index(i, 0), InspectorModel::SubPropsRole).toList();
                   for (const QVariant& s : subs)
                         if (s.toString() == QStringLiteral("size"))
                               sizeRow = i;
@@ -266,8 +283,13 @@ int main(int argc, char* argv[]) {
       darkPalette.setColor(QPalette::HighlightedText, Qt::black);
       app.setPalette(darkPalette);
 
-      QQuickStyle::setStyle("Material");
+      // Force the application-wide color scheme to dark so that native and
+      // Qt Quick Dialogs also use a dark palette, even when the desktop is
+      // configured for a light theme.  This prevents black-on-dark text in
+      // file dialogs when the app runs with Material.Dark.
+      app.styleHints()->setColorScheme(Qt::ColorScheme::Dark);
 
+      QQuickStyle::setStyle("Material");
       firstInstall();
 
       QQmlApplicationEngine engine;

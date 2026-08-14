@@ -150,10 +150,7 @@ ImageElement::ImageElement(ZCam* zcam, Element* parent) : Element3d(zcam, parent
 
       // A neutral grey so the bounding-box overlay is visible even
       // before an image is loaded.
-      if (zcam->config())
-            setColor(zcam->config()->imageColor());
-      else
-            setColor(QColor(180, 180, 180));
+      setColor(QColor(180, 180, 180));
       }
 
 ImageElement::~ImageElement() {

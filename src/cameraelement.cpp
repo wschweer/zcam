@@ -34,12 +34,10 @@
 
 CameraElement::CameraElement(ZCam* z, Element* parent) : Element3d(z, parent), _zcam(z) {
       setName(QStringLiteral("camera"));
-      if (z->config())
-            setColor(z->config()->cameraColor());
 
       _sink = new QVideoSink(this);
       connect(_sink, &QVideoSink::videoFrameChanged, this,
-              [this](const QVideoFrame& frame) { onVideoFrameChanged(frame); });
+          [this](const QVideoFrame& frame) { onVideoFrameChanged(frame); });
 
       // The show flag gates the camera capture: hidden element → camera off.
       connect(this, &CameraElement::showChanged, this, [this] { updateActiveState(); });
@@ -346,9 +344,9 @@ void CameraElement::applyBrightness() {
                         if (ioctl(fd, VIDIOC_QUERYCTRL, &qctrl) >= 0) {
                               // Map normalized -1.0..1.0 to qctrl.minimum..qctrl.maximum.
                               double b    = brightness();
-                              int32_t val = int32_t(qctrl.default_value +
-                                                    b * (b >= 0 ? (qctrl.maximum - qctrl.default_value)
-                                                                : (qctrl.default_value - qctrl.minimum)));
+                              int32_t val = int32_t(
+                                  qctrl.default_value + b * (b >= 0 ? (qctrl.maximum - qctrl.default_value)
+                                                                    : (qctrl.default_value - qctrl.minimum)));
                               struct v4l2_control ctrl {};
                               ctrl.id    = V4L2_CID_BRIGHTNESS;
                               ctrl.value = val;

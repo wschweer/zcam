@@ -43,24 +43,14 @@ class Element : public QObject
       //   A property whose value is computed by a JavaScript expression
       //   is shown in the inspector with an f(x) button.  The scripts
       //   are stored per element and persisted in the project file.
-      Q_PROPERTY(QString script READ script WRITE setScript NOTIFY scriptChanged)
-      Q_PROPERTY(QString scriptProp READ scriptProp WRITE setScriptProp NOTIFY scriptPropChanged)
+      //   The Q_PROPERTY declarations are kept for compatibility with
+      //   the meta-object system (e.g. QML scriptChanged signal), but
+      //   the actual storage is in the _scripts map (protected).
 
       QList<Element*> _children;
       Element* _parent {nullptr};
       QString _name;
       bool _expanded = false; ///< persistent expand state in TreeView
-
-      // Scripting state (see ScriptEngine).  _script/_scriptProp describe
-      // the scalar binding ("<propName>" → script text).  _scriptComp/
-      // _scriptCompProp hold the optional component bindings for
-      // vector2d/vector3d properties: index 0..2 maps to x/y/z.
-      QString _script;
-      QString _scriptProp;
-      bool _scriptActive {true}; ///< scalar binding active state
-      QStringList _scriptComp       = {QString(), QString(), QString()};
-      QStringList _scriptCompProp   = {QString(), QString(), QString()};
-      QList<bool> _scriptCompActive = {true, true, true}; ///< component binding active states
 
       // this is a global list of all elements, accessible by name
       static QHash<QString, Element*> names;
@@ -70,6 +60,22 @@ class Element : public QObject
 
     protected:
       ZCam* zcam;
+
+      // Scripting state (see ScriptEngine).  Each entry in
+      // _scripts maps a property name to its script text and
+      // active flag.  _scriptComp holds the optional component
+      // bindings for vector2d/vector3d properties: index 0..2
+      // maps to x/y/z.  These are protected so derived classes
+      // (e.g. Config) can serialise/deserialise them in toJson/
+      // fromJson.
+      struct ScriptEntry {
+            QString script;
+            bool active {true};
+            };
+      QHash<QString, ScriptEntry> _scripts;
+      QStringList _scriptComp       = {QString(), QString(), QString()};
+      QStringList _scriptCompProp   = {QString(), QString(), QString()};
+      QList<bool> _scriptCompActive = {true, true, true}; ///< component binding active states
 
     signals:
       void nameChanged();
@@ -84,6 +90,7 @@ class Element : public QObject
       Element(ZCam* zcam, Element* parent = nullptr);
       virtual ~Element();
       Q_INVOKABLE virtual QString typeName() = 0;
+      virtual const std::string_view properties() const { return ""; }
       const QList<Element*>& children() const { return _children; }
       QList<Element*>& children() { return _children; }
       Q_INVOKABLE Element* parent() const { return _parent; }
@@ -116,21 +123,36 @@ class Element : public QObject
       virtual bool saveChildren() const { return _saveChildren; }
       virtual void fixup() {}
       // ── Scripting accessors ────────────────────────────────────────
-      QString script() const { return _script; }
-      void setScript(const QString& s) {
-            if (s != _script) {
-                  _script = s;
+      /// Returns the script text for the given property, or empty.
+      QString script(const QString& prop = QString()) const {
+            if (prop.isEmpty()) {
+                  for (auto it = _scripts.constBegin(); it != _scripts.constEnd(); ++it)
+                        if (!it.value().script.isEmpty())
+                              return it.value().script;
+                  return {};
+                  }
+            return _scripts.value(prop).script;
+            }
+      /// Set the script text for the given property.
+      void setScript(const QString& prop, const QString& s) {
+            if (s.isEmpty()) {
+                  _scripts.remove(prop);
                   emit scriptChanged();
                   }
-            }
-      QString scriptProp() const { return _scriptProp; }
-      void setScriptProp(const QString& p) {
-            if (p != _scriptProp) {
-                  _scriptProp = p;
-                  emit scriptPropChanged();
+            else {
+                  auto& entry = _scripts[prop];
+                  if (s != entry.script) {
+                        entry.script = s;
+                        emit scriptChanged();
+                        }
                   }
             }
-      bool hasScript() const { return !_script.isEmpty() && !_scriptProp.isEmpty(); }
+      /// True when this element has at least one scalar script.
+      bool hasScript() const { return !_scripts.isEmpty(); }
+      /// True when this element has a script for *prop*.
+      bool hasScriptFor(const QString& prop) const {
+            return _scripts.contains(prop) && !_scripts.value(prop).script.isEmpty();
+            }
       QString scriptComp(int comp) const {
             return (comp >= 0 && comp < _scriptComp.size()) ? _scriptComp[comp] : QString();
             }
@@ -151,9 +173,7 @@ class Element : public QObject
             }
       /// Clear all stored scripts (called when a binding is removed).
       void clearScripts() {
-            _script.clear();
-            _scriptProp.clear();
-            _scriptActive = true;
+            _scripts.clear();
             for (int i = 0; i < _scriptComp.size(); ++i) {
                   _scriptComp[i].clear();
                   _scriptCompProp[i].clear();
@@ -163,10 +183,7 @@ class Element : public QObject
       /// Clear only the stored scripts for the given base property
       /// (scalar binding and vector-component bindings).
       void clearScriptsFor(const QString& prop) {
-            if (_scriptProp == prop) {
-                  _script.clear();
-                  _scriptProp.clear();
-                  }
+            _scripts.remove(prop);
             for (int i = 0; i < _scriptComp.size(); ++i) {
                   if (_scriptCompProp[i] == prop) {
                         _scriptComp[i].clear();

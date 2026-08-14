@@ -252,7 +252,7 @@ class AddGridCommand : public UndoCommand
       };
 
 //---------------------------------------------------------
-//   AddLaserLayerCommand
+//   AddLaserMopCommand
 //    Undoable command that creates a new LaserLayer and inserts
 //    it as a child of a Fixture element.  The LaserLayer is
 //    auto-linked to the first available Cad Layer (if any).
@@ -260,14 +260,14 @@ class AddGridCommand : public UndoCommand
 //    redo() re-inserts it.
 //---------------------------------------------------------
 
-class AddLaserLayerCommand : public UndoCommand
+class AddLaserMopCommand : public UndoCommand
       {
       Fixture* _fixture;
       LaserMop* _laserLayer;
       int _row {-1}; ///< position within fixture's children
 
     public:
-      AddLaserLayerCommand(ZCam* zcam, Fixture* fixture);
+      AddLaserMopCommand(ZCam* zcam, Fixture* fixture);
 
       void undo() override;
       void redo() override;

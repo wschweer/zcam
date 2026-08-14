@@ -14,6 +14,7 @@
 #include <QObject>
 #include <QThreadPool>
 #include <QVector3D>
+#include <QColor>
 #include <QByteArray>
 #include <functional>
 #include <vector>
@@ -81,7 +82,7 @@ class GeometryWorker : public QObject
             };
       using StrokeCallback = std::function<void(const StrokeResult&)>;
       void requestStroke(Clipper2Lib::PathsD paths, double halfLineWidth, int joinType, int endType,
-                         bool fill, StrokeCallback callback);
+          bool fill, StrokeCallback callback);
       //--- Cam panel data (grid replication + line merge) ---
       //    Moderate: replicates tile lines across panel grid.
       //    Input data (per-layer display lines) is pre-computed on the
@@ -90,6 +91,7 @@ class GeometryWorker : public QObject
             struct Layer {
                   Clipper2Lib::PathsD tileLines; // 2 subsets: marks, moves
                   bool burn {true};
+                  QColor color; ///< Mop colour for this layer
                   };
             std::vector<Layer> layers;
             int panelRows {1};
@@ -100,6 +102,14 @@ class GeometryWorker : public QObject
             double fixtureH {0.0};
             };
       struct CamResult {
+            /// Per-layer result: merged line geometry for one LaserMop
+            /// plus its colour.  Subset 0 = marks, subset 1 = moves.
+            struct LayerResult {
+                  Clipper2Lib::PathD markLines;
+                  Clipper2Lib::PathD moveLines;
+                  QColor color;
+                  };
+            std::vector<LayerResult> layers;
             Clipper2Lib::PathsD combinedLines;
             bool valid {false};
             };

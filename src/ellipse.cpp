@@ -26,6 +26,7 @@
 //               that changed the most drives the other proportionally
 //      Square – force width == height using the most-changed axis
 //---------------------------------------------------------
+
 void Ellipse::set_size(QVector2D v) {
       if (v == _size)
             return;
@@ -57,8 +58,6 @@ Ellipse::Ellipse(ZCam* w, Element* parent) : Element3d(w, parent) {
       _fill     = true;
       _geometry = new TessGeometry(this);
       QJSEngine::setObjectOwnership(_geometry, QJSEngine::CppOwnership);
-      if (w->config())
-            setColor(w->config()->ellipseColor());
 
       connect(this, &Ellipse::sizeChanged, [this] {
             if (!_suppressUpdate)

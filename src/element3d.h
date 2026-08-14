@@ -24,8 +24,8 @@
 #include "painterpath.h"
 #include "clipper.h"
 
-class LaserMop;
-Q_DECLARE_OPAQUE_POINTER(LaserMop*)
+class Mop;
+Q_DECLARE_OPAQUE_POINTER(Mop*)
 
 static constexpr double FONT_SCALE    = 0.352778 * .1;
 static constexpr double FONT_SCALE_UP = 10.0;
@@ -38,12 +38,14 @@ static constexpr double FONT_SCALE_UP = 10.0;
 //               axis updates the other two proportionally
 //      Square – force xScale == yScale == zScale at all times
 //---------------------------------------------------------
+
 enum class LockScaleMode : int { Off = 0, Lock = 1, Square = 2 };
 Q_DECLARE_METATYPE(LockScaleMode)
 
 //---------------------------------------------------------
 //   Element3d
 //---------------------------------------------------------
+
 class Element3d : public Element
       {
       Q_OBJECT
@@ -52,11 +54,10 @@ class Element3d : public Element
 
       PROPV(bool, show, true)
       PROPV(bool, burn, true)
-      // Reference to a LaserLayer.  Can be null, in which case the
-      // element inherits the LaserLayer from its parent (see
-      // effectiveLaserLayer()).  This replaces the old Layer→LaserLayer
-      // association via LaserLayer::baseElement.
-      PROPV(LaserMop*, laserLayer, nullptr)
+      // Reference to a Mop.  Can be null, in which case the
+      // element inherits the Mop from its parent (see
+      // effectiveMop()).
+      PROPV(Mop*, laserLayer, nullptr)
       PROPV(TessGeometry*, geometry, nullptr)
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
@@ -121,6 +122,21 @@ class Element3d : public Element
       bool _snapActiveX {false}; ///< grid snap active on X (for reference-point marker)
       bool _snapActiveY {false}; ///< grid snap active on Y (for reference-point marker)
 
+      // ── Cached transforms and bounding boxes ──────────────────────
+      // globalMatrix() walks the parent chain on every call; caching it
+      // eliminates O(N*depth) qobject_cast + matrix multiplications
+      // during picking.  worldBoundingBox() and worldBoundingBox3D()
+      // cache the AABB so repeated pick tests don't recompute it.
+      mutable QMatrix4x4 _cachedGlobalMatrix;
+      mutable bool _globalMatrixDirty {true};
+      mutable bool _cachedAncestorsShow {true};
+      mutable bool _ancestorsShowDirty {true};
+      mutable QRectF _cachedWorldBBox;
+      mutable bool _worldBBoxDirty {true};
+      mutable QVector3D _cachedWorldBBox3DMin;
+      mutable QVector3D _cachedWorldBBox3DMax;
+      mutable bool _worldBBox3DDirty {true};
+
     protected:
       // Static, class-bound flag: only elements whose class sets this to true
       // can be interactively dragged on the 3D canvas.  Subclasses override
@@ -135,6 +151,7 @@ class Element3d : public Element
       mutable bool _matrixDirty {true};
       // return true if lineWidth() is zero
       bool thinLine() const { return qFuzzyCompare(lineWidth(), 0.0); }
+    protected:
     signals:
       void selectionGeometryChanged();
       void snapActiveChanged();
@@ -152,7 +169,7 @@ class Element3d : public Element
       virtual json toJson() const override;
       virtual void fromJson(const json& json) override;
       virtual void fixup() override;
-      virtual const std::string_view properties() const { return ""; }
+      virtual const std::string_view properties() const override { return ""; }
       // if visible, the show flag can be toggled by user
       Q_INVOKABLE virtual bool visible() const { return false; }
       // Static, class-bound flag: only elements whose class sets this to true
@@ -220,10 +237,10 @@ class Element3d : public Element
       // Used to grey-out child visibility icons when a parent is hidden.
       bool ancestorsShow() const;
 
-      /// Returns the effective LaserLayer for this element by walking
+      /// Returns the effective Mop for this element by walking
       /// up the parent chain until a non-null laserLayer is found.
       /// Returns nullptr if no ancestor (including self) has a laserLayer set.
-      LaserMop* effectiveLaserLayer() const;
+      Mop* effectiveMop() const;
       QRectF boundingBox() const;
       /// Element-specific content bounding box.  The base
       /// implementation returns an empty rect; elements that carry
@@ -269,6 +286,20 @@ class Element3d : public Element
       ///   global = rootMatrix * ... * parentMatrix * localMatrix
       QMatrix4x4 globalMatrix() const;
       void strokeAndFill();
+      /// True when the element has no own path data — its bounding
+      /// box is derived entirely from children.  Used for spatial
+      /// pruning during picking: if a pure container's world box is
+      /// not hit, the entire subtree can be skipped.
+      bool isPureContainer() const { return _pathList.empty(); }
+      /// Recursively invalidate the cached global matrix and world
+      /// bounding boxes of this element and all Element3d descendants.
+      /// Called when pos/rot/scale/mirror changes.
+      void invalidateGlobalMatrix();
+      /// Invalidate the cached world bounding boxes of this element
+      /// and all Element3d ancestors (whose childrenBoundingBox()
+      /// depends on this element's box).  Called when content or
+      /// visibility changes.
+      void invalidateWorldBBoxUp();
       };
 
 //---------------------------------------------------------
@@ -307,13 +338,14 @@ class Element3d : public Element
 //---------------------------------------------------------
 
 Clipper2Lib::PathsD projectPathListToXY(const Element3d* element, bool perspective = false,
-                                        double projectionHeight = 0.0, const QPointF& viewCenter = QPointF());
+    double projectionHeight = 0.0, const QPointF& viewCenter = QPointF());
 
 extern void closePath(PathList& _pathList);
 
 //---------------------------------------------------------
 //   RootElement
 //---------------------------------------------------------
+
 class RootElement : public Element3d
       {
       Q_OBJECT

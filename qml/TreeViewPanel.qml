@@ -383,8 +383,21 @@ Item {
                 event.accepted = true
                 }
             if (event.key === Qt.Key_Escape) {
-                ZCam.clearSelection()
-                event.accepted = true
+                // Escape is a two-step action:
+                //   1st ESC — clear selection
+                //   2nd ESC — reset the current tool to Pointer
+                if (ZCam.selectedElements && ZCam.selectedElements.length > 0) {
+                    ZCam.clearSelection()
+                    event.accepted = true
+                    }
+                else if (ZCam.currentElement) {
+                    ZCam.currentElement = null
+                    event.accepted = true
+                    }
+                else {
+                    ZCam.currentTool = "pointer"
+                    event.accepted = true
+                    }
                 }
             }
 
@@ -980,15 +993,15 @@ Item {
             }
         }
 
-    // Menu for Fixture elements: "Add Laserlayer" + "Delete"
+    // Menu for Fixture elements: "Add LaserMop" + "Delete"
     Menu {
         id: fixtureMenu
         Material.theme: Material.Dark
         MenuItem {
-            text: "Add Laserlayer"
+            text: "Add LaserMop"
             onTriggered: {
                 if (ZCam.project)
-                    ZCam.project.addLaserLayerCmd(ZCam.currentElement);
+                    ZCam.project.addLaserMopCmd(ZCam.currentElement);
                 }
             }
         MenuItem {

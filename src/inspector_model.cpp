@@ -346,6 +346,7 @@ void InspectorModel::parseProperties() {
       _propertyIsRow.clear();
       _propertyIsColumns.clear();
       _columnCounts.clear();
+      _rowLabelWidths.clear();
       _columnItems.clear();
       _subPropNames.clear();
       _rowLabels.clear();
@@ -402,6 +403,12 @@ void InspectorModel::parseProperties() {
                               int rowColumns = row.contains("columns") && row["columns"].is_number_integer()
                                                    ? row["columns"].get<int>()
                                                    : 1;
+
+                              // Optional per-row label width override (-1 = use default)
+                              int rowLabelWidth =
+                                  row.contains("labelWidth") && row["labelWidth"].is_number_integer()
+                                      ? row["labelWidth"].get<int>()
+                                      : -1;
 
                               if (rowColumns > 1) {
                                     // Multi-column row: treat like a columns block
@@ -467,6 +474,7 @@ void InspectorModel::parseProperties() {
                                           _propertyIsRow.append(false);
                                           _propertyIsColumns.append(true);
                                           _columnCounts.append(rowColumns);
+                                          _rowLabelWidths.append(rowLabelWidth);
                                           _columnItems.append(cols);
                                           _subPropNames.append(QStringList {});
                                           _rowLabels.append(QString());
@@ -501,6 +509,7 @@ void InspectorModel::parseProperties() {
                                           _propertyIsRow.append(true);
                                           _propertyIsColumns.append(false);
                                           _columnCounts.append(0);
+                                          _rowLabelWidths.append(-1);
                                           _columnItems.append(QList<ColumnItem> {});
                                           _subPropNames.append(subs);
                                           QString rowLabel;
@@ -515,6 +524,7 @@ void InspectorModel::parseProperties() {
                                           _propertyIsRow.append(false);
                                           _propertyIsColumns.append(false);
                                           _columnCounts.append(0);
+                                          _rowLabelWidths.append(-1);
                                           _columnItems.append(QList<ColumnItem> {});
                                           _subPropNames.append(QStringList {});
                                           _rowLabels.append(lineLabel);
@@ -525,6 +535,7 @@ void InspectorModel::parseProperties() {
                                           _propertyIsRow.append(false);
                                           _propertyIsColumns.append(false);
                                           _columnCounts.append(0);
+                                          _rowLabelWidths.append(-1);
                                           _columnItems.append(QList<ColumnItem> {});
                                           _subPropNames.append(QStringList {});
                                           _rowLabels.append(QString());
@@ -536,6 +547,7 @@ void InspectorModel::parseProperties() {
                                     _propertyIsRow.append(false);
                                     _propertyIsColumns.append(false);
                                     _columnCounts.append(0);
+                                    _rowLabelWidths.append(-1);
                                     _columnItems.append(QList<ColumnItem> {});
                                     _subPropNames.append(QStringList {});
                                     _rowLabels.append(QString());
@@ -616,6 +628,7 @@ QVariant InspectorModel::data(const QModelIndex& index, int role) const {
                   return QString();
             case IsColumnsRole: return _propertyIsColumns.value(index.row(), false);
             case ColumnCountRole: return _columnCounts.value(index.row(), 0);
+            case LabelWidthRole: return _rowLabelWidths.value(index.row(), -1);
             case ColumnItemsRole: {
                   // Serialize the column items as a list of QVariantMaps for QML
                   QVariantList list;
@@ -916,6 +929,7 @@ QHash<int, QByteArray> InspectorModel::roleNames() const {
       roles[SubScriptBoundRole] = "subScriptBound";
       roles[ScriptTextRole]     = "scriptText";
       roles[ScriptErrorRole]    = "scriptError";
+      roles[LabelWidthRole]     = "labelWidth";
       return roles;
       }
 
@@ -1005,7 +1019,7 @@ QStringList InspectorModel::laserLayerNames() const {
 //---------------------------------------------------------
 
 QString InspectorModel::laserLayerToName(QVariant ll) const {
-      LaserMop* ptr = ll.value<LaserMop*>();
+      Mop* ptr = ll.value<Mop*>();
       if (!ptr)
             return {};
       return ptr->name();
@@ -1013,10 +1027,10 @@ QString InspectorModel::laserLayerToName(QVariant ll) const {
 
 //---------------------------------------------------------
 //   nameToLaserLayer
-//    Resolve a name string back to a LaserLayer* pointer.
+//    Resolve a name string back to a Mop* pointer.
 //---------------------------------------------------------
 
-LaserMop* InspectorModel::nameToLaserLayer(const QString& name) const {
+Mop* InspectorModel::nameToLaserLayer(const QString& name) const {
       if (!_element || name.isEmpty())
             return nullptr;
       ZCam* zc    = nullptr;
@@ -1287,7 +1301,7 @@ void InspectorModel::setScript(const QString& propName, int comp, const QString&
       // is in _scriptComp[comp].
       QString oldScript;
       if (comp < 0)
-            oldScript = _element->scriptProp() == propName ? _element->script() : QString();
+            oldScript = _element->hasScriptFor(propName) ? _element->script(propName) : QString();
       else
             oldScript = _element->scriptCompProp(comp) == propName ? _element->scriptComp(comp) : QString();
 
@@ -1352,17 +1366,14 @@ void InspectorModel::removeScript(const QString& propName) {
       if (proj && proj->undo()) {
             proj->undo()->beginMacro();
             // Scalar binding
-            if (_element->scriptProp() == propName && !_element->script().isEmpty())
-                  proj->undo()->push(new ScriptBindingCommand(
-                      _element->zcamInstance(), _element, propName, -1,
-                      _element->script(), QString()));
+            if (_element->hasScriptFor(propName))
+                  proj->undo()->push(new ScriptBindingCommand(_element->zcamInstance(), _element, propName,
+                      -1, _element->script(propName), QString()));
             // Component bindings (x/y/z)
-            for (int comp = 0; comp < 3; ++comp) {
+            for (int comp = 0; comp < 3; ++comp)
                   if (_element->scriptCompProp(comp) == propName && !_element->scriptComp(comp).isEmpty())
-                        proj->undo()->push(new ScriptBindingCommand(
-                            _element->zcamInstance(), _element, propName, comp,
-                            _element->scriptComp(comp), QString()));
-                  }
+                        proj->undo()->push(new ScriptBindingCommand(_element->zcamInstance(), _element,
+                            propName, comp, _element->scriptComp(comp), QString()));
             proj->undo()->endMacro();
             }
       else

@@ -94,6 +94,16 @@ using DefaultScript = std::pair<std::string, std::string>;
 std::vector<DefaultScript> allDefaultScripts(std::string_view propStr);
 
 //---------------------------------------------------------
+//   tooltipForName
+//    Return the "tooltip" text declared in the properties()
+//    JSON definition for the given property name.  Returns an
+//    empty string if no tooltip is declared or the name is not
+//    found.
+//---------------------------------------------------------
+
+std::string tooltipForName(std::string_view propStr, const std::string& name);
+
+//---------------------------------------------------------
 //   readPropertyFromJson
 //    Deserialise a single property from JSON.  Returns true if
 //    the property was handled, false if the type is unknown or

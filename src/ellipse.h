@@ -74,16 +74,6 @@ class Ellipse : public Element3d
                       ]
                     },
                     {
-                      "label": "Color",
-                      "cells": [
-                        {
-                          "name": "color",
-                          "type": "color",
-                          "default": "green"
-                        }
-                      ]
-                    },
-                    {
                       "label": "Pos.",
                       "cells": [
                         {

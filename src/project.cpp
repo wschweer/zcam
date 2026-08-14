@@ -106,9 +106,7 @@ Project::Project(ZCam* z, Element* parent) : Element3d(z, parent) {
 
       // Forward UndoStack signal changes to Project::dirtyChanged
       // so QML bindings on project.dirty update automatically.
-      connect(_undo, &UndoStack::dirtyChanged, this, [this] {
-            emit dirtyChanged();
-            });
+      connect(_undo, &UndoStack::dirtyChanged, this, [this] { emit dirtyChanged(); });
 
       // The camera element is created in ensureCameraElement() after
       // loading, or in endNewProject() for new projects, to avoid duplicates.
@@ -293,7 +291,7 @@ void Project::updateCadLayerVisibility() {
                         if (_cad) {
                               std::function<void(Element*)> walk = [&](Element* e) {
                                     auto* e3d = qobject_cast<Element3d*>(e);
-                                    if (e3d && e3d->effectiveLaserLayer() == ll) {
+                                    if (e3d && e3d->effectiveMop() == ll) {
                                           // Mark the nearest Layer ancestor as referenced
                                           Element* p = e3d;
                                           while (p && !isType<Group>(p))
@@ -639,10 +637,10 @@ void AddGridCommand::undo() {
       }
 
 //---------------------------------------------------------
-//   AddLaserLayerCommand implementation
+//   AddLaserMopCommand implementation
 //---------------------------------------------------------
 
-AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
+AddLaserMopCommand::AddLaserMopCommand(ZCam* zcam, Fixture* fixture)
     : UndoCommand(zcam), _fixture(fixture) {
       _laserLayer = new LaserMop(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
@@ -650,7 +648,7 @@ AddLaserLayerCommand::AddLaserLayerCommand(ZCam* zcam, Fixture* fixture)
       _laserLayer->setName(QStringLiteral("LaserLayer"));
       }
 
-void AddLaserLayerCommand::redo() {
+void AddLaserMopCommand::redo() {
       if (!_fixture || !_laserLayer)
             return;
       int row = _fixture->children().size();
@@ -666,7 +664,7 @@ void AddLaserLayerCommand::redo() {
       zcam->setCamDirty(true);
       }
 
-void AddLaserLayerCommand::undo() {
+void AddLaserMopCommand::undo() {
       if (!_fixture || !_laserLayer)
             return;
       int row = 0;
@@ -696,8 +694,6 @@ AddRectangleCommand::AddRectangleCommand(ZCam* zcam, Group* layer, double x, dou
       _rect = new Rectangle(zcam, nullptr);
       _rect->set_size(QVector2D(0.0, 0.0));
       _rect->set_pos(QVector3D(x, y, 0.0));
-      if (zcam->config())
-            _rect->setColor(zcam->config()->rectangleColor());
       _rect->set_lineWidth(0.5);
       _rect->set_fill(true);
       _rect->update();
@@ -748,8 +744,6 @@ AddPolygonCommand::AddPolygonCommand(ZCam* zcam, Group* layer, double x, double 
     : UndoCommand(zcam), _layer(layer) {
       _poly = new Polygon(zcam, nullptr);
       _poly->set_pos(QVector3D(x, y, 0.0));
-      if (zcam->config())
-            _poly->setColor(zcam->config()->polygonColor());
       _poly->set_lineWidth(0.5);
       _poly->set_fill(true);
       _poly->update();
@@ -801,8 +795,6 @@ AddEllipseCommand::AddEllipseCommand(ZCam* zcam, Group* layer, double x, double 
       _ellipse = new Ellipse(zcam, nullptr);
       _ellipse->set_size(QVector2D(0.0, 0.0));
       _ellipse->set_pos(QVector3D(x, y, 0.0));
-      if (zcam->config())
-            _ellipse->setColor(zcam->config()->ellipseColor());
       _ellipse->set_lineWidth(0.5);
       _ellipse->set_fill(true);
       _ellipse->update();
@@ -854,8 +846,6 @@ AddTextCommand::AddTextCommand(ZCam* zcam, Group* layer, double x, double y)
       _text = new Text(zcam, nullptr);
       _text->set_text("");
       _text->set_pos(QVector3D(x, y, 0.0));
-      if (zcam->config())
-            _text->setColor(zcam->config()->textColor());
       _text->set_fill(true);
       _text->update();
       }
@@ -994,24 +984,20 @@ void Project::addLayer() {
       }
 
 //---------------------------------------------------------
-//   Project::addLaserLayerCmd
-//    Create a new LaserLayer as child of the given Fixture
-//    element.  The LaserLayer is auto-linked to the first
+//   Project::addLaserMopCmd
+//    Create a new LaserMop as child of the given Fixture
+//    element.  The LaserMop is auto-linked to the first
 //    available Cad Layer.  The operation is routed through
 //    the undo stack so it can be undone/redone.
 //---------------------------------------------------------
 
-void Project::addLaserLayerCmd(Fixture* fixture) {
+void Project::addLaserMopCmd(Fixture* fixture) {
       ZCam* zc = zcamInstance();
-      if (!zc) {
-            Critical("Project::addLaserLayerCmd: no ZCam instance");
-            return;
-            }
       if (!fixture) {
-            Critical("Project::addLaserLayerCmd: no Fixture element");
+            Critical("Project::addLaserMopCmd: no Fixture element");
             return;
             }
-      auto cmd = new AddLaserLayerCommand(zc, fixture);
+      auto cmd = new AddLaserMopCommand(zc, fixture);
       _undo->beginMacro();
       _undo->push(cmd);
       _undo->endMacro();

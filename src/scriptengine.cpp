@@ -14,10 +14,12 @@
 #include "element3d.h"
 #include "zcam.h"
 #include "project.h"
+#include "config.h"
 #include "logger.h"
 #include "propertyjson.h"
 
 #include <QColor>
+#include <functional>
 #include <QMetaMethod>
 #include <QMetaProperty>
 #include <QRegularExpression>
@@ -289,6 +291,15 @@ void ScriptEngine::rebuildRegistry(bool keepBindings) {
       QJSValue global = _engine.globalObject();
       global.setProperty(QStringLiteral("project"), _engine.newObject());
 
+      // Register Config as a top-level namespace object ("config")
+      // so scripts can reference config properties like
+      // "config.machinesDirectory".
+      if (_zcam && _zcam->config()) {
+            QJSValue configObj = _engine.newQObject(_zcam->config());
+            global.setProperty(QStringLiteral("config"), configObj);
+            refreshVectorSnapshots(_zcam->config());
+            }
+
       if (!_zcam || !_zcam->project())
             return;
 
@@ -299,14 +310,29 @@ void ScriptEngine::rebuildRegistry(bool keepBindings) {
       // then apply default scripts from the properties() JSON for
       // properties that have no stored script.
       if (!keepBindings) {
-            auto func = [this](this auto& self, Element* e) -> void {
+            // Restore Config's scripts.
+            if (_zcam && _zcam->config()) {
+                  Config* cfg = _zcam->config();
+                  for (auto it = cfg->_scripts.constBegin(); it != cfg->_scripts.constEnd(); ++it)
+                        if (!it.key().isEmpty() && !it.value().script.isEmpty())
+                              createBinding(cfg, it.key(), it.value().script);
+                  for (int comp = 0; comp < 3; ++comp) {
+                        if (cfg->hasScriptComp(comp)) {
+                              const QString p = cfg->scriptCompProp(comp);
+                              if (!p.isEmpty() && !cfg->scriptComp(comp).isEmpty())
+                                    createBinding(cfg, p, comp, cfg->scriptComp(comp));
+                              }
+                        }
+                  applyDefaultScripts(cfg);
+                  }
+
+            std::function<void(Element*)> func = [this, &func](Element* e) -> void {
                   if (!e)
                         return;
-                  if (e->hasScript()) {
-                        const QString p = e->scriptProp();
-                        if (!p.isEmpty() && !e->script().isEmpty())
-                              createBinding(e, p, e->script());
-                        }
+                  // Restore all scalar scripts from the map.
+                  for (auto it = e->_scripts.constBegin(); it != e->_scripts.constEnd(); ++it)
+                        if (!it.key().isEmpty() && !it.value().script.isEmpty())
+                              createBinding(e, it.key(), it.value().script);
                   for (int comp = 0; comp < 3; ++comp) {
                         if (e->hasScriptComp(comp)) {
                               const QString p = e->scriptCompProp(comp);
@@ -318,7 +344,7 @@ void ScriptEngine::rebuildRegistry(bool keepBindings) {
                   // properties that have no stored script.
                   applyDefaultScripts(e);
                   for (Element* c : e->children())
-                        self(c);
+                        func(c);
                   };
             func(_zcam->project());
             }
@@ -357,7 +383,7 @@ void ScriptEngine::applyDefaultScripts(Element* element) {
             QString scriptQ = QString::fromStdString(script);
             // Skip if the element already has a stored script for this
             // property (scalar or any vector component).
-            if (element->hasScript() && element->scriptProp() == propQ)
+            if (element->hasScriptFor(propQ))
                   continue;
             bool hasComp = false;
             for (int c = 0; c < 3; ++c) {
@@ -375,6 +401,28 @@ void ScriptEngine::applyDefaultScripts(Element* element) {
             // The default script is active by default.
             createBinding(element, propQ, scriptQ);
             }
+      }
+
+//--------------------------------------------------------------------
+//     registerSubtree
+//--------------------------------------------------------------------
+
+void ScriptEngine::registerSubtree(Element* root) {
+      if (!root || !_zcam || !_zcam->project())
+            return;
+      QJSValue global = _engine.globalObject();
+      QJSValue ns     = global.property(QStringLiteral("project"));
+      if (!ns.isObject())
+            return;
+      registerElement(root, ns);
+      std::function<void(Element*)> applyDefaults = [this, &applyDefaults](Element* e) {
+            if (!e)
+                  return;
+            applyDefaultScripts(e);
+            for (Element* c : e->children())
+                  applyDefaults(c);
+            };
+      applyDefaults(root);
       }
 
 //---------------------------------------------------------
@@ -413,42 +461,13 @@ void ScriptEngine::registerElement(Element* element, QJSValue ns) {
       }
 
 //---------------------------------------------------------
-//   refreshVectorSnapshots
-//    Replace the QObject wrapper of depElement in the
-//    JavaScript namespace by a plain JS object holding
-//    snapshots of all its Q_PROPERTY values.  This is
-//    necessary because the Qt QObject wrapper does not
-//    expose .x/.y/.z accessors for QVector2D/QVector3D
-//    values, and setting arbitrary properties on the
-//    QObject wrapper is silently ignored.
-//    The snapshots are refreshed by dependency re-evaluation.
+//   buildAndSetSnapshot
+//    Build a snapshot JS object for depElement holding all its
+//    Q_PROPERTY values (with vector types decomposed to {x,y,z}),
+//    preserve existing child references, and set it on *cur*.
 //---------------------------------------------------------
 
-void ScriptEngine::refreshVectorSnapshots(Element* depElement) {
-      if (!depElement || depElement->name().isEmpty() || !_zcam || !_zcam->project())
-            return;
-
-      // Walk the namespace from "project" down to the element's name.
-      // Every segment must already exist (registerElement created
-      // it); if any segment is missing we create it on the fly.
-      QStringList parts;
-      Element* p = depElement->parent();
-      while (p && p->typeName() != QStringLiteral("project")) {
-            if (!p->name().isEmpty())
-                  parts.prepend(p->name());
-            p = p->parent();
-            }
-
-      QJSValue cur = _engine.globalObject().property(QStringLiteral("project"));
-      for (const QString& part : parts) {
-            QJSValue next = cur.property(part);
-            if (!next.isObject()) {
-                  next = _engine.newObject();
-                  cur.setProperty(part, next);
-                  }
-            cur = next;
-            }
-
+void ScriptEngine::buildAndSetSnapshot(QJSValue& cur, Element* depElement) {
       // Build the snapshot object.
       QJSValue snap           = _engine.newObject();
       const QMetaObject* meta = depElement->metaObject();
@@ -507,6 +526,58 @@ void ScriptEngine::refreshVectorSnapshots(Element* depElement) {
                   }
             }
       cur.setProperty(depElement->name(), snap);
+      }
+
+//---------------------------------------------------------
+//   refreshVectorSnapshots
+//    Replace the QObject wrapper of depElement in the
+//    JavaScript namespace by a plain JS object holding
+//    snapshots of all its Q_PROPERTY values.  This is
+//    necessary because the Qt QObject wrapper does not
+//    expose .x/.y/.z accessors for QVector2D/QVector3D
+//    values, and setting arbitrary properties on the
+//    QObject wrapper is silently ignored.
+//    The snapshots are refreshed by dependency re-evaluation.
+//---------------------------------------------------------
+
+void ScriptEngine::refreshVectorSnapshots(Element* depElement) {
+      if (!depElement || depElement->name().isEmpty())
+            return;
+      if (!_zcam)
+            return;
+      // Config is not part of the project tree; it lives at the
+      // global level as "config".
+      if (depElement->typeName() == QStringLiteral("config")) {
+            QJSValue cur = _engine.globalObject();
+            buildAndSetSnapshot(cur, depElement);
+            return;
+            }
+      // For project-tree elements, require a project.
+      if (!_zcam->project())
+            return;
+
+      // Walk the namespace from "project" down to the element's name.
+      // Every segment must already exist (registerElement created
+      // it); if any segment is missing we create it on the fly.
+      QStringList parts;
+      Element* p = depElement->parent();
+      while (p && p->typeName() != QStringLiteral("project")) {
+            if (!p->name().isEmpty())
+                  parts.prepend(p->name());
+            p = p->parent();
+            }
+
+      QJSValue cur = _engine.globalObject().property(QStringLiteral("project"));
+      for (const QString& part : parts) {
+            QJSValue next = cur.property(part);
+            if (!next.isObject()) {
+                  next = _engine.newObject();
+                  cur.setProperty(part, next);
+                  }
+            cur = next;
+            }
+
+      buildAndSetSnapshot(cur, depElement);
       }
 
 //---------------------------------------------------------
@@ -591,9 +662,8 @@ void ScriptEngine::createBinding(Element* element, QString prop, int comp, QStri
       // Persist the script text on the element so it survives
       // save/load (serialised in Element::toJson()).
       if (comp < 0) {
-            element->setScriptProp(prop);
-            element->setScript(script);
-            b->setActive(element->_scriptActive);
+            element->setScript(prop, script);
+            b->setActive(element->_scripts.value(prop).active);
             }
       else {
             element->setScriptCompProp(comp, prop);
@@ -671,8 +741,8 @@ bool ScriptEngine::setBindingActive(Element* element, const QString& prop, bool 
             }
       // Persist active state on the element so it survives save/load.
       if (found) {
-            if (element->scriptProp() == prop)
-                  element->_scriptActive = active;
+            if (element->_scripts.contains(prop))
+                  element->_scripts[prop].active = active;
             for (int i = 0; i < 3; ++i)
                   if (element->scriptCompProp(i) == prop)
                         element->_scriptCompActive[i] = active;
@@ -720,7 +790,7 @@ QString ScriptEngine::scriptForQml(QObject* element, const QString& prop, int co
             return {};
       if (comp >= 0)
             return el->scriptCompProp(comp) == prop ? el->scriptComp(comp) : QString();
-      return el->scriptProp() == prop ? el->script() : QString();
+      return el->hasScriptFor(prop) ? el->script(prop) : QString();
       }
 
 //---------------------------------------------------------
@@ -789,6 +859,10 @@ QVariant ScriptEngine::testScript(const QString& script) {
 static QString elementJsPath(Element* element) {
       if (!element || element->name().isEmpty())
             return {};
+      // Config is a top-level namespace object ("config"), not
+      // nested under "project".
+      if (element->typeName() == QStringLiteral("config"))
+            return element->name();
       QStringList parts;
       Element* p = element->parent();
       while (p && p->typeName() != QStringLiteral("project")) {
@@ -814,7 +888,7 @@ static QString elementJsPath(Element* element) {
 static QStringList buildScopeChain(Element* element) {
       QStringList chain;
       Element* e = element;
-      while (e && e->typeName() != QStringLiteral("project")) {
+      while (e && e->typeName() != QStringLiteral("project") && e->typeName() != QStringLiteral("config")) {
             if (!e->name().isEmpty())
                   chain.append(elementJsPath(e));
             e = e->parent();

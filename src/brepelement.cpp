@@ -48,10 +48,7 @@ BrepElement::BrepElement(ZCam* zcam, Element* parent) : Element3d(zcam, parent) 
       // Default steel-blue CAD colour; ProjectTree.qml binds this to
       // the model material (instance.color = element.curColor), so
       // without a valid colour the object renders black.
-      if (zcam->config())
-            setColor(zcam->config()->brepColor());
-      else
-            setColor(QColor(120, 150, 180));
+      setColor(QColor(120, 150, 180));
       }
 
 BrepElement::~BrepElement() = default;
@@ -141,6 +138,7 @@ bool BrepElement::loadFile(const QString& path) {
 //    _meshMin/_meshMax brick) instead of the flat z=0 rectangle
 //    the base implementation generates around boundingBox().
 //---------------------------------------------------------
+
 void BrepElement::updateSelectionGeometry() {
       if (!_selectionGeometry)
             return;
@@ -153,7 +151,7 @@ void BrepElement::updateSelectionGeometry() {
       QVector3D c[8];
       for (int i = 0; i < 8; ++i)
             c[i] = QVector3D((i & 1) ? _meshMax.x() : _meshMin.x(), (i & 2) ? _meshMax.y() : _meshMin.y(),
-                             (i & 4) ? _meshMax.z() : _meshMin.z());
+                (i & 4) ? _meshMax.z() : _meshMin.z());
       // 12 edges: 4 at z-min, 4 at z-max, 4 vertical.
       // Corner index bit layout: bit0=x, bit1=y, bit2=z.
       // Bottom face (z = min): 0-1, 1-3, 3-2, 2-0
@@ -248,8 +246,8 @@ bool BrepElement::loadShapeFromFile(const QString& path, TopoDS_Shape& shape) {
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-bool BrepElement::buildPolylineFromShape(const TopoDS_Shape& shape, double deflection, PathList& pathList,
-                                         QRectF& worldBBox) {
+bool BrepElement::buildPolylineFromShape(
+    const TopoDS_Shape& shape, double deflection, PathList& pathList, QRectF& worldBBox) {
       if (shape.IsNull())
             return false;
       OCC_CATCH_SIGNALS
@@ -303,8 +301,8 @@ bool BrepElement::buildPolylineFromShape(const TopoDS_Shape& shape, double defle
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-bool BrepElement::computeMeshBounds(const TopoDS_Shape& shape, double deflection, double angle,
-                                    QVector3D& bMin, QVector3D& bMax) {
+bool BrepElement::computeMeshBounds(
+    const TopoDS_Shape& shape, double deflection, double angle, QVector3D& bMin, QVector3D& bMax) {
       if (shape.IsNull())
             return false;
       OCC_CATCH_SIGNALS

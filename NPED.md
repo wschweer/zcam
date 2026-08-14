@@ -20,9 +20,25 @@ Or use the Ninja build system (build.ninja is pre-generated).
 - **MachineGCode : Machine**: G-code CNC machine (new).
 - **Machines**: Container that loads/saves machine JSON files.
 - **Project**: Top-level element owning CAD, CAM, Fixture, undo stack, and Machine.
+- **Config : Element**: Application-wide configuration (GUI, colors, paths,
+  SpaceMouse, DXF import settings).  Derives from Element so its properties
+  can be made scriptable via the ScriptEngine.  Registered in the JS namespace
+  as `config` (a top-level sibling of `project`) so scripts can reference
+  config properties like `config.machinesDirectory`.  Script bindings are
+  persisted in assets.json alongside the config properties.
+- **ConfigModel**: QAbstractListModel exposing Config properties to QML,
+  analogous to MachineModel.  Implements the full scripting Q_INVOKABLE API
+  (isScriptBound, setScript, scriptFor, scriptError, setScriptActive,
+  isScriptActive, boundComponents, testScript, testScriptWithContext,
+  removeScript, elementProperty) so the PropertyEditor f(x) button works
+  for scriptable Config properties (e.g. path-type properties marked with
+  `"scriptable": true`).
 - **InspectorModel / MachineModel**: QAbstractListModel exposing properties to QML.
 - **Property JSON**: Each class defines a `properties()` JSON string describing
-  the GUI layout (rows/cells format).
+  the GUI layout (rows/cells format).  Each cell can include a `"tooltip"` string
+  field; when present, the PropertyEditor shows a QML ToolTip on hover over the
+  property label (top-level) or ValueBox (sub-delegate).  The C++ helper
+  `propjson::tooltipForName()` retrieves the tooltip for a given property name.
 - **CameraElement : Element3d**: Manages an attached Linux webcam (V4L2/Qt
   Multimedia). The camera device is selected from the list of available inputs
   (combobox in the inspector, `cameraName` type), the live image is shown in the
@@ -72,6 +88,23 @@ Or use the Ninja build system (build.ninja is pre-generated).
   (`qrc:/manual/`). German is the primary language, English is an automatically
   translated variant. Language switching is done via buttons in the panel.
   Requires `Qt6::WebEngineQuick` (initialised in `main.cpp`).
+- **ZCamFileDialog (QML)**: Custom Material-dark file picker that replaces
+  Qt's platform-native `FileDialog`. On KDE Plasma the native dialog comes
+  from the xdg-desktop-portal and its sidebar (folders like "Benutzerverzeichnis",
+  "Desktop", "Downloads") renders dark-on-dark. ZCamFileDialog always uses the
+  dark theme regardless of the desktop environment; it provides a sidebar
+  (Home/Desktop/Documents/Downloads), a FolderListModel file list, filter
+  ComboBox and a path editor. It exposes the same API as Qt's FileDialog
+  (title, fileMode, nameFilters, defaultSuffix, selectedFile, accepted/rejected)
+  and is used throughout Main.qml and GalvoCalibrationDialog.qml.
+  The configured `projectsDirectory` (Config property) is automatically
+  added as a sidebar favorite entry via `ZCam::setupFileDialogFavorites()`
+  which writes to `QSettings("QtProject", "qquickfiledialog")` using the
+  `beginWriteArray("favorites")` format expected by Qt's
+  `QQuickSideBarPrivate::readSettings()`.  The favorite appears at the
+  top of the sidebar in all file dialogs.  The Open Project dialog also
+  sets `currentFolder` to the projectsDirectory so it opens there by
+  default.
 
 ## File Imports
 - **SVG / DXF / BREP**: `ZCam::importFile()` dispatches by suffix to the

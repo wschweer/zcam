@@ -16,6 +16,10 @@
 #include "tessgeometry.h"
 #include "clipper2/clipper.h"
 
+#include <QColor>
+#include <QList>
+#include <QVector2D>
+
 //---------------------------------------------------------
 //   Cam
 //---------------------------------------------------------
@@ -33,6 +37,12 @@ class Cam : public Element3d
       PROPV(bool, perspective, false)                   ///< project with central (perspective) projection
       PROPV(double, projectionHeight, 1000.0)           ///< viewpoint height [mm] above the z=0 plane
       PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0)) ///< foot point (x,y) [mm] of the viewpoint on z=0
+
+      // Colours for each LaserMop layer, in geometry-subset order.
+      // Populated by updateCam(); used by CamShape.qml to build per-layer
+      // materials so each Mop's CAM data is drawn in its own colour.
+      QList<QColor> _layerColors;
+      Q_PROPERTY(QList<QColor> layerColors READ layerColors NOTIFY layerColorsChanged)
 
       inline static constexpr std::string_view _properties {R"({
     "class": "Cam",
@@ -221,16 +231,19 @@ class Cam : public Element3d
             ]
         }
     ]
-            })"};
+                  })"};
 
     signals:
       void panelChanged();
+      void layerColorsChanged();
 
     public:
       Cam(ZCam*, Element* parent = nullptr);
       virtual QString typeName() override { return QStringLiteral("cam"); }
       virtual const std::string_view properties() const override { return _properties; }
       Q_INVOKABLE virtual bool visible() const override { return true; }
+      /// Returns the per-layer Mop colours, in subset order.
+      QList<QColor> layerColors() const { return _layerColors; }
       /// Recalculate all cam data (panel layout, fixture, laser layers).
       /// Collects geometry from all LaserLayer children, arranges them
       /// in a panel grid (rows × columns with distance offsets), and

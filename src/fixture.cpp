@@ -27,8 +27,6 @@
 
 Fixture::Fixture(ZCam* w, Element* parent) : Element3d(w, parent) {
       setName("fixture");
-      if (w->config())
-            setColor(w->config()->fixtureColor());
       if (w->project())
             w->project()->addFixture(this);
       }
@@ -87,8 +85,8 @@ Clipper2Lib::RectD Fixture::size(double& width, double& height) const {
 //---------------------------------------------------------
 
 json Fixture::toJson() const {
-      json data = Element3d::toJson();
-      data["jobDuration"] = _jobDuration;
+      json data                    = Element3d::toJson();
+      data["jobDuration"]          = _jobDuration;
       data["jobDurationEstimated"] = _jobDurationEstimated;
       return data;
       }

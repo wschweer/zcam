@@ -16,9 +16,23 @@
 // quad to exact pixel width, so this stage only fills the colour.
 // Output is fully PREMULTIPLIED, per Qt Quick 3D specification.
 
+// Varying from the vertex shader: signed side of the stroke.
+VARYING float vSide;
+
 void MAIN()
       {
+      // Analytic anti-aliasing:  the rasterizer interpolates vSide
+      // linearly across the expanded quad (0 = line centre, ±1 =
+      // edge).  Fade the alpha to 0 over the outer 40% of the
+      // stroke so the line edge is smooth instead of a hard,
+      // stair-stepped cutoff.  For a 1 px minor line this yields a
+      // graceful sub-pixel falloff; for the 2 px major line it
+      // gives visibly soft edges.
+      float dist  = abs(vSide);
+      float alpha = 1.0 - smoothstep(0.6, 1.0, dist);
+
       vec4 c = uColor;
-      c.rgb *= c.a;
+      c.a   *= alpha;        // Modulate alpha with the edge fade
+      c.rgb *= c.a;          // Premultiplied alpha per Qt Quick 3D
       FRAGCOLOR = c;
       }

@@ -19,6 +19,8 @@
 
 #include "zcam.h"
 
+class ScriptEngine;
+
 //---------------------------------------------------------
 //   ConfigColumnItem
 //    Describes a single item inside a "columns" block.
@@ -31,7 +33,8 @@ struct ConfigColumnItem {
       bool isEmpty = false;
       QStringList subProps;
       QString rowLabel;
-      int colSpan = 1;
+      int colSpan    = 1;
+      int labelWidth = -1; ///< per-row override; -1 = use default
       };
 
 //---------------------------------------------------------
@@ -78,7 +81,8 @@ class ConfigModel : public QAbstractListModel
             IsColumnsRole,
             ColumnCountRole,
             ColumnItemsRole,
-            CatRole
+            CatRole,
+            LabelWidthRole
             };
       int rowCount(const QModelIndex& parent = QModelIndex()) const override;
       QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -87,6 +91,23 @@ class ConfigModel : public QAbstractListModel
 
       Q_INVOKABLE bool setSubProperty(int row, const QString& subName, const QVariant& value);
       Q_INVOKABLE bool setColumnProperty(int modelRow, const QString& propName, const QVariant& value);
+
+      // Called from QML to read any property value from the current config.
+      // Used by the QML PropertyEditor for the "enabled" keyword and the
+      // multiline text delegate.
+      Q_INVOKABLE QVariant elementProperty(const QString& name) const;
+
+      // ── Scripting ──────────────────────────────────────────────────
+      Q_INVOKABLE bool isScriptBound(const QString& propName) const;
+      Q_INVOKABLE QString boundComponents(const QString& propName) const;
+      Q_INVOKABLE QString scriptFor(const QString& propName, int comp) const;
+      Q_INVOKABLE QString scriptError(const QString& propName, int comp) const;
+      Q_INVOKABLE void setScript(const QString& propName, int comp, const QString& script);
+      Q_INVOKABLE QVariant testScript(const QString& script) const;
+      Q_INVOKABLE QVariant testScriptWithContext(const QString& script) const;
+      Q_INVOKABLE void removeScript(const QString& propName);
+      Q_INVOKABLE void setScriptActive(const QString& propName, bool active);
+      Q_INVOKABLE bool isScriptActive(const QString& propName) const;
 
       // Called from QML delegates for "machineName" type properties: returns
       // the list of available Machine names from ZCam::machines.
@@ -116,6 +137,7 @@ class ConfigModel : public QAbstractListModel
             bool isRow      = false;
             bool isColumns  = false;
             int columnCount = 0;
+            int labelWidth  = -1;
             QStringList subProps;
             QString rowLabel;
             QList<ConfigColumnItem> columnItems;

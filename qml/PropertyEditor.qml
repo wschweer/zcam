@@ -157,6 +157,31 @@ Item {
         return Math.pow(10, -p)
         }
 
+    // ── Tooltip helpers ────────────────────────────────────────────────
+    // A single shared ToolTip on the root item.  PropLabel and ValueBox
+    // call _showPropTooltip / _hidePropTooltip from their HoverHandler.
+    function _showPropTooltip(target, text) {
+        propToolTip.text = text
+        // Position the tooltip just below the hovered item,
+        // mapped into root coordinates.
+        var pos = target.mapToItem(root, 0, target.height + 4)
+        propToolTip.x = Math.max(4, Math.min(pos.x, root.width - propToolTip.width - 4))
+        propToolTip.y = pos.y
+        propToolTip.visible = true
+        }
+
+    function _hidePropTooltip() {
+        propToolTip.visible = false
+        }
+
+    ToolTip {
+        id: propToolTip
+        parent: root
+        delay: 600
+        timeout: 8000
+        visible: false
+        }
+
     // ── "enabled" keyword support ──────────────────────────────────────
     // A cell JSON object may contain an "enabled" key whose value is the
     // name of a bool property on the same element/machine/pass.  The GUI
@@ -294,6 +319,7 @@ Item {
             case "path":          return pathDelegate
             case "line":          return lineDelegate
             case "color":         return colorDelegate
+            case "mopColor":       return mopColorDelegate
             case "layer":
             case "laserLayer":
             case "recipe":
@@ -323,7 +349,7 @@ Item {
     // Called from every Loader's onLoaded to set the unified property
     // interface with a single function call, replacing ~6 repeated
     // assignment blocks.
-    function setupDelegate(item, name, valueFn, metaObj, index, setter, isTop) {
+    function setupDelegate(item, name, valueFn, metaObj, index, setter, isTop, labelWidth) {
         if (!item)
             return
         item.propName  = name
@@ -336,10 +362,12 @@ Item {
         item.bound      = Qt.binding(() => root.isScriptBound(name))
         item.boundComponents = Qt.binding(() => root.boundComponents(name))
         item.setValue   = setter
+        // Per-row label width override from the model (-1 = use default)
+        root.safeSetProp(item, "labelWidth", labelWidth !== undefined ? labelWidth : -1)
         }
 
     // Setup for row-type delegates (subProps / subValues / rowLabel).
-    function setupRowDelegate(item, propName, subProps, subValuesBinding, rowLabel, propIndex, setSubValueFn) {
+    function setupRowDelegate(item, propName, subProps, subValuesBinding, rowLabel, propIndex, setSubValueFn, labelWidth) {
         if (!item)
             return
         item.propName   = propName
@@ -348,6 +376,7 @@ Item {
         item.rowLabel   = rowLabel ?? ""
         item.propIndex  = propIndex
         item.setSubValue = setSubValueFn
+        root.safeSetProp(item, "labelWidth", labelWidth !== undefined ? labelWidth : -1)
         }
 
     // Setup for sub-delegates loaded inside row/colRow repeaters.
@@ -483,6 +512,7 @@ Item {
         property string error: ""
         property bool active: false
         property bool _userDeactivated: false
+        property bool _closedByButton: false   // true when closed via Close button
 
         // Vector mode: show a component selector (All/X/Y/Z) so the
         // user can pick which component to bind.
@@ -500,11 +530,19 @@ Item {
             scriptTextArea.text = scriptPopup.script
             activeCheck.checked = scriptPopup.active
             scriptPopup._userDeactivated = false
+            scriptPopup._closedByButton = false
             scriptTextArea.forceActiveFocus()
             scriptPopup.evaluate()
             }
 
         onClosed: {
+            // Only apply/deactivate when the user explicitly closed the
+            // popup via the Close button.  When the popup is closed by
+            // clicking outside (CloseOnPressOutside), the targetProp may
+            // be stale (it belongs to the previous property), so
+            // applying would corrupt the wrong property's script.
+            if (!scriptPopup._closedByButton)
+                return
             if (scriptPopup._userDeactivated)
                 return
             if (scriptTextArea.text.length > 0)
@@ -707,7 +745,10 @@ Item {
 
                 Button {
                     text: qsTr("Close")
-                    onClicked: scriptPopup.close()
+                    onClicked: {
+                        scriptPopup._closedByButton = true
+                        scriptPopup.close()
+                        }
                     }
                 }
             }
@@ -915,10 +956,12 @@ Item {
 
     // ══════════════════════════════════════════════════════════════════════
     //  PropLabel — standard property label (eliminates ~20× duplication)
+    //  Shows a ToolTip when the associated cell metadata declares a
+    //  "tooltip" string.
     // ══════════════════════════════════════════════════════════════════════
     component PropLabel : Label {
         id: _lbl
-        Layout.preferredWidth: root.labelWidth
+        Layout.preferredWidth: _lbl.labelWidth > 0 ? _lbl.labelWidth : root.labelWidth
         Layout.rightMargin: 2
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
@@ -927,6 +970,11 @@ Item {
         opacity: 0.75
 
         property bool alignTop: false
+        property int labelWidth: -1
+
+        // Optional tooltip text from the cell metadata "tooltip" field.
+        // The tooltip is shown via the ValueBox's HoverHandler, not here.
+        property string tooltipText: ""
         }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -994,6 +1042,11 @@ Item {
         property bool subLabelAlignRight: false
         property bool hovered: hoverArea.containsMouse
 
+        // Optional tooltip text — shown on hover when non-empty.
+        // Used by sub-delegates (showLabel=false) where the PropLabel
+        // is hidden and the tooltip is displayed on the ValueBox instead.
+        property string tooltipText: ""
+
         default property alias contentChildren: contentColumn.data
 
         MouseArea {
@@ -1002,6 +1055,17 @@ Item {
             hoverEnabled: true
             acceptedButtons: Qt.NoButton
             }
+
+        HoverHandler {
+            id: vboxHover
+            enabled: vbox.tooltipText.length > 0
+            onHoveredChanged: {
+                if (hovered)
+                    root._showPropTooltip(vbox, vbox.tooltipText)
+                else
+                    root._hidePropTooltip()
+            }
+        }
 
         Item {
             id: contentColumn
@@ -1108,11 +1172,13 @@ Item {
                             delegateRoot.index,
                             function(subName, v) {
                                 root.model.setSubProperty(delegateRoot.index, subName, v)
-                                })
+                                },
+                            delegateRoot.model.labelWidth ?? -1)
                         }
                     else if (delegateRoot.model.isColumns) {
                         item.propIndex   = delegateRoot.index
                         item.columnCount = delegateRoot.model.columnCount
+                        item.rowLabelWidth = delegateRoot.model.labelWidth ?? -1
                         item.columnItems = Qt.binding(() => delegateRoot.model.columnItems)
                         item.setModelValue = function(propName, v) {
                             root.model.setColumnProperty(delegateRoot.index, propName, v)
@@ -1128,7 +1194,8 @@ Item {
                             root.metaFor(delegateRoot.model.propName),
                             delegateRoot.index,
                             function(v) { delegateRoot.model.propValue = v },
-                            true)
+                            true,
+                            delegateRoot.model.labelWidth ?? -1)
                         root.safeSetProp(item, "rowLabel", delegateRoot.model.rowLabel ?? "")
                         }
                     }
@@ -1154,6 +1221,7 @@ Item {
             property var meta
             property int propIndex
             property string rowLabel
+            property int labelWidth: -1
             property bool showLabel: true
             property bool bound: false
             property var boundComponents: ""
@@ -1201,6 +1269,7 @@ Item {
             property bool bound: false
             property var boundComponents: ""
             property string rowLabel: ""
+            property int labelWidth: -1
             property var setValue: function(v) {}
             }
         }
@@ -1219,12 +1288,13 @@ Item {
             property var subProps
             property var subValues
             property string rowLabel
+            property int labelWidth: -1
             property int propIndex
             property var setSubValue
 
             Label {
                 text: rowContainer.rowLabel
-                Layout.preferredWidth: root.labelWidth
+                Layout.preferredWidth: rowContainer.labelWidth > 0 ? rowContainer.labelWidth : root.labelWidth
                 Layout.rightMargin: 2
                 elide: Text.ElideRight
                 horizontalAlignment: Text.AlignRight
@@ -1290,6 +1360,7 @@ Item {
 
             property int propIndex
             property int columnCount: 2
+            property int rowLabelWidth: -1
             property var columnItems: []
             property var setModelValue: function(propName, v) {}
             property var setSubValue: function(rowItem, subName, v) {}
@@ -1443,7 +1514,8 @@ Item {
                                         colsContainer.propIndex,
                                         function(subName, v) {
                                             colsContainer.setSubValue(d, subName, v)
-                                            })
+                                            },
+                                        colsContainer.rowLabelWidth)
                                     }
                                 else {
                                     root.setupDelegate(item,
@@ -1456,7 +1528,8 @@ Item {
                                         root.metaFor(d.name),
                                         colsContainer.propIndex,
                                         function(v) { colsContainer.setModelValue(d.name, v) },
-                                        true)
+                                        true,
+                                        colsContainer.rowLabelWidth)
                                     }
                                 }
                             }
@@ -1503,10 +1576,17 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             PropLabel {
+
+
                 visible: boolDel.showLabel
+
+
+                labelWidth: boolDel.labelWidth
                 text: boolDel.meta ? boolDel.meta.label ?? "" : ""
+                tooltipText: boolDel.meta ? boolDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
@@ -1514,6 +1594,7 @@ Item {
                 Layout.minimumWidth: 60
                 unitText: boolDel.meta ? boolDel.meta.unit ?? "" : ""
                 subLabelText: !boolDel.showLabel ? (boolDel.meta ? boolDel.meta.sublabel ?? boolDel.meta.label ?? "" : "") : ""
+                tooltipText: boolDel.meta ? boolDel.meta.tooltip ?? "" : ""
 
                 // Custom styled label for fontStyle sub-properties
                 Text {
@@ -1559,16 +1640,24 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             PropLabel {
+
+
                 visible: intDel.showLabel
+
+
+                labelWidth: intDel.labelWidth
                 text: intDel.meta ? intDel.meta.label ?? "" : ""
+                tooltipText: intDel.meta ? intDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 unitText: intDel.meta ? intDel.meta.unit ?? "" : ""
                 subLabelText: !intDel.showLabel ? (intDel.meta ? intDel.meta.sublabel ?? intDel.meta.label ?? "" : "") : ""
+                tooltipText: intDel.meta ? intDel.meta.tooltip ?? "" : ""
 
                 BareSpinBox {
                     anchors.fill: parent
@@ -1616,16 +1705,24 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             PropLabel {
+
+
                 visible: floatDel.showLabel
+
+
+                labelWidth: floatDel.labelWidth
                 text: floatDel.meta ? floatDel.meta.label ?? "" : ""
+                tooltipText: floatDel.meta ? floatDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 unitText: floatDel.meta ? floatDel.meta.unit ?? "" : ""
                 subLabelText: !floatDel.showLabel ? (floatDel.meta ? floatDel.meta.sublabel ?? floatDel.meta.label ?? "" : "") : ""
+                tooltipText: floatDel.meta ? floatDel.meta.tooltip ?? "" : ""
 
                 BareDoubleSpinBox {
                     anchors.fill: parent
@@ -1679,6 +1776,7 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property bool is2d: meta?.type === "vector2d" || meta?.type === "size"
             readonly property bool isSize: meta?.type === "size"
@@ -1690,8 +1788,14 @@ Item {
                 }
 
             PropLabel {
+
+
                 visible: vecDel.showLabel
+
+
+                labelWidth: vecDel.labelWidth
                 text: vecDel.meta ? vecDel.meta.label ?? "" : ""
+                tooltipText: vecDel.meta ? vecDel.meta.tooltip ?? "" : ""
             }
 
             // ── Component 0 (X / width) ──
@@ -1701,6 +1805,7 @@ Item {
                 vectorValue: vecDel.propValue
                 meta: vecDel.meta
                 boundComponents: vecDel.boundComponents
+                tooltipText: vecDel.meta ? vecDel.meta.tooltip ?? "" : ""
                 onComponentChange: v => {
                     var cur = root.model ? root.model.elementProperty(vecDel.propName) : vecDel.propValue
                     if (!cur) return
@@ -1718,6 +1823,7 @@ Item {
                 vectorValue: vecDel.propValue
                 meta: vecDel.meta
                 boundComponents: vecDel.boundComponents
+                tooltipText: vecDel.meta ? vecDel.meta.tooltip ?? "" : ""
                 onComponentChange: v => {
                     var cur = root.model ? root.model.elementProperty(vecDel.propName) : vecDel.propValue
                     if (!cur) return
@@ -1736,6 +1842,7 @@ Item {
                 vectorValue: vecDel.propValue
                 meta: vecDel.meta
                 boundComponents: vecDel.boundComponents
+                tooltipText: vecDel.meta ? vecDel.meta.tooltip ?? "" : ""
                 onComponentChange: v => {
                     var cur = root.model ? root.model.elementProperty(vecDel.propName) : vecDel.propValue
                     if (!cur) return
@@ -1777,13 +1884,20 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property bool isMultiline: meta?.type === "multiline"
 
             PropLabel {
+
+
                 visible: textDel.showLabel
+
+
+                labelWidth: textDel.labelWidth
                 alignTop: textDel.isMultiline
                 text: textDel.meta ? textDel.meta.label ?? "" : ""
+                tooltipText: textDel.meta ? textDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
@@ -1791,6 +1905,7 @@ Item {
                 implicitHeight: textDel.isMultiline ? 80 : 28
                 unitText: textDel.meta ? textDel.meta.unit ?? "" : ""
                 subLabelText: !textDel.showLabel ? (textDel.meta ? textDel.meta.sublabel ?? textDel.meta.label ?? "" : "") : ""
+                tooltipText: textDel.meta ? textDel.meta.tooltip ?? "" : ""
 
                 // Multi-line: ScrollView + TextArea
                 ScrollView {
@@ -1868,6 +1983,7 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             function toColor(v) {
                 if (v === undefined || v === null)
@@ -1887,13 +2003,20 @@ Item {
                 }
 
             PropLabel {
+
+
                 visible: colorDel.showLabel
+
+
+                labelWidth: colorDel.labelWidth
                 text: colorDel.meta ? colorDel.meta.label ?? "" : ""
+                tooltipText: colorDel.meta ? colorDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 subLabelText: !colorDel.showLabel ? (colorDel.meta ? colorDel.meta.sublabel ?? colorDel.meta.label ?? "" : "") : ""
+                tooltipText: colorDel.meta ? colorDel.meta.tooltip ?? "" : ""
 
                 RowLayout {
                     anchors.fill: parent
@@ -1955,6 +2078,163 @@ Item {
             }
         }
 
+    // ── mopColor: button with current colour + popup palette ─────────
+    Component {
+        id: mopColorDelegate
+
+        RowLayout {
+            id: mopColorDel
+            Layout.fillWidth: !showLabel
+            width: showLabel && parent ? parent.width : 0
+            spacing: 2
+
+            property string propName
+            property var propValue
+            property var meta
+            property int propIndex
+            property var setValue: function(v) {}
+            property bool bound: false
+            property var boundComponents: ""
+            property bool showLabel: true
+            property string rowLabel: ""
+            property int labelWidth: -1
+
+            // The 32 Mop colours, read from the user-configurable Config
+            // properties (mopColor0..mopColor31) when available.  Falls
+            // back to the built-in default palette when no Config is set.
+            readonly property var defaultMopColors: [
+                "#808080", "#FF0000", "#00FF00", "#0000FF",
+                "#FFFF00", "#FF00FF", "#00FFFF", "#FF8000",
+                "#8000FF", "#0080FF", "#80FF00", "#FF0080",
+                "#00FF80", "#808000", "#008080", "#800080",
+                "#FF8080", "#80FF80", "#8080FF", "#FFFF80",
+                "#FF80FF", "#80FFFF", "#C0C0C0", "#A04040",
+                "#40A040", "#4040A0", "#A0A040", "#A040A0",
+                "#40A0A0", "#404040", "#E0E0E0", "#202020"
+            ]
+            readonly property var mopColors: {
+                var cfg = ZCam.config
+                if (!cfg)
+                    return defaultMopColors
+                var arr = []
+                for (var i = 0; i < 32; ++i) {
+                    var c = cfg["mopColor" + i]
+                    if (c !== undefined)
+                        arr.push(c)
+                    else
+                        arr.push(defaultMopColors[i])
+                    }
+                return arr
+            }
+
+            function currentIndex() {
+                var v = Number(mopColorDel.propValue)
+                if (isNaN(v) || v < 0 || v >= 32)
+                    return 0
+                return v
+            }
+
+            PropLabel {
+
+
+                visible: mopColorDel.showLabel
+
+
+                labelWidth: mopColorDel.labelWidth
+                text: mopColorDel.meta ? mopColorDel.meta.label ?? "" : ""
+                tooltipText: mopColorDel.meta ? mopColorDel.meta.tooltip ?? "" : ""
+            }
+
+            ValueBox {
+                Layout.fillWidth: true
+                subLabelText: !mopColorDel.showLabel ? (mopColorDel.meta ? mopColorDel.meta.sublabel ?? mopColorDel.meta.label ?? "" : "") : ""
+                tooltipText: mopColorDel.meta ? mopColorDel.meta.tooltip ?? "" : ""
+
+                // Colour button showing the current Mop colour
+                Rectangle {
+                    id: mopColorSwatch
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    radius: 4
+                    color: mopColorDel.mopColors[mopColorDel.currentIndex()]
+                    border.width: 1
+                    border.color: Material.accentColor
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mopColorPopup.open()
+                        hoverEnabled: true
+                        ToolTip.visible: containsMouse
+                        ToolTip.delay: 800
+                        ToolTip.text: qsTr("Click to select Mop colour")
+                    }
+                }
+            }
+
+            // Popup with 32 swatches in two rows of 16.
+            // Declared outside the ValueBox so it is not clipped or
+            // sized by the ValueBox's bounded geometry.
+            Popup {
+                id: mopColorPopup
+                parent: root.Window.window ? root.Window.window.contentItem : root
+                anchors.centerIn: parent
+                modal: true
+                padding: 10
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                background: Rectangle {
+                    color: "#3a3a3a"
+                    radius: 6
+                    border.width: 1
+                    border.color: Material.accentColor
+                }
+
+                contentItem: ColumnLayout {
+                    spacing: 8
+
+                    Label {
+                        text: qsTr("Select Mop Colour")
+                        font.bold: true
+                        color: Material.accentColor
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+
+                    GridLayout {
+                        columns: 16
+                        rowSpacing: 4
+                        columnSpacing: 4
+                        Layout.alignment: Qt.AlignHCenter
+
+                        Repeater {
+                            model: 32
+
+                            delegate: Rectangle {
+                                id: swatch
+                                required property int index
+                                width: 24
+                                height: 24
+                                radius: 3
+                                color: mopColorDel.mopColors[index]
+                                border.width: (mopColorDel.currentIndex() === index) ? 3 : 0
+                                border.color: Material.accentColor
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        mopColorDel.setValue(swatch.index)
+                                        mopColorPopup.close()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ── halign: ComboBox for horizontal alignment ──────────────────────
     Component {
         id: halignDelegate
@@ -1973,6 +2253,7 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property var alignMap: [
                 { value: Qt.AlignLeft,     text: "Left"     },
@@ -1990,14 +2271,21 @@ Item {
                 }
 
             PropLabel {
+
+
                 visible: halignDel.showLabel
+
+
+                labelWidth: halignDel.labelWidth
                 text: halignDel.meta ? halignDel.meta.label ?? "" : ""
+                tooltipText: halignDel.meta ? halignDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 subLabelAlignRight: !halignDel.showLabel
                 subLabelText: !halignDel.showLabel ? (halignDel.meta ? halignDel.meta.sublabel ?? halignDel.meta.label ?? "" : "") : ""
+                tooltipText: halignDel.meta ? halignDel.meta.tooltip ?? "" : ""
 
                 BareComboBox {
                     id: alignCombo
@@ -2031,14 +2319,22 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             PropLabel {
+
+
                 visible: fontDel.showLabel
+
+
+                labelWidth: fontDel.labelWidth
                 text: fontDel.meta ? fontDel.meta.label ?? "" : ""
+                tooltipText: fontDel.meta ? fontDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
+                tooltipText: fontDel.meta ? fontDel.meta.tooltip ?? "" : ""
 
                 FontFamilyButton {
                     anchors.fill: parent
@@ -2068,14 +2364,22 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             PropLabel {
+
+
                 visible: pathDel.showLabel
+
+
+                labelWidth: pathDel.labelWidth
                 text: pathDel.meta ? pathDel.meta.label ?? "" : ""
+                tooltipText: pathDel.meta ? pathDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
+                tooltipText: pathDel.meta ? pathDel.meta.tooltip ?? "" : ""
 
                 TextInput {
                     id: pathInput
@@ -2100,6 +2404,12 @@ Item {
                     }
                 }
             }
+
+            ScriptButton {
+                visible: pathDel.meta ? ((pathDel.meta.scriptable === true) || (pathDel.meta.script !== undefined && pathDel.meta.script.length > 0)) : false
+                propName: pathDel.propName
+                component: -1
+                }
 
             Rectangle {
                 Layout.preferredWidth: 36
@@ -2168,18 +2478,26 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property string type: meta?.type ?? ""
 
             PropLabel {
+
+
                 visible: ptrDel.showLabel
+
+
+                labelWidth: ptrDel.labelWidth
                 text: ptrDel.meta ? ptrDel.meta.label ?? "" : ""
+                tooltipText: ptrDel.meta ? ptrDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 subLabelAlignRight: !ptrDel.showLabel
                 subLabelText: !ptrDel.showLabel ? (ptrDel.meta ? ptrDel.meta.sublabel ?? ptrDel.meta.label ?? "" : "") : ""
+                tooltipText: ptrDel.meta ? ptrDel.meta.tooltip ?? "" : ""
 
                 RowLayout {
                     anchors.fill: parent
@@ -2304,18 +2622,26 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property string type: meta?.type ?? ""
 
             PropLabel {
+
+
                 visible: strDel.showLabel
+
+
+                labelWidth: strDel.labelWidth
                 text: strDel.meta ? strDel.meta.label ?? "" : ""
+                tooltipText: strDel.meta ? strDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 subLabelAlignRight: !strDel.showLabel
                 subLabelText: !strDel.showLabel ? (strDel.meta ? strDel.meta.sublabel ?? strDel.meta.label ?? "" : "") : ""
+                tooltipText: strDel.meta ? strDel.meta.tooltip ?? "" : ""
 
                 BareComboBox {
                     id: strCombo
@@ -2365,19 +2691,27 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property string type: meta?.type ?? ""
             readonly property int defaultIdx: type === "framingType" ? 1 : 0
 
             PropLabel {
+
+
                 visible: enumDel.showLabel
+
+
+                labelWidth: enumDel.labelWidth
                 text: enumDel.meta ? enumDel.meta.label ?? "" : ""
+                tooltipText: enumDel.meta ? enumDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 subLabelAlignRight: !enumDel.showLabel
                 subLabelText: !enumDel.showLabel ? (enumDel.meta ? enumDel.meta.sublabel ?? enumDel.meta.label ?? "" : "") : ""
+                tooltipText: enumDel.meta ? enumDel.meta.tooltip ?? "" : ""
 
                 BareComboBox {
                     id: enumCombo
@@ -2424,6 +2758,7 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             function freqModel() {
                 if (root.model.pulsewidthNames)
@@ -2434,8 +2769,14 @@ Item {
                 }
 
             PropLabel {
+
+
                 visible: pwDel.showLabel
+
+
+                labelWidth: pwDel.labelWidth
                 text: pwDel.meta ? pwDel.meta.label ?? "" : ""
+                tooltipText: pwDel.meta ? pwDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
@@ -2443,6 +2784,7 @@ Item {
                 unitText: pwDel.meta ? pwDel.meta.unit ?? "" : ""
                 subLabelAlignRight: !pwDel.showLabel
                 subLabelText: !pwDel.showLabel ? (pwDel.meta ? pwDel.meta.sublabel ?? pwDel.meta.label ?? "" : "") : ""
+                tooltipText: pwDel.meta ? pwDel.meta.tooltip ?? "" : ""
 
                 BareComboBox {
                     id: freqCombo
@@ -2483,6 +2825,7 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property string type: meta?.type ?? ""
             readonly property var modeNames: {
@@ -2492,8 +2835,14 @@ Item {
                 }
 
             PropLabel {
+
+
                 visible: lockDel.showLabel
+
+
+                labelWidth: lockDel.labelWidth
                 text: lockDel.meta ? lockDel.meta.label ?? "" : ""
+                tooltipText: lockDel.meta ? lockDel.meta.tooltip ?? "" : ""
             }
 
             Repeater {
@@ -2505,6 +2854,7 @@ Item {
 
                     Layout.fillWidth: true
                     subLabelText: modelData
+                    tooltipText: lockDel.meta ? lockDel.meta.tooltip ?? "" : ""
 
                     LockCheckBox {
                         modeIndex: index
@@ -2536,19 +2886,27 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             readonly property string type: meta?.type ?? ""
             property var camElement: root.model.element
 
             PropLabel {
+
+
                 visible: camDel.showLabel
+
+
+                labelWidth: camDel.labelWidth
                 text: camDel.meta ? camDel.meta.label ?? "" : ""
+                tooltipText: camDel.meta ? camDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 subLabelAlignRight: !camDel.showLabel
                 subLabelText: !camDel.showLabel ? (camDel.meta ? camDel.meta.sublabel ?? camDel.meta.label ?? "" : "") : ""
+                tooltipText: camDel.meta ? camDel.meta.tooltip ?? "" : ""
 
                 BareComboBox {
                     id: camCombo
@@ -2632,6 +2990,7 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             property var camElement: (ZCam.project && ZCam.project.cameraElement) ? ZCam.project.cameraElement : null
             // zoom factor and pan offset for the preview image
@@ -2755,18 +3114,26 @@ Item {
             property var boundComponents: ""
             property bool showLabel: true
             property string rowLabel: ""
+            property int labelWidth: -1
 
             property var camElement: (ZCam.project && ZCam.project.cam) ? ZCam.project.cam : null
 
             PropLabel {
+
+
                 visible: capDel.showLabel
+
+
+                labelWidth: capDel.labelWidth
                 text: capDel.meta ? capDel.meta.label ?? "" : ""
+                tooltipText: capDel.meta ? capDel.meta.tooltip ?? "" : ""
             }
 
             ValueBox {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 60
                 subLabelText: !capDel.showLabel ? (capDel.meta ? capDel.meta.sublabel ?? capDel.meta.label ?? "" : "") : ""
+                tooltipText: capDel.meta ? capDel.meta.tooltip ?? "" : ""
 
                 Button {
                     anchors.centerIn: parent
