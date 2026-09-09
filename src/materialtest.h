@@ -14,6 +14,9 @@
 #include "group.h"
 #include "laser.h"
 
+class LaserMop;
+class LaserRecipe;
+
 //---------------------------------------------------------
 //   MaterialTest
 //---------------------------------------------------------
@@ -67,7 +70,7 @@ class MaterialTest : public Group
                       "label": "Mop",
                       "cells": [
                         {
-                          "name": "laserLayer",
+                          "name": "mop",
                           "type": "laserLayer",
                           "default": ""
                         }

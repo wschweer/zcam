@@ -14,7 +14,7 @@
 #include "project.h"
 #include "fixture.h"
 #include "framing.h"
-#include "recipe.h"
+#include "laser_mop.h"
 #include "geometryworker.h"
 #include "machine.h"
 
@@ -159,7 +159,7 @@ Cam::Cam(ZCam* zcam, Element* parent) : Element3d(zcam, parent) {
 
 //---------------------------------------------------------
 //   updateCam
-//    Collect geometry from all LaserLayer children (through the
+//    Collect geometry from all MOP children (through the
 //    Fixture), arrange them in a panel grid (rows × columns with
 //    distanceX/distanceY offsets), and store the combined line
 //    geometry in this Cam's _geometry.  Also update the Framing
@@ -183,8 +183,8 @@ void Cam::updateCam() {
       double w, h;
       fixture->size(w, h);
 
-      // Collect display lines from all LaserLayers.
-      // Each LaserLayer produces two subsets:
+      // Collect display lines from all MOPs.
+      // Each LaserMop produces two subsets:
       //   subset 0 — mark lines
       //   subset 1 — move lines
       GeometryWorker::CamInput input;
@@ -200,7 +200,7 @@ void Cam::updateCam() {
                   continue;
             auto* ll = toType<LaserMop>(e);
 
-            Clipper2Lib::PathsD tileLines = ll->collectDisplayLines();
+            Clipper2Lib::PathsD tileLines = ll->collectLayeredDisplayLines();
             if (tileLines.size() < 2) {
                   Debug("nothing to display for {}", ll->name());
                   continue;
@@ -223,10 +223,10 @@ void Cam::updateCam() {
                 // (alternating marks and moves per layer).
                 // Each layer contributes two subsets:
                 //   marks (in the layer's Mop colour)
-                //   moves (in a dimmed version of that colour)
-                //
-                // The corresponding material list in
-                // CamShape.qml is built dynamically.
+                //   moves (jump paths) — rendered by CamShape.qml in the
+                //        configured Config "Move Color" (moveColor), NOT in
+                //        the Mop colour.  The material list in
+                //        CamShape.qml is built dynamically.
                 Clipper2Lib::PathsD geometryPaths;
                 QList<QColor> layerColors;
                 for (const auto& lr : r.layers) {
@@ -290,7 +290,7 @@ void Cam::grabCameraView() {
 
 //---------------------------------------------------------
 //   convexHull
-//    Compute the convex hull of all burn LaserLayer geometry,
+//    Compute the convex hull of all burn LaserMop geometry,
 //    including panel-grid offsets.  The single-tile polygon data
 //    is replicated across the grid to produce the full set of
 //    points, then the convex hull is computed.
@@ -334,7 +334,7 @@ Clipper2Lib::PathD Cam::convexHull() const {
 
 //---------------------------------------------------------
 //   boundingBox
-//    Compute the axis-aligned bounding box of all burn LaserLayer
+//    Compute the axis-aligned bounding box of all burn LaserMop
 //    geometry, including panel-grid offsets.  The single-tile
 //    polygon data is replicated across the grid to produce the
 //    full set of points, then the bounding box is computed.
@@ -395,4 +395,22 @@ Clipper2Lib::RectD Cam::boundingBox() const {
             return {};
 
       return {minX, minY, maxX, maxY};
+      }
+
+//---------------------------------------------------------
+//   framing
+//    Returns the Framing element that is a child of this Cam.
+//    The Framing element is the single source of truth for the
+//    framing contour: it knows the selected framing type
+//    (convex hull or bounding box) and rebuilds its own pathList()
+//    whenever the geometry or the type changes.  The laser engine
+//    reads this element to drive the framing path so that it always
+//    matches what is shown on the canvas.
+//---------------------------------------------------------
+
+Framing* Cam::framing() const {
+      for (auto e : children())
+            if (Framing* f = qobject_cast<Framing*>(e))
+                  return f;
+      return nullptr;
       }

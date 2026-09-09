@@ -48,6 +48,8 @@ ApplicationWindow {
         property int windowX: -1
         property int windowY: -1
         property bool mediaBrowserVisible: false
+        property bool aiPanelVisible: false
+        property bool scriptPanelVisible: false
         }
 
     onWidthChanged: if (visible)
@@ -88,7 +90,7 @@ ApplicationWindow {
     Timer {
         id: restoreTimer
         interval: 0
-        onTriggered: ZCam.restoreLastProject()
+        onTriggered: ZCam.handleStartupFile()
         }
 
     // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -122,6 +124,10 @@ ApplicationWindow {
         }
     Shortcut {
         sequence: "Delete"
+        // Disabled on the Recipes tab (index 1) and Machines tab (index 2)
+        // — those tabs have their own Shortcut that deletes the selected
+        // recipe/folder or machine.
+        enabled: tabBar.currentIndex !== 1 && tabBar.currentIndex !== 2
         onActivated: ZCam.deleteCurrentElement()
         }
     Shortcut {
@@ -195,7 +201,40 @@ ApplicationWindow {
         id: actionExportSvg
         text: qsTr("&Export SVG…")
         icon.source: "qrc:/icons/dark/file-export.svg"
-        onTriggered: exportSvgFileDialog.open()
+        onTriggered: {
+            if (ZCam.project) {
+                var dir = ZCam.project.projectPath !== ""
+                    ? ZCam.project.projectPath.replace(/[^\/]*$/, "")
+                    : ZCam.expandPath(ZCam.config.projectsDirectory) + "/"
+                // Set folder + file BEFORE open(): Qt only reads the initial
+                // selection while opening.  The "File name" field itself is
+                // filled by the C++ prefill (SideBarColorFixer) since the
+                // export file does not exist on disk yet.
+                exportSvgFileDialog.currentFolder = "file://" + dir
+                exportSvgFileDialog.selectedFile = "file://" + dir + ZCam.project.projectName + ".svg"
+                }
+            exportSvgFileDialog.open()
+            }
+        }
+
+    Action {
+        id: actionExportDxf
+        text: qsTr("Export &DXF…")
+        icon.source: "qrc:/icons/dark/file-export.svg"
+        onTriggered: {
+            if (ZCam.project) {
+                var dir = ZCam.project.projectPath !== ""
+                    ? ZCam.project.projectPath.replace(/[^\/]*$/, "")
+                    : ZCam.expandPath(ZCam.config.projectsDirectory) + "/"
+                // Set folder + file BEFORE open(): Qt only reads the initial
+                // selection while opening.  The "File name" field itself is
+                // filled by the C++ prefill (SideBarColorFixer) since the
+                // export file does not exist on disk yet.
+                exportDxfFileDialog.currentFolder = "file://" + dir
+                exportDxfFileDialog.selectedFile = "file://" + dir + ZCam.project.projectName + ".dxf"
+                }
+            exportDxfFileDialog.open()
+            }
         }
 
     Action {
@@ -292,6 +331,22 @@ ApplicationWindow {
         }
 
     Action {
+        id: actionShowAiPanel
+        text: qsTr("Show AI panel")
+        checkable: true
+        checked: settings.aiPanelVisible
+        onCheckedChanged: settings.aiPanelVisible = checked
+        }
+
+    Action {
+        id: actionShowScriptPanel
+        text: qsTr("Show Script Console")
+        checkable: true
+        checked: settings.scriptPanelVisible
+        onCheckedChanged: settings.scriptPanelVisible = checked
+        }
+
+    Action {
         id: actionAbout
         text: qsTr("&About")
         onTriggered: aboutDialog.open()
@@ -346,6 +401,16 @@ ApplicationWindow {
         onAccepted: ZCam.exportSvg(selectedFile.toString().replace("file://", ""))
         }
 
+    ZFileDialog {
+        id: exportDxfFileDialog
+        Material.theme: Material.Dark
+        title: qsTr("Export DXF")
+        nameFilters: [qsTr("DXF (*.dxf)"), qsTr("All files (*)")]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "dxf"
+        onAccepted: ZCam.exportDxf(selectedFile.toString().replace("file://", ""))
+        }
+
     // =========================================================================
     //  Dialog – unsaved-changes guard (unified)
     // =========================================================================
@@ -372,6 +437,11 @@ ApplicationWindow {
         title: qsTr("Unsaved Changes")
         modal: true
         anchors.centerIn: parent
+        // Explicit width: without it the Material style computes implicitWidth
+        // from the Label, whose width depends on the Dialog's contentWidth —
+        // when the text changes while closed Qt evaluates the chain and flags
+        // a binding loop ("Binding loop detected for property implicitWidth").
+        width: 420
         standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
 
         property string messageText: ""
@@ -468,91 +538,111 @@ ApplicationWindow {
         }
 
     // =========================================================================
-    //  Layout: MenuBar / ToolBar / TabBar / StackLayout
+    //  Layout: MenuBar+ToolBar (single row) / TabBar / StackLayout
+    //
+    //  MenuBar and ToolBar are merged into one horizontal header row to
+    //  save vertical screen space.  The MenuBar sits on the left, followed
+    //  by a thin separator, then the file/edit tool buttons, another
+    //  separator, undo/redo, a flexible spacer, and finally the panel
+    //  toggle buttons (M, Laser, AI, JS) on the right.
     // =========================================================================
-
-    menuBar: MenuBar {
-        // File menu
-        Menu {
-            title: qsTr("&File")
-            MenuItem {
-                action: actionNew
-                }
-            MenuItem {
-                action: actionOpen
-                }
-            MenuSeparator {}
-            MenuItem {
-                action: actionSave
-                }
-            MenuItem {
-                action: actionSaveAs
-                }
-            MenuSeparator {}
-            MenuItem {
-                action: actionImport
-                }
-            MenuItem {
-                action: actionExportSvg
-                }
-            MenuSeparator {}
-            MenuItem {
-                action: actionQuit
-                }
-            }
-
-        // Edit menu
-        Menu {
-            title: qsTr("&Edit")
-            MenuItem {
-                action: actionUndo
-                }
-            MenuItem {
-                action: actionRedo
-                }
-            MenuItem {
-                action: actionConfig
-                }
-            }
-
-        // Tools menu
-        Menu {
-            title: qsTr("&Tools")
-            MenuItem {
-                action: actionMaterialTest
-                }
-            MenuItem {
-                action: actionGalvoTest
-                }
-            MenuItem {
-                action: actionGalvoTest64
-                }
-            MenuItem {
-                action: actionCalibrationScan
-                }
-            MenuItem {
-                action: actionGalvoCalibration
-                }
-            MenuSeparator {}
-            MenuItem {
-                action: actionTestProject
-                }
-            }
-
-        // Help menu
-        Menu {
-            title: qsTr("&Help")
-            MenuItem {
-                action: actionAbout
-                }
-            }
-        }
 
     header: ToolBar {
         RowLayout {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
             width: parent.width
+
+            // ── Menu bar (inline) ──────────────────────────────────────────
+            MenuBar {
+                id: inlineMenuBar
+                Layout.alignment: Qt.AlignVCenter
+
+                // File menu
+                Menu {
+                    title: qsTr("&File")
+                    MenuItem {
+                        action: actionNew
+                        }
+                    MenuItem {
+                        action: actionOpen
+                        }
+                    MenuSeparator {}
+                    MenuItem {
+                        action: actionSave
+                        }
+                    MenuItem {
+                        action: actionSaveAs
+                        }
+                    MenuSeparator {}
+                    MenuItem {
+                        action: actionImport
+                        }
+                    MenuItem {
+                        action: actionExportSvg
+                        }
+                    MenuItem {
+                        action: actionExportDxf
+                        }
+                    MenuSeparator {}
+                    MenuItem {
+                        action: actionQuit
+                        }
+                    }
+
+                // Edit menu
+                Menu {
+                    title: qsTr("&Edit")
+                    MenuItem {
+                        action: actionUndo
+                        }
+                    MenuItem {
+                        action: actionRedo
+                        }
+                    MenuItem {
+                        action: actionConfig
+                        }
+                    }
+
+                // Tools menu
+                Menu {
+                    title: qsTr("&Tools")
+                    MenuItem {
+                        action: actionMaterialTest
+                        }
+                    MenuItem {
+                        action: actionGalvoTest
+                        }
+                    MenuItem {
+                        action: actionGalvoTest64
+                        }
+                    MenuItem {
+                        action: actionCalibrationScan
+                        }
+                    MenuItem {
+                        action: actionGalvoCalibration
+                        }
+                    MenuSeparator {}
+                    MenuItem {
+                        action: actionTestProject
+                        }
+                    }
+
+                // Help menu
+                Menu {
+                    title: qsTr("&Help")
+                    MenuItem {
+                        action: actionAbout
+                        }
+                    }
+                }
+
+            // Separator between menu bar and tool buttons
+            Rectangle {
+                implicitWidth: 1
+                implicitHeight: 24
+                color: Material.color(Material.BlueGrey, Material.Shade500)
+                }
 
             // File operations
             ToolButton {
@@ -656,6 +746,53 @@ ApplicationWindow {
                     }
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Show Laser Panel")
+                Layout.rightMargin: 4
+                }
+
+            // AI panel toggle button — shows/hides the AI side panel
+            ToolButton {
+                id: aiPanelBtn
+                action: actionShowAiPanel
+                display: AbstractButton.TextOnly
+                text: qsTr("AI")
+                font.bold: true
+                contentItem: Text {
+                    text: aiPanelBtn.text
+                    color: aiPanelBtn.checked ? "white" : "black"
+                    font: aiPanelBtn.font
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    }
+                background: Rectangle {
+                    color: aiPanelBtn.checked ? Material.color(Material.Teal, Material.Shade700) : (aiPanelBtn.hovered ? Material.color(Material.BlueGrey, Material.Shade600) : "transparent")
+                    radius: 4
+                    }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Show AI Panel")
+                Layout.rightMargin: 4
+                }
+
+            // Script Console toggle button
+            ToolButton {
+                id: scriptPanelBtn
+                action: actionShowScriptPanel
+                display: AbstractButton.TextOnly
+                text: qsTr("JS")
+                font.bold: true
+                contentItem: Text {
+                    text: scriptPanelBtn.text
+                    color: scriptPanelBtn.checked ? "white" : "black"
+                    font: scriptPanelBtn.font
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    }
+                background: Rectangle {
+                    color: scriptPanelBtn.checked ? Material.color(Material.Amber, Material.Shade700) : (scriptPanelBtn.hovered ? Material.color(Material.BlueGrey, Material.Shade600) : "transparent")
+                    radius: 4
+                    }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Show Script Console")
+                Layout.rightMargin: 4
                 }
             }
         }
@@ -805,6 +942,25 @@ ApplicationWindow {
                     id: manualPanel
                     }
                 }
+
+            // ── AI side panel (toggled by the "AI" toolbar button) ──────
+            AiPanel {
+                id: aiPanel
+                visible: actionShowAiPanel.checked
+                SplitView.minimumWidth: 300
+                SplitView.preferredWidth: 420
+                SplitView.maximumWidth: 800
+                }
+
+            // -- Script Console side panel --
+            ScriptPanel {
+                id: scriptPanel
+                visible: actionShowScriptPanel.checked
+                SplitView.minimumWidth: 300
+                SplitView.preferredWidth: 400
+                SplitView.maximumWidth: 800
+                }
+
             LaserPanel {
                 id: laserPanel
                 visible: actionShowLaserPanel.checked
@@ -898,6 +1054,18 @@ ApplicationWindow {
         function onSvgExported(path) {
             var name = path !== "" ? path.replace(/.*\//, "") : "svg";
             statusBar.show(qsTr("%1 exported").arg(name), Material.color(Material.Green, Material.Shade400));
+            }
+
+        // Status bar: Nest finished — reported by Nest::nest() *after* it
+        // applied the packing results.  Also shown when nothing could be
+        // packed (packed === 0) so "Run Nest" never looks like a no-op.
+        function onNestFinished(packed, total) {
+            if (packed > 0)
+                statusBar.show(qsTr("Nest: %1 of %2 item(s) packed").arg(packed).arg(total),
+                    Material.color(Material.Green, Material.Shade400));
+            else
+                statusBar.show(qsTr("Nest: no items fit into the bin"),
+                    Material.color(Material.Red, Material.Shade300));
             }
         }
     }

@@ -38,7 +38,7 @@ class Config : public Element
 
       PROPV(int, iconSize, 32)
       PROPV(int, navCubeSize, 200)
-      PROPV(double, handleSize, 0.02)
+      PROPV(double, handleSize, 8.0)
       PROPV(double, dragThreshold, 0.5)
       PROPV(QString, font, QStringLiteral("NotoSans"))
       PROPV(int, fontSize, 12)
@@ -51,16 +51,16 @@ class Config : public Element
       PROPV(QColor, framingColor, QColor("#00ff00"))
       // 32 configurable Mop colours (indices 0..31).
       // Defaults match Mop::mopColorTable().
-      PROPV(QColor, mopColor0,  QColor(0x80, 0x80, 0x80))
-      PROPV(QColor, mopColor1,  QColor(0xFF, 0x00, 0x00))
-      PROPV(QColor, mopColor2,  QColor(0x00, 0xFF, 0x00))
-      PROPV(QColor, mopColor3,  QColor(0x00, 0x00, 0xFF))
-      PROPV(QColor, mopColor4,  QColor(0xFF, 0xFF, 0x00))
-      PROPV(QColor, mopColor5,  QColor(0xFF, 0x00, 0xFF))
-      PROPV(QColor, mopColor6,  QColor(0x00, 0xFF, 0xFF))
-      PROPV(QColor, mopColor7,  QColor(0xFF, 0x80, 0x00))
-      PROPV(QColor, mopColor8,  QColor(0x80, 0x00, 0xFF))
-      PROPV(QColor, mopColor9,  QColor(0x00, 0x80, 0xFF))
+      PROPV(QColor, mopColor0, QColor(0x80, 0x80, 0x80))
+      PROPV(QColor, mopColor1, QColor(0xFF, 0x00, 0x00))
+      PROPV(QColor, mopColor2, QColor(0x00, 0xFF, 0x00))
+      PROPV(QColor, mopColor3, QColor(0x00, 0x00, 0xFF))
+      PROPV(QColor, mopColor4, QColor(0xFF, 0xFF, 0x00))
+      PROPV(QColor, mopColor5, QColor(0xFF, 0x00, 0xFF))
+      PROPV(QColor, mopColor6, QColor(0x00, 0xFF, 0xFF))
+      PROPV(QColor, mopColor7, QColor(0xFF, 0x80, 0x00))
+      PROPV(QColor, mopColor8, QColor(0x80, 0x00, 0xFF))
+      PROPV(QColor, mopColor9, QColor(0x00, 0x80, 0xFF))
       PROPV(QColor, mopColor10, QColor(0x80, 0xFF, 0x00))
       PROPV(QColor, mopColor11, QColor(0xFF, 0x00, 0x80))
       PROPV(QColor, mopColor12, QColor(0x00, 0xFF, 0x80))
@@ -98,6 +98,12 @@ class Config : public Element
       PROPV(QString, recipesDirectory, QString("~/ZCam/recipes"))
       PROPV(QString, zcamDirectory, QString("~/ZCam"))
       PROPV(QString, projectsDirectory, QString("~/ZCam/projects"))
+
+      // ── AI / Ollama configuration ────────────────────────────────────
+      PROPV(QString, ollamaModel, QStringLiteral("llama3.1"))
+      PROPV(QString, ollamaBaseUrl, QStringLiteral("http://localhost:11434/api/chat"))
+      PROPV(double, aiTemperature, 0.2)
+      PROPV(int, aiContextSize, 4096)
 
       PROPV(double, dxfScale, 72.0)
       PROPV(int, dxfCircleResolution, 360)

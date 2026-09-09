@@ -327,7 +327,8 @@ Item {
             case "machineName":
             case "machineType":
             case "boardType":
-            case "ethDevice":    return stringComboDelegate
+            case "ethDevice":
+            case "ollamaModel":   return stringComboDelegate
             case "override":
             case "lineJoin":
             case "lineEnd":
@@ -358,7 +359,7 @@ Item {
         item.propIndex  = index
         item.showLabel  = isTop
         item.enabled    = Qt.binding(() => root.isPropEnabled(item.meta))
-        item.opacity    = Qt.binding(() => item ? (item.enabled ? 1.0 : 0.4) : 0.4)
+        item.opacity    = Qt.binding(() => item ? (item.enabled ? 1.0 : 0.65) : 0.65)
         item.bound      = Qt.binding(() => root.isScriptBound(name))
         item.boundComponents = Qt.binding(() => root.boundComponents(name))
         item.setValue   = setter
@@ -388,7 +389,7 @@ Item {
         item.meta       = subMeta
         item.showLabel  = false
         item.enabled    = Qt.binding(() => root.isPropEnabled(item.meta))
-        item.opacity    = Qt.binding(() => item ? (item.enabled ? 1.0 : 0.4) : 0.4)
+        item.opacity    = Qt.binding(() => item ? (item.enabled ? 1.0 : 0.65) : 0.65)
         item.bound      = Qt.binding(() => root.isScriptBound(subName))
         item.boundComponents = Qt.binding(() => root.boundComponents(subName))
         item.setValue   = setSubFn
@@ -773,7 +774,7 @@ Item {
 
         contentItem: TextInput {
             text: _sb.displayText
-            color: _sb.boundColor.length > 0 ? _sb.boundColor : (_sb.enabled ? "#ffffff" : "#888888")
+            color: _sb.boundColor.length > 0 ? _sb.boundColor : (_sb.enabled ? "#ffffff" : "#aaaaaa")
             font.bold: true
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -856,7 +857,7 @@ Item {
 
         contentItem: TextInput {
             text: _dsb.displayText
-            color: _dsb.boundColor.length > 0 ? _dsb.boundColor : (_dsb.enabled ? "#ffffff" : "#888888")
+            color: _dsb.boundColor.length > 0 ? _dsb.boundColor : (_dsb.enabled ? "#ffffff" : "#aaaaaa")
             font.bold: true
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
@@ -1022,6 +1023,12 @@ Item {
                 }
             value: modelValue
             onModelValueChanged: if (value !== modelValue) value = modelValue
+            // When decimals changes (e.g. from default 2 to the precision
+            // declared in the properties JSON), re-apply the model value so
+            // DoubleSpinBox rounds it to the correct number of decimal places.
+            // Without this, the initial value is rounded to 2 places and never
+            // re-evaluated when decimals is later updated to 6.
+            onDecimalsChanged: if (value !== modelValue) value = modelValue
 
             onValueChanged: vecBox.onComponentChange(value)
             }
@@ -1032,10 +1039,10 @@ Item {
     // ══════════════════════════════════════════════════════════════════════
     component ValueBox : Rectangle {
         id: vbox
-        color: vbox.enabled ? (vbox.hovered ? "#c2c2c2" : "#a9a9a9") : "#5a5a5a"
+        color: vbox.enabled ? (vbox.hovered ? "#c2c2c2" : "#a9a9a9") : "#7a7a7a"
         radius: 4
         implicitHeight: 28
-        opacity: vbox.enabled ? 1.0 : 0.5
+        opacity: vbox.enabled ? 1.0 : 0.7
 
         property string unitText: ""
         property string subLabelText: ""
@@ -1081,7 +1088,7 @@ Item {
             visible: vbox.subLabelText.length > 0 && !vbox.subLabelAlignRight
             text: vbox.subLabelText
             font.pixelSize: 13
-            color: vbox.enabled ? "#333333" : "#666666"
+            color: vbox.enabled ? "#333333" : "#777777"
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 1
             anchors.left: parent.left
@@ -1092,7 +1099,7 @@ Item {
             visible: vbox.subLabelText.length > 0 && vbox.subLabelAlignRight
             text: vbox.subLabelText
             font.pixelSize: 13
-            color: vbox.enabled ? "#333333" : "#666666"
+            color: vbox.enabled ? "#333333" : "#777777"
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.rightMargin: 4
@@ -1111,7 +1118,7 @@ Item {
                 id: unitLabel
                 text: vbox.unitText
                 font.pixelSize: 9
-                color: vbox.enabled ? "#333333" : "#666666"
+                color: vbox.enabled ? "#333333" : "#777777"
                 rotation: 90
                 transformOrigin: Item.Center
                 anchors.centerIn: parent
@@ -1179,6 +1186,10 @@ Item {
                         item.propIndex   = delegateRoot.index
                         item.columnCount = delegateRoot.model.columnCount
                         item.rowLabelWidth = delegateRoot.model.labelWidth ?? -1
+                        // columnItems stays live so value edits propagate,
+                        // but reads it re-entrantly (from _rowsKey while
+                        // dataChanged is emitted) must not feed back into
+                        // rebuilding rows during the same evaluation.
                         item.columnItems = Qt.binding(() => delegateRoot.model.columnItems)
                         item.setModelValue = function(propName, v) {
                             root.model.setColumnProperty(delegateRoot.index, propName, v)
@@ -1365,10 +1376,22 @@ Item {
             property var setModelValue: function(propName, v) {}
             property var setSubValue: function(rowItem, subName, v) {}
 
-            // Structural key: changes only when items are added/removed/
-            // reordered or change type, NOT when property values change.
-            property string _rowsKey: {
-                const items = colsContainer.columnItems
+            // Structural key: only names/spans/type — NOT values — so a
+            // value change (dataChanged) does not rebuild the rows.  The
+            // comparison result is cached in _structKey to avoid redundant
+            // work, and rows are only rebuilt when the key really changes.
+            property string _structKey: ""
+
+            property var _structItems: []
+
+            // Called from _structKey's binding evaluation.  Returns the
+            // structural key string and, as a side effect, updates
+            // _structItems only when the key changed.  The write happens
+            // in a JS function called from a binding so QML does not track
+            // _structItems as a dependency of this expression — that would
+            // create the loop  columnItems -> _structKey -> _structItems -> rows
+            // that produced the "Binding loop detected for columnItems" warning.
+            function _updateStructKey(items) {
                 if (!items || !items.length)
                     return ""
                 let key = ""
@@ -1381,10 +1404,57 @@ Item {
                 return key
                 }
 
-            property var _structItems: []
+            // Rebuild _structItems from columnItems whenever the structural
+            // key actually changed (items added/removed/reordered/type).
+            function refreshStructure() {
+                const items = colsContainer.columnItems
+                if (!items || !items.length) {
+                    if (colsContainer._structItems.length !== 0)
+                        colsContainer._structItems = []
+                    return
+                    }
+                const struct = []
+                for (let i = 0; i < items.length; ++i) {
+                    const item = items[i]
+                    struct.push({
+                        name: item.name,
+                        isRow: item.isRow,
+                        isLine: item.isLine,
+                        isEmpty: item.isEmpty,
+                        colSpan: item.colSpan || 1,
+                        rowLabel: item.rowLabel || "",
+                        subProps: item.subProps || []
+                    })
+                    }
+                colsContainer._structItems = struct
+                }
+
+            property bool _refreshPending: false
+
+            // When columnItems changes (including value-only changes), check
+            // the structural key and rebuild the rows model only if it did.
+            // The rebuild is deferred with Qt.callLater so it runs AFTER the
+            // current columnItems evaluation finishes;  doing it inline
+            // re-reads columnItems while QML is still inside its change
+            // notification for that binding, which QML reports as
+            // "Binding loop detected for columnItems".
+            onColumnItemsChanged: {
+                if (colsContainer._refreshPending)
+                    return
+                colsContainer._refreshPending = true
+                Qt.callLater(() => {
+                    colsContainer._refreshPending = false
+                    const k = colsContainer._updateStructKey(colsContainer.columnItems)
+                    if (k !== colsContainer._structKey) {
+                        colsContainer._structKey = k
+                        colsContainer.refreshStructure()
+                        }
+                    })
+                }
 
             property var rows: {
-                const _k = colsContainer._rowsKey
+                // rows depends only on _structItems (the structural snapshot),
+                // so value-only changes do NOT rebuild the delegate tree.
                 const items = colsContainer._structItems
                 if (!items || !items.length)
                     return []
@@ -1420,26 +1490,6 @@ Item {
                 if (currentRow.length > 0)
                     result.push(currentRow)
                 return result
-                }
-
-            on_RowsKeyChanged: {
-                const items = colsContainer.columnItems
-                const struct = []
-                if (items && items.length) {
-                    for (let i = 0; i < items.length; ++i) {
-                        const item = items[i]
-                        struct.push({
-                            name: item.name,
-                            isRow: item.isRow,
-                            isLine: item.isLine,
-                            isEmpty: item.isEmpty,
-                            colSpan: item.colSpan || 1,
-                            rowLabel: item.rowLabel || "",
-                            subProps: item.subProps || []
-                        })
-                    }
-                }
-                colsContainer._structItems = struct
                 }
 
             Repeater {
@@ -1593,7 +1643,14 @@ Item {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 60
                 unitText: boolDel.meta ? boolDel.meta.unit ?? "" : ""
-                subLabelText: !boolDel.showLabel ? (boolDel.meta ? boolDel.meta.sublabel ?? boolDel.meta.label ?? "" : "") : ""
+                // fontStyle sub-properties render their label through the
+                // custom styled Text below (bold / italic / underlined).
+                // Suppress the ValueBox built-in sublabel in that case so
+                // the text is not drawn twice (plain + styled on top of
+                // each other at the same position).
+                subLabelText: !boolDel.showLabel && boolDel.meta?.type !== "fontStyle"
+                              ? (boolDel.meta ? boolDel.meta.sublabel ?? boolDel.meta.label ?? "" : "")
+                              : ""
                 tooltipText: boolDel.meta ? boolDel.meta.tooltip ?? "" : ""
 
                 // Custom styled label for fontStyle sub-properties
@@ -1739,6 +1796,9 @@ Item {
                     property real modelValue: floatDel.propValue !== undefined ? Number(floatDel.propValue) : 0.0
                     value: modelValue
                     onModelValueChanged: if (value !== modelValue) value = modelValue
+                    // Re-apply model value when decimals changes (see
+                    // VectorComponentBox for rationale).
+                    onDecimalsChanged: if (value !== modelValue) value = modelValue
 
                     onValueChanged: {
                         if (floatDel.propValue !== value)
@@ -1955,7 +2015,7 @@ Item {
                     text: textDel.propValue !== undefined ? textDel.propValue : ""
                     readOnly: textDel.bound
                     onEditingFinished: textDel.setValue(text)
-                    horizontalAlignment: textDel.showLabel ? TextInput.AlignLeft : TextInput.AlignRight
+                    horizontalAlignment: TextInput.AlignLeft
                     verticalAlignment: TextInput.AlignVCenter
                     color: textDel.bound ? root._boundColor : "#ffffff"
                     clip: true
@@ -2647,12 +2707,31 @@ Item {
                     id: strCombo
                     anchors.fill: parent
 
+                    // Local copy of the Ollama models list, kept in sync
+                    // via the ZCam.aiAgent.ollamaModelsChanged signal.  We
+                    // cannot bind directly to ZCam.aiAgent.ollamaModels in
+                    // the switch below because QML evaluates that
+                    // expression eagerly and does not re-evaluate it
+                    // when the NOTIFY signal fires (the switch is
+                    // opaque to the binding system).
+                    property var _ollamaModels: []
+                    Connections {
+                        target: ZCam.aiAgent
+                        function onOllamaModelsChanged() {
+                            strCombo._ollamaModels = ZCam.aiOllamaModels()
+                        }
+                        Component.onCompleted: {
+                            strCombo._ollamaModels = ZCam.aiOllamaModels()
+                        }
+                    }
+
                     model: {
                         switch (strDel.type) {
                             case "machineName": return root.model.machineNames ? root.model.machineNames() : []
                             case "machineType": return root.model.machineTypes ? root.model.machineTypes() : []
                             case "boardType":   return root.model.boardTypes   ? root.model.boardTypes()   : []
                             case "ethDevice":   return root.model.ethDevices   ? root.model.ethDevices()   : []
+                            case "ollamaModel": return strCombo._ollamaModels
                             default: return []
                             }
                         }
@@ -2662,6 +2741,14 @@ Item {
                     currentIndex: {
                         let idx = strCombo.find(strCombo.displayTextOverride)
                         return idx >= 0 ? idx : -1
+                        }
+
+                    Component.onCompleted: {
+                        if (strDel.type === "ollamaModel") {
+                            strCombo._ollamaModels = ZCam.aiOllamaModels()
+                            if (strCombo._ollamaModels.length === 0)
+                                ZCam.aiRefreshOllamaModels()
+                            }
                         }
 
                     onActivated: index => strDel.setValue(strCombo.model[index])
@@ -2722,7 +2809,7 @@ Item {
                             case "override":     return root.model.overrideTypeNames  ? root.model.overrideTypeNames()  : []
                             case "lineJoin":     return root.model.joinTypeNames      ? root.model.joinTypeNames()      : []
                             case "lineEnd":      return root.model.endTypeNames        ? root.model.endTypeNames()       : []
-                            case "framingType":  return root.model.framingTypeNames    ? root.model.framingTypeNames()   : ["BoundingBox", "ConvexHull"]
+                            case "framingType":  return root.model.framingTypeNames    ? root.model.framingTypeNames()   : ["BoundingBox", "ConvexHull", "Rectangle"]
                             default: return []
                             }
                         }
@@ -2763,8 +2850,8 @@ Item {
             function freqModel() {
                 if (root.model.pulsewidthNames)
                     return root.model.pulsewidthNames()
-                if (ZCam.project?.machine?.laserPulseList)
-                    return ZCam.project.machine.laserPulseList()
+                if (ZCam.project?.machine?.laserEngine()?.laserPulseList)
+                    return ZCam.project.machine.laserEngine().laserPulseList()
                 return []
                 }
 

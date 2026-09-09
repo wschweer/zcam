@@ -14,7 +14,8 @@
 #include "cam.h"
 #include "cameraelement.h"
 #include "group.h"
-#include "recipe.h"
+#include "nest.h"
+// #include "recipe.h"
 #include "element3d.h"
 #include "rectangle.h"
 #include "polygon.h"
@@ -26,10 +27,12 @@
 #include "undo.h"
 #include "scriptengine.h"
 #include "logger.h"
+#include "laser_mop.h"
 
 #include <QSet>
 #include <QMetaProperty>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <functional>
 
 //---------------------------------------------------------
@@ -63,6 +66,33 @@ void HandleDragCommand::redo() {
       if (!_element)
             return;
       _element->setVertexPos(_handleIndex, _newPos);
+      zcam->setCamDirty(true);
+      }
+
+//---------------------------------------------------------
+//   NestBinCommand implementation
+//    Applies the complete old (undo) or new (redo) pair of binSize
+//    and pos to the Nest element.  The setters are called through
+//    the meta-object system (setProperty) so the project's script
+//    bindings see the value change like any GUI edit.
+//---------------------------------------------------------
+
+static void applyNestBinState(Element3d* nest, const QVector2D& binSize, const QVector3D& pos) {
+      nest->setProperty("binSize", QVariant::fromValue(binSize));
+      nest->setProperty("pos", QVariant::fromValue(pos));
+      }
+
+void NestBinCommand::undo() {
+      if (!_nest)
+            return;
+      applyNestBinState(_nest, _oldBinSize, _oldPos);
+      zcam->setCamDirty(true);
+      }
+
+void NestBinCommand::redo() {
+      if (!_nest)
+            return;
+      applyNestBinState(_nest, _newBinSize, _newPos);
       zcam->setCamDirty(true);
       }
 
@@ -170,7 +200,7 @@ void Project::changeProperty(Element* element, const QString& propName, const QV
       // but null value) and the property is a pointer type, we need to write
       // a typed null pointer directly.  setProperty() with an untyped null
       // (e.g. from QML) silently does nothing for Q_DECLARE_OPAQUE_POINTER
-      // properties such as LaserLayer*.
+      // properties such as LaserMop*.
       bool isNullPointerWrite = false;
       QMetaType propertyMetaType;
       if (!newValue.isValid() || newValue.isNull()) {
@@ -213,27 +243,80 @@ void Project::changeProperty(Element* element, const QString& propName, const QV
             auto el = qobject_cast<Element*>(element);
             if (!el)
                   return;
-            QString oldName = el->name();
-            // Apply the new name first to capture the de-duplicated result
-            // el->setName(newValue.toString());
-            QString actualName = el->name();
-            _undo->beginMacro();
-            auto cmd = new RenameElementCommand(zcam, el, oldName, actualName);
-            _undo->push(cmd);
-            _undo->endMacro();
+            // Route through the central rename API: uniqueness and
+            // JS-identifier sanitization are enforced by the central
+            // Element::names registry (setName()), and the change is
+            // recorded as a RenameElementCommand on the undo stack.
+            renameElement(el, newValue.toString());
             // mark cam data as stale so the Cam refresh button enables
             return;
             }
-      Debug("change property {} of {}", pn, element->name());
-      bool active = _undo->isActive();
-      if (active) {
-            Debug(" undo is already active");
+//      Debug("change property {} of {}", pn, element->name());
+      if (_undo->isActive()) {
+            // A macro is already active (e.g. AI session) — push
+            // the command directly into the existing macro.
+            _undo->push(new PropertyChangeCommand(zcam, element, pn, oldValue, newValue));
             return;
             }
 
       _undo->beginMacro();
       _undo->push(new PropertyChangeCommand(zcam, element, pn, oldValue, newValue));
       _undo->endMacro();
+      }
+
+//---------------------------------------------------------
+//   uniqueNameFor
+//    Dry-run of Element::setName() name computation: sanitize the
+//    raw name to a valid JS identifier and append a numeric suffix
+//    until it is unique in the central Element::names registry.
+//    Nothing is applied or registered — this only *predicts* the
+//    name that setName(rawName) would assign.  The logic must stay
+//    in sync with Element::setName().
+//---------------------------------------------------------
+
+QString Project::uniqueNameFor(const QString& rawName) {
+      QString n = rawName.trimmed();
+      if (n.isEmpty())
+            return QStringLiteral("_");
+      n.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_$]")), QStringLiteral("_"));
+      if (n.isEmpty() || !(n[0].isLetter() || n[0] == u'_'))
+            n.prepend(u'_');
+      QString nn = n;
+      int i      = 1;
+      while (Element::namesMap().contains(nn)) {
+            nn = QString("%1-%2").arg(n).arg(i);
+            ++i;
+            if (i >= 100000)
+                  break;
+            }
+      return nn;
+      }
+
+//---------------------------------------------------------
+//   renameElement
+//    Central rename API for an Element: uniqueness of the name is
+//    enforced by the central Element::names registry (setName() de-
+//    duplicates and sanitizes to a valid JS identifier).  The change
+//    is recorded on the undo stack via RenameElementCommand, so it
+//    is undoable/redoable and marks the project dirty.  Returns the
+//    actual (de-duplicated) name the element now has.
+//    No-op (returns the current name) when the requested name
+//    resolves to the element's current name, e.g. renaming "foo" to
+//    "foo" or to "foo-1" while "foo" still exists.
+//---------------------------------------------------------
+
+QString Project::renameElement(Element* element, const QString& newName) {
+      if (!element)
+            return QString();
+      QString oldName    = element->name();
+      QString actualName = uniqueNameFor(newName);
+      if (actualName == oldName)
+            return oldName;
+
+      _undo->beginMacro();
+      _undo->push(new RenameElementCommand(zcam, element, oldName, actualName));
+      _undo->endMacro();
+      return actualName;
       }
 
 //---------------------------------------------------------
@@ -269,7 +352,7 @@ void Project::doRedo() {
 //---------------------------------------------------------
 //   updateCadLayerVisibility
 //    Show only CAD Layers that are referenced by at least one
-//    LaserLayer in the active fixture.  Layers not referenced
+//    LaserMop in the active fixture.  Layers not referenced
 //    by the active fixture are hidden.
 //---------------------------------------------------------
 
@@ -278,16 +361,16 @@ void Project::updateCadLayerVisibility() {
             return;
 
       // Build a set of all Layer pointers that have at least one
-      // LaserLayer referencing them via laserLayer property in the
+      // LaserMop referencing them via laserLayer property in the
       // active fixture.  Also show Layers that contain children which
-      // have a laserLayer set to one of the fixture's LaserLayers.
+      // have a laserLayer set to one of the fixture's LaserMOPs.
       // For now, simply show all layers (the old baseElement logic is gone).
       QSet<Group*> referencedLayers;
       if (_fixture) {
             for (const auto c : _fixture->children()) {
                   auto* ll = qobject_cast<LaserMop*>(c);
                   if (ll) {
-                        // Walk the Cad subtree to find elements referencing this LaserLayer
+                        // Walk the Cad subtree to find elements referencing this LaserMop
                         if (_cad) {
                               std::function<void(Element*)> walk = [&](Element* e) {
                                     auto* e3d = qobject_cast<Element3d*>(e);
@@ -313,8 +396,8 @@ void Project::updateCadLayerVisibility() {
             if (!layer)
                   continue;
             // Set show to true only if this layer is referenced by
-            // a LaserLayer in the active fixture.
-            //            layer->set_show(referencedLayers.contains(layer));
+            // a LaserMop in the active fixture.
+            //  layer->set_show(referencedLayers.contains(layer));
             }
       }
 
@@ -444,8 +527,8 @@ void Project::removeFixture(Fixture* f) {
 AddGroupCommand::AddGroupCommand(ZCam* zcam, Cad* cad, Fixture* fixture)
     : UndoCommand(zcam), _cad(cad), _fixture(fixture) {
       _layer = new Group(zcam, nullptr);
-      // No longer create a LaserLayer automatically.
-      // The user creates LaserLayers explicitly and assigns
+      // No longer create a LaserMop automatically.
+      // The user creates LaserMOPs explicitly and assigns
       // elements to them via the laserLayer property.
       }
 
@@ -640,12 +723,11 @@ void AddGridCommand::undo() {
 //   AddLaserMopCommand implementation
 //---------------------------------------------------------
 
-AddLaserMopCommand::AddLaserMopCommand(ZCam* zcam, Fixture* fixture)
-    : UndoCommand(zcam), _fixture(fixture) {
+AddLaserMopCommand::AddLaserMopCommand(ZCam* zcam, Fixture* fixture) : UndoCommand(zcam), _fixture(fixture) {
       _laserLayer = new LaserMop(zcam, nullptr);
       // No longer auto-link to the first Cad Layer via baseElement.
-      // The user assigns elements to this LaserLayer via the laserLayer property.
-      _laserLayer->setName(QStringLiteral("LaserLayer"));
+      // The user assigns elements to this LaserMop via the laserLayer property.
+      _laserLayer->setName(QStringLiteral("LaserMop"));
       }
 
 void AddLaserMopCommand::redo() {
@@ -958,7 +1040,7 @@ void Project::addGridCmd() {
 //---------------------------------------------------------
 //   Project::addLayer
 //    Create a new Layer as child of the Cad element and a
-//    corresponding LaserLayer as child of the Fixture element.
+//    corresponding LaserMop as child of the Fixture element.
 //    The operation is routed through the undo stack so it can
 //    be undone/redone.
 //---------------------------------------------------------
@@ -979,8 +1061,36 @@ void Project::addLayer() {
       _undo->beginMacro();
       _undo->push(cmd);
       _undo->endMacro();
-      // The new Layer is referenced by a LaserLayer in the active fixture,
+      // The new Layer is referenced by a LaserMop in the active fixture,
       // so make it visible on the 3D canvas.
+      }
+
+//---------------------------------------------------------
+//   Project::addNest
+//    Create a new Nest element as child of the Cad element.
+//    The operation is routed through the undo stack.
+//---------------------------------------------------------
+
+void Project::addNest() {
+      ZCam* zc = zcamInstance();
+      if (!zc) {
+            Critical("Project::addNest: no ZCam instance");
+            return;
+            }
+      Cad* cad = _cad;
+      if (!cad) {
+            Critical("Project::addNest: no Cad element");
+            return;
+            }
+      auto* n = new Nest(zc, cad);
+      int row = cad->children().size();
+      if (zc->treeModel())
+            zc->treeModel()->beginInsertChild(cad, row);
+      cad->addChild(n);
+      if (zc->treeModel())
+            zc->treeModel()->endInsertChild();
+      emit zc->add3dElement(n);
+      zc->setCamDirty(true);
       }
 
 //---------------------------------------------------------
@@ -1112,6 +1222,43 @@ void MoveElementCommand::redo() {
       if (sameParent && newRow > oldRow)
             --adjustedRow;
 
+      //--- World-space-preserving transform adjustment ---
+      // When the parent actually changes and both the element and the
+      // new parent are Element3d, adjust the element's local pos / rot /
+      // scale so its world-space transform stays the same.
+      if (!sameParent) {
+            auto* e3d      = qobject_cast<Element3d*>(_element);
+            auto* newPar3d = qobject_cast<Element3d*>(_newParent);
+            if (e3d && newPar3d) {
+                  if (!_transformAdjusted) {
+                        QMatrix4x4 oldGlobal       = e3d->globalMatrix();
+                        QMatrix4x4 newParentGlobal = newPar3d->globalMatrix();
+                        bool ok                    = false;
+                        QMatrix4x4 newParentInv    = newParentGlobal.inverted(&ok);
+                        if (ok) {
+                              QMatrix4x4 newLocal = newParentInv * oldGlobal;
+                              auto dt             = Element3d::decomposeTransform(newLocal);
+                              _oldPos             = e3d->pos();
+                              _oldRot             = e3d->rot();
+                              _oldScale           = e3d->scale();
+                              _newPos             = dt.pos;
+                              _newRot             = dt.rot;
+                              _newScale           = dt.scale;
+                              _transformAdjusted  = true;
+                              }
+                        }
+                  // Apply the adjusted transform before the tree move so
+                  // the 3D scene rebuilds with the correct local transform.
+                  if (_transformAdjusted) {
+                        e3d->beginBatchUpdate();
+                        e3d->set_pos(_newPos);
+                        e3d->set_rot(_newRot);
+                        e3d->set_scale(_newScale);
+                        e3d->endBatchUpdate();
+                        }
+                  }
+            }
+
       // Remove from old parent
       if (zcam->treeModel())
             zcam->treeModel()->beginRemoveChild(_oldParent, oldRow);
@@ -1167,6 +1314,18 @@ void MoveElementCommand::undo() {
       if (!sameParent)
             emit zcam->remove3dElement(qobject_cast<Element3d*>(_element));
 
+      // Restore the original local transform before re-inserting into
+      // the old parent so the 3D scene rebuilds with correct values.
+      if (!sameParent && _transformAdjusted) {
+            if (auto* e3d = qobject_cast<Element3d*>(_element)) {
+                  e3d->beginBatchUpdate();
+                  e3d->set_pos(_oldPos);
+                  e3d->set_rot(_oldRot);
+                  e3d->set_scale(_oldScale);
+                  e3d->endBatchUpdate();
+                  }
+            }
+
       // Insert back into old parent at original position
       if (zcam->treeModel())
             zcam->treeModel()->beginInsertChild(_oldParent, oldRow);
@@ -1185,7 +1344,7 @@ void MoveElementCommand::undo() {
 //---------------------------------------------------------
 //   Project::removeElement
 //    Remove an element from the project tree.  If the element
-//    is a Layer, all LaserLayers referencing it as baseElement
+//    is a Layer, all LaserMOPs referencing it as baseElement
 //    are also removed.  The operation is undoable.
 //---------------------------------------------------------
 
@@ -1213,17 +1372,17 @@ void Project::removeElement(Element* el) {
       auto cmd = new RemoveElementCommand(zc, parent, el, row);
 
       // If the element is a Layer, find all elements in the Cad tree
-      // whose effectiveLaserLayer references a LaserLayer that is a child
-      // of the current fixture, so we can also remove those LaserLayers.
+      // whose effectiveLaserMop references a LaserMop that is a child
+      // of the current fixture, so we can also remove those LaserMOPs.
       auto layer = qobject_cast<Group*>(el);
       if (layer && _fixture) {
-            // Find LaserLayers in the fixture whose collectElements()
+            // Find LaserMOPs in the fixture whose collectElements()
             // includes any element under the removed Layer.
             for (const auto c : _fixture->children()) {
                   auto ll = qobject_cast<LaserMop*>(c);
                   if (!ll)
                         continue;
-                  // Check if any element in the LaserLayer's collection
+                  // Check if any element in the LaserMOP's collection
                   // is a descendant of the removed Layer.
                   auto elements      = ll->collectElements();
                   bool hasDescendant = false;
@@ -1246,7 +1405,7 @@ void Project::removeElement(Element* el) {
                                     break;
                               ++llRow;
                               }
-                        // TODO cmd->_linkedLaserLayers.push_back({_fixture, ll, llRow});
+                        // TODO cmd->_linkedLaserMOPs.push_back({_fixture, ll, llRow});
                         }
                   }
             }
@@ -1254,7 +1413,7 @@ void Project::removeElement(Element* el) {
       _undo->beginMacro();
       _undo->push(cmd);
       _undo->endMacro();
-      // Update CAD layer visibility since removing a Layer or LaserLayer
+      // Update CAD layer visibility since removing a Layer or LaserMop
       // may change which layers are referenced by the active fixture.
       }
 
@@ -1349,4 +1508,32 @@ void InsertElementCommand::undo() {
       _parent->removeChild(_element);
       if (zcam->treeModel())
             zcam->treeModel()->endRemoveChild();
+      }
+
+//---------------------------------------------------------
+//   PolygonPathCommand implementation
+//---------------------------------------------------------
+
+void PolygonPathCommand::undo() {
+      if (!_polygon)
+            return;
+      _polygon->setPainterPath(_oldPath);
+      _polygon->update();
+      _polygon->geometryChanged();
+      _polygon->vertexRevisionChanged();
+      zcam->setCamDirty(true);
+      }
+
+void PolygonPathCommand::redo() {
+      if (!_polygon)
+            return;
+      _polygon->setPainterPath(_newPath);
+      _polygon->update();
+      _polygon->geometryChanged();
+      _polygon->vertexRevisionChanged();
+      zcam->setCamDirty(true);
+      }
+
+std::string PolygonPathCommand::description() const {
+      return "Edit polygon path";
       }

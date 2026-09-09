@@ -36,6 +36,7 @@ Dialog {
     readonly property font unifiedFontBold: Qt.font({ family: cfgFontFamily, pointSize: cfgFontSize, weight: Font.Bold })
 
     property Machine machine: null
+    property var laser: machine ? machine.laserEngine() : null
     property double nominalSpacing: machine ? machine.maxTravel.x * 0.5 : 87.5
     property GalvoCalibration calib: ZCam.galvoCalibration
 
@@ -198,8 +199,8 @@ Dialog {
                         font: unifiedFont
                         text: calib.valid
                             ? "%1,  %2".arg(calib.scale.x.toFixed(6)).arg(calib.scale.y.toFixed(6))
-                            : (galvoCalDialog.machine
-                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoScale.x.toFixed(6)).arg(galvoCalDialog.machine.galvoScale.y.toFixed(6))
+                            : (galvoCalDialog.laser
+                                ? "%1,  %2".arg(galvoCalDialog.laser.galvoScale.x.toFixed(6)).arg(galvoCalDialog.laser.galvoScale.y.toFixed(6))
                                 : "—")
                     }
                     Label {
@@ -210,8 +211,8 @@ Dialog {
                         font: unifiedFont
                         text: calib.valid
                             ? "%1,  %2".arg(calib.bulge.x.toFixed(4)).arg(calib.bulge.y.toFixed(4))
-                            : (galvoCalDialog.machine
-                                ? "%1,  %2".arg(galvoCalDialog.machine.galvoBulge.x.toFixed(4)).arg(galvoCalDialog.machine.galvoBulge.y.toFixed(4))
+                            : (galvoCalDialog.laser
+                                ? "%1,  %2".arg(galvoCalDialog.laser.galvoBulge.x.toFixed(4)).arg(galvoCalDialog.laser.galvoBulge.y.toFixed(4))
                                 : "—")
                     }
                     Label {
@@ -222,8 +223,8 @@ Dialog {
                         font: unifiedFont
                         text: calib.valid
                             ? "%1,  %2 mm".arg(calib.offset.x.toFixed(4)).arg(calib.offset.y.toFixed(4))
-                            : (galvoCalDialog.machine
-                                ? "%1,  %2 mm".arg(galvoCalDialog.machine.galvoOffset.x.toFixed(4)).arg(galvoCalDialog.machine.galvoOffset.y.toFixed(4))
+                            : (galvoCalDialog.laser
+                                ? "%1,  %2 mm".arg(galvoCalDialog.laser.galvoOffset.x.toFixed(4)).arg(galvoCalDialog.laser.galvoOffset.y.toFixed(4))
                                 : "—")
                     }
                     Label {

@@ -19,10 +19,12 @@ Rectangle {
     focus: true
     id: laserPanel
     color: Material.color(Material.BlueGrey, Material.Shade800)
-    // The machine itself is the laser (Laser : Machine), so we cast
-    // via qml.  If the machine is not a Laser (e.g. GCode CNC), laser is null.
+    // The machine owns an Engine (Laser or MachineGCode).
+    // If the engine is a Laser, we expose it as the "laser" property
+    // so the LaserPanel can access laser-specific state (enabled,
+    // framing, marking, IO ports, etc.).
     property var machine: ZCam.project?.machine ?? null
-    property var laser: machine && machine.toString().indexOf("Laser") >= 0 ? machine : null
+    property var laser: machine ? machine.laserEngine() : null
 
     ColumnLayout {
         spacing: 0

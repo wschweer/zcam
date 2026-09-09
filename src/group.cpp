@@ -15,7 +15,7 @@
 #include "clipper.h"
 
 //---------------------------------------------------------
-//   Layer
+//   Group
 //---------------------------------------------------------
 
 Group::Group(ZCam* w, Element* parent) : Element3d(w, parent) {

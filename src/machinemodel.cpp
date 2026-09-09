@@ -10,6 +10,7 @@
 //=============================================================================
 
 #include "machinemodel.h"
+#include "engine.h"
 #include <QMetaProperty>
 #include <nlohmann/json.hpp>
 #include <pcap/pcap.h>
@@ -18,12 +19,35 @@
 //---------------------------------------------------------
 //   MachineModel
 //---------------------------------------------------------
+
 MachineModel::MachineModel(QObject* parent) : QAbstractListModel(parent) {
+      }
+
+//---------------------------------------------------------
+//   connectEngineNotify
+//    Connect all Q_PROPERTY NOTIFY signals of the machine's engine
+//    to onMachinePropertyChanged so external changes (e.g.
+//    GalvoCalibration::applyToMachine) are reflected in the QML
+//    PropertyEditor immediately.
+//---------------------------------------------------------
+
+void MachineModel::connectEngineNotify() {
+      if (!_machine || !_machine->engine())
+            return;
+      const QMetaObject* emeta = _machine->engine()->metaObject();
+      for (int i = 0; i < emeta->propertyCount(); ++i) {
+            QMetaProperty mp = emeta->property(i);
+            if (!mp.hasNotifySignal())
+                  continue;
+            QByteArray sig = "2" + mp.notifySignal().methodSignature();
+            connect(_machine->engine(), sig, this, SLOT(onMachinePropertyChanged()));
+            }
       }
 
 //---------------------------------------------------------
 //   setMachine
 //---------------------------------------------------------
+
 void MachineModel::setMachine(Machine* machine) {
       if (_machine == machine)
             return;
@@ -31,19 +55,20 @@ void MachineModel::setMachine(Machine* machine) {
       emit machineChanged();
       parseProperties();
 
-      // Connect all Q_PROPERTY NOTIFY signals of the machine so that
-      // external changes (e.g. GalvoCalibration::applyToMachine) are
+      // Connect all Q_PROPERTY NOTIFY signals of the machine AND its engine
+      // so that external changes (e.g. GalvoCalibration::applyToMachine) are
       // reflected in the QML PropertyEditor immediately.
       if (_machine) {
-      const QMetaObject* meta = _machine->metaObject();
-      for (int i = 0; i < meta->propertyCount(); ++i) {
-      QMetaProperty mp = meta->property(i);
-      if (!mp.hasNotifySignal())
-      continue;
-      QByteArray sig = "2" + mp.notifySignal().methodSignature();
-      connect(_machine, sig, this, SLOT(onMachinePropertyChanged()));
-      }
-      }
+            const QMetaObject* meta = _machine->metaObject();
+            for (int i = 0; i < meta->propertyCount(); ++i) {
+                  QMetaProperty mp = meta->property(i);
+                  if (!mp.hasNotifySignal())
+                        continue;
+                  QByteArray sig = "2" + mp.notifySignal().methodSignature();
+                  connect(_machine, sig, this, SLOT(onMachinePropertyChanged()));
+                  }
+            connectEngineNotify();
+            }
       }
 
 //---------------------------------------------------------
@@ -52,6 +77,7 @@ void MachineModel::setMachine(Machine* machine) {
 //    its value (e.g. via GalvoCalibration::applyToMachine).
 //    Refreshes all model rows so QML shows the new values.
 //---------------------------------------------------------
+
 void MachineModel::onMachinePropertyChanged() {
       if (_propertyNames.isEmpty())
             return;
@@ -65,6 +91,8 @@ void MachineModel::onMachinePropertyChanged() {
 //   parseProperties
 //    Parse the Machine::properties() JSON and build the internal
 //    model rows, analog to InspectorModel::parseProperties().
+//---------------------------------------------------------
+
 void MachineModel::parseProperties() {
       beginResetModel();
       _propertyNames.clear();
@@ -85,7 +113,9 @@ void MachineModel::parseProperties() {
             return;
             }
 
-      std::string_view propStr = _machine->properties();
+      std::string propStr;
+      if (_machine && _machine->engine())
+            propStr = _machine->engine()->properties();
       if (propStr.empty()) {
             _title = _machine->name();
             endResetModel();
@@ -112,9 +142,10 @@ void MachineModel::parseProperties() {
                                              : 1;
 
                         // Optional per-row label width override (-1 = use default)
-                        int rowLabelWidth = row.contains("labelWidth") && row["labelWidth"].is_number_integer()
-                                             ? row["labelWidth"].get<int>()
-                                             : -1;
+                        int rowLabelWidth =
+                            row.contains("labelWidth") && row["labelWidth"].is_number_integer()
+                                ? row["labelWidth"].get<int>()
+                                : -1;
 
                         if (rowColumns > 1) {
                               QList<MachineColumnItem> cols;
@@ -174,7 +205,7 @@ void MachineModel::parseProperties() {
                                     _propertyIsRow.append(false);
                                     _propertyIsColumns.append(true);
                                     _columnCounts.append(rowColumns);
-                              _rowLabelWidths.append(rowLabelWidth);
+                                    _rowLabelWidths.append(rowLabelWidth);
                                     _columnItems.append(cols);
                                     _subPropNames.append(QStringList {});
                                     _rowLabels.append(QString());
@@ -266,6 +297,7 @@ void MachineModel::parseProperties() {
 //---------------------------------------------------------
 //   rowCount
 //---------------------------------------------------------
+
 int MachineModel::rowCount(const QModelIndex& parent) const {
       if (parent.isValid())
             return 0;
@@ -277,6 +309,7 @@ int MachineModel::rowCount(const QModelIndex& parent) const {
 //    Read property values from the Machine via the Qt meta-object
 //    system, using read() since Machine is a QObject.
 //---------------------------------------------------------
+
 QVariant MachineModel::data(const QModelIndex& index, int role) const {
       if (!index.isValid() || index.row() >= static_cast<int>(_propertyNames.size()))
             return {};
@@ -291,10 +324,26 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                         return {};
                   const QMetaObject* meta = _machine->metaObject();
                   int idx                 = meta->indexOfProperty(name.toUtf8().constData());
-                  if (idx < 0)
-                        return {};
-                  QMetaProperty mp = meta->property(idx);
-                  return mp.read(_machine);
+                  if (idx >= 0) {
+                        QMetaProperty mp = meta->property(idx);
+                        QVariant value   = mp.read(_machine);
+                        // For the MachineType enum "type" property, return the
+                        // human-readable string name so the QML stringComboDelegate
+                        // can display it and match it against machineTypes().
+                        if (name == QStringLiteral("type") && value.canConvert<int>())
+                              return _machine->machineTypeName();
+                        return value;
+                        }
+                  // Try engine properties (laser galvo, delays, IO, etc.)
+                  if (_machine->engine()) {
+                        const QMetaObject* emeta = _machine->engine()->metaObject();
+                        int eidx                 = emeta->indexOfProperty(name.toUtf8().constData());
+                        if (eidx >= 0) {
+                              QMetaProperty mp = emeta->property(eidx);
+                              return mp.read(_machine->engine());
+                              }
+                        }
+                  return {};
                   }
             case IsRowRole: return isRow;
             case SubPropsRole: {
@@ -307,12 +356,25 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                   if (!_machine)
                         return {};
                   QVariantList list;
-                  const QMetaObject* meta = _machine->metaObject();
+                  const QMetaObject* meta  = _machine->metaObject();
+                  const QMetaObject* emeta = _machine->engine() ? _machine->engine()->metaObject() : nullptr;
                   for (const QString& s : _subPropNames[index.row()]) {
                         int idx = meta->indexOfProperty(s.toUtf8().constData());
                         if (idx >= 0) {
                               QMetaProperty mp = meta->property(idx);
-                              list.append(mp.read(_machine));
+                              QVariant v       = mp.read(_machine);
+                              if (s == QStringLiteral("type") && v.canConvert<int>())
+                                    v = _machine->machineTypeName();
+                              list.append(v);
+                              }
+                        else if (emeta) {
+                              int eidx = emeta->indexOfProperty(s.toUtf8().constData());
+                              if (eidx >= 0) {
+                                    QMetaProperty mp = emeta->property(eidx);
+                                    list.append(mp.read(_machine->engine()));
+                                    }
+                              else
+                                    list.append(QVariant());
                               }
                         else
                               list.append(QVariant());
@@ -330,6 +392,8 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                   QVariantList list;
                   if (index.row() < _columnItems.size() && _machine) {
                         const QMetaObject* meta = _machine->metaObject();
+                        const QMetaObject* emeta =
+                            _machine->engine() ? _machine->engine()->metaObject() : nullptr;
                         for (const MachineColumnItem& ci : _columnItems[index.row()]) {
                               QVariantMap m;
                               m["name"]     = ci.name;
@@ -348,7 +412,19 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                                           int idx = meta->indexOfProperty(s.toUtf8().constData());
                                           if (idx >= 0) {
                                                 QMetaProperty mp = meta->property(idx);
-                                                subVals.append(mp.read(_machine));
+                                                QVariant v       = mp.read(_machine);
+                                                if (s == QStringLiteral("type") && v.canConvert<int>())
+                                                      v = _machine->machineTypeName();
+                                                subVals.append(v);
+                                                }
+                                          else if (emeta) {
+                                                int eidx = emeta->indexOfProperty(s.toUtf8().constData());
+                                                if (eidx >= 0) {
+                                                      QMetaProperty mp = emeta->property(eidx);
+                                                      subVals.append(mp.read(_machine->engine()));
+                                                      }
+                                                else
+                                                      subVals.append(QVariant());
                                                 }
                                           else
                                                 subVals.append(QVariant());
@@ -359,7 +435,17 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
                                     int idx = meta->indexOfProperty(ci.name.toUtf8().constData());
                                     if (idx >= 0) {
                                           QMetaProperty mp = meta->property(idx);
-                                          m["propValue"]   = mp.read(_machine);
+                                          QVariant v       = mp.read(_machine);
+                                          if (ci.name == QStringLiteral("type") && v.canConvert<int>())
+                                                v = _machine->machineTypeName();
+                                          m["propValue"] = v;
+                                          }
+                                    else if (emeta) {
+                                          int eidx = emeta->indexOfProperty(ci.name.toUtf8().constData());
+                                          if (eidx >= 0) {
+                                                QMetaProperty mp = emeta->property(eidx);
+                                                m["propValue"]   = mp.read(_machine->engine());
+                                                }
                                           }
                                     }
                               list.append(m);
@@ -376,6 +462,7 @@ QVariant MachineModel::data(const QModelIndex& index, int role) const {
 //    Write a property value back to the Machine using
 //    write() and emit dataChanged.
 //---------------------------------------------------------
+
 bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int role) {
       if (!index.isValid() || index.row() >= static_cast<int>(_propertyNames.size()))
             return false;
@@ -392,16 +479,42 @@ bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int 
       const QString& name     = _propertyNames[index.row()];
       const QMetaObject* meta = _machine->metaObject();
       int idx                 = meta->indexOfProperty(name.toUtf8().constData());
-      if (idx < 0)
-            return false;
-      QMetaProperty mp = meta->property(idx);
-      if (!mp.write(_machine, value))
+      if (idx >= 0) {
+            QMetaProperty mp = meta->property(idx);
+
+            // The "type" property is a MachineType enum but the QML delegate
+            // sends a string name.  Convert it back to the enum value.
+            if (name == QStringLiteral("type") && value.canConvert<QString>())
+                  _machine->set_typeFromName(value.toString());
+            else if (!mp.write(_machine, value))
+                  return false;
+            }
+      else if (_machine->engine()) {
+            // Engine property (laser galvo, delays, IO, etc.)
+            const QMetaObject* emeta = _machine->engine()->metaObject();
+            int eidx                 = emeta->indexOfProperty(name.toUtf8().constData());
+            if (eidx < 0)
+                  return false;
+            QMetaProperty mp = emeta->property(eidx);
+            if (!mp.write(_machine->engine(), value))
+                  return false;
+            }
+      else
             return false;
 
-      // When the machine "type" property changes, the properties() JSON
-      // description changes too — rebuild the entire model so the QML
-      // panel refreshes with the new property set.
+      // When the machine "type" or "boardType" property changes, a new
+      // engine of the appropriate subclass must be created.  Then rebuild
+      // the entire model so the QML panel refreshes with the new property set.
       if (name == "type") {
+            _machine->changeType(_machine->type(), _machine->boardType());
+            connectEngineNotify();
+            parseProperties();
+            emit machineDataChanged();
+            return true;
+            }
+      if (name == "boardType") {
+            _machine->createEngine();
+            connectEngineNotify();
             parseProperties();
             emit machineDataChanged();
             return true;
@@ -415,6 +528,7 @@ bool MachineModel::setData(const QModelIndex& index, const QVariant& value, int 
 //---------------------------------------------------------
 //   setSubProperty
 //---------------------------------------------------------
+
 bool MachineModel::setSubProperty(int row, const QString& subName, const QVariant& value) {
       if (!_machine || row < 0 || row >= _propertyNames.size())
             return false;
@@ -423,16 +537,41 @@ bool MachineModel::setSubProperty(int row, const QString& subName, const QVarian
 
       const QMetaObject* meta = _machine->metaObject();
       int idx                 = meta->indexOfProperty(subName.toUtf8().constData());
-      if (idx < 0)
-            return false;
-      QMetaProperty mp = meta->property(idx);
-      if (!mp.write(_machine, value))
+      if (idx >= 0) {
+            QMetaProperty mp = meta->property(idx);
+
+            // The "type" property is a MachineType enum but the QML delegate
+            // sends a string name.  Convert it back to the enum value.
+            if (subName == QStringLiteral("type") && value.canConvert<QString>())
+                  _machine->set_typeFromName(value.toString());
+            else if (!mp.write(_machine, value))
+                  return false;
+            }
+      else if (_machine->engine()) {
+            const QMetaObject* emeta = _machine->engine()->metaObject();
+            int eidx                 = emeta->indexOfProperty(subName.toUtf8().constData());
+            if (eidx < 0)
+                  return false;
+            QMetaProperty mp = emeta->property(eidx);
+            if (!mp.write(_machine->engine(), value))
+                  return false;
+            }
+      else
             return false;
 
-      // When the machine "type" property changes, the properties() JSON
-      // description changes too — rebuild the entire model so the QML
-      // panel refreshes with the new property set.
+      // When the machine "type" or "boardType" property changes, a new
+      // engine of the appropriate subclass must be created.  Then rebuild
+      // the entire model so the QML panel refreshes with the new property set.
       if (subName == "type") {
+            _machine->changeType(_machine->type(), _machine->boardType());
+            connectEngineNotify();
+            parseProperties();
+            emit machineDataChanged();
+            return true;
+            }
+      if (subName == "boardType") {
+            _machine->createEngine();
+            connectEngineNotify();
             parseProperties();
             emit machineDataChanged();
             return true;
@@ -447,6 +586,7 @@ bool MachineModel::setSubProperty(int row, const QString& subName, const QVarian
 //---------------------------------------------------------
 //   setColumnProperty
 //---------------------------------------------------------
+
 bool MachineModel::setColumnProperty(int modelRow, const QString& propName, const QVariant& value) {
       if (!_machine || modelRow < 0 || modelRow >= _propertyNames.size())
             return false;
@@ -455,16 +595,40 @@ bool MachineModel::setColumnProperty(int modelRow, const QString& propName, cons
 
       const QMetaObject* meta = _machine->metaObject();
       int idx                 = meta->indexOfProperty(propName.toUtf8().constData());
-      if (idx < 0)
-            return false;
-      QMetaProperty mp = meta->property(idx);
-      if (!mp.write(_machine, value))
-            return false;
+      if (idx >= 0) {
+            QMetaProperty mp = meta->property(idx);
 
-      // When the machine "type" property changes, the properties() JSON
-      // description changes too — rebuild the entire model so the QML
-      // panel refreshes with the new property set.
+            // The "type" property is a MachineType enum but the QML delegate
+            // sends a string name.  Convert it back to the enum value.
+            if (propName == QStringLiteral("type") && value.canConvert<QString>())
+                  _machine->set_typeFromName(value.toString());
+            else if (!mp.write(_machine, value))
+                  return false;
+            }
+      else if (_machine->engine()) {
+            const QMetaObject* emeta = _machine->engine()->metaObject();
+            int eidx                 = emeta->indexOfProperty(propName.toUtf8().constData());
+            if (eidx < 0)
+                  return false;
+            QMetaProperty mp = emeta->property(eidx);
+            if (!mp.write(_machine->engine(), value))
+                  return false;
+            }
+      else
+            return false;
+      // When the machine "type" or "boardType" property changes, a new
+      // engine of the appropriate subclass must be created.  Then rebuild
+      // the entire model so the QML panel refreshes with the new property set.
       if (propName == "type") {
+            _machine->changeType(_machine->type(), _machine->boardType());
+            connectEngineNotify();
+            parseProperties();
+            emit machineDataChanged();
+            return true;
+            }
+      if (propName == "boardType") {
+            _machine->createEngine();
+            connectEngineNotify();
             parseProperties();
             emit machineDataChanged();
             return true;
@@ -481,20 +645,32 @@ bool MachineModel::setColumnProperty(int modelRow, const QString& propName, cons
 //    Read any property value from the current Machine by name.
 //    Used by the QML PropertyEditor to evaluate the "enabled" keyword.
 //---------------------------------------------------------
+
 QVariant MachineModel::elementProperty(const QString& name) const {
       if (!_machine || name.isEmpty())
             return {};
       const QMetaObject* meta = _machine->metaObject();
       int idx                 = meta->indexOfProperty(name.toUtf8().constData());
-      if (idx < 0)
-            return {};
-      QMetaProperty mp = meta->property(idx);
-      return mp.read(_machine);
+      if (idx >= 0) {
+            QMetaProperty mp = meta->property(idx);
+            return mp.read(_machine);
+            }
+      // Try engine properties.
+      if (_machine->engine()) {
+            const QMetaObject* emeta = _machine->engine()->metaObject();
+            int eidx                 = emeta->indexOfProperty(name.toUtf8().constData());
+            if (eidx >= 0) {
+                  QMetaProperty mp = emeta->property(eidx);
+                  return mp.read(_machine->engine());
+                  }
+            }
+      return {};
       }
 
 //---------------------------------------------------------
 //   roleNames
 //---------------------------------------------------------
+
 QHash<int, QByteArray> MachineModel::roleNames() const {
       QHash<int, QByteArray> roles;
       roles[PropNameRole]    = "propName";
@@ -513,10 +689,11 @@ QHash<int, QByteArray> MachineModel::roleNames() const {
 //   machineTypes
 //    Return the list of available machine type strings.
 //---------------------------------------------------------
+
 QStringList MachineModel::machineTypes() const {
       QStringList result;
-      for (const auto& t : ::machineTypes)
-            result.append(QString::fromStdString(t));
+      for (std::size_t i = 0; i < machineTypeMap.size(); ++i)
+            result.append(QString::fromUtf8(machineTypeMap.nameAt(static_cast<MachineType>(i))));
       return result;
       }
 
@@ -524,6 +701,7 @@ QStringList MachineModel::machineTypes() const {
 //   boardTypes
 //    Return the list of available board type strings.
 //---------------------------------------------------------
+
 QStringList MachineModel::boardTypes() const {
       QStringList result;
       for (const auto& t : ::boardTypes)
@@ -537,6 +715,7 @@ QStringList MachineModel::boardTypes() const {
 //    libpcap can open for live capture.  Uses pcap_findalldevs()
 //    to enumerate all interfaces on the system.
 //---------------------------------------------------------
+
 QStringList MachineModel::ethDevices() const {
       QStringList result;
       pcap_if_t* alldevs = nullptr;

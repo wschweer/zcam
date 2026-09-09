@@ -44,10 +44,12 @@ class LayerSettingModel : public QAbstractListModel
       Q_OBJECT
       QML_ELEMENT
       Q_PROPERTY(LaserPass* pass READ pass WRITE setPass NOTIFY passChanged)
+      Q_PROPERTY(LaserRecipe* recipe READ recipe WRITE setRecipe)
       Q_PROPERTY(QString title READ title NOTIFY titleChanged)
       Q_PROPERTY(QString propertiesJson READ propertiesJson NOTIFY propertiesJsonChanged)
 
       LaserPass* _pass = nullptr;
+      LaserRecipe* _recipe = nullptr;
       QString _title;
       QString _propertiesJson;
 
@@ -71,6 +73,8 @@ class LayerSettingModel : public QAbstractListModel
       explicit LayerSettingModel(QObject* parent = nullptr);
       LaserPass* pass() const { return _pass; }
       void setPass(LaserPass* pass);
+      void setRecipe(LaserRecipe* recipe);
+      LaserRecipe* recipe() const { return _recipe; }
       Q_INVOKABLE void clearPass();
       QString title() const { return _title; }
       QString propertiesJson() const { return _propertiesJson; }

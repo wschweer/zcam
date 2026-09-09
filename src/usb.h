@@ -29,7 +29,7 @@ class Usb
       libusb_device* device {nullptr};
       libusb_device_handle* handle {nullptr};
 
-      bool mock { false };
+      bool mock {false};
 
       bool readWrite(u_char* data, size_t count, int endpoint);
 

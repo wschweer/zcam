@@ -1010,7 +1010,7 @@ QStringList InspectorModel::laserLayerNames() const {
             zc = el->zcamInstance();
       if (!zc)
             return {};
-      return zc->laserLayerNames();
+      return zc->mopNames();
       }
 
 //---------------------------------------------------------
@@ -1039,7 +1039,7 @@ Mop* InspectorModel::nameToLaserLayer(const QString& name) const {
             zc = el->zcamInstance();
       if (!zc)
             return nullptr;
-      return zc->laserLayerPtr(name);
+      return zc->mopPtr(name);
       }
 
 //---------------------------------------------------------
@@ -1099,9 +1099,9 @@ QStringList InspectorModel::pulsewidthNames() const {
             zc = el->zcamInstance();
       if (!zc || !zc->project() || !zc->project()->machine())
             return {};
-      // The machine may be a Laser subclass (which provides laserPulseList)
-      // or a non-laser Machine (which does not).
-      auto* laser = qobject_cast<Laser*>(zc->project()->machine());
+      // The machine engine may be a Laser (which provides laserPulseList)
+      // or a non-laser Engine (which does not).
+      auto* laser = zc->project()->machine()->laserEngine();
       if (!laser)
             return {};
       QStringList sl;
@@ -1154,7 +1154,7 @@ QStringList InspectorModel::lockScaleNames() const {
 //---------------------------------------------------------
 
 QStringList InspectorModel::framingTypeNames() const {
-      return {QStringLiteral("BoundingBox"), QStringLiteral("ConvexHull")};
+      return {QStringLiteral("BoundingBox"), QStringLiteral("ConvexHull"), QStringLiteral("Rectangle")};
       }
 
 //---------------------------------------------------------

@@ -33,5 +33,5 @@ Cad::Cad(ZCam* zcam, Element* parent) : Group(zcam, parent) {
       zcam->project()->set_cad(this);
 
       auto* nopMop = new NopMop(zcam, this);
-      set_laserLayer(nopMop);
+      set_mop(nopMop);
       }

@@ -107,6 +107,7 @@ class MachineModel : public QAbstractListModel
 
     private:
       void parseProperties();
+      void connectEngineNotify();
 
       QPointer<Machine> _machine;
       QString _title;

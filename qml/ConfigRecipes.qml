@@ -20,7 +20,18 @@ Item {
     property int currentRecipeIdx: -1
     property int currentLayerIdx: -1
     property bool _updating: false
+    property bool _removing: false   // guard: true while removeCurrent() is in progress
     property var currentFolderRelDir: ""   // relative path of currently selected folder, "" = root
+    property var currentParentDir: ""      // directory of the currently selected entry (folder or recipe)
+
+    // Delete removes the currently selected recipe/folder.
+    // Scoped to this component so it only fires when the recipes panel is
+    // loaded and something is selected.  No keyboard focus required.
+    Shortcut {
+        sequence: "Delete"
+        enabled: root.visible && (root.currentRecipeIdx >= 0 || root.currentFolderRelDir !== "")
+        onActivated: root.removeCurrent()
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -30,6 +41,11 @@ Item {
     Connections {
         target: ZCam.recipes
         function onRecipeModelChanged() {
+            // Skip while removeCurrent() is in progress — it handles
+            // index adjustment and updateDetails() itself after the
+            // model has been fully rebuilt.
+            if (_removing)
+                return;
             if (currentRecipeIdx >= ZCam.recipes.recipeModel.length) {
                 currentRecipeIdx = ZCam.recipes.recipeModel.length - 1;
             } else if (currentRecipeIdx < 0 && ZCam.recipes.recipeModel.length > 0) {
@@ -47,10 +63,7 @@ Item {
     function updateDetails() {
         _updating = true;
         if (currentRecipeIdx >= 0 && currentRecipeIdx < ZCam.recipes.recipeModel.length) {
-            let r = ZCam.recipes.recipe(currentRecipeIdx);
-            recipeNameField.text = r.name;
-            recipeDescField.text = r.description;
-            recipePassesBox.value = r.numPasses;
+            recipeModel.recipe = ZCam.recipes.recipePtr(currentRecipeIdx);
             layerList.model = ZCam.recipes.layerModel(currentRecipeIdx);
 
             if (currentLayerIdx >= layerList.model.length) {
@@ -61,13 +74,27 @@ Item {
             layerList.currentIndex = currentLayerIdx;
 
             if (currentLayerIdx >= 0 && currentLayerIdx < layerList.model.length) {
+                layerSettingModel.recipe = ZCam.recipes.recipe(currentRecipeIdx)
                 layerSettingModel.pass = ZCam.recipes.layerPtr(currentRecipeIdx, currentLayerIdx);
             } else {
                 layerSettingModel.clearPass();
             }
+
+            // Keep the left tree expanded so the recipe shown in the right
+            // panel is always visible in the tree, and make sure the recipe
+            // row is the selected (current) one.
+            expandRecipeInTree(currentRecipeIdx);
+            let sm = recipeTree.selectionModel;
+            let tm = ZCam.recipes.recipeTreeModel;
+            if (sm && tm) {
+                let targetIdx = tm.indexForRecipe(currentRecipeIdx);
+                if (targetIdx && targetIdx.valid &&
+                    !(sm.currentIndex && sm.currentIndex === targetIdx)) {
+                    sm.setCurrentIndex(targetIdx, ItemSelectionModel.ClearAndSelect);
+                }
+            }
         } else {
-            recipeNameField.text = "";
-            recipeDescField.text = "";
+            recipeModel.recipe = null;
             layerList.model = [];
             currentLayerIdx = -1;
             layerSettingModel.clearPass();
@@ -75,22 +102,20 @@ Item {
         _updating = false;
     }
 
-    /// Selects the recipe with the given name in the tree and detail view.
-    /// Expands all parent folders so the recipe is visible in the TreeView.
-    function selectRecipeByName(name) {
-        let idx = ZCam.recipes.recipeIndexByName(name);
+    /// Expands every ancestor folder of the recipe with the given index so
+    /// that its row is visible in the left TreeView.  A no-op when the recipe
+    /// cannot be found in the tree model or is already fully expanded.
+    function expandRecipeInTree(idx) {
         if (idx < 0)
             return;
-        currentRecipeIdx = idx;
-        updateDetails();
-
-        // Find the model index for this recipe in the tree model
         let tm = ZCam.recipes.recipeTreeModel;
+        if (!tm)
+            return;
         let targetIdx = tm.indexForRecipe(idx);
         if (!targetIdx || !targetIdx.valid)
             return;
 
-        // Build the chain of parent indices from root to the target.
+        // Build the chain of ancestor indices from root to the target.
         let chain = [];
         let p = targetIdx.parent;
         while (p && p.valid) {
@@ -99,8 +124,8 @@ Item {
         }
 
         // Expand each ancestor from top to bottom so the target row
-        // becomes visible. After each expand, forceLayout() makes
-        // newly revealed child rows immediately available.
+        // becomes visible.  forceLayout() makes newly revealed child
+        // rows immediately available for the next iteration.
         for (let i = 0; i < chain.length; ++i) {
             let visRow = recipeTree.rowAtIndex(chain[i]);
             if (visRow >= 0 && !recipeTree.isExpanded(visRow)) {
@@ -108,15 +133,117 @@ Item {
                 recipeTree.forceLayout();
             }
         }
+    }
 
-        // Now select the target row (it should be visible after expanding)
-        let visRow = recipeTree.rowAtIndex(targetIdx);
-        if (visRow >= 0)
-            recipeTree.selectionModel.setCurrentIndex(targetIdx, ItemSelectionModel.ClearAndSelect);
+    /// Removes the currently selected recipe (or the currently selected
+    /// folder when no recipe is shown in the details panel).  Shared by the
+    /// "−" button and the Delete key.  The folder that contained the removed
+    /// entry is re-expanded afterwards so the tree does not collapse.
+    function removeCurrent() {
+        // Guard against re-entrant updates from the Connections handler
+        // (recipeModelChanged fires inside removeRecipe / removeFolder,
+        // before the tree model is rebuilt).
+        _removing = true;
+
+        // Capture the folders that are expanded right now.  removeRecipe() /
+        // removeFolder() rebuild the tree model (resetModel), which clears the
+        // TreeView's expanded state, so we re-expand them afterwards.
+        let savedExpansion = expandedPaths();
+
+        if (currentRecipeIdx >= 0) {
+            ZCam.recipes.removeRecipe(currentRecipeIdx);
+            currentRecipeIdx = -1;
+        } else if (currentFolderRelDir !== "") {
+            ZCam.recipes.removeFolder(currentFolderRelDir);
+            currentFolderRelDir = "";
+        }
+
+        _removing = false;
+
+        // Now that the model is fully rebuilt, update the details panel
+        // and restore the tree's expanded state.
+        updateDetails();
+        restoreExpansion(savedExpansion);
+    }
+
+    /// Records the relative paths of all folder nodes that are currently
+    /// expanded in the tree.  Used to restore the expanded state after the
+    /// model is rebuilt (a model reset wipes the TreeView expansion).
+    ///
+    /// The visible rows of the QML TreeView are iterated (rows / isExpanded /
+    /// index are QML built-ins).  Only QML-origin indices are fed to
+    /// tm.path(), the same (working) pattern as the selection handler, so no
+    /// invalid QModelIndex ever crosses the QML/C++ boundary.
+    function expandedPaths() {
+        let out = [];
+        let tm = ZCam.recipes.recipeTreeModel;
+        if (!tm)
+            return out;
+        let n = recipeTree.rows;
+        for (let r = 0; r < n; ++r) {
+            if (!recipeTree.isExpanded(r))
+                continue;
+            let idx = recipeTree.index(r, 0);
+            let p = tm.path(idx);
+            if (p.length > 0)
+                out.push(p);
+        }
+        return out;
+    }
+
+    /// Re-expands the top-level machine node and then the folders with the
+    /// given relative paths (parent-first).  Folders that no longer exist
+    /// (e.g. because they were removed) are skipped silently.
+    function restoreExpansion(paths) {
+        let tm = ZCam.recipes.recipeTreeModel;
+        if (!tm)
+            return;
+        // Re-expand the top-level machine node (always visible row 0) so its
+        // children are visible again before the sub-folders are expanded.
+        if (recipeTree.rows > 0 && !recipeTree.isExpanded(0)) {
+            recipeTree.expand(0);
+            recipeTree.forceLayout();
+        }
+        if (!paths)
+            return;
+        for (let i = 0; i < paths.length; ++i) {
+            let idx = tm.indexForPath(paths[i]);
+            if (!idx || !idx.valid)
+                continue;
+            let visRow = recipeTree.rowAtIndex(idx);
+            if (visRow >= 0 && !recipeTree.isExpanded(visRow)) {
+                recipeTree.expand(visRow);
+                recipeTree.forceLayout();
+            }
+        }
+    }
+
+    /// Selects the recipe with the given name in the tree and detail view.
+    /// updateDetails() takes care of expanding all parent folders and of
+    /// selecting the recipe row in the TreeView.
+    function selectRecipeByName(name) {
+        let idx = ZCam.recipes.recipeIndexByName(name);
+        if (idx < 0)
+            return;
+        currentRecipeIdx = idx;
+        updateDetails();
+    }
+
+    RecipeModel {
+        id: recipeModel
     }
 
     LayerSettingModel {
         id: layerSettingModel
+    }
+
+    Connections {
+        target: recipeModel
+        function onRecipeDataChanged() {
+            // Recipe property was edited via PropertyEditor; persist
+            // by notifying the Recipe container.
+            ZCam.recipes.recipeChanged(currentRecipeIdx)
+        }
     }
 
     Connections {
@@ -149,7 +276,17 @@ Item {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Add Recipe")
                     onClicked: {
-                        ZCam.recipes.addRecipeInDir("New Recipe", currentFolderRelDir)
+                        // Create the new recipe in the directory of the
+                        // currently selected entry (folder or recipe);
+                        // clone the selected recipe's settings when one is
+                        // selected.  Select and display the new recipe so it
+                        // shows up on the right, selected and expanded.
+                        let newIdx = ZCam.recipes.addRecipeInDir(
+                            "New Recipe", currentParentDir, currentRecipeIdx);
+                        if (newIdx >= 0) {
+                            currentRecipeIdx = newIdx;
+                            updateDetails();
+                        }
                     }
                 }
                 // Add Folder button
@@ -166,17 +303,8 @@ Item {
                 ToolButton {
                     text: "−"
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Remove selected")
-                    onClicked: {
-                        if (currentRecipeIdx >= 0) {
-                            ZCam.recipes.removeRecipe(currentRecipeIdx);
-                            currentRecipeIdx = -1;
-                            updateDetails();
-                        } else if (currentFolderRelDir !== "") {
-                            ZCam.recipes.removeFolder(currentFolderRelDir);
-                            currentFolderRelDir = "";
-                        }
-                    }
+                    ToolTip.text: qsTr("Remove selected (Del)")
+                    onClicked: removeCurrent()
                 }
             }
 
@@ -198,20 +326,40 @@ Item {
                     model: ZCam.recipes.recipeTreeModel
 
                     onCurrentIndexChanged: {
+                        // Skip if we are currently updating the details panel
+                        // (updateDetails sets the selection index programmatically)
+                        // or removing an item (removeCurrent handles cleanup itself).
+                        if (_updating || _removing)
+                            return
                         var idx = currentIndex
                         if (!idx || !idx.valid) {
                             currentFolderRelDir = ""
+                            currentParentDir = ""
                             return
                         }
                         var tm = ZCam.recipes.recipeTreeModel
                         if (tm.isDir(idx)) {
+                            // Selecting a folder clears the recipe in the details panel.
                             currentFolderRelDir = tm.path(idx)
-                            currentRecipeIdx = -1
+                            // A new entry created now goes directly into this folder.
+                            currentParentDir = tm.path(idx)
+                            if (currentRecipeIdx !== -1) {
+                                currentRecipeIdx = -1
+                                updateDetails()
+                            }
                         } else {
                             currentFolderRelDir = tm.path(idx) // parent folder for context
-                            currentRecipeIdx = tm.recipeIndex(idx)
+                            // A new entry created now goes into the selected
+                            // recipe's parent folder (next to it).
+                            currentParentDir = tm.path(idx)
+                            var rIdx = tm.recipeIndex(idx)
+                            // Ignore the notification we just triggered ourselves
+                            // from updateDetails() — nothing has actually changed.
+                            if (rIdx === currentRecipeIdx)
+                                return;
+                            currentRecipeIdx = rIdx
+                            updateDetails()
                         }
-                        updateDetails()
                     }
                 }
 
@@ -233,6 +381,15 @@ Item {
 
                     leftPadding: 8 + depth * 20
                     rightPadding: 8
+                    topPadding: 2
+                    bottomPadding: 2
+
+                    background: Rectangle {
+                        anchors.fill: parent
+                        color: recipeDelegate.highlighted
+                               ? Material.accentColor
+                               : "transparent"
+                    }
 
                     contentItem: RowLayout {
                         spacing: 4
@@ -323,63 +480,40 @@ Item {
             // 1: Recipe Details
             ColumnLayout {
 
-                // Header: Recipe Info
+                // Header: Recipe Info (dynamically built from properties())
                 GroupBox {
-                    title: "Recipe Details"
+                    title: recipeModel.title.length > 0 ? recipeModel.title : "Recipe"
                     Layout.fillWidth: true
-                    GridLayout {
-                        columns: 2
+                    Layout.preferredHeight: 200
+
+                    ColumnLayout {
                         anchors.fill: parent
 
                         Label {
-                            text: "Name:"
-                        }
-                        TextField {
-                            id: recipeNameField
+                            text: recipeModel.title.length > 0 ? recipeModel.title : "Recipe"
+                            font.bold: true
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.bottomMargin: 2
+                            elide: Text.ElideRight
                             Layout.fillWidth: true
-                            onEditingFinished: {
-                                let r = ZCam.recipes.recipe(currentRecipeIdx);
-                                r.name = text;
-                                ZCam.recipes.updateRecipe(currentRecipeIdx, r);
-                            }
+                            horizontalAlignment: Text.AlignHCenter
+                            color: Material.accentColor
                         }
 
-                        Label {
-                            text: "Description:"
-                            Layout.alignment: Qt.AlignTop | Qt.AlignLeft
-                        }
-                        ScrollView {
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: recipeDescField.font.lineHeight * 5 + 12
-                            Layout.maximumHeight: recipeDescField.font.lineHeight * 5 + 12
-                            clip: true
-                            TextArea {
-                                id: recipeDescField
-                                width: parent.width
-                                wrapMode: TextArea.Wrap
-                                placeholderText: qsTr("Enter description...")
-                                text: ""
-                                onTextChanged: {
-                                    if (_updating) return;
-                                    let r = ZCam.recipes.recipe(currentRecipeIdx);
-                                    r.description = text;
-                                    ZCam.recipes.updateRecipe(currentRecipeIdx, r);
-                                }
-                            }
+                            implicitHeight: 1
+                            color: Material.accentColor
+                            opacity: 0.4
+                            Layout.bottomMargin: 2
                         }
 
-                        Label {
-                            text: "Passes:"
-                        }
-                        SpinBox {
-                            id: recipePassesBox
-                            from: 1
-                            to: 1000
-                            onValueModified: {
-                                let r = ZCam.recipes.recipe(currentRecipeIdx);
-                                r.numPasses = value;
-                                ZCam.recipes.updateRecipe(currentRecipeIdx, r);
-                            }
+                        PropertyEditor {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            model: recipeModel
+                            propertiesJson: recipeModel.propertiesJson
+                            labelWidth: 100
                         }
                     }
                 }
@@ -490,6 +624,11 @@ Item {
         title: qsTr("New Folder")
         modal: true
         anchors.centerIn: parent
+        // Explicit width: the ColumnLayout below sizes itself to
+        // parent.width, so without a fixed dialog width the content
+        // width depends on implicitWidth and Qt can flag a binding
+        // loop for "implicitWidth" (same as Main.qml unsavedChangesGuard).
+        width: 360
         standardButtons: Dialog.Ok | Dialog.Cancel
 
         ColumnLayout {
@@ -512,7 +651,7 @@ Item {
         }
         onAccepted: {
             if (folderNameField.text.length > 0) {
-                ZCam.recipes.addFolder(folderNameField.text, currentFolderRelDir)
+                ZCam.recipes.addFolder(folderNameField.text, currentParentDir)
             }
         }
     }

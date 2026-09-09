@@ -12,6 +12,7 @@
 #define NANOSVG_IMPLEMENTATION
 #include <nanosvg/nanosvg.h>
 #include "zcam.h"
+#include "dxfexport.h"
 #include "polygon.h"
 #include "rectangle.h"
 #include "ellipse.h"
@@ -470,7 +471,7 @@ static QString transformAttr(const Element3d* e) {
 //---------------------------------------------------------
 
 static QString styleAttr(const Element3d* e) {
-      QColor color    = e->color();
+      QColor color = e->color();
       if (!color.isValid())
             color = QColor("#333333");
       QString fillCol = e->fill() ? color.name() : QStringLiteral("none");
@@ -516,7 +517,7 @@ static QString polygonToSvgD(const Polygon* poly) {
                         const PPElement& p3 = pp[i + 2];
                         d += QStringLiteral(" C%1 %2 %3 %4 %5 %6")
                                  .arg(fmt(e.x()), fmt(e.y()), fmt(p2.x()), fmt(p2.y()), fmt(p3.x()),
-                                      fmt(p3.y()));
+                                     fmt(p3.y()));
                         i += 2;
                         } break;
                   case PPType::CurveToData1:
@@ -750,4 +751,13 @@ bool ZCam::exportSvg(const QString& path) {
       Info("exportSvg: wrote {}", path);
       emit svgExported(path);
       return true;
+      }
+
+//---------------------------------------------------------
+//   exportDxf
+//    Delegates to DxfExport::exportDxf().
+//---------------------------------------------------------
+
+bool ZCam::exportDxf(const QString& path) {
+      return DxfExport::exportDxf(this, path);
       }

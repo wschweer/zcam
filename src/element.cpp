@@ -28,9 +28,11 @@
 #include "materialtest.h"
 #include "brepelement.h"
 #include "imageelement.h"
+#include "nest.h"
 #include "treemodel.h"
 #include "zcam.h"
 #include "scriptengine.h"
+#include "laser_mop.h"
 #include <QRegularExpression>
 
 QHash<QString, Element*> Element::names;
@@ -242,6 +244,10 @@ void Element::fromJson(const json& data) {
                               }
                         else if (key == "image") {
                               element = new ImageElement(zcam, this);
+                              element->fromJson(value);
+                              }
+                        else if (key == "nest") {
+                              element = new Nest(zcam, this);
                               element->fromJson(value);
                               }
                         if (!element) {

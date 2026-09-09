@@ -52,6 +52,7 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
       // redundant signal cascades; endBatchUpdate() will emit it once.
       connect(this, &Element3d::posChanged, this, [this] {
             _matrixDirty = true;
+            invalidateGlobalMatrix();
             if (!_batching) {
                   ++_vertexRevision;
                   emit vertexRevisionChanged();
@@ -59,6 +60,7 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
             });
       connect(this, &Element3d::rotChanged, this, [this] {
             _matrixDirty = true;
+            invalidateGlobalMatrix();
             if (!_batching) {
                   ++_vertexRevision;
                   emit vertexRevisionChanged();
@@ -66,6 +68,7 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
             });
       connect(this, &Element3d::scaleChanged, this, [this] {
             _matrixDirty = true;
+            invalidateGlobalMatrix();
             if (!_batching) {
                   ++_vertexRevision;
                   emit vertexRevisionChanged();
@@ -73,6 +76,7 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
             });
       connect(this, &Element3d::mirrorXChanged, this, [this] {
             _matrixDirty = true;
+            invalidateGlobalMatrix();
             if (!_batching) {
                   ++_vertexRevision;
                   emit vertexRevisionChanged();
@@ -80,6 +84,7 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
             });
       connect(this, &Element3d::mirrorYChanged, this, [this] {
             _matrixDirty = true;
+            invalidateGlobalMatrix();
             if (!_batching) {
                   ++_vertexRevision;
                   emit vertexRevisionChanged();
@@ -105,12 +110,12 @@ Element3d::Element3d(ZCam* zcam, Element* parent) : Element(zcam, parent) {
       connect(this, &Element3d::endTypeChanged, [this] { update(); });
       connect(this, &Element3d::joinTypeChanged, [this] { update(); });
 
-      // When this element's laserLayer reference changes, its effective
+      // When this element's Mop reference changes, its effective
       // Mop (and that of all descendants that inherit the Mop from this
       // element) changes, so emit curColorChanged on the entire subtree.
-      // Descendants that have their own laserLayer set are unaffected —
+      // Descendants that have their own Mop set are unaffected —
       // their curColor is still derived from their own Mop.
-      connect(this, &Element3d::laserLayerChanged, this, [this] {
+      connect(this, &Element3d::mopChanged, this, [this] {
             std::function<void(Element*)> walk = [&](Element* e) {
                   if (!e)
                         return;
@@ -233,9 +238,15 @@ static bool writeLayerOrRecipe(
 
 static bool readLayerOrRecipe(
     const nlohmann::json& data, Element3d* element, const std::string& name, const std::string& type) {
-      if (!data.contains(name))
+      // Backward compatibility: old project files store the Mop reference
+      // under the key "laserLayer".  The properties() JSON now uses "mop",
+      // so check both keys when reading.
+      std::string jsonKey = name;
+      if (type == "laserLayer" && !data.contains(name) && data.contains("laserLayer"))
+            jsonKey = "laserLayer";
+      if (!data.contains(jsonKey))
             return false;
-      const nlohmann::json& jval = data.at(name);
+      const nlohmann::json& jval = data.at(jsonKey);
       const QMetaObject* meta    = element->metaObject();
       QByteArray propName        = QByteArray::fromStdString(name);
       int idx                    = meta->indexOfProperty(propName.constData());
@@ -273,7 +284,7 @@ static bool readLayerOrRecipe(
             }
       else if (type == "laserLayer") {
             QString llName = QString::fromStdString(jval.get<std::string>());
-            Mop* ll        = element->zcamInstance()->laserLayerPtr(llName);
+            Mop* ll        = element->zcamInstance()->mopPtr(llName);
             if (ll)
                   mp.write(element, QVariant::fromValue(ll));
             else if (!llName.isEmpty())
@@ -407,8 +418,8 @@ void Element3d::fromJson(const json& json) {
 //    Called after the full project tree has been loaded.
 //    Resolves pending forward references that could not be
 //    resolved during fromJson() because the referenced element
-//    had not yet been created (e.g. laserLayer references from
-//    Cad elements loaded before the Fixture/LaserLayer elements).
+//    had not yet been created (e.g. Mop references from Cad
+//    elements loaded before the Fixture/LaserMop elements).
 //---------------------------------------------------------
 
 void Element3d::fixup() {
@@ -422,7 +433,7 @@ void Element3d::fixup() {
                   QMetaProperty mp = meta->property(idx);
 
                   if (ref.refType == "laserLayer") {
-                        Mop* ll = zcamInstance()->laserLayerPtr(ref.name);
+                        Mop* ll = zcamInstance()->mopPtr(ref.name);
                         if (ll)
                               mp.write(this, QVariant::fromValue(ll));
                         else
@@ -478,15 +489,15 @@ bool Element3d::ancestorsShow() const {
 //---------------------------------------------------------
 //   effectiveMop
 //    Walk up the parent chain from this element and return the
-//    first non-null laserLayer reference found.  Returns nullptr
-//    if no ancestor (including self) has a laserLayer set.
+//    first non-null Mop reference found.  Returns nullptr
+//    if no ancestor (including self) has a Mop set.
 //---------------------------------------------------------
 
 Mop* Element3d::effectiveMop() const {
       const Element3d* e = this;
       while (e) {
-            if (e->_laserLayer)
-                  return e->_laserLayer;
+            if (e->_mop)
+                  return e->_mop;
             auto* p = e->parent();
             e       = qobject_cast<const Element3d*>(p);
             }
@@ -684,6 +695,18 @@ TessGeometry* Element3d::selectionGeometry() {
       // loop: the getter → setLines() → geometryRevisionChanged() →
       // QML re-evaluates the geometry binding → reads the getter again.
       return _selectionGeometry;
+      }
+
+//---------------------------------------------------------
+//   controlHandleGeometry
+//    Returns the geometry holding the dashed bezier association lines.
+//    Only Polygon populates it (see Polygon::updateControlHandles());
+//    for all other element types the pointer is null, so Shape.qml
+//    renders nothing.
+//---------------------------------------------------------
+
+TessGeometry* Element3d::controlHandleGeometry() {
+      return _controlHandleGeometry;
       }
 
 //---------------------------------------------------------
@@ -930,6 +953,70 @@ const QMatrix4x4& Element3d::matrix() const {
       return _matrix;
       }
 
+//--------------------------------------------------------------------
+//     decomposeTransform
+//--------------------------------------------------------------------
+//   Decompose a 4×4 transformation matrix into pos / rot / scale.
+//   The decomposition assumes the matrix was built as
+//     M = T * R * S
+//   (translate, then rotate, then scale) which is how matrix()
+//   constructs the local transform.
+//
+//   Mirror handling: when the determinant of the 3×3 upper-left
+//   block is negative (an odd number of axis flips), the scale on
+//   the X axis is negated and the rotation is adjusted by flipping
+//   the X column.  This ensures that reconstructing the matrix via
+//   translate(pos) * rotate(euler) * scale(s) reproduces the input,
+//   including any mirror encoded as negative scale.
+//--------------------------------------------------------------------
+
+Element3d::DecomposedTransform Element3d::decomposeTransform(const QMatrix4x4& m) {
+      // Translation: last column.
+      QVector3D pos(m(0, 3), m(1, 3), m(2, 3));
+
+      // Column vectors of the 3×3 linear part.
+      QVector3D col0(m(0, 0), m(1, 0), m(2, 0));
+      QVector3D col1(m(0, 1), m(1, 1), m(2, 1));
+      QVector3D col2(m(0, 2), m(1, 2), m(2, 2));
+
+      // Scale = length of each column.
+      float sx = col0.length();
+      float sy = col1.length();
+      float sz = col2.length();
+
+      // Determinant of the 3×3 block to detect mirroring.
+      float det = QVector3D::dotProduct(col0, QVector3D::crossProduct(col1, col2));
+      bool mirrored = (det < 0.0f);
+
+      // If mirrored, absorb the sign into the X scale.
+      if (mirrored)
+            sx = -sx;
+
+      // Build the rotation matrix by dividing out the scale.
+      // If a scale component is near-zero, leave the column as zero
+      // (the rotation around that axis is undefined / irrelevant).
+      QMatrix3x3 rotMat;
+      if (std::abs(sx) > 1e-9f) {
+            rotMat(0, 0) = m(0, 0) / sx;
+            rotMat(1, 0) = m(1, 0) / sx;
+            rotMat(2, 0) = m(2, 0) / sx;
+            }
+      if (sy > 1e-9f) {
+            rotMat(0, 1) = m(0, 1) / sy;
+            rotMat(1, 1) = m(1, 1) / sy;
+            rotMat(2, 1) = m(2, 1) / sy;
+            }
+      if (sz > 1e-9f) {
+            rotMat(0, 2) = m(0, 2) / sz;
+            rotMat(1, 2) = m(1, 2) / sz;
+            rotMat(2, 2) = m(2, 2) / sz;
+            }
+      QQuaternion quat = QQuaternion::fromRotationMatrix(rotMat);
+      QVector3D rot    = quat.toEulerAngles();
+
+      return { pos, rot, QVector3D(sx, sy, sz) };
+      }
+
 //---------------------------------------------------------
 //   globalMatrix
 //    Returns the full transformation matrix from this element's
@@ -964,6 +1051,11 @@ QMatrix4x4 Element3d::globalMatrix() const {
 void Element3d::strokeAndFill() {
       double lw     = lineWidth();
       bool doStroke = !qFuzzyCompare(lw, 0.0);
+
+      // Cache the unmodified geometry for containment tests.
+      // strokeAndFill() may replace _pathList with inflated stroke
+      // outlines; _fillPathList preserves the original fill outline.
+      _fillPathList = _pathList;
 
       if (doStroke) {
             // Offload the expensive InflatePaths computation to a

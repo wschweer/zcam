@@ -18,7 +18,6 @@
 using json = nlohmann::json;
 
 #include "logger.h"
-// #include "macros.h"
 
 class ZCam;
 class ScriptEngine;
@@ -38,7 +37,10 @@ class Element : public QObject
       Q_PROPERTY(QList<Element*> children READ children)
       Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
       Q_PROPERTY(bool expanded READ expanded WRITE setExpanded NOTIFY expandedChanged)
-
+      // Q_INVOKABLE wrapper so scripts can call element.childElements()
+      // instead of element.children() (which fails because children is
+      // a Q_PROPERTY returning a list, not a callable function).
+      Q_INVOKABLE QList<Element*> childElements() const { return _children; }
       // ── Scripting ──────────────────────────────────────────────────
       //   A property whose value is computed by a JavaScript expression
       //   is shown in the inspector with an f(x) button.  The scripts
@@ -60,7 +62,6 @@ class Element : public QObject
 
     protected:
       ZCam* zcam;
-
       // Scripting state (see ScriptEngine).  Each entry in
       // _scripts maps a property name to its script text and
       // active flag.  _scriptComp holds the optional component

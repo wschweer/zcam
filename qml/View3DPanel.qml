@@ -32,6 +32,9 @@ Item {
 
     // Polygon drawing state
     property var _drawingPolygon: null   // the Polygon being drawn (null when idle)
+    // When true the next polygon click inserts a cubic bezier segment
+    // instead of a straight line (toggled with 'b' or Ctrl+click).
+    property bool _bezierMode: false
 
     // Text editing state
     property var _editingText: null      // the Text element being edited (null when idle)
@@ -88,15 +91,18 @@ Item {
             // Only show handles when the associated element is visible.
             visible: _poly ? (_poly.show && _poly.ancestorsShow) : false
             source: "#Sphere"
-            // Compensate for root.scale so handles keep a constant
-            // on-screen size regardless of scene zoom level.
+            // Constant on-screen size, independent of both the scene zoom
+            // level (root.scale) and the machine's work-area scale.
+            // panel.mmPerPixel (computed by updateGridViewport()) is the
+            // EXACT root-local-units-per-pixel ratio at the z=0 plane, so
+            // multiplying by it already compensates for the root scale —
+            // dividing by root.scale again would double-compensate and
+            // make the handles grow when zooming out.
+            // The #Sphere primitive has radius 1 (diameter 2), so we divide
+            // by 2 to make the visible diameter exactly handleSize pixels.
             scale: {
-                var s = ZCam.config ? ZCam.config.handleSize : 0.02;
-                var rs = root.scale;
-                var sx = rs.x !== 0 ? s / rs.x : s;
-                var sy = rs.y !== 0 ? s / rs.y : s;
-                var sz = rs.z !== 0 ? s / rs.z : s;
-                return Qt.vector3d(sx, sy, sz);
+                var r = (ZCam.config ? ZCam.config.handleSize : 8) * panel.mmPerPixel * 0.5;
+                return Qt.vector3d(r, r, r);
                 }
             pickable: true
             materials: [
@@ -116,6 +122,11 @@ Item {
     property var _handlePolygon: null
     property var _handleList: []
     property var _hoveredHandle: null   // currently hovered vertex handle Model
+    // Current scene-units-per-pixel ratio at the z=0 plane, computed by
+    // updateGridViewport().  Used to give the vertex handles a constant
+    // on-screen size (config.handleSize pixels) regardless of zoom level
+    // or machine work-area scale.  Defaults to 1 (1 unit = 1 px).
+    property real mmPerPixel: 1.0
 
     // Rebuild all vertex handles.  Called when the current element
     // changes (selection) or when the scene graph is rebuilt.
@@ -164,6 +175,20 @@ Item {
         if (!_handlePolygon)
             return;
         var poly = _handlePolygon;
+        // If the set of visible handles changed (e.g. a segment was
+        // selected/deselected, which restricts or expands the handles),
+        // a full rebuild is needed to add/remove handles.  Otherwise
+        // (pure vertex drag / undo-redo) just reposition in place for
+        // performance.
+        var n = poly.vertexCount();
+        var visible = 0;
+        for (var idx = 0; idx < n; ++idx)
+            if (poly.isVertex(idx))
+                visible++;
+        if (visible !== _handleList.length) {
+            rebuildVertexHandles();
+            return;
+            }
         for (var i = 0; i < _handleList.length; ++i) {
             var h = _handleList[i];
             if (!h)
@@ -195,6 +220,7 @@ Item {
             return;
         _drawingPolygon.finishDrawing();
         _drawingPolygon = null;
+        _bezierMode = false;
         rebuildVertexHandles();
         }
 
@@ -264,10 +290,6 @@ Item {
         // always sees the latest view state (pan / zoom / rotate).
         pushViewCamera();
 
-        var grid = ZCam.project ? ZCam.project.gridElement : null;
-        if (!grid)
-            return;
-
         // Map the four corners of the viewport to scene (root) coordinates.
         var tl = screenToScene(0, 0);
         var tr = screenToScene(panel.width, 0);
@@ -280,6 +302,23 @@ Item {
         var right  = Math.max(tl.x, tr.x, bl.x, br.x);
         var top    = Math.min(tl.y, tr.y, bl.y, br.y);
         var bottom = Math.max(tl.y, tr.y, bl.y, br.y);
+
+        // Expose the local-mm-per-pixel ratio for constant-size vertex
+        // handles (see the handle `scale:` binding).  The visible region
+        // spans (right-left) local mm across panel.width pixels.
+        // This is computed BEFORE the grid check so that mmPerPixel is
+        // always kept up to date even when no grid element exists (a
+        // project may legitimately have no grid) — otherwise it would
+        // keep its stale default of 1.0 and the handles would be
+        // rendered far too large.
+        var span = (right - left) / (panel.width > 0 ? panel.width : 1);
+        if (span > 1e-6)
+            mmPerPixel = span;
+
+        // The rest of this function only affects the grid itself.
+        var grid = ZCam.project ? ZCam.project.gridElement : null;
+        if (!grid)
+            return;
 
         // Compute the camera view direction in local (root) coordinates.
         // Derive it EXACTLY like screenToScene(): take two points on the
@@ -451,9 +490,46 @@ Item {
                 ZCam.currentTool = "pointer";
                 event.accepted = true;
                 }
+            // 'p' splits the selected line segment at its midpoint
+            // when a polygon segment is selected (not drawing).  When
+            // no segment is selected, 'p' centers the current element on
+            // the workspace as before.
             if (event.key === Qt.Key_P) {
-                ZCam.centerOnWorkspace(ZCam.currentElement);
-                event.accepted = true;
+                var el = ZCam.currentElement;
+                var hasSeg = false;
+                try { hasSeg = el && el.selectedSegment() >= 0; } catch(e) {}
+                if (hasSeg) {
+                    el.splitSelectedSegment();
+                    rebuildVertexHandles();
+                    event.accepted = true;
+                    }
+                else {
+                    ZCam.centerOnWorkspace(ZCam.currentElement);
+                    event.accepted = true;
+                    }
+                }
+            // 'b' toggles bezier mode for the polygon tool while a
+            // polygon is being drawn: every subsequent click inserts a
+            // cubic bezier segment instead of a straight line until 'b'
+            // is pressed again (or the drawing session ends).  Ctrl+click
+            // inserts a one-off bezier segment without toggling the mode.
+            // When a polygon segment is selected (not drawing), 'b'
+            // converts the selected line segment into a bezier segment.
+            if (event.key === Qt.Key_B) {
+                if (_drawingPolygon && ZCam.currentTool == "polygon") {
+                    _bezierMode = !_bezierMode;
+                    event.accepted = true;
+                    }
+                else {
+                    var el2 = ZCam.currentElement;
+                    var hasSeg2 = false;
+                    try { hasSeg2 = el2 && el2.selectedSegment() >= 0; } catch(e) {}
+                    if (hasSeg2) {
+                        el2.convertSelectedSegmentToBezier();
+                        rebuildVertexHandles();
+                        event.accepted = true;
+                        }
+                    }
                 }
             }
 
@@ -565,6 +641,14 @@ Item {
                 panel._editingText = null;
                 ZCam.currentTool = "pointer";
                 }
+            // Clear segment hover on the previous polygon so the
+            // hover highlight does not persist after switching elements.
+            if (_handlePolygon && _handlePolygon !== ZCam.currentElement) {
+                try {
+                    if (_handlePolygon.hoveredSegment !== undefined && _handlePolygon.hoveredSegment !== -1)
+                        _handlePolygon.setHoveredSegment(-1);
+                    } catch (e) {}
+                }
             rebuildVertexHandles();
             // The snap marker is bound to ZCam.snapRefPos / snapActive and
             // updates itself — nothing to clean up here.
@@ -633,8 +717,27 @@ Item {
             }
         }
 
+    // Recompute the grid viewport when a project is loaded so that
+    // mmPerPixel (which the vertex handles use for a constant on-screen
+    // size) reflects the restored camera / root scale.  Without this, the
+    // handles were built with a stale mmPerPixel and appeared too large
+    // until the first canvas refresh recalculated it.
+    Connections {
+        target: ZCam
+        function onProjectLoaded() {
+            // Defer to let the scene graph rebuild (add3dElement / set_rootElement)
+            // finish first so the grid and root scale are fully in place.
+            Qt.callLater(updateGridViewport);
+            }
+        ignoreUnknownSignals: true
+        }
+
     Component.onCompleted: {
         rebuildVertexHandles();
+        // Register the main 3-D canvas with the C++ side so the AI agent
+        // and remote-control can capture a screenshot of it (ZCam.grabCanvas()).
+        if (ZCam.canvasItem !== view3D)
+            ZCam.canvasItem = view3D;
         // Sync camera button states with the persisted perspectiveCamera value.
         // The Settings component restores perspectiveCamera before this
         // handler runs (inner Component.onCompleted runs first), so the
@@ -764,7 +867,6 @@ Item {
         property real frameDelta: 10
         property var curNode: null
         property variant vertexDragHandle: null
-        property var _panGrabPoint: null   // scene point grabbed at middle-button press
         // Drag threshold: accumulate scene-space movement until it
         // exceeds config.dragThreshold before actually moving the
         // element.  This prevents accidental micro-moves when the user
@@ -774,30 +876,61 @@ Item {
         acceptedButtons: Qt.AllButtons
 
         //-----------------------------------------------------
-        //  pan
-        //    Grab-and-drag panning: on middle-button press the scene
-        //    point under the cursor is stored in _panGrabPoint.  On
-        //    each subsequent move the camera is shifted so that the
-        //    grabbed scene point stays exactly under the cursor.
-        //    This works correctly regardless of zoom level (root.scale),
-        //    rotation or projection type because it uses the same
-        //    screenToScene raycast the rest of the viewport uses.
+        //  panScreen
+        //    Screen-space pixel-delta panning for the middle-button drag.
+        //
+        //    For ORTHOGRAPHIC projection the screen-to-scene map is
+        //    linear (parallel rays), so a simple delta in the z=0 plane
+        //    converts 1:1 to a camera translation — the old grab-and-drag
+        //    approach worked perfectly.
+        //
+        //    For PERSPECTIVE projection the converging rays make the
+        //    screen-to-scene map non-linear in camera position.  Moving
+        //    the camera by a world-space delta does NOT keep the z=0
+        //    plane point under the cursor because objects at different
+        //    depths shift by different screen amounts.  The feedback
+        //    between camera position and screenToScene causes visible
+        //    jitter (~5 mm oscillation).
+        //
+        //    Solution: use a screen-space pixel delta approach that is
+        //    inherently stable for both projection types.  Convert the
+        //    pixel delta to a world-space camera translation using the
+        //    scene's mm-per-pixel ratio at the current zoom.  This is
+        //    the same technique used by Qt's OrbitCameraController and
+        //    standard 3D editors — it never raycasts a fixed grab point
+        //    and therefore cannot feed back.
         //-----------------------------------------------------
-        function pan(grabScene, currentScene) {
-            if (!grabScene || !currentScene)
+        function panScreen(dxPx, dyPx, mx, my) {
+            // Convert a screen-space pixel delta to a world-space camera
+            // translation.  The mm-per-pixel scale is derived from
+            // screenToScene samples taken at the *cursor* position (not
+            // the viewport centre) so it correctly accounts for the local
+            // projection geometry — including perspective foreshortening
+            // and any root rotation.  All samples are taken in the
+            // *current* (pre-pan) camera frame, so there is no feedback.
+
+            // Sample the z=0 plane at the cursor and one pixel to the
+            // right / one pixel below.  The differences give the
+            // root-local mm-per-pixel in screen X and Y at this exact
+            // location — including sign, so the mapping is always correct
+            // regardless of rotation or projection type.
+            var p0 = screenToScene(mx, my);
+            var px = screenToScene(mx + 1, my);
+            var py = screenToScene(mx, my + 1);
+            if (!p0 || !px || !py)
                 return;
-            // Delta in root-local coordinates (mm).
-            var localDelta = currentScene.minus(grabScene);
+
+            // Full root-local displacement for the pixel delta.
+            var stepX = px.minus(p0);   // root-local vector for +1 px right
+            var stepY = py.minus(p0);   // root-local vector for +1 px down
+            var localDelta = stepX.times(dxPx).plus(stepY.times(dyPx));
+
             // Convert root-local delta to world (scene) delta.
-            // mapPositionToScene applies root's rotation + scale but
-            // also root.position; subtracting the mapped origin
-            // (== root.position) cancels the translation so we get
-            // only the rotation + scale contribution.
             var worldOrigin = root.mapPositionToScene(Qt.vector3d(0, 0, 0));
             var worldTarget = root.mapPositionToScene(localDelta);
             var worldDelta  = worldTarget.minus(worldOrigin);
-            // Move the camera opposite to the delta so the grabbed
-            // point follows the cursor (grab-and-drag metaphor).
+
+            // Grab-and-drag: camera moves opposite to the content drag.
             var cam = view3D.camera;
             cam.position = cam.position.minus(worldDelta);
             }
@@ -867,10 +1000,12 @@ Item {
             // Reset drag threshold state on every press.
             _dragAccum = Qt.vector3d(0, 0, 0);
             _dragThresholdMet = false;
-            // Store the scene point under the cursor for grab-and-drag panning.
-            _panGrabPoint = eLastPos;
             // Ctrl+Left-drag starts a lasso selection.
-            if (mouse.button == Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)) {
+            // While a polygon is being drawn, Ctrl+click is reserved for
+            // adding a bezier segment (handled in the polygon tool
+            // block below), so skip lasso start in that case.
+            if (mouse.button == Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)
+                && !(_drawingPolygon && ZCam.currentTool == "polygon")) {
                 lassoActive = true;
                 lassoPoints = [Qt.vector3d(eLastPos.x, eLastPos.y, eLastPos.z)];
                 lassoScreenPoints = [Qt.vector2d(mouse.x, mouse.y)];
@@ -950,13 +1085,16 @@ Item {
                 // Polygon tool: interactive polygon drawing.
                 // First click starts a new polygon; subsequent
                 // clicks add segments; right-click or Escape
-                // finishes the polygon.
+                // finishes the polygon.  Ctrl+click (or a click with
+                // bezier mode toggled on via 'b') adds a cubic bezier
+                // segment instead of a straight line.
                 if (ZCam.currentTool == "polygon") {
                     if (!_drawingPolygon) {
                         // Start a new polygon at the click position.
                         var newPoly = ZCam.createPolygon(eLastPos.x, eLastPos.y);
                         if (newPoly) {
                             _drawingPolygon = newPoly;
+                            _bezierMode = false;
                             var lp = worldToPolygonLocal(newPoly, eLastPos);
                             _drawingPolygon.startDrawing(Qt.vector2d(lp.x, lp.y));
                             rebuildVertexHandles();
@@ -964,7 +1102,13 @@ Item {
                         } else {
                         // Continue: fix current segment, start new one.
                         var lp2 = worldToPolygonLocal(_drawingPolygon, eLastPos);
-                        _drawingPolygon.continueDrawing(Qt.vector2d(lp2.x, lp2.y));
+                        var p2 = Qt.vector2d(lp2.x, lp2.y);
+                        // A bezier is inserted when bezier mode is on ('b')
+                        // or for a one-off Ctrl+click.
+                        if (_bezierMode || (mouse.modifiers & Qt.ControlModifier))
+                            _drawingPolygon.continueDrawingBezier(p2);
+                        else
+                            _drawingPolygon.continueDrawing(p2);
                         rebuildVertexHandles();
                         }
                     return;
@@ -1008,11 +1152,12 @@ Item {
                 var el = ZCam.currentElement;
                 if (el) {
                     rebuildVertexHandles();
+                    view3D.forceActiveFocus();
                     // Only start element drag if no segment is selected
                     // (otherwise the user is doing segment-level editing).
                     var hasSegSel = false;
                     try {
-                        hasSegSel = el.selectedSegment >= 0;
+                        hasSegSel = el.selectedSegment() >= 0;
                         } catch (e) {}
                     if (el.draggable() && !hasSegSel)
                         ZCam.startElementDrag(el);
@@ -1075,8 +1220,16 @@ Item {
                 ZCam.endVertexDrag(vertexDragHandle._poly, vertexDragHandle._vertexIndex);
                 vertexDragHandle = null;
                 }
-            _panGrabPoint = null;
             ZCam.endElementDrag();
+            // endElementDrag may have applied a pending segment selection
+            // (click on already-selected polygon).  Rebuild handles so
+            // the visible set matches the new selection state — the
+            // vertexRevisionChanged signal may have been emitted while
+            // _handlePolygon was still null (Qt.callLater in
+            // rebuildVertexHandles had not yet run).
+            if (ZCam.currentElement && ZCam.currentElement.hasHandles)
+                rebuildVertexHandles();
+            view3D.forceActiveFocus();
             if (ZCam.currentTool != "rectangle" && ZCam.currentTool != "polygon" && ZCam.currentTool != "circle")
                 curNode = null;
             }
@@ -1124,14 +1277,42 @@ Item {
             }
 
         // Picking variant used to start a left-button drag.
-        // Uses the same ray-based approach as pickModel().  The
-        // Group-drag-handle special case (return the selected Group
-        // itself when clicking inside its box) is intentionally not
-        // re-implemented here — ray-based picking on 3D elements
-        // already returns the innermost draggable element, which is
-        // the correct drag target for the 3D viewport.
+        //
+        // Priority order:
+        //  1. Container (has children) inside its bbox → drag the
+        //     whole container.  Essential for Groups: a Group has no
+        //     own pickable geometry, so the ray-based pick would
+        //     return a child (deselecting the Group) or nothing
+        //     (empty space → deselect the Group).
+        //  2. Ray-based element pick (pickModel) — the normal
+        //     selection path for plain shapes and overlapping
+        //     geometry.
+        //  3. Bbox fallback: if the ray-based pick returned nothing
+        //     but the click point lies inside the current element's
+        //     world bounding box, the bounding box acts as a drag
+        //     handle.  This makes it possible to drag a selected
+        //     plain shape (Rectangle, Ellipse, Polygon, …) by
+        //     clicking anywhere inside the yellow selection box,
+        //     even if no pickable geometry was hit exactly.
         function pickDragTarget(x, y) {
-            return pickModel(x, y);
+            var cur = ZCam.currentElement;
+            // [1] Container with children: bbox is a drag handle.
+            if (cur && cur.draggable() && eLastPos
+                && cur.children && cur.children.length > 0
+                && typeof cur.containsWorldPoint === "function"
+                && cur.containsWorldPoint(eLastPos.x, eLastPos.y))
+                return { element: cur, objectHit: null, bounds: null };
+            // [2] Normal ray-based element pick.
+            var node = pickModel(x, y);
+            if (node && node.element)
+                return node;
+            // [3] Bbox fallback: the click missed all pickable geometry
+            //     but falls inside the current element's world bounding box.
+            if (cur && cur.draggable() && eLastPos
+                && typeof cur.containsWorldPoint === "function"
+                && cur.containsWorldPoint(eLastPos.x, eLastPos.y))
+                return { element: cur, objectHit: null, bounds: null };
+            return null;
             }
 
         // Returns the vertex handle Model under x/y, or null.
@@ -1150,6 +1331,8 @@ Item {
             }
 
         function screenToScene(x, y) {
+            if (view3D.width == 0 || view3D.height == 0)
+                return null
             let normX = x / view3D.width;
             let normY = y / view3D.height;
             let nearPos = root.mapPositionFromScene(view3D.camera.mapFromViewport(Qt.vector3d(normX, normY, 0)));
@@ -1161,8 +1344,8 @@ Item {
                 let r = nearPos.plus(direction.times(t));
                 return r;
                 }
-            console.log("overflow: no screen position");
-            return null;
+            console.log("overflow: no screen position "+normX+"  "+normY)
+            return null
             }
 
         onPositionChanged: mouse => {
@@ -1210,7 +1393,12 @@ Item {
                 lastPos = currentPos;
                 updateGridViewport();
                 } else if ((mouse.buttons == Qt.MiddleButton) && (mouse.modifiers == Qt.NoModifier)) {
-                pan(_panGrabPoint, pos3d);
+                // Screen-space pixel delta — stable for both orthographic
+                // and perspective projection.  See panScreen() comment.
+                // delta = lastPos - currentPos:
+                //   drag right → delta.x < 0 → pass +|delta| for grab-right
+                //   drag down  → delta.y < 0 → pass +|delta| for grab-down
+                panScreen(-delta.x, -delta.y, mouse.x, mouse.y);
                 lastPos = currentPos;
                 updateGridViewport();
                 } else if ((mouse.buttons == Qt.LeftButton) && ((mouse.modifiers == Qt.NoModifier) || (mouse.modifiers == Qt.ShiftModifier))) {
@@ -1246,6 +1434,27 @@ Item {
                 updateHandleHover(mouse.x, mouse.y);
                 var m = pickModel(mouse.x, mouse.y);
                 ZCam.hover(m ? m.element : null);
+                // Segment hover preview: when hovering over the already-
+                // selected polygon, highlight the nearest segment so the
+                // user sees which edge will be selected on click.
+                // A vertex handle (Anfasser) has priority: while a handle
+                // is under the cursor the neighbouring (non-selected)
+                // segment must not light up — clear any active segment
+                // hover and skip the preview.
+                var cur = ZCam.currentElement;
+                if (_hoveredHandle) {
+                    if (cur && cur.hasHandles && typeof cur.setHoveredSegment === "function"
+                           && cur.hoveredSegment !== -1)
+                        cur.setHoveredSegment(-1);
+                    } else if (cur && cur === (m ? m.element : null) && cur.hasHandles
+                               && typeof cur.setHoveredSegment === "function") {
+                    var seg = cur.findNearestSegment(pos3d);
+                    if (seg !== cur.hoveredSegment)
+                        cur.setHoveredSegment(seg);
+                    } else if (cur && cur.hasHandles && typeof cur.setHoveredSegment === "function"
+                               && cur.hoveredSegment !== -1) {
+                    cur.setHoveredSegment(-1);
+                    }
                 }
             }
         }
@@ -1681,6 +1890,24 @@ Item {
             z: 1
             }
         TButton {
+            // Capture a screenshot of the 3-D canvas and save it as a
+            // PNG under ~/ZCam/screenshots (same path the AI `screenshot`
+            // tool and the stdin remote-control use).
+            icon.source: "qrc:////icons/camera.svg"
+            onClicked: {
+                var path = ZCam.saveCanvasScreenshot();
+                if (path !== "")
+                    console.log("Screenshot saved: " + path);
+                else
+                    console.log("Screenshot capture failed");
+                }
+            ToolTip.text: qsTr("Save a screenshot of the 3-D canvas to ~/ZCam/screenshots")
+            ToolTip.delay: 1000
+            ToolTip.timeout: 4000
+            ToolTip.visible: hovered
+            z: 1
+            }
+        TButton {
             icon.source: "qrc:////icons/view-fullscreen.svg"
             onClicked: resetCamera()
             z: 1
@@ -1705,6 +1932,10 @@ Item {
             checked: ZCam.currentTool == "polygon"
             onCheckedChanged: if (checked)
                 ZCam.currentTool = "polygon"
+            ToolTip.text: qsTr("Polygon\nClick to add a line segment.\n' b ' or Ctrl+Click for a bezier segment.\nSelect a segment: 'b' converts line→bezier, 'p' splits at midpoint.\nRight-Click / Esc to finish.")
+            ToolTip.visible: hovered
+            ToolTip.delay: 1000
+            z: 1
             }
         RButton {
             icon.source: "qrc:////icons/Draft_Rectangle.svg"

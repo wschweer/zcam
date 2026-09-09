@@ -52,13 +52,14 @@ const std::string_view Config::_properties {
                     "label": "Handle Size",
                     "type": "float",
                     "cat": "GUI",
-                    "min": 0.01,
-                    "max": 1.0,
-                    "default": 0.2,
-                    "precision": 2,
-                    "step": 0.05,
-                    "bigStep": 0.5,
-                    "tooltip": "Relative size of selection and transform handles in the 3D viewport"
+                    "min": 0.2,
+                    "max": 100.0,
+                    "default": 8.0,
+                    "precision": 1,
+                    "step": 0.5,
+                    "bigStep": 5,
+                    "minStep": 0.1,
+                    "tooltip": "Diameter of vertex/control-point handles in the 3D viewport, in pixels"
                   },
                   {
                     "name": "dragThreshold",
@@ -564,6 +565,53 @@ const std::string_view Config::_properties {
                     "bigStep": 0.5
                   }
                 ]
+              },
+              {
+                "columns": 2,
+                "cat": "AI",
+                "cells": [
+                  {
+                    "name": "ollamaModel",
+                    "label": "Ollama Model",
+                    "type": "ollamaModel",
+                    "cat": "AI",
+                    "default": "llama3.1",
+                    "tooltip": "Name of the Ollama model to use for the AI assistant"
+                  },
+                  {
+                    "name": "ollamaBaseUrl",
+                    "label": "Ollama Server URL",
+                    "type": "string",
+                    "cat": "AI",
+                    "default": "http://localhost:11434/api/chat",
+                    "tooltip": "Base URL of the Ollama server (e.g. http://localhost:11434/api/chat)"
+                  },
+                  {
+                    "name": "aiTemperature",
+                    "label": "Temperature",
+                    "type": "float",
+                    "cat": "AI",
+                    "min": 0.0,
+                    "max": 2.0,
+                    "default": 0.2,
+                    "precision": 2,
+                    "step": 0.05,
+                    "bigStep": 0.2,
+                    "tooltip": "LLM sampling temperature (0 = deterministic, 2 = very creative)"
+                  },
+                  {
+                    "name": "aiContextSize",
+                    "label": "Context Size",
+                    "type": "int",
+                    "cat": "AI",
+                    "min": 512,
+                    "max": 1000000,
+                    "default": 140000,
+                    "step": 512,
+                    "bigStep": 2048,
+                    "tooltip": "Maximum context window size in tokens for the LLM"
+                  }
+                ]
               }
             ]
                 })json"};
@@ -572,8 +620,7 @@ const std::string_view Config::_properties {
 //     Config::Config
 //--------------------------------------------------------------------
 
-Config::Config(ZCam* zc)
-      : Element(zc, nullptr) {
+Config::Config(ZCam* zc) : Element(zc, nullptr) {
       setName(QStringLiteral("config"));
       }
 

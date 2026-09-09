@@ -19,19 +19,22 @@
 #include <QtQml/qqmlregistration.h>
 #include <nlohmann/json.hpp>
 
-#include "machine.h"
-#include "laser_recipe.h"
+#include "engine.h"
 #include "macros.h"
+#include "clipper.h"
+#include "types.h"
 
 #include <thread>
 #include <atomic>
-#include <cmath>
+// #include <cmath>
 
 class ZCam;
 class Machine;
 class Project;
 class Fixture;
+class Laser;
 class LaserMop;
+class LaserPass;
 class Group;
 
 using PathsD = Clipper2Lib::PathsD;
@@ -60,6 +63,7 @@ struct LaserPathElement {
 //    This is a list of points representing a path the
 //    laser has to travel along.
 //---------------------------------------------------------
+
 class LaserPath : public std::vector<LaserPathElement>
       {
     public:
@@ -81,6 +85,7 @@ class LaserPath : public std::vector<LaserPathElement>
 //---------------------------------------------------------
 //   LineSegment
 //---------------------------------------------------------
+
 struct LineSegment {
       Vec2d p1; // start position of Line
       Vec2d p2; // end position of Line
@@ -89,6 +94,7 @@ struct LineSegment {
 //---------------------------------------------------------
 //   LineSegments
 //---------------------------------------------------------
+
 class LineSegments : public std::vector<LineSegment>
       {
     public:
@@ -98,6 +104,7 @@ class LineSegments : public std::vector<LineSegment>
 //---------------------------------------------------------
 //   LaserPosition
 //---------------------------------------------------------
+
 struct LaserPosition {
       uint16_t x;
       uint16_t y;
@@ -112,6 +119,7 @@ enum class ParameterType : int { None, Speed, Power, Interval, Frequency, Count,
 //---------------------------------------------------------
 //   LaserParameterSet
 //---------------------------------------------------------
+
 struct LaserParameterSet {
       double power;
       double speed;
@@ -134,6 +142,7 @@ struct LaserParameterSet {
 //---------------------------------------------------------
 //   Pulse
 //---------------------------------------------------------
+
 struct Pulse33 {
       int pulseWidth;      // ns
       int cutOffFrequency; // above this the laser will have expected output power
@@ -154,15 +163,20 @@ enum class LaserState {
 
 //---------------------------------------------------------
 //   Laser
-//    Virtual base class for laser machines.  Inherits from Machine
-//    and integrates the LaserEngine interface (framing/marking
-//    state machine, background threads, board communication).
+//    Virtual base class for laser engines.  Inherits from Engine
+//    and integrates the laser state machine (framing/marking,
+//    background threads, board communication).
+//
+//    Laser-specific properties (galvo, delays, frequencies) live
+//    on this class.  Shared machine properties (travel, precision)
+//    live on the owning Machine and are accessed via machine().
 //---------------------------------------------------------
-class Laser : public Machine
+
+class Laser : public Engine
       {
       Q_OBJECT
       QML_ELEMENT
-      QML_UNCREATABLE("Laser objects are created by Machines")
+      QML_UNCREATABLE("Laser objects are created by Machine")
 
       // Laser state properties (exposed to QML)
       // galvolaser
@@ -192,6 +206,20 @@ class Laser : public Machine
       // UV-LAser
       PROPV(double, ticklePulse, 1.0)
       PROPV(double, tickleFreq, 5.0)
+
+      // Z - Axis
+      PROPV(bool, enableZ, false)
+      PROPV(double, stepsMMZ, 300.0)
+      PROPV(int, minSpeedZ, 30)
+      PROPV(int, maxSpeedZ, 3000)
+      PROPV(int, accelZ, 100)
+
+      // Rotary
+      PROPV(bool, enableR, false)
+      PROPV(double, stepsMMR, 300.0)
+      PROPV(int, minSpeedR, 30)
+      PROPV(int, maxSpeedR, 3000)
+      PROPV(int, accelR, 100)
 
       PROPV(bool, enableFPK, false)
       PROPV(double, fpkStartPower, 10.00)
@@ -226,13 +254,17 @@ class Laser : public Machine
       QTimer inputPortTimer;
       QTimer markTimer;
 
-      LaserState state;
       std::thread* framingThread {nullptr};
       std::thread* markingThread {nullptr};
       std::atomic<bool> stopFraming;
       std::atomic<bool> stopMarking;
 
       volatile bool aborting {false};
+
+      // Set when the marking thread exits via the catch (abort) path
+      // so that endMarkingEngine() knows to skip sending stale list
+      // data and instead reset the board cleanly.
+      bool markingAborted {false};
 
       void changeState(LaserState newState);
 
@@ -251,6 +283,9 @@ class Laser : public Machine
       void framingStopped();
       void markingStopped();
 
+   protected:
+      LaserState state;
+
     public slots:
       void init();
       void exit();
@@ -260,7 +295,7 @@ class Laser : public Machine
       void startMarking();
 
     public:
-      Laser(ZCam* zc, QObject* parent = nullptr);
+      Laser(Machine* m, QObject* parent = nullptr);
       virtual ~Laser();
 
       // ── LaserEngine interface (pure virtual) ──────────────────

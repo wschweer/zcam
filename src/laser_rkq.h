@@ -72,7 +72,7 @@ class LaserRKQ : public Laser
       void packetSent();
 
     public:
-      LaserRKQ(ZCam* w, QObject* parent = nullptr);
+      LaserRKQ(Machine* m, QObject* parent = nullptr);
       virtual ~LaserRKQ();
 
       // ── LaserEngine interface overrides ───────────────────────
@@ -93,5 +93,5 @@ class LaserRKQ : public Laser
       // ---- raw Ethernet I/O (async, integrated into Qt event loop) ----
       bool sendPacket(const std::vector<std::uint8_t>& frame);
       bool setFilter(const std::string& bpfExpression);
-      virtual const std::string_view properties() const override { return ""; }
+      virtual const std::string properties() const override { return ""; }
       };

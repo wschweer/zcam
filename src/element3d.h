@@ -57,7 +57,7 @@ class Element3d : public Element
       // Reference to a Mop.  Can be null, in which case the
       // element inherits the Mop from its parent (see
       // effectiveMop()).
-      PROPV(Mop*, laserLayer, nullptr)
+      PROPV(Mop*, mop, nullptr)
       PROPV(TessGeometry*, geometry, nullptr)
       PROPV(QString, model, QString("Shape.qml"))
       PROPV(QVector3D, pos, QVector3D(0.0, 0.0, 0.0))
@@ -66,8 +66,8 @@ class Element3d : public Element
     public:
       // Pending forward references that could not be resolved during
       // fromJson() because the referenced element had not yet been
-      // created (e.g. laserLayer references from Cad elements loaded
-      // before the Fixture/LaserLayer elements).  These are resolved in
+      // created (e.g. mop references from Cad elements loaded
+      // before the Fixture/LaserMop elements).  These are resolved in
       // fixup() after the full project tree has been loaded.
       struct PendingRef {
             std::string propName;
@@ -107,6 +107,14 @@ class Element3d : public Element
       PROP(QList<Element3d*>, subElements)
 
       Q_PROPERTY(TessGeometry* selectionGeometry READ selectionGeometry NOTIFY selectionGeometryChanged)
+      // Dashed association lines connecting each bezier segment's anchor
+      // points to their control points.  Populated only by Polygon (see
+      // Polygon::updateControlHandles()); other element types leave it
+      // empty.  Rendered in Shape.qml as a red, thin overlay while the
+      // element is the current selection, so the user can see which
+      // control points shape which bezier segment.
+      Q_PROPERTY(
+          TessGeometry* controlHandleGeometry READ controlHandleGeometry NOTIFY controlHandleGeometryChanged)
       Q_PROPERTY(bool snapActive READ snapActive NOTIFY snapActiveChanged)
       Q_PROPERTY(bool ancestorsShow READ ancestorsShow NOTIFY ancestorsShowChanged)
       Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
@@ -114,8 +122,10 @@ class Element3d : public Element
       Q_PROPERTY(int vertexRevision READ vertexRevision NOTIFY vertexRevisionChanged)
 
       TessGeometry* _selectionGeometry {nullptr};
+      TessGeometry* _controlHandleGeometry {nullptr};
       QColor _color;
       PathList _pathList;
+      PathList _fillPathList; ///< unmodified geometry before strokeAndFill (for containment tests)
       mutable QMatrix4x4 _matrix;
       int _vertexRevision {0};
       bool _batching {false};    ///< suppresses vertexRevisionChanged during batch updates
@@ -138,22 +148,16 @@ class Element3d : public Element
       mutable bool _worldBBox3DDirty {true};
 
     protected:
-      // Static, class-bound flag: only elements whose class sets this to true
-      // can be interactively dragged on the 3D canvas.  Subclasses override
-      // s_draggable and draggable() to opt in.
-      static constexpr bool s_draggable = false;
-      // Static, class-bound flag: only elements whose class sets this to true
-      // can be deleted from the project tree. Subclasses override
-      // s_deletable and deletable() to opt in.
-      static constexpr bool s_deletable = false;
       PainterPath painterPath; // editable source path
       virtual void updateSelectionGeometry();
       mutable bool _matrixDirty {true};
       // return true if lineWidth() is zero
       bool thinLine() const { return qFuzzyCompare(lineWidth(), 0.0); }
+
     protected:
     signals:
       void selectionGeometryChanged();
+      void controlHandleGeometryChanged();
       void snapActiveChanged();
       void ancestorsShowChanged();
       void colorChanged();
@@ -174,10 +178,10 @@ class Element3d : public Element
       Q_INVOKABLE virtual bool visible() const { return false; }
       // Static, class-bound flag: only elements whose class sets this to true
       // can be interactively dragged on the 3D canvas.
-      Q_INVOKABLE virtual bool draggable() const { return s_draggable; }
+      Q_INVOKABLE virtual bool draggable() const { return false; }
       // Static, class-bound flag: only elements whose class sets this to true
       // can be deleted from the project tree.
-      Q_INVOKABLE virtual bool deletable() const { return s_deletable; }
+      Q_INVOKABLE virtual bool deletable() const { return false; }
       // Returns true if this element exposes editable vertex handles
       // in the 3D viewport.  Subclasses with handles (e.g. Polygon,
       // Rectangle) override this to return true.
@@ -235,11 +239,14 @@ class Element3d : public Element
       void clearSnapMarkers();
       // Returns true when every ancestor Element3d has show == true.
       // Used to grey-out child visibility icons when a parent is hidden.
-      bool ancestorsShow() const;
+      // Virtual so that special elements (e.g. the Framing outline, which is
+      // a child of the hidden-by-default Cam but must still render on canvas)
+      // can opt out of the ancestor-visibility rule.
+      virtual bool ancestorsShow() const;
 
       /// Returns the effective Mop for this element by walking
-      /// up the parent chain until a non-null laserLayer is found.
-      /// Returns nullptr if no ancestor (including self) has a laserLayer set.
+      /// up the parent chain until a non-null Mop is found.
+      /// Returns nullptr if no ancestor (including self) has a Mop set.
       Mop* effectiveMop() const;
       QRectF boundingBox() const;
       /// Element-specific content bounding box.  The base
@@ -268,17 +275,24 @@ class Element3d : public Element
       void worldBoundingBox3D(QVector3D& bMin, QVector3D& bMax) const;
       /// Returns true if the given world-space point (x, y) lies inside
       /// this element's world bounding box.
-      bool containsWorldPoint(double x, double y) const;
+      Q_INVOKABLE bool containsWorldPoint(double x, double y) const;
       /// Rebuilds the content of the (constructor-created) selection
       /// geometry for the current bounding box before returning it,
       /// so the QML binding always sees a filled rectangle.
       TessGeometry* selectionGeometry();
       const TessGeometry* selectionGeometry() const { return _selectionGeometry; }
+      /// See the Q_PROPERTY comment above for what this geometry holds.
+      TessGeometry* controlHandleGeometry();
+      const TessGeometry* controlHandleGeometry() const { return _controlHandleGeometry; }
       QColor color() const { return _color; }
       void setColor(const QColor&);
       Q_INVOKABLE QColor curColor() const;
       const PathList& pathList() const { return _pathList; }
       PathList& pathList() { return _pathList; }
+      /// Returns the unmodified geometry (before strokeAndFill inflation).
+      /// Used for containment tests where the fill outline, not the stroked
+      /// outline, is the relevant area.
+      const PathList& fillPathList() const { return _fillPathList; }
       const QMatrix4x4& matrix() const;
       /// Returns the full transformation matrix from this element's local
       /// coordinate system to the root (project) coordinate system by
@@ -300,6 +314,23 @@ class Element3d : public Element
       /// depends on this element's box).  Called when content or
       /// visibility changes.
       void invalidateWorldBBoxUp();
+      //--------------------------------------------------------------------
+      //     DecomposedTransform
+      //--------------------------------------------------------------------
+      //   Result of decomposing a 4×4 transformation matrix into its
+      //   translation, rotation (Euler angles) and scale components.
+      //   Used by reparenting logic to preserve world-space coordinates.
+      //--------------------------------------------------------------------
+      struct DecomposedTransform {
+            QVector3D pos;
+            QVector3D rot;
+            QVector3D scale;
+            };
+      /// Decompose a 4×4 matrix into pos / rot (Euler) / scale.
+      /// Negative determinant (mirror) is handled: the scale sign is
+      /// absorbed and the rotation is adjusted so that reconstructing
+      /// the matrix via translate→rotate→scale reproduces the input.
+      static DecomposedTransform decomposeTransform(const QMatrix4x4& m);
       };
 
 //---------------------------------------------------------

@@ -10,6 +10,7 @@
 //=============================================================================
 
 #include "machine.h"
+#include "engine.h"
 #include "laser.h"
 #include "laser_bjjcz.h"
 #include "laser_rkq.h"
@@ -18,16 +19,46 @@
 #include "logger.h"
 
 //---------------------------------------------------------
+//   Machine
+//---------------------------------------------------------
+
+Machine::Machine(ZCam* zc, QObject* parent) : QObject(parent), zcam(zc) {
+      }
+
+//---------------------------------------------------------
+//   ~Machine
+//---------------------------------------------------------
+
+Machine::~Machine() {
+      delete _engine;
+      _engine = nullptr;
+      }
+
+//---------------------------------------------------------
 //   toJson
-//    Serialize all user-editable properties declared in
-//    properties() to JSON, using the shared propjson utilities.
-//    Machine is a QObject, so gadget=false.
+//    Serialize shared Machine properties + engine-specific
+//    properties to JSON.
 //---------------------------------------------------------
 
 json Machine::toJson() const {
       json data;
 
-      std::string_view propStr = properties();
+      // ── shared properties (declared in Machine itself) ──────────
+      // Write the base set of properties that every Machine has,
+      // regardless of engine type.  These are the properties declared
+      // via PROP/PROPV in machine.h.
+            {
+            // Build a minimal properties() JSON for the shared properties.
+            // The actual property list is obtained from the engine, which
+            // includes the shared properties at the top of its JSON layout.
+            // We rely on the engine's properties() to list ALL properties
+            // (shared + engine-specific) and serialise them all through
+            // the meta-object system of the Machine + Engine hierarchy.
+            }
+
+      std::string propStr;
+      if (_engine)
+            propStr = _engine->properties();
       if (propStr.empty())
             return data;
 
@@ -40,18 +71,32 @@ json Machine::toJson() const {
             return data;
             }
 
-      const QMetaObject* meta = metaObject();
-      for (const auto& [name, type] : propNames)
-            propjson::writePropertyToJson(data, this, meta, false, name, type,
-                                          propjson::precisionForName(propStr, name));
+      // Serialise shared Machine properties via the Machine meta-object.
+      const QMetaObject* machineMeta = metaObject();
+      for (const auto& [name, type] : propNames) {
+            // Try the Machine's own meta-object first (shared properties).
+            int idx = machineMeta->indexOfProperty(name.c_str());
+            if (idx >= 0) {
+                  propjson::writePropertyToJson(
+                      data, this, machineMeta, false, name, type, propjson::precisionForName(propStr, name));
+                  }
+            else if (_engine) {
+                  // Engine-specific property (e.g. galvo, laser delays, IO pins).
+                  const QMetaObject* engineMeta = _engine->metaObject();
+                  int eidx                      = engineMeta->indexOfProperty(name.c_str());
+                  if (eidx >= 0)
+                        propjson::writePropertyToJson(data, _engine, engineMeta, false, name, type,
+                            propjson::precisionForName(propStr, name));
+                  }
+            }
 
       return data;
       }
 
 //---------------------------------------------------------
 //   fromJson
-//    Deserialize all properties from JSON using the shared
-//    propjson utilities.  Machine is a QObject, so gadget=false.
+//    Deserialize shared Machine properties + engine-specific
+//    properties from JSON.
 //---------------------------------------------------------
 
 bool Machine::fromJson(const json& data) {
@@ -65,26 +110,44 @@ bool Machine::fromJson(const json& data) {
             // Migration: map legacy type names
             if (t == QStringLiteral("Fiber Laser"))
                   t = QStringLiteral("Q-switched Laser");
-            set_type(t);
+            set_typeFromName(t);
             }
       if (data.contains("boardType") && data["boardType"].is_string())
             set_boardType(QString::fromStdString(data["boardType"].get<std::string>()));
 
-      std::string_view propStr = properties();
+      // Create the engine if not yet present (type/boardType are now set).
+      if (!_engine)
+            createEngine();
+
+      std::string propStr;
+      if (_engine)
+            propStr = _engine->properties();
       if (propStr.empty())
             return true;
 
       try {
-            auto propNames          = propjson::parseAllPropertyNames(propStr);
-            const QMetaObject* meta = metaObject();
-            for (const auto& [name, type] : propNames)
-                  propjson::readPropertyFromJson(data, this, meta, false, name, type);
+            auto propNames                 = propjson::parseAllPropertyNames(propStr);
+            const QMetaObject* machineMeta = metaObject();
+            const QMetaObject* engineMeta  = _engine ? _engine->metaObject() : nullptr;
+
+            for (const auto& [name, type] : propNames) {
+                  // Try the Machine's own meta-object first (shared properties).
+                  int idx = machineMeta->indexOfProperty(name.c_str());
+                  if (idx >= 0) {
+                        propjson::readPropertyFromJson(data, this, machineMeta, false, name, type);
+                        }
+                  else if (engineMeta) {
+                        int eidx = engineMeta->indexOfProperty(name.c_str());
+                        if (eidx >= 0)
+                              propjson::readPropertyFromJson(data, _engine, engineMeta, false, name, type);
+                        }
+                  }
 
             // Migration: rename legacy machine type names to current ones.
             // This handles the case where readPropertyFromJson read the
             // raw (unmigrated) "Fiber Laser" value from JSON.
-            if (type() == QStringLiteral("Fiber Laser"))
-                  set_type(QStringLiteral("Q-switched Laser"));
+            if (machineTypeName() == QStringLiteral("Fiber Laser"))
+                  set_typeFromName(QStringLiteral("Q-switched Laser"));
             }
       catch (const nlohmann::json::parse_error& err) {
             Warning("Machine::fromJson: JSON parse error: {}", err.what());
@@ -98,22 +161,74 @@ bool Machine::fromJson(const json& data) {
       }
 
 //---------------------------------------------------------
-//   createMachine
-//    Factory: create a concrete Machine subclass based on the
-//    machine type string.  Laser types create the appropriate
-//    Laser subclass based on boardType; GCode CNC creates a
-//    MachineGCode.
+//   set_typeFromName
+//    Set the machine type from its human-readable string name.
+//    Performs a lookup in the machineTypeMap.  If the name is
+//    not found, the type is left unchanged.
 //---------------------------------------------------------
 
-Machine* Machine::create(ZCam* zc, const QString& machineType, const QString& boardType) {
-      if (machineType == QStringLiteral("GCode CNC"))
-            return new MachineGCode(zc);
-      // All laser types — create the appropriate Laser subclass
-      // based on the board type.  The specific Laser variant is
-      // chosen here so that board-specific code (USB/Ethernet) is
-      // compiled into the right subclass.
-      if (boardType == QStringLiteral("RKQ-LM-441"))
-            return new LaserRKQ(zc);
-      // Default: BJJCZ board
-      return new LaserBJJCZ(zc);
+void Machine::set_typeFromName(const QString& name) {
+      auto sv = name.toUtf8();
+      auto mt = machineTypeMap.type(std::string_view(sv.constData(), sv.size()));
+      if (mt)
+            set_type(*mt);
+      }
+
+//---------------------------------------------------------
+//   createEngine
+//    Create or replace the Engine based on the current type()
+//    and boardType().
+//---------------------------------------------------------
+
+void Machine::createEngine() {
+      delete _engine;
+      _engine = Engine::create(this, _type, _boardType);
+      emit engineChanged();
+      }
+
+//---------------------------------------------------------
+//   changeType
+//    Change the machine type dynamically.  Creates a new Engine
+//    of the appropriate subclass, replacing the old one.  The
+//    shared properties (travel, precision, etc.) are preserved
+//    because they live on Machine, not on the Engine.
+//---------------------------------------------------------
+
+void Machine::changeType(MachineType newType, const QString& boardType) {
+
+      // If boardType is empty, keep the current one.
+      QString bt = boardType.isEmpty() ? _boardType : boardType;
+
+      // Update type and boardType first.
+      set_type(newType);
+      set_boardType(bt);
+
+      // Replace the engine.
+      delete _engine;
+      _engine = Engine::create(this, newType, bt);
+      emit engineChanged();
+      }
+
+//---------------------------------------------------------
+//   laserEngine
+//    Convenience: return the engine as a Laser, or nullptr.
+//---------------------------------------------------------
+
+Laser* Machine::laserEngine() const {
+      return qobject_cast<Laser*>(_engine);
+      }
+
+//---------------------------------------------------------
+//   create
+//    Factory: create a Machine with the appropriate Engine
+//    based on the machine type enum and board type string.
+//---------------------------------------------------------
+
+Machine* Machine::create(ZCam* zc, MachineType machineType, const QString& boardType) {
+//      Debug("Machine::create type={} board={}", int(machineType), boardType.toStdString());
+      Machine* m = new Machine(zc);
+      m->set_type(machineType);
+      m->set_boardType(boardType);
+      m->createEngine();
+      return m;
       }

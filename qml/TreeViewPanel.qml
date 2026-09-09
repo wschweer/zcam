@@ -263,7 +263,12 @@ Item {
     TreeView {
         id: treeView
         anchors.fill: parent
-        anchors.margins: 4
+        // No right margin: the vertical scrollbar sits flush against the
+        // window edge and the rows get the full horizontal width.
+        anchors.leftMargin: 4
+        anchors.topMargin: 4
+        anchors.bottomMargin: 4
+        anchors.rightMargin: 0
         model: ZCam.treeModel
         clip: true
 
@@ -568,6 +573,47 @@ Item {
                     height: 1
                     }
 
+                // ── LaserMop colour indicator ──────────────────────────────────
+                //   A small coloured circle in front of the name of every
+                //   LaserMop.  The colour is the Mop palette colour resolved
+                //   from the Mop's colorIndex (Mop::mopColor).  ZCam.mopColor()
+                //   is a Q_INVOKABLE helper (QML sees Element with its STATIC
+                //   type, so Mop::mopColor() is invisible on the JS wrapper —
+                //   the same problem solved by ZCam.invokeElementMethod()).
+                //   The Connections handler keeps the circle in sync with
+                //   colour changes made in the Inspector (colorIndexChanged
+                //   signal from PROPV on Mop::colorIndex).
+                Rectangle {
+                    id: mopColorCircle
+                    visible: model.element
+                            && model.element.typeName() === "laserMop"
+                    width: 10
+                    height: 10
+                    radius: width / 2
+                    border.color: Qt.rgba(1, 1, 1, 0.3)
+                    border.width: 1
+                    Layout.alignment: Qt.AlignVCenter
+                    // Initial colour; Connections below keeps it up to date.
+                    // ZCam.mopColor() returns transparent for null / non-Mop
+                    // elements, so no ternary is needed (a mixed-type ternary
+                    // — QColor vs a colour-string literal — fails QML's type
+                    // check and breaks the whole MainPanel load chain).
+                    color: ZCam.mopColor(model.element)
+
+                    Connections {
+                        // Only connect on actual LaserMop rows — for every
+                        // other element the colorIndexChanged signal does not
+                        // exist and QML would emit "no signal of the target
+                        // matches the name" for each of those delegates.
+                        // (Signals resolve against the target's DYNAMIC
+                        // meta-object, so the connection works on LaserMops.)
+                        target: (model.element && model.element.typeName() === "laserMop") ? model.element : null
+                        function onColorIndexChanged() {
+                            mopColorCircle.color = ZCam.mopColor(model.element);
+                        }
+                    }
+                }
+
                 // ── Element name ──────────────────────────────────────────────────
                 //  Default: show a Label.
                 //  On double-click of an editable element, switch to a TextField
@@ -675,26 +721,25 @@ Item {
                     return;
                 delegateItem.editing = false;
                 if (model.element && nameEdit.text.length > 0) {
-                    // Route through the undo system so the name change
-                    // is recorded for undo/redo and marks the project dirty.
-                    // Element::setName() may de-duplicate the name (e.g.
-                    // "foo" -> "foo-1"); the actual name flows back through
-                    // nameChanged -> Label binding automatically.
-                    ZCam.project.changeProperty(model.element, "name", nameEdit.text);
+                    // Route through the central rename API (Q_INVOKABLE):
+                    // name uniqueness / JS-identifier sanitization and the
+                    // undoable RenameElementCommand are handled by C++.
+                    // (changeProperty() is NOT Q_INVOKABLE, so it is not
+                    // callable from QML.)  The actual (de-duplicated) name
+                    // flows back through nameChanged -> Label binding.
+                    ZCam.project.renameElement(model.element, nameEdit.text);
                     }
                 }
 
-            // Select element on tap (row tap, not the chevron tap)
-            // ── Selection handling ───────────────────────────────────
-            //   Ctrl-click: toggle the element in/out of the multi-selection.
-            //   Shift-click: range select from the last clicked row to this row.
-            //   Plain click: clear selection and select only this element.
-            //   The current (primary) element is always set to the clicked
-            //   element so the inspector shows it.
-            //
-            //   Modifier-clicks (Ctrl/Shift) are handled by the MouseArea
-            //   below, which intercepts the press so this handler is only
-            //   reached for plain clicks.
+            // ── Left-click (plain) handling ─────────────────────────────────
+            //   Plain left-click lives on the ItemDelegate (a Control):
+            //     * clicked()  -> select this row / element;
+            //     * doubleClicked() -> toggle a node, or start inline name
+            //                          editing (onDoubleClicked below).
+            //   NOTE: Control.clicked() takes NO argument, so there is no
+            //   *mouse* parameter here and no way to read modifiers — that is
+            //   why Ctrl/Shift clicks are handled by the top MouseArea's
+            //   onPressed instead (see below).
             onClicked: {
                 // Clear any existing multi-selection without clearing
                 // currentElement (which would cause an intermediate null
@@ -720,69 +765,66 @@ Item {
                     }
                 }
 
-            // ── Mouse handler for left-click (with modifiers) and right-click ─
-            //   Left-click with Ctrl: toggle element in multi-selection.
-            //   Left-click with Shift: range select from anchor to here.
-            //   Plain left-click: handled by ItemDelegate.onClicked above.
-            //   Right-click: context menu (see below).
+            // ── Mouse handler: modifier-clicks (left) and right-click ─────
+            //   This full-coverage MouseArea intercepts Ctrl/Shift left-clicks
+            //   and the right-click (both need mouse.modifiers / a button that
+            //   the ItemDelegate cannot report), and ACCEPTS those presses so
+            //   the delegate's handler does not also fire for them.
             //
-            //   This MouseArea handles only modifier-clicks to avoid
-            //   conflicting with the ItemDelegate's built-in click/
-            //   doubleClick handling.  When modifiers are present, the
-            //   press is accepted so ItemDelegate doesn't also fire.
+            //   Crucially it does NOT set propagateComposedEvents: when that
+            //   flag is true the top MouseArea owns the whole press/release
+            //   sequence and forwards only a composed *single* click to the
+            //   delegate — the delegate therefore never sees the second click
+            //   and its double-click detection (inline name editing) dies.
+            //   Without it, plain left presses are left unhandled by this
+            //   area and fall through to the delegate, which handles both
+            //   single and double clicks natively.
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
-                propagateComposedEvents: true
 
                 onPressed: function(mouse) {
                     if (mouse.button === Qt.RightButton) {
-                        // Accept right-click so onClicked receives it and
-                        // can show the context menu.
+                        // Context menu (see onClicked).
                         mouse.accepted = true;
+                        return;
                         }
-                    else if (mouse.button === Qt.LeftButton
+                    if (mouse.button === Qt.LeftButton
                         && (mouse.modifiers & Qt.ControlModifier
                             || mouse.modifiers & Qt.ShiftModifier)) {
-                        // Accept the press so ItemDelegate.onClicked doesn't fire.
+                        // Modifier left-click: consume it so the delegate's
+                        // plain-click selection does not also run.
                         mouse.accepted = true;
-                        }
-                    else {
-                        // Let ItemDelegate handle plain clicks.
-                        mouse.accepted = false;
-                        }
-                    }
-
-                onClicked: function(mouse) {
-                    if (mouse.button === Qt.LeftButton) {
                         if (mouse.modifiers & Qt.ControlModifier) {
-                            // Ctrl-click: toggle this element in the multi-selection.
+                            // Ctrl-click: toggle in the multi-selection.
                             ZCam.toggleSelection(model.element);
                             root.syncMultiSelection();
                             }
                         else if (mouse.modifiers & Qt.ShiftModifier) {
-                            // Shift-click: range select from anchor to here.
+                            // Shift-click: range select from the anchor.
                             root.rangeSelect(delegateItem.row);
                             }
-                        // Plain left-click falls through to ItemDelegate.
+                        return;
                         }
-                    else if (mouse.button === Qt.RightButton) {
-                        // If the element is not already in the multi-selection,
-                        // clear and select only this element (like a plain click).
-                        // Otherwise keep the current multi-selection and just
-                        // make this element the current one for the context menu.
-                        if (!ZCam.isSelected(model.element)) {
-                            root.selectionAnchor = delegateItem.row;
-                            treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect);
-                            ZCam.currentElement = model.element;
-                            }
-                        else {
-                            // Make this the current element without clearing selection.
-                            ZCam.currentElement = model.element;
-                            }
-                        var global = delegateItem.mapToItem(root, mouse.x, mouse.y);
-                        root.showContextMenu(model.element, global.x, global.y);
+                    // Plain left-click: leave unhandled so the delegate
+                    // processes it (single click = select, double = edit).
+                    mouse.accepted = false;
+                    }
+
+                onClicked: function(mouse) {
+                    if (mouse.button !== Qt.RightButton)
+                        return;
+                    // Right-click: make this the current element without
+                    // clearing the multi-selection (unless it is not
+                    // selected, in which case select only it, like a plain
+                    // click), then show the context menu.
+                    if (!ZCam.isSelected(model.element)) {
+                        root.selectionAnchor = delegateItem.row;
+                        treeView.selectionModel.setCurrentIndex(treeView.index(row, column), ItemSelectionModel.ClearAndSelect);
                         }
+                    ZCam.currentElement = model.element;
+                    var global = delegateItem.mapToItem(root, mouse.x, mouse.y);
+                    root.showContextMenu(model.element, global.x, global.y);
                     }
                 }
 
@@ -939,7 +981,10 @@ Item {
         else if (tn === "fixture") {
             fixtureMenu.popup(x, y);
             }
-        else if (tn === "text" || tn === "polygon" || tn === "ellipse" || tn === "rectangle") {
+        else if (tn === "polygon") {
+            polygonMenu.popup(x, y);
+            }
+        else if (tn === "text" || tn === "ellipse" || tn === "rectangle") {
             shapeMenu.popup(x, y);
             }
         else if (tn === "cameraElement") {
@@ -948,12 +993,15 @@ Item {
         else if (tn === "grid") {
             gridMenu.popup(x, y);
             }
+        else if (tn === "nest") {
+            nestMenu.popup(x, y);
+            }
         else if (element.deletable()) {
             deleteMenu.popup(x, y);
             }
         }
 
-    // Menu for Cad elements: "Add Group"
+    // Menu for Cad elements: "Add Group" + "Add Nest"
     Menu {
         id: cadMenu
         Material.theme: Material.Dark
@@ -962,6 +1010,16 @@ Item {
             onTriggered: {
                 if (ZCam.project)
                     ZCam.project.addLayer();
+                }
+            }
+        MenuItem {
+            text: qsTr("Add Nest")
+            ToolTip.visible: hovered
+            ToolTip.delay: 800
+            ToolTip.text: qsTr("Create a nesting container that packs children into a bin")
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.addNest();
                 }
             }
         }
@@ -1031,6 +1089,82 @@ Item {
     Menu {
         id: shapeMenu
         Material.theme: Material.Dark
+        MenuItem {
+            text: qsTr("Center &P")
+            onTriggered: {
+                ZCam.centerOnWorkspace(ZCam.currentElement);
+                }
+            }
+        MenuItem {
+            text: qsTr("Delete")
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
+                }
+            }
+        }
+
+    // Menu for Polygon elements: "Optimize" + "Center on Workspace" + "Delete"
+    // "Optimize" simplifies the outline by replacing degenerate bezier
+    // segments (whose control points lie on the chord) with straight lines
+    // and by merging runs of collinear vertices into a single segment.
+    // Like nest() above, optimize/splitSelectedSegment are declared only
+    // on Polygon and are therefore invisible on the statically-typed
+    // Element3d JS wrapper — dispatch via ZCam.invokeElementMethod().
+    Menu {
+        id: polygonMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: qsTr("Optimize")
+            ToolTip.visible: hovered
+            ToolTip.delay: 800
+            ToolTip.text: qsTr("Reduce degenerate curves and collinear vertices")
+            enabled: ZCam.currentElement && ZCam.currentElement.typeName() === "polygon"
+            onTriggered: {
+                if (ZCam.currentElement)
+                    ZCam.invokeElementMethod(ZCam.currentElement, "optimize");
+                }
+            }
+        MenuSeparator {}
+        MenuItem {
+            text: qsTr("Center &P")
+            onTriggered: {
+                ZCam.centerOnWorkspace(ZCam.currentElement);
+                }
+            }
+        MenuItem {
+            text: qsTr("Delete")
+            onTriggered: {
+                if (ZCam.project)
+                    ZCam.project.removeElement(ZCam.currentElement);
+                }
+            }
+        }
+
+    // Menu for Nest elements: "Run Nest" + "Center on Workspace" + "Delete"
+    // "Run Nest" packs all child elements into the nesting bin via
+    // Nest::nest().  NOTE: ZCam.currentElement is exposed to QML with
+    // its STATIC type (Element3d), so Nest methods like nest() are
+    // NOT visible on the JS wrapper — the guard
+    //   if (el && el.nest) el.nest()
+    // would silently do nothing (typeof el.nest === "undefined").
+    // ZCam.invokeElementMethod() dispatches on the DYNAMIC
+    // meta-object and works for every Q_INVOKABLE method.
+    Menu {
+        id: nestMenu
+        Material.theme: Material.Dark
+        MenuItem {
+            text: qsTr("Run Nest")
+            ToolTip.visible: hovered
+            ToolTip.delay: 800
+            ToolTip.text: qsTr("Pack all child elements into the nesting bin using libnest2d")
+            enabled: ZCam.currentElement && ZCam.currentElement.typeName() === "nest"
+            onTriggered: {
+                if (ZCam.currentElement)
+                    ZCam.invokeElementMethod(ZCam.currentElement, "nest");
+                }
+            }
+        MenuSeparator {}
         MenuItem {
             text: qsTr("Center &P")
             onTriggered: {

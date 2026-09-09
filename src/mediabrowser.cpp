@@ -1269,3 +1269,382 @@ QString ArtworkTreeModel::dxfToSvgFile(
       f.close();
       return QStringLiteral("file://%1").arg(tempPath);
       }
+
+//---------------------------------------------------------
+//   GlyphTableModel
+//---------------------------------------------------------
+
+GlyphTableModel::GlyphTableModel(QObject* parent) : QAbstractListModel(parent) {
+      }
+
+//---------------------------------------------------------
+//   setFamily
+//---------------------------------------------------------
+
+void GlyphTableModel::setFamily(const QString& v) {
+      if (v == _family)
+            return;
+      _family = v;
+      emit familyChanged();
+      rebuildGlyphList();
+      }
+
+//---------------------------------------------------------
+//   setStyle
+//---------------------------------------------------------
+
+void GlyphTableModel::setStyle(const QString& v) {
+      if (v == _style)
+            return;
+      _style = v;
+      emit styleChanged();
+      rebuildGlyphList();
+      }
+
+//---------------------------------------------------------
+//   rebuildGlyphList
+//    Create a QRawFont from the current family/style and scan
+//    all Unicode codepoints in the BMP (U+0000–U+FFFF) plus a
+//    selection of supplementary-plane ranges to find all
+//    characters that have a real glyph (glyph index > 0).
+//---------------------------------------------------------
+
+void GlyphTableModel::rebuildGlyphList() {
+      beginResetModel();
+      _glyphs.clear();
+      _rawFont = QRawFont();
+
+      if (_family.isEmpty()) {
+            endResetModel();
+            emit glyphCountChanged();
+            return;
+            }
+
+      // Build a QFont matching the family and style, then obtain
+      // the QRawFont from it.  QRawFont gives us access to the
+      // actual font file glyph mapping.
+      QFont font(_family);
+      if (!_style.isEmpty())
+            font.setStyleName(_style);
+      _rawFont = QRawFont::fromFont(font);
+
+      if (!_rawFont.isValid()) {
+            Warning("GlyphTableModel: invalid raw font for family '{}' style '{}'",
+                _family.toUtf8().constData(), _style.toUtf8().constData());
+            endResetModel();
+            emit glyphCountChanged();
+            return;
+            }
+
+      // Scan the Basic Multilingual Plane (U+0000 to U+FFFF).
+      // Glyph index 0 is the ".notdef" glyph — it means the font
+      // does not contain an outline for that codepoint.
+      for (uint32_t cp = 0x20; cp <= 0xFFFF; ++cp) {
+            // Skip surrogate pairs (U+D800–U+DFFF)
+            if (cp >= 0xD800 && cp <= 0xDFFF)
+                  continue;
+            char32_t cp32                 = cp;
+            QString str                   = QString::fromUcs4(&cp32, 1);
+            QVector<quint32> glyphIndexes = _rawFont.glyphIndexesForString(str);
+            if (glyphIndexes.size() == 1 && glyphIndexes[0] != 0) {
+                  GlyphEntry entry;
+                  entry.codepoint  = cp;
+                  entry.glyphIndex = glyphIndexes[0];
+                  entry.hexCode    = codepointToHex(cp);
+                  entry.charName   = codepointToName(cp);
+                  _glyphs.push_back(std::move(entry));
+                  }
+            }
+      // Also scan common supplementary-plane ranges.
+      // These are scanned in chunks to keep memory usage reasonable.
+      struct SuppRange {
+            uint32_t first;
+            uint32_t last;
+            };
+      static constexpr SuppRange suppRanges[] = {
+               {0x10000, 0x1FFFF}, // Supplementary Multilingual Plane
+               {0x20000, 0x2FFFF}, // Supplementary Ideographic Plane
+               {0xE0000, 0xE007F}, // Tags
+               {0xE0100, 0xE01EF}, // Variation Selectors Supplement
+               {0xF0000, 0xFFFFD}, // Supplementary Private Use Area A
+            };
+      for (const auto& r : suppRanges) {
+            for (uint32_t cp = r.first; cp <= r.last; ++cp) {
+                  char32_t cp32                 = cp;
+                  QString str                   = QString::fromUcs4(&cp32, 1);
+                  QVector<quint32> glyphIndexes = _rawFont.glyphIndexesForString(str);
+                  if (glyphIndexes.size() == 1 && glyphIndexes[0] != 0) {
+                        GlyphEntry entry;
+                        entry.codepoint  = cp;
+                        entry.glyphIndex = glyphIndexes[0];
+                        entry.hexCode    = codepointToHex(cp);
+                        entry.charName   = codepointToName(cp);
+                        _glyphs.push_back(std::move(entry));
+                        }
+                  }
+            }
+
+      endResetModel();
+      emit glyphCountChanged();
+      }
+
+//---------------------------------------------------------
+//   rowCount
+//---------------------------------------------------------
+
+int GlyphTableModel::rowCount(const QModelIndex& parent) const {
+      if (parent.isValid())
+            return 0;
+      return static_cast<int>(_glyphs.size());
+      }
+
+//---------------------------------------------------------
+//   data
+//---------------------------------------------------------
+
+QVariant GlyphTableModel::data(const QModelIndex& index, int role) const {
+      if (!index.isValid() || index.row() >= static_cast<int>(_glyphs.size()))
+            return {};
+      const GlyphEntry& g = _glyphs[index.row()];
+      switch (role) {
+            case CharacterRole: {
+                  char32_t cp = g.codepoint;
+                  return QString::fromUcs4(&cp, 1);
+                  }
+            case CodepointRole: return g.codepoint;
+            case GlyphIndexRole: return g.glyphIndex;
+            case HexCodeRole: return g.hexCode;
+            case CharacterNameRole: return g.charName;
+            default: return {};
+            }
+      }
+
+//---------------------------------------------------------
+//   roleNames
+//---------------------------------------------------------
+
+QHash<int, QByteArray> GlyphTableModel::roleNames() const {
+      QHash<int, QByteArray> roles;
+      roles[CharacterRole]     = "glyphChar";
+      roles[CodepointRole]     = "codepoint";
+      roles[GlyphIndexRole]    = "glyphIndex";
+      roles[HexCodeRole]       = "hexCode";
+      roles[CharacterNameRole] = "charName";
+      return roles;
+      }
+
+//---------------------------------------------------------
+//   codepointToHex
+//    Returns a hex string like "U+0041" for a codepoint.
+//---------------------------------------------------------
+
+QString GlyphTableModel::codepointToHex(uint32_t cp) {
+      return QStringLiteral("U+%1").arg(cp, 4, 16, QChar('0')).toUpper();
+      }
+
+//---------------------------------------------------------
+//   codepointToName
+//    Best-effort Unicode character name.  Qt does not ship a
+//    Unicode character name database, so we provide names for
+//    the most common ranges and fall back to the Unicode
+//    category for unknown characters.
+//---------------------------------------------------------
+
+QString GlyphTableModel::codepointToName(uint32_t cp) {
+      // ASCII control characters
+      if (cp < 0x20) {
+            static const char* ctrlNames[] = {
+               "NULL", "START OF HEADING", "START OF TEXT", "END OF TEXT", "END OF TRANSMISSION", "ENQUIRY",
+               "ACKNOWLEDGE", "BELL", "BACKSPACE", "HORIZONTAL TAB", "LINE FEED", "VERTICAL TAB", "FORM FEED",
+               "CARRIAGE RETURN", "SHIFT OUT", "SHIFT IN", "DATA LINK ESCAPE", "DEVICE CONTROL 1",
+               "DEVICE CONTROL 2", "DEVICE CONTROL 3", "DEVICE CONTROL 4", "NEGATIVE ACKNOWLEDGE",
+               "SYNCHRONOUS IDLE", "END OF TRANSMISSION BLOCK", "CANCEL", "END OF MEDIUM", "SUBSTITUTE",
+               "ESCAPE", "FILE SEPARATOR", "GROUP SEPARATOR", "RECORD SEPARATOR", "UNIT SEPARATOR"};
+            return QString::fromLatin1(ctrlNames[cp]);
+            }
+      // Latin-1 supplement names (partial)
+      static const QHash<uint32_t, const char*> latin1Names = {
+               {0x20,                                      "SPACE"},
+               {0x21,                           "EXCLAMATION MARK"},
+               {0x22,                             "QUOTATION MARK"},
+               {0x23,                                "NUMBER SIGN"},
+               {0x24,                                "DOLLAR SIGN"},
+               {0x25,                               "PERCENT SIGN"},
+               {0x26,                                  "AMPERSAND"},
+               {0x27,                                 "APOSTROPHE"},
+               {0x28,                           "LEFT PARENTHESIS"},
+               {0x29,                          "RIGHT PARENTHESIS"},
+               {0x2A,                                   "ASTERISK"},
+               {0x2B,                                  "PLUS SIGN"},
+               {0x2C,                                      "COMMA"},
+               {0x2D,                               "HYPHEN-MINUS"},
+               {0x2E,                                  "FULL STOP"},
+               {0x2F,                                    "SOLIDUS"},
+               {0x30,                                 "DIGIT ZERO"},
+               {0x31,                                  "DIGIT ONE"},
+               {0x32,                                  "DIGIT TWO"},
+               {0x33,                                "DIGIT THREE"},
+               {0x34,                                 "DIGIT FOUR"},
+               {0x35,                                 "DIGIT FIVE"},
+               {0x36,                                  "DIGIT SIX"},
+               {0x37,                                "DIGIT SEVEN"},
+               {0x38,                                "DIGIT EIGHT"},
+               {0x39,                                 "DIGIT NINE"},
+               {0x3A,                                      "COLON"},
+               {0x3B,                                  "SEMICOLON"},
+               {0x3C,                             "LESS-THAN SIGN"},
+               {0x3D,                                "EQUALS SIGN"},
+               {0x3E,                          "GREATER-THAN SIGN"},
+               {0x3F,                              "QUESTION MARK"},
+               {0x40,                              "COMMERCIAL AT"},
+               {0x41,                     "LATIN CAPITAL LETTER A"},
+               {0x42,                     "LATIN CAPITAL LETTER B"},
+               {0x43,                     "LATIN CAPITAL LETTER C"},
+               {0x44,                     "LATIN CAPITAL LETTER D"},
+               {0x45,                     "LATIN CAPITAL LETTER E"},
+               {0x46,                     "LATIN CAPITAL LETTER F"},
+               {0x47,                     "LATIN CAPITAL LETTER G"},
+               {0x48,                     "LATIN CAPITAL LETTER H"},
+               {0x49,                     "LATIN CAPITAL LETTER I"},
+               {0x4A,                     "LATIN CAPITAL LETTER J"},
+               {0x4B,                     "LATIN CAPITAL LETTER K"},
+               {0x4C,                     "LATIN CAPITAL LETTER L"},
+               {0x4D,                     "LATIN CAPITAL LETTER M"},
+               {0x4E,                     "LATIN CAPITAL LETTER N"},
+               {0x4F,                     "LATIN CAPITAL LETTER O"},
+               {0x50,                     "LATIN CAPITAL LETTER P"},
+               {0x51,                     "LATIN CAPITAL LETTER Q"},
+               {0x52,                     "LATIN CAPITAL LETTER R"},
+               {0x53,                     "LATIN CAPITAL LETTER S"},
+               {0x54,                     "LATIN CAPITAL LETTER T"},
+               {0x55,                     "LATIN CAPITAL LETTER U"},
+               {0x56,                     "LATIN CAPITAL LETTER V"},
+               {0x57,                     "LATIN CAPITAL LETTER W"},
+               {0x58,                     "LATIN CAPITAL LETTER X"},
+               {0x59,                     "LATIN CAPITAL LETTER Y"},
+               {0x5A,                     "LATIN CAPITAL LETTER Z"},
+               {0x5B,                        "LEFT SQUARE BRACKET"},
+               {0x5C,                            "REVERSE SOLIDUS"},
+               {0x5D,                       "RIGHT SQUARE BRACKET"},
+               {0x5E,                          "CIRCUMFLEX ACCENT"},
+               {0x5F,                                   "LOW LINE"},
+               {0x60,                               "GRAVE ACCENT"},
+               {0x61,                       "LATIN SMALL LETTER A"},
+               {0x62,                       "LATIN SMALL LETTER B"},
+               {0x63,                       "LATIN SMALL LETTER C"},
+               {0x64,                       "LATIN SMALL LETTER D"},
+               {0x65,                       "LATIN SMALL LETTER E"},
+               {0x66,                       "LATIN SMALL LETTER F"},
+               {0x67,                       "LATIN SMALL LETTER G"},
+               {0x68,                       "LATIN SMALL LETTER H"},
+               {0x69,                       "LATIN SMALL LETTER I"},
+               {0x6A,                       "LATIN SMALL LETTER J"},
+               {0x6B,                       "LATIN SMALL LETTER K"},
+               {0x6C,                       "LATIN SMALL LETTER L"},
+               {0x6D,                       "LATIN SMALL LETTER M"},
+               {0x6E,                       "LATIN SMALL LETTER N"},
+               {0x6F,                       "LATIN SMALL LETTER O"},
+               {0x70,                       "LATIN SMALL LETTER P"},
+               {0x71,                       "LATIN SMALL LETTER Q"},
+               {0x72,                       "LATIN SMALL LETTER R"},
+               {0x73,                       "LATIN SMALL LETTER S"},
+               {0x74,                       "LATIN SMALL LETTER T"},
+               {0x75,                       "LATIN SMALL LETTER U"},
+               {0x76,                       "LATIN SMALL LETTER V"},
+               {0x77,                       "LATIN SMALL LETTER W"},
+               {0x78,                       "LATIN SMALL LETTER X"},
+               {0x79,                       "LATIN SMALL LETTER Y"},
+               {0x7A,                       "LATIN SMALL LETTER Z"},
+               {0x7B,                         "LEFT CURLY BRACKET"},
+               {0x7C,                              "VERTICAL LINE"},
+               {0x7D,                        "RIGHT CURLY BRACKET"},
+               {0x7E,                                      "TILDE"},
+               {0xA0,                             "NO-BREAK SPACE"},
+               {0xA1,                  "INVERTED EXCLAMATION MARK"},
+               {0xA2,                                  "CENT SIGN"},
+               {0xA3,                                 "POUND SIGN"},
+               {0xA4,                              "CURRENCY SIGN"},
+               {0xA5,                                   "YEN SIGN"},
+               {0xA6,                                 "BROKEN BAR"},
+               {0xA7,                               "SECTION SIGN"},
+               {0xA8,                                  "DIAERESIS"},
+               {0xA9,                             "COPYRIGHT SIGN"},
+               {0xAA,                 "FEMININE ORDINAL INDICATOR"},
+               {0xAB,  "LEFT-POINTING DOUBLE ANGLE QUOTATION MARK"},
+               {0xAC,                                   "NOT SIGN"},
+               {0xAD,                                "SOFT HYPHEN"},
+               {0xAE,                            "REGISTERED SIGN"},
+               {0xAF,                                     "MACRON"},
+               {0xB0,                                "DEGREE SIGN"},
+               {0xB1,                            "PLUS-MINUS SIGN"},
+               {0xB2,                            "SUPERSCRIPT TWO"},
+               {0xB3,                          "SUPERSCRIPT THREE"},
+               {0xB4,                               "ACUTE ACCENT"},
+               {0xB5,                                 "MICRO SIGN"},
+               {0xB6,                               "PILCROW SIGN"},
+               {0xB7,                                 "MIDDLE DOT"},
+               {0xB8,                                    "CEDILLA"},
+               {0xB9,                            "SUPERSCRIPT ONE"},
+               {0xBA,                "MASCULINE ORDINAL INDICATOR"},
+               {0xBB, "RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK"},
+               {0xBC,                "VULGAR FRACTION ONE QUARTER"},
+               {0xBD,                   "VULGAR FRACTION ONE HALF"},
+               {0xBE,             "VULGAR FRACTION THREE QUARTERS"},
+               {0xBF,                     "INVERTED QUESTION MARK"},
+            };
+      auto it = latin1Names.find(cp);
+      if (it != latin1Names.end())
+            return QString::fromLatin1(it.value());
+
+      // For other characters, provide a category-based description.
+      if (cp <= 0xFFFF) {
+            QChar ch(static_cast<char16_t>(cp));
+            QChar::Category cat = ch.category();
+            switch (cat) {
+                  case QChar::Category::Number_DecimalDigit: return QStringLiteral("DECIMAL DIGIT");
+                  case QChar::Category::Number_Letter: return QStringLiteral("LETTER NUMBER");
+                  case QChar::Category::Number_Other: return QStringLiteral("OTHER NUMBER");
+                  case QChar::Category::Letter_Uppercase: return QStringLiteral("UPPERCASE LETTER");
+                  case QChar::Category::Letter_Lowercase: return QStringLiteral("LOWERCASE LETTER");
+                  case QChar::Category::Letter_Titlecase: return QStringLiteral("TITLECASE LETTER");
+                  case QChar::Category::Letter_Modifier: return QStringLiteral("MODIFIER LETTER");
+                  case QChar::Category::Letter_Other: return QStringLiteral("OTHER LETTER");
+                  case QChar::Category::Mark_NonSpacing: return QStringLiteral("NON-SPACING MARK");
+                  case QChar::Category::Mark_SpacingCombining:
+                        return QStringLiteral("SPACING COMBINING MARK");
+                  case QChar::Category::Mark_Enclosing: return QStringLiteral("ENCLOSING MARK");
+                  case QChar::Category::Punctuation_Connector: return QStringLiteral("CONNECTOR PUNCTUATION");
+                  case QChar::Category::Punctuation_Dash: return QStringLiteral("DASH PUNCTUATION");
+                  case QChar::Category::Punctuation_Open: return QStringLiteral("OPEN PUNCTUATION");
+                  case QChar::Category::Punctuation_Close: return QStringLiteral("CLOSE PUNCTUATION");
+                  case QChar::Category::Punctuation_InitialQuote:
+                        return QStringLiteral("INITIAL QUOTATION MARK");
+                  case QChar::Category::Punctuation_FinalQuote: return QStringLiteral("FINAL QUOTATION MARK");
+                  case QChar::Category::Punctuation_Other: return QStringLiteral("OTHER PUNCTUATION");
+                  case QChar::Category::Symbol_Math: return QStringLiteral("MATH SYMBOL");
+                  case QChar::Category::Symbol_Currency: return QStringLiteral("CURRENCY SYMBOL");
+                  case QChar::Category::Symbol_Modifier: return QStringLiteral("MODIFIER SYMBOL");
+                  case QChar::Category::Symbol_Other: return QStringLiteral("OTHER SYMBOL");
+                  case QChar::Category::Separator_Space: return QStringLiteral("SPACE SEPARATOR");
+                  case QChar::Category::Separator_Line: return QStringLiteral("LINE SEPARATOR");
+                  case QChar::Category::Separator_Paragraph: return QStringLiteral("PARAGRAPH SEPARATOR");
+                  case QChar::Category::Other_Control: return QStringLiteral("CONTROL CHARACTER");
+                  case QChar::Category::Other_Format: return QStringLiteral("FORMAT CHARACTER");
+                  case QChar::Category::Other_Surrogate: return QStringLiteral("SURROGATE");
+                  case QChar::Category::Other_PrivateUse: return QStringLiteral("PRIVATE USE");
+                  default: return QStringLiteral("CHARACTER");
+                  }
+            }
+      // Supplementary planes — provide a generic description.
+      if (cp >= 0x10000 && cp <= 0x1FFFF)
+            return QStringLiteral("SUPPLEMENTARY CHARACTER");
+      if (cp >= 0x20000 && cp <= 0x2FFFF)
+            return QStringLiteral("CJK IDEOGRAPH");
+      if (cp >= 0xE0000 && cp <= 0xE007F)
+            return QStringLiteral("TAG CHARACTER");
+      if (cp >= 0xE0100 && cp <= 0xE01EF)
+            return QStringLiteral("VARIATION SELECTOR");
+      if (cp >= 0xF0000)
+            return QStringLiteral("PRIVATE USE CHARACTER");
+      return QStringLiteral("CHARACTER");
+      }

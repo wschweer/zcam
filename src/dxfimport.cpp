@@ -40,12 +40,14 @@
 #include <unordered_set>
 #include <vector>
 
+#include <functional>
 #include "libdxfrw.h"
 #include "drw_interface.h"
 #include "drw_base.h"
 #include "drw_entities.h"
 #include "drw_header.h"
 #include "config.h"
+#include "laser_mop.h"
 
 //---------------------------------------------------------
 //   DxfReaderInterface
@@ -64,16 +66,18 @@
 class DxfReaderInterface final : public DRW_Interface
       {
       ZCam* m_zcam;
-      Group* m_defaultLayer;     ///< the single root layer created for this import
-      Group* m_parent {nullptr}; ///< current insertion parent inside the import layer
+      Group* m_defaultLayer;          ///< the single root layer created for this import
+      Group* m_parent {nullptr};      ///< current insertion parent inside the import layer
       Group* m_activeBlock {nullptr}; ///< block definition group of the insert being expanded
-      int m_parentDepth {0};     ///< recursion guard for nested block expansion
-      double m_unitScale;        ///< conversion factor to mm
-      QString m_baseName;        ///< file base name for element naming
+      int m_parentDepth {0};          ///< recursion guard for nested block expansion
+      double m_unitScale;             ///< conversion factor to mm
+      QString m_baseName;             ///< file base name for element naming
       std::unordered_map<std::string, Group*>
           m_dxfLayerMap; ///< dxf layer name -> Group inside the import layer
+      std::unordered_map<Group*, std::unordered_map<int, Group*>>
+          m_dxfColorMap; ///< (layer group, ACI color) -> color sub-group
       std::unordered_map<std::string, Group*>
-          m_blockGroupMap; ///< block name -> Group inside the import layer
+          m_blockGroupMap;                              ///< block name -> Group inside the import layer
       std::unordered_set<const Group*> m_blockGroupSet; ///< fast O(1) lookup for isBlockGroup()
       // Block support: collect entities per block, then replicate on INSERT
       struct BlockEntity {
@@ -112,6 +116,7 @@ class DxfReaderInterface final : public DRW_Interface
             double height {1.0};
             double angle {0.0};
             std::string layer; ///< dxf layer name of the source entity
+            int color {256};   ///< dxf entity color (ACI code 62), 256=BYLAYER, 0=BYBLOCK
             // Insert (nested block reference)
             std::string block; ///< referenced block name
             double xscale {1.0};
@@ -121,6 +126,30 @@ class DxfReaderInterface final : public DRW_Interface
       std::string m_currentBlockName;
       bool m_inBlock {false};
       int m_insertCounter {0};
+      // Line buffer: collect LINE entities and merge connected ones
+      // into shared polylines instead of creating one Polygon per line.
+      struct LineSeg {
+            Vec2d p1, p2;
+            std::string layer;
+            int color {256}; ///< dxf entity color (ACI code 62), 256=BYLAYER, 0=BYBLOCK
+            };
+      std::vector<LineSeg> m_lineBuffer;
+      /// DXF layer definitions collected from the LAYER table.
+      /// Maps layer name → ACI color (code 62).  Used to resolve
+      /// entities whose color is BYLAYER (256).
+      std::unordered_map<std::string, int> m_dxfLayerColors;
+
+      int m_entityCounts[12] {}; ///< per-type entity counts for logging
+      ///
+      /// Collect all (layer-group, color) sub-groups created during the
+      /// import.  Each entry maps a Group pointer to the resolved ACI
+      /// colour used for naming and LaserMop assignment.
+      ///
+      struct ColorGroupInfo {
+            Group* group;
+            int aci;
+            };
+      std::vector<ColorGroupInfo> m_colorGroups;
 
       static constexpr int kMaxInsertDepth            = 16; ///< recursion limit for nested INSERTs
       static constexpr std::string_view kBlockPrefix  = "\xe2\x96\xa0 "; ///< "■ " marks block groups
@@ -133,6 +162,63 @@ class DxfReaderInterface final : public DRW_Interface
       void setUnitScale(double s) { m_unitScale = s; }
       double mm(double v) const { return v * m_unitScale; }
       Vec2d mm2d(const DRW_Coord& c) const { return {mm(c.x), mm(c.y)}; }
+      /// Return all colour sub-groups created during the import.
+      const std::vector<ColorGroupInfo>& colorGroups() const { return m_colorGroups; }
+      /// Resolved element color for the current entity:
+      /// if the entity's color is 256 (BYLAYER), look up the
+      /// layer color from m_dxfLayerColors; if 0 (BYBLOCK) and
+      /// the layer color is unknown, use 7 (white) as default.
+      /// BYBLOCK (0) is kept as a distinct colour so border/frame
+      /// entities are not merged with white mark entities.
+      int resolveColor(int entityColor, const std::string& layer) const {
+            if (entityColor == 256) { // BYLAYER
+                  auto it = m_dxfLayerColors.find(layer);
+                  if (it != m_dxfLayerColors.end())
+                        return it->second;
+                  return 7; // default white
+                  }
+            // BYBLOCK (0) is kept as-is so border entities form
+            // their own colour group, distinct from white (7).
+            return entityColor;
+            }
+      /// ACI (AutoCAD Color Index) → QColor.
+      /// Only the standard colours 1–8 and a few high-index ones
+      /// are mapped explicitly; everything else falls back to
+      /// white (7).
+      static QColor aciToQColor(int aci) {
+            // clang-format off
+            switch (aci) {
+                  case 0:  return QColor(255, 255, 255);  // BYBLOCK → white
+                  case 1:  return QColor(255,   0,   0);  // red
+                  case 2:  return QColor(255, 255,   0);  // yellow
+                  case 3:  return QColor(  0, 255,   0);  // green
+                  case 4:  return QColor(  0, 255, 255);  // cyan
+                  case 5:  return QColor(  0,   0, 255);  // blue
+                  case 6:  return QColor(255,   0, 255);  // magenta
+                  case 7:  return QColor(255, 255, 255);  // white / black
+                  case 8:  return QColor(128, 128, 128);  // grey
+                  case 9:  return QColor(192, 192, 192);  // light grey
+                  default: return QColor(255, 255, 255);  // fallback
+                        }
+            // clang-format on
+            }
+      /// Human-readable label for a resolved ACI colour, used as
+      /// the sub-group name inside a DXF layer group.
+      static QString aciLabel(int aci) {
+            switch (aci) {
+                  case 0: return QStringLiteral("BYBLOCK");
+                  case 1: return QStringLiteral("Red");
+                  case 2: return QStringLiteral("Yellow");
+                  case 3: return QStringLiteral("Green");
+                  case 4: return QStringLiteral("Cyan");
+                  case 5: return QStringLiteral("Blue");
+                  case 6: return QStringLiteral("Magenta");
+                  case 7: return QStringLiteral("White");
+                  case 8: return QStringLiteral("Grey");
+                  case 9: return QStringLiteral("LightGrey");
+                  default: return QStringLiteral("Color-%1").arg(aci);
+                  }
+            }
       int circleResolution() const {
             if (!m_zcam || !m_zcam->config())
                   return 360;
@@ -180,12 +266,13 @@ class DxfReaderInterface final : public DRW_Interface
                   }
             }
       void addLType(const DRW_LType&) override {}
-      void addLayer(const DRW_Layer&) override {}
+      void addLayer(const DRW_Layer& data) override { m_dxfLayerColors[data.name] = data.color; }
       void addDimStyle(const DRW_Dimstyle&) override {}
       void addVport(const DRW_Vport&) override {}
       void addTextStyle(const DRW_Textstyle&) override {}
       void addAppId(const DRW_AppId&) override {}
       void addBlock(const DRW_Block& data) override {
+            Debug("DXF BLOCK begin: '{}'", data.name);
             m_currentBlockName = data.name;
             m_blocks[m_currentBlockName].clear();
             m_inBlock = true;
@@ -194,15 +281,19 @@ class DxfReaderInterface final : public DRW_Interface
             // DWG: switch to a previously defined block
             }
       void endBlock() override {
+            Debug("DXF BLOCK end: '{}' ({} entities collected)", m_currentBlockName,
+                m_blocks[m_currentBlockName].size());
             m_inBlock = false;
             m_currentBlockName.clear();
             }
       void addPoint(const DRW_Point& data) override {
+            ++m_entityCounts[8];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type  = BlockEntity::Type::Point;
                   e.p1    = data.basePoint;
                   e.layer = data.layer;
+                  e.color = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
@@ -215,31 +306,30 @@ class DxfReaderInterface final : public DRW_Interface
             poly->lineTo(p);
             poly->set_lineWidth(0.0);
             poly->set_fill(false);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void addLine(const DRW_Line& data) override {
+            ++m_entityCounts[0];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type  = BlockEntity::Type::Line;
                   e.p1    = data.basePoint;
                   e.p2    = data.secPoint;
                   e.layer = data.layer;
+                  e.color = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
-            auto* poly = new Polygon(m_zcam, m_parent);
-            poly->setName(elementName("Line"));
-            poly->moveTo(mm2d(data.basePoint));
-            poly->lineTo(mm2d(data.secPoint));
-            poly->set_lineWidth(0.0);
-            poly->set_fill(false);
-            poly->update();
-            insertElement(poly, entityParent(data.layer));
+            // Buffer the line for later merging into polylines
+            m_lineBuffer.push_back({mm2d(data.basePoint), mm2d(data.secPoint), data.layer, data.color});
             }
       void addRay(const DRW_Ray&) override {}
       void addXline(const DRW_Xline&) override {}
       void addArc(const DRW_Arc& data) override {
+            ++m_entityCounts[1];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type     = BlockEntity::Type::Arc;
@@ -249,27 +339,37 @@ class DxfReaderInterface final : public DRW_Interface
                   e.endAng   = data.endangle;
                   e.isccw    = data.isccw;
                   e.layer    = data.layer;
+                  e.color    = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
             auto pp = arcToPainterPath(data);
             if (pp.empty())
                   return;
+            Debug("DXF Arc: {} path elements (curves: {})", pp.size(),
+                std::count_if(pp.begin(), pp.end(), [](const PPElement& e) {
+                      return e.type == PPType::CurveTo || e.type == PPType::CurveToData1 ||
+                             e.type == PPType::CurveToData2;
+                      }));
             auto* poly = new Polygon(m_zcam, m_parent);
             poly->setName(elementName("Arc"));
             poly->setPainterPath(pp);
             poly->set_lineWidth(0.0);
             poly->set_fill(false);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void addCircle(const DRW_Circle& data) override {
+            ++m_entityCounts[2];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type   = BlockEntity::Type::Circle;
                   e.p1     = data.basePoint;
                   e.radius = data.radious;
                   e.layer  = data.layer;
+                  e.color  = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
@@ -278,10 +378,13 @@ class DxfReaderInterface final : public DRW_Interface
             ell->setName(elementName("Circle"));
             ell->set_pos(QVector3D(mm(data.basePoint.x), mm(data.basePoint.y), 0.0));
             ell->set_size(QVector2D(r * 2.0, r * 2.0));
+            int rc = resolveColor(data.color, data.layer);
+            ell->setColor(aciToQColor(rc));
             ell->update();
-            insertElement(ell, entityParent(data.layer));
+            insertElement(ell, entityParent(data.layer, rc));
             }
       void addEllipse(const DRW_Ellipse& data) override {
+            ++m_entityCounts[3];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type     = BlockEntity::Type::Ellipse;
@@ -292,6 +395,7 @@ class DxfReaderInterface final : public DRW_Interface
                   e.endparam = data.endparam;
                   e.isccw    = data.isccw;
                   e.layer    = data.layer;
+                  e.color    = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
@@ -303,6 +407,7 @@ class DxfReaderInterface final : public DRW_Interface
 
             // Full ellipse: staparam=0, endparam=2π
             bool full = (data.staparam == 0.0 && std::abs(data.endparam - 2.0 * std::numbers::pi) < 1e-6);
+            int rc    = resolveColor(data.color, data.layer);
 
             if (full) {
                   auto* ell = new Ellipse(m_zcam, m_parent);
@@ -310,27 +415,34 @@ class DxfReaderInterface final : public DRW_Interface
                   ell->set_pos(QVector3D(mm(data.basePoint.x), mm(data.basePoint.y), 0.0));
                   ell->set_size(QVector2D(majorR * 2.0, minorR * 2.0));
                   ell->set_rot(QVector3D(0.0, 0.0, rotDeg));
+                  ell->setColor(aciToQColor(rc));
                   ell->update();
-                  insertElement(ell, entityParent(data.layer));
+                  insertElement(ell, entityParent(data.layer, rc));
                   }
             else {
                   // Elliptical arc → tessellate into a polygon
                   auto pp = ellipseArcToPainterPath(data);
                   if (pp.empty())
                         return;
+                  Debug("DXF EllipseArc: {} path elements (curves: {})", pp.size(),
+                      std::count_if(pp.begin(), pp.end(), [](const PPElement& e) {
+                            return e.type == PPType::CurveTo || e.type == PPType::CurveToData1 ||
+                                   e.type == PPType::CurveToData2;
+                            }));
                   auto* poly = new Polygon(m_zcam, m_parent);
                   poly->setName(elementName("EllipseArc"));
                   poly->setPainterPath(pp);
                   poly->set_lineWidth(0.0);
                   poly->set_fill(false);
+                  poly->setColor(aciToQColor(rc));
                   poly->update();
-                  insertElement(poly, entityParent(data.layer));
+                  insertElement(poly, entityParent(data.layer, rc));
                   }
             }
       void addLWPolyline(const DRW_LWPolyline& data) override {
             if (data.vertlist.empty())
                   return;
-
+            ++m_entityCounts[4];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type = BlockEntity::Type::LWPolyline;
@@ -338,6 +450,7 @@ class DxfReaderInterface final : public DRW_Interface
                         e.vertices.push_back(*v);
                   e.flags = data.flags;
                   e.layer = data.layer;
+                  e.color = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
@@ -370,12 +483,15 @@ class DxfReaderInterface final : public DRW_Interface
                   }
             poly->set_lineWidth(0.0);
             poly->set_fill(data.flags & 1);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void addPolyline(const DRW_Polyline& data) override {
             if (data.vertlist.empty())
                   return;
+            ++m_entityCounts[5];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type = BlockEntity::Type::LWPolyline;
@@ -383,6 +499,7 @@ class DxfReaderInterface final : public DRW_Interface
                         e.vertices.push_back(DRW_Vertex2D(v->basePoint.x, v->basePoint.y, v->bulge));
                   e.flags = data.flags;
                   e.layer = data.layer;
+                  e.color = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
@@ -409,18 +526,21 @@ class DxfReaderInterface final : public DRW_Interface
                   }
             poly->set_lineWidth(0.0);
             poly->set_fill(data.flags & 1);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void addSpline(const DRW_Spline* data) override {
             if (!data || data->controllist.empty())
                   return;
-
+            ++m_entityCounts[6];
             if (m_inBlock) {
                   BlockEntity e;
                   e.type   = BlockEntity::Type::Spline;
                   e.degree = data->degree;
                   e.layer  = data->layer;
+                  e.color  = data->color;
                   for (const auto& cp : data->controllist)
                         e.controlPoints.push_back(*cp);
                   for (const auto& fp : data->fitlist)
@@ -436,31 +556,64 @@ class DxfReaderInterface final : public DRW_Interface
                   controls.push_back(*cp);
             std::vector<double> knots = data->knotslist;
 
-            auto pts = DxfTess::evaluateSpline(data->degree, controls, knots, curveResolution());
-            if (pts.empty())
-                  return;
+            // Convert control points to Vec2d and apply unit scale
+            std::vector<Vec2d> ctrlPts;
+            ctrlPts.reserve(controls.size());
+            for (const auto& c : controls)
+                  ctrlPts.emplace_back(mm(c.x), mm(c.y));
+
+            int deg = data->degree;
+            // Try exact Bezier conversion for degree <= 3
+            auto beziers = DxfTess::bsplineToCubicBeziers(deg, ctrlPts, knots);
 
             auto* poly = new Polygon(m_zcam, m_parent);
             poly->setName(elementName("Spline"));
-            bool first = true;
-            for (const auto& pt : pts) {
-                  Vec2d p(mm(pt.x()), mm(pt.y()));
-                  if (first) {
-                        poly->moveTo(p);
-                        first = false;
+
+            if (!beziers.empty()) {
+                  // Use exact cubic Bezier segments
+                  Debug("DXF Spline: degree {} → {} cubic Bezier segments", deg, beziers.size());
+                  bool firstSeg = true;
+                  for (const auto& bz : beziers) {
+                        if (firstSeg) {
+                              poly->moveTo(bz.p0);
+                              firstSeg = false;
+                              }
+                        poly->cubicTo(bz.p1, bz.p2, bz.p3);
                         }
-                  else {
-                        poly->lineTo(p);
+                  }
+            else {
+                  // Fallback: tessellate for degree > 3
+                  auto pts = DxfTess::evaluateSpline(deg, controls, knots, curveResolution());
+                  if (pts.empty()) {
+                        delete poly;
+                        return;
+                        }
+                  bool firstSeg = true;
+                  for (const auto& pt : pts) {
+                        Vec2d p(mm(pt.x()), mm(pt.y()));
+                        if (firstSeg) {
+                              poly->moveTo(p);
+                              firstSeg = false;
+                              }
+                        else {
+                              poly->lineTo(p);
+                              }
                         }
                   }
             poly->set_lineWidth(0.0);
             poly->set_fill(false);
+            int rc = resolveColor(data->color, data->layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data->layer));
+            insertElement(poly, entityParent(data->layer, rc));
             }
       void addKnot(const DRW_Entity&) override {}
       void addInsert(const DRW_Insert& data) override {
             ++m_insertCounter;
+            ++m_entityCounts[7];
+            Debug("DXF INSERT: block='{}' pos=({},{}) rot={} scale=({},{}) layer='{}' {}", data.name,
+                mm(data.basePoint.x), mm(data.basePoint.y), data.angle * 180.0 / std::numbers::pi,
+                data.xscale, data.yscale, data.layer, m_inBlock ? "in-block" : "top-level");
 
             // A block may itself contain INSERTs of other blocks.  Collect
             // the reference now; it is expanded (with the full hierarchy)
@@ -474,6 +627,7 @@ class DxfReaderInterface final : public DRW_Interface
                   e.yscale = data.yscale;
                   e.block  = data.name;
                   e.layer  = data.layer;
+                  e.color  = data.color;
                   m_blocks[m_currentBlockName].push_back(std::move(e));
                   return;
                   }
@@ -490,8 +644,10 @@ class DxfReaderInterface final : public DRW_Interface
             poly->lineTo(mm2d(data.basePoint)); // close
             poly->set_lineWidth(0.0);
             poly->set_fill(true);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void add3dFace(const DRW_3Dface& data) override {
             auto* poly = new Polygon(m_zcam, m_parent);
@@ -508,8 +664,10 @@ class DxfReaderInterface final : public DRW_Interface
             poly->lineTo(mm2d(data.basePoint)); // close
             poly->set_lineWidth(0.0);
             poly->set_fill(true);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void addSolid(const DRW_Solid& data) override {
             auto* poly = new Polygon(m_zcam, m_parent);
@@ -521,14 +679,16 @@ class DxfReaderInterface final : public DRW_Interface
             poly->lineTo(mm2d(data.basePoint)); // close
             poly->set_lineWidth(0.0);
             poly->set_fill(true);
+            int rc = resolveColor(data.color, data.layer);
+            poly->setColor(aciToQColor(rc));
             poly->update();
-            insertElement(poly, entityParent(data.layer));
+            insertElement(poly, entityParent(data.layer, rc));
             }
       void addMText(const DRW_MText& data) override {
-            addTextEntity(data.basePoint, data.height, data.text, data.angle, data.layer);
+            addTextEntity(data.basePoint, data.height, data.text, data.angle, data.layer, data.color);
             }
       void addText(const DRW_Text& data) override {
-            addTextEntity(data.basePoint, data.height, data.text, data.angle, data.layer);
+            addTextEntity(data.basePoint, data.height, data.text, data.angle, data.layer, data.color);
             }
       void addDimAlign(const DRW_DimAligned*) override {}
       void addDimLinear(const DRW_DimLinear*) override {}
@@ -557,60 +717,38 @@ class DxfReaderInterface final : public DRW_Interface
       void writeObjects() override {}
       void writeAppId() override {}
 
-      bool m_batch {false};  ///< batch mode: direct addChild, no per-entity undo command
-
     private:
       //---------------------------------------------------------
       //   insertElement
-      //    Push a new element into the layer.  In batch mode
-      //    (m_batch == true) the element is added directly to
-      //    the parent without creating an InsertElementCommand
-      //    per entity.  The undo stack still records a single
-      //    macro containing one InsertElementCommand per top-
-      //    level child of the import layer, pushed at the end
-      //    of the import.  This avoids O(N²) TreeModel index
-      //    lookups and O(N²) QML searchBase() calls.
+      //    Add a new element to its parent group.  The entire
+      //    element tree is built without any undo/redo handling;
+      //    a single InsertElementCommand for the top-level import
+      //    layer is pushed at the end of import().
       //    Elements expanded into a block definition group are
       //    shared by all INSERTs of that block: identical copies
       //    created while expanding further instances are skipped.
       //---------------------------------------------------------
-
       void insertElement(Element3d* el, Group* parent = nullptr) {
             parent = parent ? parent : m_defaultLayer;
             if (isBlockGroup(parent) && hasIdenticalChild(parent, el)) {
-                  // Same block entity expanded again for another
-                  // instance of the same block: one shared copy in
-                  // the block definition group is enough.
+                  Debug("DXF insert: <{}> → '{}' (SKIPPED — duplicate in block def)", el->name(),
+                      parent->name());
                   delete el;
                   return;
                   }
-            if (m_batch) {
-                  // Direct insertion without per-entity undo command
-                  // or TreeModel notifications.  The undo macro and
-                  // TreeModel reset are handled centrally in import().
-                  parent->addChild(el);
-                  }
-            else {
-                  auto cmd = new InsertElementCommand(m_zcam, parent, el, -1);
-                  m_zcam->project()->undo()->push(cmd);
-                  }
+            Debug("DXF insert: <{}> → '{}'", el->name(), parent->name());
+            parent->addChild(el);
             }
-
       //---------------------------------------------------------
       //   isBlockGroup
       //---------------------------------------------------------
-
-      bool isBlockGroup(const Group* g) const {
-            return m_blockGroupSet.contains(g);
-            }
-
+      bool isBlockGroup(const Group* g) const { return m_blockGroupSet.contains(g); }
       //---------------------------------------------------------
       //   hasIdenticalChild
       //    Cheap structural comparison used to detect that the
       //    same block entity was expanded into a block group more
       //    than once.
       //---------------------------------------------------------
-
       bool hasIdenticalChild(const Group* parent, const Element3d* el) const {
             const QString tn = const_cast<Element3d*>(el)->typeName();
             for (const Element* kid : parent->children()) {
@@ -619,11 +757,11 @@ class DxfReaderInterface final : public DRW_Interface
                         continue;
                   if (const auto* a = qobject_cast<const Polygon*>(el)) {
                         if (const auto* b = qobject_cast<const Polygon*>(k)) {
-                              if (a->vertices() == b->vertices()
-                                  && std::ranges::equal(a->painterPathData(), b->painterPathData(),
-                                                        [](const PPElement& e1, const PPElement& e2) {
-                                                            return e1.type == e2.type && e1.pos == e2.pos;
-                                                            }))
+                              if (a->vertices() == b->vertices() &&
+                                  std::ranges::equal(a->painterPathData(), b->painterPathData(),
+                                      [](const PPElement& e1, const PPElement& e2) {
+                                            return e1.type == e2.type && e1.pos == e2.pos;
+                                            }))
                                     return true;
                               }
                         }
@@ -645,20 +783,27 @@ class DxfReaderInterface final : public DRW_Interface
       //---------------------------------------------------------
       //   entityParent
       //    Resolve the parent group for an entity living on the
-      //    given dxf layer.  Inside block expansion entities on
+      //    given dxf layer with the given resolved color.
+      //    Inside block expansion entities on
       //    layer "0" belong to the current insert instance (DXF
       //    resolves them against the layer of the INSERT); entities
       //    on any other layer belong to the block definition group
       //    so that all instances share that geometry.
+      //    At top level, entities are grouped first by DXF layer
+      //    and then by resolved color (sub-group named after the
+      //    ACI colour label, e.g. "Cyan", "White").
       //---------------------------------------------------------
-
-      Group* entityParent(const std::string& layer) {
+      Group* entityParent(const std::string& layer, int resolvedColor = -1) {
             if (m_parentDepth > 0) {
                   if (layer.empty() || layer == "0")
                         return m_parent;
                   return blockParent();
                   }
-            return dxfLayerGroup(QString::fromStdString(layer));
+            // At top level: group by layer, then by color
+            Group* layerGroup = dxfLayerGroup(QString::fromStdString(layer));
+            if (resolvedColor < 0)
+                  return layerGroup;
+            return dxfColorGroup(layerGroup, resolvedColor);
             }
       //---------------------------------------------------------
       //   blockParent
@@ -667,16 +812,12 @@ class DxfReaderInterface final : public DRW_Interface
       //    "0") dxf layer are added there once so every INSERT
       //    shares the same geometry.
       //---------------------------------------------------------
-
-      Group* blockParent() const {
-            return m_activeBlock ? m_activeBlock : m_defaultLayer;
-            }
+      Group* blockParent() const { return m_activeBlock ? m_activeBlock : m_defaultLayer; }
       //---------------------------------------------------------
       //   dxfLayerGroup
       //    Return (creating on first use) the Group representing
       //    the given dxf layer inside the root import layer.
       //---------------------------------------------------------
-
       Group* dxfLayerGroup(const QString& name) {
             auto it = m_dxfLayerMap.find(name.toStdString());
             if (it != m_dxfLayerMap.end())
@@ -685,6 +826,28 @@ class DxfReaderInterface final : public DRW_Interface
             g->setName(name.isEmpty() ? elementName("Layer") : name);
             insertElement(g, m_defaultLayer);
             m_dxfLayerMap[name.toStdString()] = g;
+            Debug("DXF created layer group: '{}'", g->name());
+            return g;
+            }
+      //---------------------------------------------------------
+      //   dxfColorGroup
+      //    Return (creating on first use) a sub-Group inside the
+      //    given layer group, named after the resolved ACI color
+      //    label (e.g. "Cyan", "White").  Entities of different
+      //    colors end up in separate sub-groups so they can be
+      //    assigned to different LaserMops (cut vs mark).
+      //---------------------------------------------------------
+      Group* dxfColorGroup(Group* layerGroup, int aci) {
+            auto& colorMap = m_dxfColorMap[layerGroup];
+            auto it        = colorMap.find(aci);
+            if (it != colorMap.end())
+                  return it->second;
+            auto* g = new Group(m_zcam, layerGroup);
+            g->setName(aciLabel(aci));
+            insertElement(g, layerGroup);
+            colorMap[aci] = g;
+            m_colorGroups.push_back({g, aci});
+            Debug("DXF created color group: '{}' (aci={}) in layer '{}'", g->name(), aci, layerGroup->name());
             return g;
             }
       //---------------------------------------------------------
@@ -692,7 +855,6 @@ class DxfReaderInterface final : public DRW_Interface
       //    Return (creating on first use) the Group representing
       //    the named block definition inside the root import layer.
       //---------------------------------------------------------
-
       Group* blockGroup(const QString& name) {
             auto it = m_blockGroupMap.find(name.toStdString());
             if (it != m_blockGroupMap.end())
@@ -702,6 +864,7 @@ class DxfReaderInterface final : public DRW_Interface
             insertElement(g, m_defaultLayer);
             m_blockGroupMap[name.toStdString()] = g;
             m_blockGroupSet.insert(g);
+            Debug("DXF created block group: '{}'", g->name());
             return g;
             }
       //---------------------------------------------------------
@@ -712,18 +875,21 @@ class DxfReaderInterface final : public DRW_Interface
       //    a transformed child Group below it or below the current
       //    parent group.
       //---------------------------------------------------------
-
-      void expandInsert(const std::string& blockName, const DRW_Coord& base, double rotation, double sx,
-                        double sy) {
+      void expandInsert(
+          const std::string& blockName, const DRW_Coord& base, double rotation, double sx, double sy) {
             auto it = m_blocks.find(blockName);
             if (it == m_blocks.end() || it->second.empty())
                   return;
+
+            Debug("DXF expandInsert: block='{}' depth={} entities={} pos=({},{}) rot={:.1f} scale=({},{})",
+                blockName, m_parentDepth, it->second.size(), mm(base.x), mm(base.y),
+                rotation * 180.0 / std::numbers::pi, sx, sy);
 
             // Guard against recursive block references (a block
             // inserting itself directly or transitively).
             if (m_parentDepth >= kMaxInsertDepth) {
                   Warning("DXF import: maximum block insert depth ({}) reached - skipping INSERT of '{}'",
-                          int(kMaxInsertDepth), blockName);
+                      int(kMaxInsertDepth), blockName);
                   return;
                   }
 
@@ -747,9 +913,9 @@ class DxfReaderInterface final : public DRW_Interface
                   }
             auto* instGroup = new Group(m_zcam, insertParent);
             instGroup->setName(QStringLiteral("%1%2 #%3")
-                                   .arg(QString::fromUtf8(kInsertPrefix.data(), kInsertPrefix.size()),
-                                        QString::fromStdString(blockName))
-                                   .arg(m_insertCounter));
+                    .arg(QString::fromUtf8(kInsertPrefix.data(), kInsertPrefix.size()),
+                        QString::fromStdString(blockName))
+                    .arg(m_insertCounter));
             instGroup->set_pos(QVector3D(cx, cy, 0.0));
             instGroup->set_rot(QVector3D(0.0, 0.0, ang * 180.0 / std::numbers::pi));
             instGroup->set_scale(QVector3D(sx, sy, 1.0));
@@ -777,9 +943,13 @@ class DxfReaderInterface final : public DRW_Interface
       //    Coordinates are block-local (unit scale applied) so the
       //    parent group transform takes care of placement.
       //---------------------------------------------------------
-
       void expandBlockEntity(const BlockEntity& e) {
-            Group* target = entityParent(e.layer);
+            int rc        = resolveColor(e.color, e.layer);
+            Group* target = entityParent(e.layer, rc);
+            Debug("DXF expandBlockEntity: type={} layer='{}' color={} → parent='{}' (depth={})",
+                static_cast<int>(e.type), e.layer, rc, target ? target->name().toUtf8().data() : "null",
+                m_parentDepth);
+            QColor qc = aciToQColor(rc);
             switch (e.type) {
                   case BlockEntity::Type::Line: {
                         auto* poly = new Polygon(m_zcam, m_parent);
@@ -788,16 +958,18 @@ class DxfReaderInterface final : public DRW_Interface
                         poly->lineTo(mm2d(e.p2));
                         poly->set_lineWidth(0.0);
                         poly->set_fill(false);
+                        poly->setColor(qc);
                         poly->update();
                         insertElement(poly, target);
                         break;
-                        }
+                        } // Note: block lines are typically few; no merging needed
                   case BlockEntity::Type::Circle: {
                         double r  = mm(e.radius);
                         auto* ell = new Ellipse(m_zcam, m_parent);
                         ell->setName(elementName("BlockCircle"));
                         ell->set_pos(QVector3D(mm(e.p1.x), mm(e.p1.y), 0.0));
                         ell->set_size(QVector2D(r * 2.0, r * 2.0));
+                        ell->setColor(qc);
                         ell->update();
                         insertElement(ell, target);
                         break;
@@ -808,6 +980,7 @@ class DxfReaderInterface final : public DRW_Interface
                         poly->setPainterPath(arcToPainterPath(e.p1, e.radius, e.startAng, e.endAng, e.isccw));
                         poly->set_lineWidth(0.0);
                         poly->set_fill(false);
+                        poly->setColor(qc);
                         poly->update();
                         insertElement(poly, target);
                         break;
@@ -836,6 +1009,7 @@ class DxfReaderInterface final : public DRW_Interface
                               poly->lineTo(poly->startPos());
                         poly->set_lineWidth(0.0);
                         poly->set_fill(e.flags & 1);
+                        poly->setColor(qc);
                         poly->update();
                         insertElement(poly, target);
                         break;
@@ -848,30 +1022,56 @@ class DxfReaderInterface final : public DRW_Interface
                         poly->lineTo(p);
                         poly->set_lineWidth(0.0);
                         poly->set_fill(false);
+                        poly->setColor(qc);
                         poly->update();
                         insertElement(poly, target);
                         break;
                         }
                   case BlockEntity::Type::Spline: {
-                        auto pts =
-                            DxfTess::evaluateSpline(e.degree, e.controlPoints, e.knots, curveResolution());
-                        if (pts.empty())
-                              break;
+                        // Convert control points to Vec2d and apply unit scale
+                        std::vector<Vec2d> ctrlPts;
+                        ctrlPts.reserve(e.controlPoints.size());
+                        for (const auto& c : e.controlPoints)
+                              ctrlPts.emplace_back(mm(c.x), mm(c.y));
+
+                        auto beziers = DxfTess::bsplineToCubicBeziers(e.degree, ctrlPts, e.knots);
+
                         auto* poly = new Polygon(m_zcam, m_parent);
                         poly->setName(elementName("BlockSpline"));
-                        bool firstV = true;
-                        for (const auto& pt : pts) {
-                              Vec2d p(mm(pt.x()), mm(pt.y()));
-                              if (firstV) {
-                                    poly->moveTo(p);
-                                    firstV = false;
+
+                        if (!beziers.empty()) {
+                              bool firstV = true;
+                              for (const auto& bz : beziers) {
+                                    if (firstV) {
+                                          poly->moveTo(bz.p0);
+                                          firstV = false;
+                                          }
+                                    poly->cubicTo(bz.p1, bz.p2, bz.p3);
                                     }
-                              else {
-                                    poly->lineTo(p);
+                              }
+                        else {
+                              // Fallback: tessellate for degree > 3
+                              auto pts = DxfTess::evaluateSpline(
+                                  e.degree, e.controlPoints, e.knots, curveResolution());
+                              if (pts.empty()) {
+                                    delete poly;
+                                    break;
+                                    }
+                              bool firstV = true;
+                              for (const auto& pt : pts) {
+                                    Vec2d p(mm(pt.x()), mm(pt.y()));
+                                    if (firstV) {
+                                          poly->moveTo(p);
+                                          firstV = false;
+                                          }
+                                    else {
+                                          poly->lineTo(p);
+                                          }
                                     }
                               }
                         poly->set_lineWidth(0.0);
                         poly->set_fill(false);
+                        poly->setColor(qc);
                         poly->update();
                         insertElement(poly, target);
                         break;
@@ -890,11 +1090,13 @@ class DxfReaderInterface final : public DRW_Interface
                               ell->set_pos(QVector3D(mm(e.p1.x), mm(e.p1.y), 0.0));
                               ell->set_size(QVector2D(majorR * 2.0, minorR * 2.0));
                               ell->set_rot(QVector3D(0.0, 0.0, rotDeg));
+                              ell->setColor(qc);
                               ell->update();
                               insertElement(ell, target);
                               }
                         else {
-                              PainterPath pp;
+                              // Elliptical arc: build in local space with addArc,
+                              // then rotate and translate control points.
                               double cx = mm(e.p1.x);
                               double cy = mm(e.p1.y);
                               double sa = e.staparam;
@@ -902,30 +1104,29 @@ class DxfReaderInterface final : public DRW_Interface
                               if (sa > ea)
                                     ea += 2.0 * std::numbers::pi;
                               double sweep = ea - sa;
-                              int segs     = DxfTess::ellipseSegments(sweep, circleResolution());
-                              double step  = sweep / segs;
-                              double cosR  = std::cos(rotation);
-                              double sinR  = std::sin(rotation);
-                              bool firstPt = true;
-                              for (int i = 0; i <= segs; ++i) {
-                                    double t  = sa + step * i;
-                                    double ex = majorR * std::cos(t);
-                                    double ey = minorR * std::sin(t);
-                                    double rx = ex * cosR - ey * sinR;
-                                    double ry = ex * sinR + ey * cosR;
-                                    Vec2d pt(rx + cx, ry + cy);
-                                    if (firstPt) {
-                                          pp.moveTo(pt);
-                                          firstPt = false;
-                                          }
-                                    else
-                                          pp.lineTo(pt);
+
+                              double startDeg = sa * 180.0 / std::numbers::pi;
+                              double sweepDeg = sweep * 180.0 / std::numbers::pi;
+
+                              QRectF arcRect(-majorR, -minorR, 2.0 * majorR, 2.0 * minorR);
+                              PainterPath localPp;
+                              localPp.addArc(arcRect, startDeg, -sweepDeg);
+
+                              double cosR = std::cos(rotation);
+                              double sinR = std::sin(rotation);
+                              PainterPath pp;
+                              pp.reserve(localPp.size());
+                              for (const auto& elem : localPp) {
+                                    double rx = elem.pos.x() * cosR - elem.pos.y() * sinR;
+                                    double ry = elem.pos.x() * sinR + elem.pos.y() * cosR;
+                                    pp.push_back({elem.type, Vec2d(rx + cx, ry + cy)});
                                     }
                               auto* poly = new Polygon(m_zcam, m_parent);
                               poly->setName(elementName("BlockEllipseArc"));
                               poly->setPainterPath(pp);
                               poly->set_lineWidth(0.0);
                               poly->set_fill(false);
+                              poly->setColor(qc);
                               poly->update();
                               insertElement(poly, target);
                               }
@@ -940,6 +1141,7 @@ class DxfReaderInterface final : public DRW_Interface
                         double h                    = mm(e.height);
                         constexpr double mmPerPoint = 0.352778;
                         textEl->set_pointSize(h / mmPerPoint);
+                        textEl->setColor(qc);
                         textEl->update();
                         insertElement(textEl, target);
                         break;
@@ -958,7 +1160,7 @@ class DxfReaderInterface final : public DRW_Interface
       //   addTextEntity
       //---------------------------------------------------------
       void addTextEntity(const DRW_Coord& pos, double height, const std::string& txt, double /*angle*/,
-                         const std::string& layer) {
+          const std::string& layer, int entityColor = 256) {
             if (txt.empty())
                   return;
             auto* textEl = new Text(m_zcam, m_parent);
@@ -972,8 +1174,10 @@ class DxfReaderInterface final : public DRW_Interface
             // 1 pt = 0.352778 mm.
             constexpr double mmPerPoint = 0.352778;
             textEl->set_pointSize(h / mmPerPoint);
+            int rc = resolveColor(entityColor, layer);
+            textEl->setColor(aciToQColor(rc));
             textEl->update();
-            insertElement(textEl, entityParent(layer));
+            insertElement(textEl, entityParent(layer, rc));
             }
       //
       //---------------------------------------------------------
@@ -986,12 +1190,15 @@ class DxfReaderInterface final : public DRW_Interface
             }
       //---------------------------------------------------------
       //   arcToPainterPath
-      //    Tessellate an arc described by center, radius and the
+      //    Convert an arc described by center, radius and the
       //    start/end angles (radians, drawing units) into a
-      //    PainterPath.
+      //    PainterPath using exact cubic Bézier segments.
+      //    A circular arc is represented by at most 4 cubic
+      //    Bézier segments (one per 90° quadrant), regardless
+      //    of the configured circle resolution.
       //---------------------------------------------------------
-      PainterPath arcToPainterPath(const DRW_Coord& center, double radius, double startAngle, double endAngle,
-                                   int isccw) {
+      PainterPath arcToPainterPath(
+          const DRW_Coord& center, double radius, double startAngle, double endAngle, int isccw) {
             PainterPath pp;
             double r = mm(radius);
             if (r <= 0.0)
@@ -1008,25 +1215,26 @@ class DxfReaderInterface final : public DRW_Interface
             if (sa > ea)
                   ea += 2.0 * std::numbers::pi;
             double sweep = ea - sa;
-            int segs     = DxfTess::circleSegments(sweep, circleResolution());
-            double step  = sweep / segs;
 
-            bool first = true;
-            for (int i = 0; i <= segs; ++i) {
-                  double a = sa + step * i;
-                  Vec2d pt(std::cos(a) * r + cx, std::sin(a) * r + cy);
-                  if (first) {
-                        pp.moveTo(pt);
-                        first = false;
-                        }
-                  else
-                        pp.lineTo(pt);
-                  }
+            // Convert to degrees for Qt's addArc which expects degrees.
+            // Qt's coordinate system has Y pointing downward, so a CCW
+            // arc in the standard math sense (Y up) is a CW arc in Qt's
+            // sense (Y down).  We pass a negative sweep to draw CCW.
+            double startDeg = sa * 180.0 / std::numbers::pi;
+            double sweepDeg = sweep * 180.0 / std::numbers::pi;
+
+            QRectF rect(cx - r, cy - r, 2.0 * r, 2.0 * r);
+            pp.addArc(rect, startDeg, -sweepDeg);
             return pp;
             }
       //---------------------------------------------------------
       //   ellipseArcToPainterPath
-      //    Tessellate an elliptical arc into a PainterPath.
+      //    Convert an elliptical arc into a PainterPath using
+      //    cubic Bézier segments.  The arc is first built in
+      //    the ellipse's local (axis-aligned) coordinate system
+      //    using addArc, then all control points are rotated by
+      //    the ellipse's rotation angle and translated to the
+      //    ellipse center.
       //---------------------------------------------------------
       PainterPath ellipseArcToPainterPath(const DRW_Ellipse& data) {
             PainterPath pp;
@@ -1037,42 +1245,46 @@ class DxfReaderInterface final : public DRW_Interface
             double cx       = mm(data.basePoint.x);
             double cy       = mm(data.basePoint.y);
 
+            if (majorR <= 0.0 || minorR <= 0.0)
+                  return pp;
+
             double sa = data.staparam;
             double ea = data.endparam;
             if (sa > ea)
                   ea += 2.0 * std::numbers::pi;
             double sweep = ea - sa;
 
-            int segs    = DxfTess::ellipseSegments(sweep, circleResolution());
-            double step = sweep / segs;
+            // Build the arc in the local axis-aligned coordinate system.
+            // The ellipse is centred at origin with rx=majorR, ry=minorR.
+            double startDeg = sa * 180.0 / std::numbers::pi;
+            double sweepDeg = sweep * 180.0 / std::numbers::pi;
+
+            QRectF rect(-majorR, -minorR, 2.0 * majorR, 2.0 * minorR);
+            PainterPath localPp;
+            localPp.addArc(rect, startDeg, -sweepDeg);
+
+            // Rotate and translate all control points
             double cosR = std::cos(rotation);
             double sinR = std::sin(rotation);
-
-            bool first = true;
-            for (int i = 0; i <= segs; ++i) {
-                  double t  = sa + step * i;
-                  double ex = majorR * std::cos(t);
-                  double ey = minorR * std::sin(t);
-                  // Rotate
-                  double rx = ex * cosR - ey * sinR;
-                  double ry = ex * sinR + ey * cosR;
-                  Vec2d pt(rx + cx, ry + cy);
-                  if (first) {
-                        pp.moveTo(pt);
-                        first = false;
-                        }
-                  else
-                        pp.lineTo(pt);
+            pp.reserve(localPp.size());
+            for (const auto& elem : localPp) {
+                  double rx = elem.pos.x() * cosR - elem.pos.y() * sinR;
+                  double ry = elem.pos.x() * sinR + elem.pos.y() * cosR;
+                  pp.push_back({elem.type, Vec2d(rx + cx, ry + cy)});
                   }
             return pp;
             }
       //---------------------------------------------------------
       //   arcBulgeTo
       //    Given a bulge value between prev and current point,
-      //    tessellate the arc segment and append to the polygon.
+      //    append a circular arc as exact cubic Bézier segment(s)
+      //    to the polygon's painter path.
+      //
+      //    bulge = tan(theta/4) where theta is the included angle.
+      //    The arc is a circular segment represented by cubic
+      //    Bézier segments using the Kappa constant.
       //---------------------------------------------------------
       void arcBulgeTo(Polygon& poly, const Vec2d& prev, const Vec2d& curr, double bulge) {
-            // bulge = tan(theta/4) where theta is the included angle
             double dx    = curr.x() - prev.x();
             double dy    = curr.y() - prev.y();
             double chord = std::sqrt(dx * dx + dy * dy);
@@ -1082,42 +1294,201 @@ class DxfReaderInterface final : public DRW_Interface
             double theta = 4.0 * std::atan(std::abs(bulge));
             double r     = chord / (2.0 * std::sin(theta / 2.0));
 
-            // Center of arc
-            double midx = (prev.x() + curr.x()) / 2.0;
-            double midy = (prev.y() + curr.y()) / 2.0;
-            // Direction perpendicular to chord
+            double midx  = (prev.x() + curr.x()) / 2.0;
+            double midy  = (prev.y() + curr.y()) / 2.0;
             double perpX = -dy / chord;
             double perpY = dx / chord;
-            // Distance from midpoint to center
-            double dist = r * std::cos(theta / 2.0);
-            // Sign depends on bulge sign
-            double sign = (bulge > 0) ? 1.0 : -1.0;
-            double cx   = midx + sign * perpX * dist;
-            double cy   = midy + sign * perpY * dist;
+            double dist  = r * std::cos(theta / 2.0);
+            double sign  = (bulge > 0) ? 1.0 : -1.0;
+            double cx    = midx + sign * perpX * dist;
+            double cy    = midy + sign * perpY * dist;
 
             double startAng = std::atan2(prev.y() - cy, prev.x() - cx);
             double endAng   = std::atan2(curr.y() - cy, curr.x() - cx);
 
-            // Ensure correct direction
             if (bulge > 0) {
-                  // CCW
                   if (endAng < startAng)
                         endAng += 2.0 * std::numbers::pi;
                   }
             else {
-                  // CW
                   if (endAng > startAng)
                         endAng -= 2.0 * std::numbers::pi;
                   }
 
-            int segs    = DxfTess::circleSegments(std::abs(endAng - startAng), circleResolution());
-            double step = (endAng - startAng) / segs;
+            double startDeg = startAng * 180.0 / std::numbers::pi;
+            double sweepDeg = (endAng - startAng) * 180.0 / std::numbers::pi;
 
-            for (int i = 1; i <= segs; ++i) {
-                  double a = startAng + step * i;
-                  poly.lineTo(Vec2d(std::cos(a) * r + cx, std::sin(a) * r + cy));
-                  }
+            QRectF rect(cx - r, cy - r, 2.0 * r, 2.0 * r);
+            PainterPath arcPp;
+            arcPp.addArc(rect, startDeg, -sweepDeg);
+            // Skip the MoveTo (first element) and append the rest
+            poly.appendPainterPath(arcPp, true);
             }
+      //---------------------------------------------------------
+      //   flushLines
+      //    Merge buffered LINE entities into connected polylines.
+      //    Lines whose end point matches the start of another line
+      //    (within tolerance) are chained into a single Polygon,
+      //    drastically reducing the number of elements when a DXF
+      //    file contains thousands of small line segments.
+      //---------------------------------------------------------
+
+    public:
+      void flushLines() {
+            if (m_lineBuffer.empty())
+                  return;
+
+            constexpr double tol = 0.01; // mm
+            // Group lines by (layer, resolved-color) so lines of different
+            // colors are never chained together.
+            struct LayerColorKey {
+                  std::string layer;
+                  int color;
+                  bool operator==(const LayerColorKey&) const = default;
+                  };
+            struct LayerColorKeyHash {
+                  size_t operator()(const LayerColorKey& k) const {
+                        size_t h  = std::hash<std::string>()(k.layer);
+                        h        ^= std::hash<int>()(k.color) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                        return h;
+                        }
+                  };
+            std::unordered_map<LayerColorKey, std::vector<size_t>, LayerColorKeyHash> byLayerColor;
+            for (size_t i = 0; i < m_lineBuffer.size(); ++i) {
+                  int rc = resolveColor(m_lineBuffer[i].color, m_lineBuffer[i].layer);
+                  byLayerColor[{m_lineBuffer[i].layer, rc}].push_back(i);
+                  }
+
+            for (auto& [key, indices] : byLayerColor) {
+                  if (indices.empty())
+                        continue;
+
+                  // Build chains: greedily connect end→start points
+                  std::vector<bool> used(indices.size(), false);
+                  std::vector<std::vector<size_t>> chains;
+
+                  for (size_t seed = 0; seed < indices.size(); ++seed) {
+                        if (used[seed])
+                              continue;
+                        used[seed]                = true;
+                        std::vector<size_t> chain = {indices[seed]};
+                        const LineSeg* tail       = &m_lineBuffer[indices[seed]];
+
+                        // Forward chain: tail.p2 → next.p1
+                        for (;;) {
+                              bool found = false;
+                              for (size_t j = 0; j < indices.size(); ++j) {
+                                    if (used[j])
+                                          continue;
+                                    const LineSeg& ls = m_lineBuffer[indices[j]];
+                                    if (std::abs(tail->p2.x() - ls.p1.x()) < tol &&
+                                        std::abs(tail->p2.y() - ls.p1.y()) < tol) {
+                                          used[j] = true;
+                                          chain.push_back(indices[j]);
+                                          tail  = &ls;
+                                          found = true;
+                                          break;
+                                          }
+                                    // Also try reversed: tail.p2 → ls.p2
+                                    if (std::abs(tail->p2.x() - ls.p2.x()) < tol &&
+                                        std::abs(tail->p2.y() - ls.p2.y()) < tol) {
+                                          used[j] = true;
+                                          // Reverse this segment
+                                          m_lineBuffer[indices[j]] = {ls.p2, ls.p1, ls.layer, ls.color};
+                                          chain.push_back(indices[j]);
+                                          tail  = &m_lineBuffer[indices[j]];
+                                          found = true;
+                                          break;
+                                          }
+                                    }
+                              if (!found)
+                                    break;
+                              }
+
+                        // Backward chain: chain.front().p1 ← prev.p2
+                        const LineSeg* head = &m_lineBuffer[chain.front()];
+                        for (;;) {
+                              bool found = false;
+                              for (size_t j = 0; j < indices.size(); ++j) {
+                                    if (used[j])
+                                          continue;
+                                    const LineSeg& ls = m_lineBuffer[indices[j]];
+                                    if (std::abs(head->p1.x() - ls.p2.x()) < tol &&
+                                        std::abs(head->p1.y() - ls.p2.y()) < tol) {
+                                          used[j] = true;
+                                          chain.insert(chain.begin(), indices[j]);
+                                          head  = &m_lineBuffer[indices[j]];
+                                          found = true;
+                                          break;
+                                          }
+                                    // Also try reversed: head.p1 ← ls.p1
+                                    if (std::abs(head->p1.x() - ls.p1.x()) < tol &&
+                                        std::abs(head->p1.y() - ls.p1.y()) < tol) {
+                                          used[j]                  = true;
+                                          m_lineBuffer[indices[j]] = {ls.p2, ls.p1, ls.layer, ls.color};
+                                          chain.insert(chain.begin(), indices[j]);
+                                          head  = &m_lineBuffer[indices[j]];
+                                          found = true;
+                                          break;
+                                          }
+                                    }
+                              if (!found)
+                                    break;
+                              }
+
+                        chains.push_back(std::move(chain));
+                        }
+
+                  // Create one Polygon per chain
+                  int polyCount = 0;
+                  for (const auto& chain : chains) {
+                        if (chain.empty())
+                              continue;
+                        auto* poly = new Polygon(m_zcam, m_parent);
+                        poly->setName(elementName("Lines"));
+                        bool first = true;
+                        for (size_t idx : chain) {
+                              const LineSeg& ls = m_lineBuffer[idx];
+                              if (first) {
+                                    poly->moveTo(ls.p1);
+                                    poly->lineTo(ls.p2);
+                                    first = false;
+                                    }
+                              else {
+                                    poly->lineTo(ls.p2);
+                                    }
+                              }
+                        // Check if closed
+                        Vec2d start = m_lineBuffer[chain.front()].p1;
+                        Vec2d end   = m_lineBuffer[chain.back()].p2;
+                        bool closed =
+                            std::abs(start.x() - end.x()) < tol && std::abs(start.y() - end.y()) < tol;
+                        if (closed)
+                              poly->set_fill(false); // don't fill by default
+                        poly->set_lineWidth(0.0);
+                        poly->set_fill(false);
+                        poly->setColor(aciToQColor(key.color));
+                        poly->update();
+                        insertElement(poly, entityParent(key.layer, key.color));
+                        ++polyCount;
+                        }
+
+                  Debug("DXF Lines on layer '{}' color {}: {} segments → {} polylines", key.layer, key.color,
+                      indices.size(), polyCount);
+                  }
+            m_lineBuffer.clear();
+            }
+      //---------------------------------------------------------
+      //   logImportStats
+      //---------------------------------------------------------
+      void logImportStats() const {
+            Debug("DXF entity counts: Line={} Arc={} Circle={} Ellipse={} LWPoly={} Poly={} Spline={} "
+                  "Insert={} Point={}",
+                m_entityCounts[0], m_entityCounts[1], m_entityCounts[2], m_entityCounts[3], m_entityCounts[4],
+                m_entityCounts[5], m_entityCounts[6], m_entityCounts[7], m_entityCounts[8]);
+            }
+
+    private:
       //---------------------------------------------------------
       //   unitToMm
       //    Convert DRW_Header::Units $INSUNITS value to mm scale.
@@ -1151,6 +1522,28 @@ class DxfReaderInterface final : public DRW_Interface
       };
 
 //---------------------------------------------------------
+//   optimizeAllPolygons
+//    Recursively find every Polygon below `root` and call
+//    optimize() on it.  optimize() performs two exact,
+//    visually lossless reductions:
+//      1) A cubic-bezier segment whose control points both lie
+//         on the chord (start → end) collapses to a single LineTo.
+//      2) Two consecutive straight segments A → B → C whose three
+//         anchors are collinear merge into A → C, removing vertex B.
+//    No-ops (no undo entry) for polygons that already have no
+//    redundant vertices or curves.
+//---------------------------------------------------------
+
+static void optimizeAllPolygons(Element* root) {
+      if (!root)
+            return;
+      if (auto* poly = qobject_cast<Polygon*>(root))
+            poly->optimize();
+      for (Element* child : root->children())
+            optimizeAllPolygons(child);
+      }
+
+//---------------------------------------------------------
 //   DxfImport::import
 //    Public entry point. Creates a Layer for the DXF file,
 //    reads all entities via libdxfrw, and links a LaserLayer.
@@ -1168,81 +1561,196 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
 
       Cad* cad = zcam->project()->cad();
 
-      // Create a new Layer for this DXF file
-      auto* layer = new Group(zcam, cad);
+      // Create a new Layer for this DXF file.  The layer is not yet
+      // added to the CAD tree; it will be inserted undoably at the
+      // end after the entire element tree has been built.
+      auto* layer = new Group(zcam, nullptr);
       layer->setName(fi.baseName());
       layer->setExpanded(true);
 
-      // All undo commands generated during the DXF import (layer insertion,
-      // laser layer insertion, and individual entity insertions) are wrapped
-      // in a single macro so the entire import can be undone as one operation.
-      zcam->project()->undo()->beginMacro();
-            {
-            auto cmd = new InsertElementCommand(zcam, cad, layer, -1);
-            zcam->project()->undo()->push(cmd);
-            }
-
-      // Create a LaserLayer linked to this Layer
+      // Create a LaserLayer linked to this Layer.  Like the layer
+      // itself, the LaserMop is not yet added to the fixture; it will
+      // be inserted undoably at the end.  If the DXF contains multiple
+      // entity colours, one LaserMop per colour is created and linked
+      // to the corresponding colour sub-group so that cut and mark
+      // operations can use different recipes / power levels.
       Fixture* fixture = zcam->project()->fixture();
       if (!fixture) {
             if (!zcam->project()->fixtures().empty())
                   fixture = zcam->project()->fixtures().at(0);
             }
+      LaserMop* laserMop {nullptr};
+      std::vector<LaserMop*> extraMops; ///< per-colour LaserMops (owned until inserted)
       if (fixture) {
-            auto* ll = new LaserMop(zcam, fixture);
-            ll->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
-            ll->setExpanded(false);
-            layer->set_laserLayer(ll);
-            ll->set_kerfOffset(-0.05);
-            auto cmd = new InsertElementCommand(zcam, fixture, ll, -1);
-            zcam->project()->undo()->push(cmd);
+            laserMop = new LaserMop(zcam, nullptr);
+            laserMop->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
+            laserMop->setExpanded(false);
+            layer->set_mop(laserMop);
+            laserMop->set_kerfOffset(-0.05);
             }
 
-      // Read the DXF file using libdxfrw in batch mode: entities are
-      // added directly to the tree without per-entity undo commands,
-      // TreeModel notifications, or script-engine namespace updates.
-      // After the read, the TreeModel is reset once, the script namespace
-      // is rebuilt once, and a single add3dElement signal is emitted for
-      // the import layer so QML recursively builds the entire subtree.
+      // Read the DXF file: entities are added directly to the layer
+      // tree without per-entity undo commands, TreeModel notifications,
+      // or script-engine namespace updates.
       DxfReaderInterface reader(zcam, layer, fi.baseName());
-      reader.m_batch = true;
 
       // Suppress per-entity script-engine overhead (applyDefaultScripts
-      // and addElementToTree) during the batch read.
-      ScriptEngine* se = ScriptEngine::instance();
+      // and addElementToTree) during the read.
+      ScriptEngine* se     = ScriptEngine::instance();
       bool savedRebuilding = se ? se->_rebuilding : false;
       if (se)
             se->_rebuilding = true;
 
       dxfRW dxf(path.toUtf8().constData());
+      Debug("==========================");
       bool ok = dxf.read(&reader, false);
+      Debug("==========================");
 
-      // Restore script-engine state and rebuild the namespace once.
+      // Restore script-engine state and rebuild the namespace once
+      // for the entire subtree.
       if (se) {
             se->_rebuilding = savedRebuilding;
             if (ok)
                   se->registerSubtree(layer);
             }
 
-      // Reset the TreeModel once so the view picks up all new
-      // children in a single O(N) pass instead of O(N²) per-entity
-      // beginInsertRows/endInsertRows calls.
-      if (ok && zcam->treeModel())
-            zcam->treeModel()->resetModel();
+      // Flush buffered LINE entities into merged polylines
+      reader.logImportStats();
+      reader.flushLines();
 
-      // Emit a single add3dElement for the import layer.  QML's
-      // addElement() recursively creates Shape components for the
-      // layer and all its children, so individual per-entity signals
-      // are not needed.
+      // Create per-colour LaserMops: for each colour sub-group found
+      // during the import, create a LaserMop linked to that sub-group.
+      // The first (or only) colour's LaserMop is the one already set on
+      // the top-level layer (laserMop); additional colours get their
+      // own LaserMops linked to the corresponding sub-group.
+      const auto& colorGroups = reader.colorGroups();
+      if (fixture && colorGroups.size() > 1) {
+            // Multiple colours: link the existing laserMop to the first
+            // colour group, and create additional LaserMops for the rest.
+            // Determine sensible defaults based on colour semantics:
+            //   ACI 0 (BYBLOCK) → Default cut (kerfOffset, burn=true)
+            //   ACI 4 (Cyan) → Cut (kerfOffset, burn=true)
+            //   ACI 7 (White) → Mark (kerfOffset=0, burn=true)
+            //   others → Default cut (burn=true)
+            auto mopDefaults = [](int aci) {
+                  struct Defaults {
+                        double kerf;
+                        bool burn;
+                        };
+                  switch (aci) {
+                        case 0: return Defaults {-0.05, true};  // BYBLOCK → Default cut
+                        case 4: return Defaults {-0.05, true};  // Cyan → Cut
+                        case 7: return Defaults {0.0, true};    // White → Mark
+                        default: return Defaults {-0.05, true}; // others → Default cut
+                        }
+                  };
+
+            // Track colour indices used by the Mops we create so each
+            // new Mop gets a unique colour from the configured Mop
+            // palette.  The existing laserMop was already assigned a
+            // colour by its constructor via nextFreeColorIndex(); we
+            // pick up from there.
+            int nextColorIdx = laserMop ? laserMop->colorIndex() : 1;
+
+            for (size_t i = 0; i < colorGroups.size(); ++i) {
+                  const auto& cg    = colorGroups[i];
+                  auto [kerf, burn] = mopDefaults(cg.aci);
+                  if (i == 0) {
+                        // Use the existing laserMop for the first colour group
+                        cg.group->set_mop(laserMop);
+                        laserMop->set_kerfOffset(kerf);
+                        laserMop->set_burn(burn);
+                        Debug("DXF: linked LaserMop '{}' to colour group '{}' (aci={}, kerf={}, burn={})",
+                            laserMop->name().toUtf8().data(), cg.group->name().toUtf8().data(), cg.aci, kerf,
+                            burn);
+                        }
+                  else {
+                        auto* mop = new LaserMop(zcam, nullptr);
+                        mop->setName(QStringLiteral("LL-%1-%2")
+                                .arg(fi.baseName(), DxfReaderInterface::aciLabel(cg.aci)));
+                        mop->setExpanded(false);
+                        mop->set_kerfOffset(kerf);
+                        mop->set_burn(burn);
+                        // Assign the next unique colour index.  The
+                        // LaserMop constructor already called
+                        // nextFreeColorIndex against the existing project
+                        // tree, but since this Mop is not yet in the tree
+                        // we must advance the index manually to avoid
+                        // collisions with previously created Mops in
+                        // this import.
+                        nextColorIdx = (nextColorIdx % Mop::mopColorCount()) + 1;
+                        if (nextColorIdx == 0)
+                              nextColorIdx = 1;
+                        mop->set_colorIndex(nextColorIdx);
+                        cg.group->set_mop(mop);
+                        extraMops.push_back(mop);
+                        Debug("DXF: created LaserMop '{}' for colour group '{}' (aci={}, colorIdx={}, kerf={}, burn={})",
+                            mop->name().toUtf8().data(), cg.group->name().toUtf8().data(), cg.aci,
+                            nextColorIdx, kerf, burn);
+                        }
+                  }
+            }
+      else if (fixture && !colorGroups.empty()) {
+            // Single colour: link the existing laserMop to the single colour group
+            colorGroups[0].group->set_mop(laserMop);
+            Debug("DXF: linked single LaserMop '{}' to colour group '{}'", laserMop->name().toUtf8().data(),
+                colorGroups[0].group->name().toUtf8().data());
+            }
+
+      // Simplify every imported polygon: collapse degenerate bezier
+      // segments to straight lines and merge consecutive collinear
+      // vertices into a single segment.  optimize() is a no-op (no
+      // undo entry, no signal) for polygons that are already clean.
+      // Done before the insert-undo-macro so the optimisation commands
+      // sit *behind* the import command on the undo stack — undoing the
+      // import removes the layer and makes the stale optimisation
+      // commands inert.
       if (ok)
-            emit zcam->add3dElement(layer);
+            optimizeAllPolygons(layer);
 
+      if (!ok) {
+            // The read failed: the layer and all its children are not
+            // in the project tree (no Qt parent owns them via addChild),
+            // so delete the layer to avoid a leak.  The LaserMop was
+            // created with nullptr parent and is not in any tree, so it
+            // would be leaked if not deleted here.  The layer holds a
+            // pointer to the LaserMop via set_mop() but does not take
+            // Qt ownership, so delete it explicitly.
+            for (auto* mop : extraMops)
+                  delete mop;
+            delete laserMop;
+            delete layer;
+            Critical("DXF import failed: {}", path.toUtf8().data());
+            return false;
+            }
+
+      // Add the top-level layer and its linked LaserMop(s) to the project
+      // with a single undoable command pair wrapped in a macro so the
+      // entire import can be undone as one operation.
+      zcam->project()->undo()->beginMacro();
+      zcam->project()->undo()->push(new InsertElementCommand(zcam, cad, layer, -1));
+      if (fixture && laserMop)
+            zcam->project()->undo()->push(new InsertElementCommand(zcam, fixture, laserMop, -1));
+      for (auto* mop : extraMops)
+            zcam->project()->undo()->push(new InsertElementCommand(zcam, fixture, mop, -1));
       zcam->project()->undo()->endMacro();
 
-      if (!ok)
-            Critical("DXF import failed: {}", path.toUtf8().data());
-      else
-            Debug("DXF import completed: {}", path.toUtf8().data());
+      Debug("DXF import completed: {}", path.toUtf8().data());
+
+      // Dump the resulting element tree
+      std::function<void(Element*, int)> dumpTree = [&](Element* el, int depth) -> void {
+            QString indent;
+            indent.fill(' ', depth * 2);
+            QString typeName = qobject_cast<Element3d*>(el)
+                                   ? const_cast<Element3d*>(qobject_cast<Element3d*>(el))->typeName()
+                                   : "element";
+            Debug("{}{} '{}'", indent, typeName, el->name());
+            for (const auto* child : el->children())
+                  dumpTree(const_cast<Element*>(child), depth + 1);
+            };
+      Debug("=== DXF import tree ===");
+      dumpTree(layer, 0);
+      Debug("=== end tree ===");
 
       return ok;
       }
@@ -1254,7 +1762,6 @@ bool DxfImport::import(ZCam* zcam, const QString& path) {
 //    file.  It mirrors the unit-scale logic of
 //    DxfReaderInterface so the bounding box is in mm.
 //=========================================================
-
 class DxfBBoxCollector final : public DRW_Interface
       {
       double m_unitScale {1.0};
@@ -1340,12 +1847,15 @@ class DxfBBoxCollector final : public DRW_Interface
       void addTextStyle(const DRW_Textstyle&) override {}
       void addAppId(const DRW_AppId&) override {}
       void addBlock(const DRW_Block& data) override {
+            Debug("DXF BLOCK begin: '{}'", data.name);
             m_currentBlockName = data.name;
             m_blocks[m_currentBlockName].clear();
             m_inBlock = true;
             }
       void setBlock(int) override {}
       void endBlock() override {
+            Debug("DXF BLOCK end: '{}' ({} entities collected)", m_currentBlockName,
+                m_blocks[m_currentBlockName].size());
             m_inBlock = false;
             m_currentBlockName.clear();
             }
@@ -1546,8 +2056,8 @@ class DxfBBoxCollector final : public DRW_Interface
                               expand(c.first + r * std::cos(sa), c.second + r * std::sin(sa));
                               expand(c.first + r * std::cos(ea), c.second + r * std::sin(ea));
                               // Axis-crossing points within sweep
-                              for (double a : {0.0, std::numbers::pi / 2, std::numbers::pi,
-                                               3.0 * std::numbers::pi / 2}) {
+                              for (double a :
+                                        {0.0, std::numbers::pi / 2, std::numbers::pi, 3.0 * std::numbers::pi / 2}) {
                                     double na = a;
                                     while (na < sa)
                                           na += 2.0 * std::numbers::pi;
@@ -1639,10 +2149,12 @@ QRectF DxfImport::boundingBox(ZCam* zcam, const QString& path) {
       double dxfScale = zcam->config() ? zcam->config()->dxfScale() : 72.0;
       DxfBBoxCollector collector(dxfScale);
       dxfRW dxf(path.toUtf8().constData());
+      Debug("=========================================");
       if (!dxf.read(&collector, false)) {
             Warning("DxfImport::boundingBox: failed to read DXF: {}", path.toUtf8().constData());
             return {};
             }
+      Debug("=========================================");
       return collector.result();
       }
 

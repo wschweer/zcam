@@ -56,7 +56,7 @@ class Group : public Element3d
                       "label": "Mop",
                       "cells": [
                         {
-                          "name": "laserLayer",
+                          "name": "mop",
                           "type": "laserLayer",
                           "default": ""
                         }
@@ -146,16 +146,6 @@ class Group : public Element3d
                   ]
                       })json"};
 
-    public:
-      Group(ZCam*, Element* parent = nullptr);
-      virtual QString typeName() override { return QStringLiteral("group"); }
-      virtual const std::string_view properties() const override { return _properties; }
-      Q_INVOKABLE virtual bool deletable() const override { return true; }
-      Q_INVOKABLE virtual bool visible() const override { return true; }
-      Q_INVOKABLE bool draggable() const override { return true; }
-    public slots:
-      void update(int flags = -1) override;
-
     private slots:
       // Called when any child's geometry or visibility changes so
       // the Group's selection bounding box stays in sync.
@@ -163,6 +153,17 @@ class Group : public Element3d
 
     protected:
       void updateSelectionGeometry() override;
+
+    public slots:
+      void update(int flags = -1) override;
+
+    public:
+      Group(ZCam*, Element* parent = nullptr);
+      virtual QString typeName() override { return QStringLiteral("group"); }
+      virtual const std::string_view properties() const override { return _properties; }
+      Q_INVOKABLE virtual bool deletable() const override { return true; }
+      Q_INVOKABLE virtual bool visible() const override { return true; }
+      Q_INVOKABLE bool draggable() const override { return true; }
       };
 
 extern Clipper2Lib::PathD wobble(const Clipper2Lib::PathD& path, double step, double r);

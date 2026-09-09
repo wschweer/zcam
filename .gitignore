@@ -7,6 +7,7 @@ zcam.log*
 .nped-log*
 .nped.log*
 .qmlls.ini
+NPED.md
 LOG
 mops*
 *.zcam

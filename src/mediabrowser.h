@@ -19,6 +19,9 @@
 #include <QHash>
 #include <QSet>
 #include <QVariantList>
+#include <QRawFont>
+#include <QFont>
+#include <QChar>
 #include <memory>
 #include <vector>
 
@@ -174,4 +177,71 @@ class ArtworkTreeModel : public QAbstractItemModel
       QString _rootPath;
       std::unique_ptr<ArtworkNode> _root;
       QStringList _imageExtensions {"svg", "png", "dxf", "SVG", "PNG", "DXF"};
+      };
+
+//---------------------------------------------------------
+//   GlyphTableModel
+//    Provides a list of all available glyphs (characters)
+//    for a given font family and style.  Uses QRawFont to
+//    query the actual glyph indices present in the font
+//    file, so only characters that have real outlines are
+//    shown.  The model is consumed by the MediaFontsPanel
+//    QML component to display a flickable glyph table.
+//---------------------------------------------------------
+
+class GlyphTableModel : public QAbstractListModel
+      {
+      Q_OBJECT
+      QML_ELEMENT
+
+      Q_PROPERTY(QString family READ family WRITE setFamily NOTIFY familyChanged)
+      Q_PROPERTY(QString style READ style WRITE setStyle NOTIFY styleChanged)
+      Q_PROPERTY(int glyphCount READ glyphCount NOTIFY glyphCountChanged)
+
+    public:
+      //--------------------------------------------------------------------
+      //     GlyphTableModel::Roles
+      //--------------------------------------------------------------------
+      enum Roles {
+            CharacterRole = Qt::UserRole + 1, // the QChar itself
+            CodepointRole,                    // unsigned int unicode codepoint
+            GlyphIndexRole,                   // glyph index in the font
+            HexCodeRole,                      // hex string e.g. "U+0041"
+            CharacterNameRole,                // Unicode character name (best effort)
+            };
+      Q_ENUM(Roles)
+
+      explicit GlyphTableModel(QObject* parent = nullptr);
+
+      int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+      QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+      QHash<int, QByteArray> roleNames() const override;
+      QString family() const { return _family; }
+      void setFamily(const QString& v);
+      QString style() const { return _style; }
+      void setStyle(const QString& v);
+      int glyphCount() const { return static_cast<int>(_glyphs.size()); }
+    signals:
+      void familyChanged();
+      void styleChanged();
+      void glyphCountChanged();
+
+    private:
+      //--------------------------------------------------------------------
+      //     GlyphTableModel::GlyphEntry
+      //--------------------------------------------------------------------
+      struct GlyphEntry {
+            uint32_t codepoint;
+            uint32_t glyphIndex;
+            QString hexCode;
+            QString charName;
+            };
+      void rebuildGlyphList();
+      static QString codepointToHex(uint32_t cp);
+      static QString codepointToName(uint32_t cp);
+
+      QString _family;
+      QString _style;
+      QRawFont _rawFont;
+      std::vector<GlyphEntry> _glyphs;
       };

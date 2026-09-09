@@ -21,6 +21,8 @@ Item {
 
     property real previewScale: 1.0
     property string selectedFamily: ""
+    property bool glyphTableExpanded: true
+    property int glyphCellSize: 56
 
     // Emitted when the user explicitly wants to apply the selected font
     // to the currently selected Text element in the project tree.
@@ -30,14 +32,21 @@ Item {
         id: fontModel
         }
 
+    GlyphTableModel {
+        id: glyphModel
+        family: root.selectedFamily
+        style: fontModel.currentStyle
+        }
+
     Settings {
         id: fontSettings
         category: "MediaFontsPanel"
         property string currentFamily: ""
         property string currentStyle: ""
         property bool showFavorites: false
-        property string sampleText: "The quick brown fox jumps over the lazy dog"
+        property string sampleText: "The quick brown fox jumps over the lazy dog\nPack my box with five dozen liquor jugs\nHow vexingly quick daft zebras jump!\nThe five boxing wizards jump quickly."
         property real previewScale: 1.0
+        property bool glyphTableExpanded: true
         property var splitState
         }
 
@@ -59,6 +68,7 @@ Item {
         fontModel.currentStyle = fontSettings.currentStyle
         fontModel.showFavorites = fontSettings.showFavorites
         root.previewScale = fontSettings.previewScale
+        root.glyphTableExpanded = fontSettings.glyphTableExpanded
         if (fontSettings.splitState)
             splitView.restoreState(fontSettings.splitState)
         updateCurrentIndex()
@@ -78,6 +88,7 @@ Item {
         }
 
     onPreviewScaleChanged: fontSettings.previewScale = root.previewScale
+    onGlyphTableExpandedChanged: fontSettings.glyphTableExpanded = root.glyphTableExpanded
 
     SplitView {
         id: splitView
@@ -152,13 +163,10 @@ Item {
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     onCurrentIndexChanged: {
-                        console.log("currentIndex changed:", currentIndex)
                         var family = fontModel.familyAt(currentIndex)
-                        console.log("family from model:", family)
                         if (family === undefined || family === null)
                             family = ""
                         root.selectedFamily = family
-                        console.log("selectedFamily:", root.selectedFamily)
                         if (family !== fontModel.currentFamily)
                             fontModel.currentFamily = family
                         }
@@ -204,7 +212,6 @@ Item {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                console.log("mouse clicked index:", index, "model.family:", model.family)
                                 fontList.currentIndex = index
                                 fontList.forceActiveFocus()
                                 }
@@ -214,153 +221,292 @@ Item {
                 }
             }
 
-        // ── Right: font preview ────────────────────────────────────────────
-        ColumnLayout {
+        // ── Right: font preview + glyph table ───────────────────────────
+        SplitView {
             SplitView.fillWidth: true
             SplitView.minimumWidth: 200
+            orientation: Qt.Vertical
             spacing: 4
 
-            // Current font name as title
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
-                color: Material.color(Material.BlueGrey, Material.Shade900)
+            // ── Top: preview area ──────────────────────────────────────────
+            ColumnLayout {
+                SplitView.fillHeight: true
+                spacing: 4
 
+                // Current font name as title
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 56
+                    color: Material.color(Material.BlueGrey, Material.Shade900)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        spacing: 4
+
+                        Column {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Label {
+                                text: root.selectedFamily
+                                color: Material.accentColor
+                                font.bold: true
+                                }
+
+                            Label {
+                                text: fontModel.currentStyle
+                                color: Material.foreground
+                                font.pixelSize: 10
+                                }
+                            }
+
+                        // Apply the selected font to the current Text element.
+                        Button {
+                            text: qsTr("Apply")
+                            flat: true
+                            enabled: ZCam.currentElement && ZCam.currentElement.typeName() === "text"
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 600
+                            ToolTip.text: qsTr("Apply font to selected text element")
+                            onClicked: {
+                                if (ZCam.currentElement && ZCam.currentElement.typeName() === "text")
+                                    root.applyFontRequested(root.selectedFamily)
+                                }
+                            }
+                        }
+                    }
+
+                // Style selection row
                 RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    spacing: 4
+                    Layout.fillWidth: true
+                    Layout.margins: 4
+                    spacing: 8
 
-                    Column {
+                    Label {
+                        text: qsTr("Style:")
+                        color: Material.foreground
+                        }
+
+                    ComboBox {
+                        id: styleCombo
                         Layout.fillWidth: true
-                        spacing: 2
+                        model: fontModel.stylesForFamily(root.selectedFamily)
+                        currentIndex: {
+                            var styles = fontModel.stylesForFamily(root.selectedFamily)
+                            var idx = styles.indexOf(fontModel.currentStyle)
+                            return idx >= 0 ? idx : -1
+                            }
+                        onActivated: {
+                            fontModel.currentStyle = styleCombo.model[index]
+                            }
+                        }
+
+                    // Add to favorites button
+                    Button {
+                        text: fontModel.isFavorite(root.selectedFamily) ? "★" : "☆"
+                        flat: true
+                        ToolTip.visible: hovered
+                        ToolTip.text: fontModel.isFavorite(root.selectedFamily) ? qsTr("Remove from favorites") : qsTr("Add to favorites")
+                        onClicked: {
+                            if (fontModel.isFavorite(root.selectedFamily))
+                                fontModel.removeFavorite(root.selectedFamily)
+                            else
+                                fontModel.addFavorite(root.selectedFamily)
+                            }
+                        }
+                    }
+
+                // Sample text editor — multiline, at least 4 lines
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 96
+                    Layout.minimumHeight: 96
+                    clip: true
+
+                    TextArea {
+                        id: sampleTextEdit
+                        text: fontSettings.sampleText
+                        placeholderText: qsTr("Enter sample text…")
+                        wrapMode: TextArea.Wrap
+                        color: Material.foreground
+                        onTextChanged: fontSettings.sampleText = text
+                        }
+                    }
+
+                // Font preview area
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    ScrollView {
+                        anchors.fill: parent
+                        clip: true
+
+                        TextArea {
+                            id: previewText
+                            readOnly: true
+                            text: fontSettings.sampleText
+                            wrapMode: TextArea.Wrap
+                            color: Material.foreground
+                            font.family: root.selectedFamily
+                            font.pointSize: 24 * root.previewScale
+                            font.styleName: fontModel.currentStyle
+                            font.bold: fontModel.currentStyle.toLowerCase().indexOf("bold") >= 0
+                            font.italic: fontModel.currentStyle.toLowerCase().indexOf("italic") >= 0 || fontModel.currentStyle.toLowerCase().indexOf("oblique") >= 0
+                            background: Rectangle {
+                                color: Material.color(Material.BlueGrey, Material.Shade900)
+                                radius: 4
+                                }
+                            }
+                        }
+
+                    // Ctrl+wheel to scale the preview font size
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.NoButton
+                        onWheel: wheel => {
+                            if (wheel.modifiers & Qt.ControlModifier) {
+                                if (wheel.angleDelta.y > 0)
+                                    root.previewScale = Math.min(6.0, root.previewScale * 1.15)
+                                else
+                                    root.previewScale = Math.max(0.2, root.previewScale / 1.15)
+                                wheel.accepted = true
+                                }
+                            else {
+                                wheel.accepted = false
+                                }
+                            }
+                        }
+                    }
+                }
+
+            // ── Bottom: glyph table ─────────────────────────────────────────
+            //
+            // A flickable grid showing all available glyphs for the
+            // selected font.  Uses QRawFont via GlyphTableModel to
+            // find the actual glyph outlines present in the font file.
+            //
+            ColumnLayout {
+                SplitView.preferredHeight: 220
+                SplitView.minimumHeight: 100
+                spacing: 0
+
+                // Header row with title and glyph count
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 28
+                    color: Material.color(Material.BlueGrey, Material.Shade900)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 4
+                        spacing: 8
 
                         Label {
-                            text: root.selectedFamily
+                            text: qsTr("Glyphs")
                             color: Material.accentColor
                             font.bold: true
                             }
 
                         Label {
-                            text: "idx:" + fontList.currentIndex + " sel:" + root.selectedFamily + " fam:" + fontModel.currentFamily
+                            text: glyphModel.glyphCount > 0 ? (glyphModel.glyphCount + " " + qsTr("glyphs")) : ""
                             color: Material.foreground
-                            font.pixelSize: 10
+                            font.pixelSize: 11
                             }
-                        }
 
-                    // Apply the selected font to the current Text element.
-                    Button {
-                        text: qsTr("Apply")
-                        flat: true
-                        enabled: ZCam.currentElement && ZCam.currentElement.typeName() === "text"
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 600
-                        ToolTip.text: qsTr("Apply font to selected text element")
-                        onClicked: {
-                            if (ZCam.currentElement && ZCam.currentElement.typeName() === "text")
-                                root.applyFontRequested(root.selectedFamily)
+                        Item { Layout.fillWidth: true }
+
+                        Label {
+                            text: root.glyphTableExpanded ? qsTr("▼") : qsTr("▲")
+                            color: Material.foreground
+                            font.pixelSize: 12
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.glyphTableExpanded = !root.glyphTableExpanded
+                                }
                             }
                         }
                     }
-                }
 
-            // Style selection row
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.margins: 4
-                spacing: 8
-
-                Label {
-                    text: qsTr("Style:")
-                    color: Material.foreground
-                    }
-
-                ComboBox {
-                    id: styleCombo
+                // Flickable glyph grid
+                Rectangle {
                     Layout.fillWidth: true
-                    model: fontModel.stylesForFamily(root.selectedFamily)
-                    currentIndex: {
-                        var styles = fontModel.stylesForFamily(root.selectedFamily)
-                        var idx = styles.indexOf(fontModel.currentStyle)
-                        return idx >= 0 ? idx : -1
-                        }
-                    onActivated: {
-                        fontModel.currentStyle = styleCombo.model[index]
-                        }
-                    }
+                    Layout.fillHeight: true
+                    color: Material.color(Material.BlueGrey, Material.Shade900)
+                    visible: root.glyphTableExpanded
 
-                // Add to favorites button
-                Button {
-                    text: fontModel.isFavorite(root.selectedFamily) ? "★" : "☆"
-                    flat: true
-                    ToolTip.visible: hovered
-                    ToolTip.text: fontModel.isFavorite(root.selectedFamily) ? qsTr("Remove from favorites") : qsTr("Add to favorites")
-                    onClicked: {
-                        if (fontModel.isFavorite(root.selectedFamily))
-                            fontModel.removeFavorite(root.selectedFamily)
-                        else
-                            fontModel.addFavorite(root.selectedFamily)
-                        }
-                    }
-                }
+                    Flickable {
+                        id: glyphFlickable
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        clip: true
+                        contentWidth: glyphGrid.width
+                        contentHeight: glyphGrid.height
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.VerticalFlick | Flickable.HorizontalFlick
 
-            // Sample text editor
-            ScrollView {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 60
-                clip: true
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                TextArea {
-                    id: sampleTextEdit
-                    text: fontSettings.sampleText
-                    placeholderText: qsTr("Enter sample text…")
-                    wrapMode: TextArea.Wrap
-                    color: Material.foreground
-                    onTextChanged: fontSettings.sampleText = text
-                    }
-                }
+                        Grid {
+                            id: glyphGrid
+                            columns: Math.max(1, Math.floor(glyphFlickable.width / root.glyphCellSize))
+                            spacing: 1
 
-            // Font preview area
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                            Repeater {
+                                model: glyphModel
 
-                ScrollView {
-                    anchors.fill: parent
-                    clip: true
+                                delegate: Rectangle {
+                                    width: root.glyphCellSize
+                                    height: root.glyphCellSize
+                                    color: glyphMouseArea.containsMouse ? Material.color(Material.Teal, Material.Shade700) : Material.color(Material.BlueGrey, Material.Shade800)
+                                    border.width: 1
+                                    border.color: Material.color(Material.BlueGrey, Material.Shade700)
 
-                    TextArea {
-                        id: previewText
-                        readOnly: true
-                        text: fontSettings.sampleText
-                        wrapMode: TextArea.Wrap
-                        color: Material.foreground
-                        font.family: root.selectedFamily
-                        font.pointSize: 24 * root.previewScale
-                        font.styleName: fontModel.currentStyle
-                        font.bold: fontModel.currentStyle.toLowerCase().indexOf("bold") >= 0
-                        font.italic: fontModel.currentStyle.toLowerCase().indexOf("italic") >= 0 || fontModel.currentStyle.toLowerCase().indexOf("oblique") >= 0
-                        background: Rectangle {
-                            color: Material.color(Material.BlueGrey, Material.Shade900)
-                            radius: 4
-                            }
-                        }
-                    }
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: 2
+                                        spacing: 0
 
-                // Ctrl+wheel to scale the preview font size
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    onWheel: wheel => {
-                        if (wheel.modifiers & Qt.ControlModifier) {
-                            if (wheel.angleDelta.y > 0)
-                                root.previewScale = Math.min(6.0, root.previewScale * 1.15)
-                            else
-                                root.previewScale = Math.max(0.2, root.previewScale / 1.15)
-                            wheel.accepted = true
-                            }
-                        else {
-                            wheel.accepted = false
+                                        // The glyph character itself, rendered in the font
+                                        Label {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: model.glyphChar
+                                            font.family: root.selectedFamily
+                                            font.styleName: fontModel.currentStyle
+                                            font.pixelSize: Math.min(root.glyphCellSize * 0.45, 28)
+                                            color: Material.foreground
+                                            elide: Text.ElideNone
+                                            }
+
+                                        // Hex code label
+                                        Label {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: model.hexCode
+                                            font.pixelSize: 8
+                                            color: Material.color(Material.Grey, Material.Shade400)
+                                            }
+                                        }
+
+                                    MouseArea {
+                                        id: glyphMouseArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onClicked: {
+                                            // Insert the glyph at cursor position
+                                            sampleTextEdit.insert(sampleTextEdit.cursorPosition, model.glyphChar)
+                                            sampleTextEdit.forceActiveFocus()
+                                            }
+                                        }
+
+                                    ToolTip.visible: glyphMouseArea.containsMouse
+                                    ToolTip.delay: 400
+                                    ToolTip.text: model.charName + " (" + model.hexCode + ", glyph #" + model.glyphIndex + ")"
+                                    }
+                                }
                             }
                         }
                     }

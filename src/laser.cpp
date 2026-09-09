@@ -10,13 +10,16 @@
 //=============================================================================
 
 #include "laser.h"
+#include "machine.h"
 #include "laser_bjjcz.h"
 #include "laser_rkq.h"
-#include "recipe.h"
+#include "laser_mop.h"
+#include "pathstrategy.h"
 #include "zcam.h"
 #include "project.h"
 #include "cam.h"
 #include "fixture.h"
+#include "framing.h"
 #include "logger.h"
 
 //---------------------------------------------------------
@@ -73,10 +76,12 @@ LaserPosition Laser::mapToGalvo(double, double) {
 
 //---------------------------------------------------------
 //   Laser
+//    Constructor takes a Machine* (the owning machine) instead
+//    of a ZCam*.  The ZCam pointer is obtained via machine()->getZcam().
 //---------------------------------------------------------
 
-Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
-      Assert(zc != nullptr);
+Laser::Laser(Machine* m, QObject* parent) : Engine(m, parent) {
+      Assert(m != nullptr);
       set_stateText("off");
       state = LaserState::Off;
 
@@ -142,10 +147,12 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                 markTimer.stop();
                 double elapsed = markTime.elapsed() / 1000.0;
                 set_currentTime(elapsed);
-                if (zcam->project() && zcam->project()->fixture()) {
-                      Fixture* fixture = zcam->project()->fixture();
+                ZCam* zc = machine()->getZcam();
+                if (zc->project() && zc->project()->fixture()) {
+                      Fixture* fixture = zc->project()->fixture();
                       if (fixture->jobDurationEstimated()) {
-                            zcam->project()->changeProperty(fixture, QStringLiteral("jobDuration"), QVariant::fromValue(elapsed));
+                            zc->project()->changeProperty(
+                                fixture, QStringLiteral("jobDuration"), QVariant::fromValue(elapsed));
                             fixture->set_jobDurationEstimated(false);
                             }
                       }
@@ -155,8 +162,8 @@ Laser::Laser(ZCam* zc, QObject* parent) : Machine(zc, parent) {
                       }
                 else if (state == LaserState::MarkingAboutToFraming) {
                       refreshCamAndFraming();
-                      runFraming();
                       changeState(LaserState::Framing);
+                      runFraming();
                       }
                 else if (state == LaserState::Marking) {
                       // switch back to framing
@@ -303,15 +310,25 @@ void Laser::startMarking() {
 //   refreshCamAndFraming
 //    Refresh cam data and rebuild the framing contour so the
 //    laser follows the current geometry.  Called before every
-//    framing start to ensure the convex hull / bounding box
-//    is up to date even if the user edited shapes without pressing
+//    framing start to ensure the convex hull / bounding box is
+//    up to date even if the user edited shapes without pressing
 //    the manual Cam refresh button.
+//
+//    The framing contour is owned by the Framing element, which is
+//    a child of the Cam (not the Fixture).  Its update() rebuilds
+//    the contour according to the selected framing type so the laser
+//    and the on-canvas preview always agree.
 //---------------------------------------------------------
 
 void Laser::refreshCamAndFraming() {
-      zcam->refreshCam();
-      if (zcam->project() && zcam->project()->fixture() && zcam->project()->fixture()->framing())
-            zcam->project()->fixture()->framing()->update();
+      ZCam* zc = machine()->getZcam();
+      zc->refreshCam();
+      if (Project* project = zc->project()) {
+            if (Cam* cam = project->cam()) {
+                  if (Framing* framing = cam->framing())
+                        framing->update();
+                  }
+            }
       }
 
 //---------------------------------------------------------
@@ -357,24 +374,24 @@ void Laser::startFraming() {
 //    where K1, K2, K3 are empirical magic constants.
 //---------------------------------------------------------
 
-double Laser::guessJobDuration() const
-      {
-      if (!zcam->project() || !zcam->project()->fixture())
+double Laser::guessJobDuration() const {
+      ZCam* zc = machine()->getZcam();
+      if (!zc->project() || !zc->project()->fixture())
             return 0.0;
 
       // Empirical magic constants
-      constexpr double K1 = 0.0001;  // per-jump overhead (seconds)
-      constexpr double K2 = 0.0001;  // per-mark overhead (seconds)
-      constexpr double K3 = 1.2;     // global fudge factor
+      constexpr double K1 = 0.0001; // per-jump overhead (seconds)
+      constexpr double K2 = 0.0001; // per-mark overhead (seconds)
+      constexpr double K3 = 1.2;    // global fudge factor
 
       double totalJumpDistance = 0.0;
       double totalMarkDistance = 0.0;
-      int    numJumps           = 0;
-      int    numMarks           = 0;
+      int numJumps             = 0;
+      int numMarks             = 0;
       double totalJumpTime     = 0.0;
       double totalMarkTime     = 0.0;
 
-      Fixture* fixture = zcam->project()->fixture();
+      Fixture* fixture = zc->project()->fixture();
       for (auto e : fixture->children()) {
             if (!isType<LaserMop>(e))
                   continue;
@@ -385,7 +402,7 @@ double Laser::guessJobDuration() const
             if (!recipe)
                   continue;
 
-            LaserPath path = ll->collectLaserPath();
+            LaserPath path = PathStrategy::toLayeredLaserPath(ll->collectLayeredLaserPath());
 
             // Determine the effective speeds from the first enabled pass.
             // If no pass is enabled, skip this recipe.
@@ -418,15 +435,15 @@ double Laser::guessJobDuration() const
 
             double recipeJumpDist = 0.0;
             double recipeMarkDist = 0.0;
-            int    recipeJumps    = 0;
-            int    recipeMarks    = 0;
+            int recipeJumps       = 0;
+            int recipeMarks       = 0;
 
             Vec2d prev = path.front().p;
             for (size_t i = 1; i < path.size(); ++i) {
                   const auto& elem = path[i];
-                  double dx = elem.x() - prev.x();
-                  double dy = elem.y() - prev.y();
-                  double dist = std::sqrt(dx * dx + dy * dy);
+                  double dx        = elem.x() - prev.x();
+                  double dy        = elem.y() - prev.y();
+                  double dist      = std::sqrt(dx * dx + dy * dy);
                   if (elem.type == LaserPathElementType::MoveTo) {
                         recipeJumpDist += dist;
                         ++recipeJumps;
@@ -465,7 +482,8 @@ double Laser::guessJobDuration() const
 //---------------------------------------------------------
 
 void Laser::doStartMarking() {
-      if (!zcam->project() || !zcam->project()->fixture()) {
+      ZCam* zc = machine()->getZcam();
+      if (!zc->project() || !zc->project()->fixture()) {
             Critical("incomplete project");
             return;
             }
@@ -479,8 +497,8 @@ void Laser::doStartMarking() {
       //   - markTimer fires every 100 ms to update currentTime for
       //     the slider in the LaserPanel
       //
-      Fixture* fixture = zcam->project()->fixture();
-      double duration = fixture->jobDuration();
+      Fixture* fixture = zc->project()->fixture();
+      double duration  = fixture->jobDuration();
       if (duration == 0.0) {
             //
             //  No measured duration yet — estimate it from the laser
@@ -501,57 +519,55 @@ void Laser::doStartMarking() {
             //
             // marking happens in this background task
             //
-            Project* topLevel = zcam->project();
+            ZCam* zc          = machine()->getZcam();
+            Project* topLevel = zc->project();
             Fixture* fixture  = topLevel->fixture();
-            Laser* laser      = toType<Laser>(topLevel->machine());
+            Laser* laser      = this;
             startMarkingEngine();
             stopMarking = false;
             Debug("start");
 
             try {
                   for (auto e : fixture->children()) {
-                        Debug("==mark <{}>", e->name());
                         if (!isType<LaserMop>(e))
                               continue;
                         auto ll = toType<LaserMop>(e);
                         if (!ll->burn())
                               continue;
-                        LaserPath spl             = ll->collectLaserPath();
+                        LayeredLines layered      = ll->collectLayeredLaserPath();
+                        LaserPath spl             = PathStrategy::toLayeredLaserPath(layered);
                         const LaserRecipe* recipe = ll->recipe();
                         if (!recipe)
                               Fatal("no recipe for <{}>", ll->name());
 
-                        Debug("==mark2 passes {}", recipe->numPasses());
                         for (int i = 0; i < recipe->numPasses(); ++i) { // global passes
                               // mark every sublayer
-                              Debug("layers <{}>", recipe->passes().size());
                               for (int i = 0; i < recipe->passes().size(); ++i) {
                                     auto s            = &recipe->pass(i);
                                     auto parameterSet = LaserParameterSet(s, laser);
-                                    parameterSet.setOverride(ParameterType(ll->overrideType1()),
-                                                             ll->overrideValue1());
-                                    parameterSet.setOverride(ParameterType(ll->overrideType2()),
-                                                             ll->overrideValue2());
+                                    parameterSet.setOverride(
+                                        ParameterType(ll->overrideType1()), ll->overrideValue1());
+                                    parameterSet.setOverride(
+                                        ParameterType(ll->overrideType2()), ll->overrideValue2());
                                     if (stopMarking)
-                                          throw "stopped";
+                                          throw std::string("stopped");
                                     if (s->enabled()) {
                                           spl.check();
-                                          Debug("mark+");
                                           markLayer(spl, parameterSet);
-                                          Debug("mark-");
                                           }
                                     }
                               }
                         }
-                  Debug("end of mark data");
                   }
             catch (const std::string s) {
+                  markingAborted = true;
                   stopMarkingEngine();
                   stopMarking = false;
                   Debug("marking stopped: {}", s);
                   }
 
             endMarkingEngine();
+            markingAborted = false;
             emit markingStopped();
             });
       }
@@ -561,15 +577,44 @@ void Laser::doStartMarking() {
 //---------------------------------------------------------
 
 bool Laser::runFraming() {
-      if (!zcam->project() || !zcam->project()->fixture()) {
+      ZCam* zc = machine()->getZcam();
+      if (!zc->project() || !zc->project()->cam()) {
             Critical("incomplete project");
             return false;
             }
 
       framingThread = new std::thread([this] {
-            Project* project           = zcam->project();
-            Clipper2Lib::PathD polygon = project->cam()->convexHull();
-            stopFraming                = false;
+            ZCam* zc         = machine()->getZcam();
+            Project* project = zc->project();
+            //
+            //  The framing contour is owned by the Framing element, a
+            //  child of the Cam.  It honours the selected framing type
+            //  (BoundingBox, ConvexHull or the user-defined Rectangle) and
+            //  refreshCamAndFraming() has called update() on the main
+            //  thread just before this background thread started, so
+            //  worldContour() holds the correct, up-to-date contour.
+            //  worldContour() is the work-field-space outline (the element's
+            //  pos/rot/scale and, if configured, the camera projection are
+            //  already applied) — exactly what the canvas shows and what the
+            //  laser must move.  For the auto types the element transform is
+            //  the identity, so it equals the raw path.
+            //
+            Clipper2Lib::PathD polygon;
+            if (Cam* cam = project->cam()) {
+                  if (Framing* framing = cam->framing()) {
+                        const Clipper2Lib::PathD& contour = framing->worldContour();
+                        polygon.reserve(contour.size());
+                        for (const auto& pt : contour)
+                              polygon.push_back({pt.x, pt.y});
+                  }
+                  }
+            if (polygon.size() < 3) {
+                  Warning("framing: no framing contour available");
+                  stopFramingEngine();
+                  emit framingStopped();
+                  return;
+                  }
+            stopFraming = false;
             try {
                   if (startFramingEngine()) {
                         for (;;) {

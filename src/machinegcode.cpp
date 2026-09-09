@@ -9,212 +9,268 @@
 //  the file LICENCE.GPL
 //=============================================================================
 
+#include "logger.h"
+#include "machine.h"
 #include "machinegcode.h"
+
+//---------------------------------------------------------
+//   _properties
+//---------------------------------------------------------
+
+static const std::string propertiesGCodeLaser =
+    //
+    R"json(
+      {
+        "columns": 2,
+        "cells": [
+          {
+            "name": "maxTravel",
+            "label": "Travel",
+            "type": "vector3d",
+            "scriptable": true,
+            "unit": "mm",
+            "default": [
+              100.0,
+              100.0,
+              100.0
+            ]
+          },
+          {
+            "name": "maxFeed",
+            "label": "maxFeed",
+            "type": "vector3d",
+            "scriptable": true,
+            "unit": "mm/s",
+            "default": [
+              1000.0,
+              1000.0,
+              1000.0
+            ]
+          },
+          {
+            "name": "maxAcceleration",
+            "label": "max. Accel.",
+            "type": "vector3d",
+            "scriptable": true,
+            "unit": "mm/s²",
+            "default": [
+              1000.0,
+              1000.0,
+              1000.0
+            ]
+          },
+          {
+            "name": "line",
+            "type": "line",
+            "colSpan": 2
+          },
+          {
+            "label": "Precision",
+            "cells": [
+              {
+                "name": "precision",
+                "sublabel": "Prec",
+                "type": "float",
+                "scriptable": true,
+                "unit": "mm",
+                "min": 0.001,
+                "max": 10.0,
+                "precision": 3,
+                "default": 0.001
+              },
+              {
+                "name": "ncPrecision",
+                "sublabel": "NC Prec",
+                "type": "float",
+                "scriptable": true,
+                "unit": "mm",
+                "min": 0.001,
+                "max": 10.0,
+                "precision": 3,
+                "default": 0.001
+              }
+            ]
+          },
+          {
+            "name": "circlePrecision",
+            "label": "Circle Prec",
+            "type": "float",
+            "scriptable": true,
+            "unit": "mm",
+            "min": 0.001,
+            "max": 10.0,
+            "precision": 3,
+            "default": 0.001
+          },
+          {
+            "name": "line",
+            "type": "line",
+            "colSpan": 2
+          }
+        ]
+      }
+
+    )json";
+
+static const std::string propertiesGCodeMill =
+    //
+    R"json(
+      {
+        "columns": 2,
+        "cells": [
+          {
+            "name": "maxTravel",
+            "label": "Travel",
+            "type": "vector3d",
+            "scriptable": true,
+            "unit": "mm",
+            "default": [
+              100.0,
+              100.0,
+              100.0
+            ]
+          },
+          {
+            "name": "maxFeed",
+            "label": "maxFeed",
+            "type": "vector3d",
+            "scriptable": true,
+            "unit": "mm/s",
+            "default": [
+              1000.0,
+              1000.0,
+              1000.0
+            ]
+          },
+          {
+            "name": "maxAcceleration",
+            "label": "max. Accel.",
+            "type": "vector3d",
+            "scriptable": true,
+            "unit": "mm/s²",
+            "default": [
+              1000.0,
+              1000.0,
+              1000.0
+            ]
+          },
+          {
+            "label": "Safe Dist",
+            "cells": [
+              {
+                "name": "safeDist1",
+                "sublabel": "Safe 1",
+                "type": "float",
+                "scriptable": true,
+                "unit": "mm",
+                "min": 0.0,
+                "max": 1000.0,
+                "default": 0.0
+              },
+              {
+                "name": "safeDist2",
+                "sublabel": "Safe 2",
+                "type": "float",
+                "scriptable": true,
+                "unit": "mm",
+                "min": 0.0,
+                "max": 1000.0,
+                "default": 0.0
+              }
+            ]
+          },
+          {
+            "label": "Spindle",
+            "cells": [
+              {
+                "name": "minSpindle",
+                "sublabel": "Min",
+                "type": "float",
+                "scriptable": true,
+                "unit": "rpm",
+                "min": 0.0,
+                "max": 1000000.0,
+                "default": 0.0
+              },
+              {
+                "name": "maxSpindle",
+                "sublabel": "Max",
+                "type": "float",
+                "scriptable": true,
+                "unit": "rpm",
+                "min": 0.0,
+                "max": 1000000.0,
+                "default": 0.0
+              }
+            ]
+          },
+          {
+            "name": "line",
+            "type": "line",
+            "colSpan": 2
+          },
+          {
+            "label": "Precision",
+            "cells": [
+              {
+                "name": "precision",
+                "sublabel": "Prec",
+                "type": "float",
+                "scriptable": true,
+                "unit": "mm",
+                "min": 0.001,
+                "max": 10.0,
+                "precision": 3,
+                "default": 0.001
+              },
+              {
+                "name": "ncPrecision",
+                "sublabel": "NC Prec",
+                "type": "float",
+                "scriptable": true,
+                "unit": "mm",
+                "min": 0.001,
+                "max": 10.0,
+                "precision": 3,
+                "default": 0.001
+              }
+            ]
+          },
+          {
+            "name": "circlePrecision",
+            "label": "Circle Prec",
+            "type": "float",
+            "scriptable": true,
+            "unit": "mm",
+            "min": 0.001,
+            "max": 10.0,
+            "precision": 3,
+            "default": 0.001
+          },
+          {
+            "name": "line",
+            "type": "line",
+            "colSpan": 2
+          }
+        ]
+      }
+
+    )json";
 
 //---------------------------------------------------------
 //   properties
 //---------------------------------------------------------
 
-const std::string_view MachineGCode::properties() const {
-      return R"json({
-                      "class": "Machine",
-                      "rows": [
-                        {
-                          "label": " ",
-                          "cells": [
-                            {
-                              "name": "name",
-                              "sublabel": "Name",
-                              "type": "string"
-                            },
-                            {
-                              "name": "type",
-                              "sublabel": "Type",
-                              "type": "machineType"
-                            },
-                            {
-                              "name": "boardType",
-                              "sublabel": "Board",
-                              "type": "boardType"
-                            }
-                          ]
-                        },
-                        {
-                          "label": "Description",
-                          "cells": [
-                            {
-                              "name": "description",
-                              "type": "multiline"
-                            }
-                          ]
-                        },
-                        {
-                          "cells": [
-                            {
-                              "name": "line",
-                              "type": "line"
-                            }
-                          ]
-                        },
-                        {
-                          "columns": 2,
-                          "cells": [
-                            {
-                              "name": "maxTravel",
-                              "label": "Travel",
-                              "type": "vector3d",
-                              "scriptable": true,
-                              "unit": "mm",
-                              "default": [
-                                100.0,
-                                100.0,
-                                100.0
-                              ]
-                            },
-                            {
-                              "name": "travelSpeed",
-                              "label": "Travel Speed",
-                              "type": "float",
-                              "scriptable": true,
-                              "unit": "mm/s",
-                              "min": 0.0,
-                              "max": 100000.0,
-                              "default": 2000.0
-                            },
-                            {
-                              "name": "framingSpeed",
-                              "label": "Framing Speed",
-                              "type": "float",
-                              "scriptable": true,
-                              "unit": "mm/s",
-                              "min": 0.0,
-                              "max": 100000.0,
-                              "default": 0.0
-                            },
-                            {
-                              "label": "Safe Dist",
-                              "cells": [
-                                {
-                                  "name": "safeDist1",
-                                  "sublabel": "Safe 1",
-                                  "type": "float",
-                                  "scriptable": true,
-                                  "unit": "mm",
-                                  "min": 0.0,
-                                  "max": 1000.0,
-                                  "default": 0.0
-                                },
-                                {
-                                  "name": "safeDist2",
-                                  "sublabel": "Safe 2",
-                                  "type": "float",
-                                  "scriptable": true,
-                                  "unit": "mm",
-                                  "min": 0.0,
-                                  "max": 1000.0,
-                                  "default": 0.0
-                                }
-                              ]
-                            },
-                            {
-                              "name": "maxFeed",
-                              "label": "Max Feed",
-                              "type": "vector3d",
-                              "scriptable": true,
-                              "unit": "mm/s",
-                              "default": [
-                                0.0,
-                                0.0,
-                                0.0
-                              ]
-                            },
-                            {
-                              "name": "maxAcceleration",
-                              "label": "Max Accel",
-                              "type": "vector3d",
-                              "scriptable": true,
-                              "unit": "mm/s²",
-                              "default": [
-                                0.0,
-                                0.0,
-                                0.0
-                              ]
-                            },
-                            {
-                              "label": "Spindle",
-                              "cells": [
-                                {
-                                  "name": "minSpindle",
-                                  "sublabel": "Min",
-                                  "type": "float",
-                                  "scriptable": true,
-                                  "unit": "rpm",
-                                  "min": 0.0,
-                                  "max": 1000000.0,
-                                  "default": 0.0
-                                },
-                                {
-                                  "name": "maxSpindle",
-                                  "sublabel": "Max",
-                                  "type": "float",
-                                  "scriptable": true,
-                                  "unit": "rpm",
-                                  "min": 0.0,
-                                  "max": 1000000.0,
-                                  "default": 0.0
-                                }
-                              ]
-                            },
-                            {
-                              "name": "line",
-                              "type": "line",
-                              "colSpan": 2
-                            },
-                            {
-                              "label": "Precision",
-                              "cells": [
-                                {
-                                  "name": "precision",
-                                  "sublabel": "Prec",
-                                  "type": "float",
-                                  "scriptable": true,
-                                  "unit": "mm",
-                                  "min": 0.001,
-                                  "max": 10.0,
-                                  "precision": 3,
-                                  "default": 0.001
-                                },
-                                {
-                                  "name": "ncPrecision",
-                                  "sublabel": "NC Prec",
-                                  "type": "float",
-                                  "scriptable": true,
-                                  "unit": "mm",
-                                  "min": 0.001,
-                                  "max": 10.0,
-                                  "precision": 3,
-                                  "default": 0.001
-                                }
-                              ]
-                            },
-                            {
-                              "name": "circlePrecision",
-                              "label": "Circle Prec",
-                              "type": "float",
-                              "scriptable": true,
-                              "unit": "mm",
-                              "min": 0.001,
-                              "max": 10.0,
-                              "precision": 3,
-                              "default": 0.001
-                            },
-                            {
-                              "name": "line",
-                              "type": "line",
-                              "colSpan": 2
-                            }
-                          ]
-                        }
-                      ]
-                          })json";
+const std::string MachineGCode::properties() const {
+      std::string head = "{\n\"class\": \"Machine\",\"rows\": \[";
+      std::string foot = "]\n}";
+
+      if (machine()->type() == MachineType::GCODE_LASER)
+            return head + propertiesMachine + propertiesGCodeLaser + foot;
+      else if (machine()->type() == MachineType::GCODE_MILL)
+            return head + propertiesMachine + propertiesGCodeMill + foot;
+      else  {
+            Fatal("bad machine type");
+            return "";
+            }
       }

@@ -30,10 +30,22 @@ Machines::Machines(ZCam* zc, QObject* parent) : QObject(parent), zcam(zc) {
 Machines::~Machines() {
       }
 
+//---------------------------------------------------------
+//   machine
+//---------------------------------------------------------
+
 Machine* Machines::machine(int idx) {
       if (idx < 0 || idx >= static_cast<int>(machines.size()))
             return nullptr;
       return machines[idx];
+      }
+
+Machine* Machines::machine(const QString& name) {
+      for (auto& m : machines) {
+            if (m->name() == name)
+                  return m;
+            }
+      return nullptr;
       }
 
 void Machines::updateMachine(int idx, Machine* r) {
@@ -49,7 +61,7 @@ void Machines::updateMachine(int idx, Machine* r) {
 
 void Machines::addMachine(const QString& name) {
       // Create a default laser machine (Q-switched Laser with BJJCZ board)
-      Machine* m = Machine::create(zcam, QStringLiteral("Q-switched Laser"), QStringLiteral("BJJCZ"));
+      Machine* m = Machine::create(zcam, MachineType::Q_LASER, QStringLiteral("BJJCZ"));
       m->set_name(name);
       machines.push_back(m);
       emit machinesModelChanged();
@@ -74,7 +86,7 @@ void Machines::removeMachine(int idx) {
                         QString delPath = filePath + ".del";
                         if (!file.rename(delPath))
                               Warning("Machines::removeMachine: cannot rename {} to {}",
-                                      filePath.toStdString(), delPath.toStdString());
+                                  filePath.toStdString(), delPath.toStdString());
                         }
                   }
             }
@@ -105,18 +117,22 @@ void Machines::fromJson(const json& data) {
             for (const auto& jm : data) {
                   // Read the type and boardType from JSON to determine
                   // which concrete Machine subclass to create.
-                  QString machineType;
+                  std::string machineTypeName;
                   QString boardType;
                   if (jm.contains("type") && jm["type"].is_string())
-                        machineType = QString::fromStdString(jm["type"].get<std::string>());
+                        machineTypeName = jm["type"].get<std::string>();
                   if (jm.contains("boardType") && jm["boardType"].is_string())
                         boardType = QString::fromStdString(jm["boardType"].get<std::string>());
 
                   // Migration: map legacy type names
-                  if (machineType == QStringLiteral("Fiber Laser"))
-                        machineType = QStringLiteral("Q-switched Laser");
+                  if (machineTypeName == "Fiber Laser")
+                        machineTypeName = "Q-switched Laser";
 
-                  Machine* m = Machine::create(zcam, machineType, boardType);
+                  // Resolve the string name to a MachineType enum.
+                  auto mt          = machineTypeMap.type(machineTypeName);
+                  MachineType type = mt.value_or(MachineType::Q_LASER);
+
+                  Machine* m = Machine::create(zcam, type, boardType);
                   m->setParent(this);
                   m->fromJson(jm);
                   machines.push_back(m);
@@ -151,25 +167,30 @@ void Machines::loadFromDirectory(const QString& dir) {
                   json jm = json::parse(data.toStdString());
                   Assert(zcam != nullptr);
 
-                  QString machineType;
+                  QString machineTypeName;
                   QString boardType;
                   if (jm.contains("type") && jm["type"].is_string())
-                        machineType = QString::fromStdString(jm["type"].get<std::string>());
+                        machineTypeName = QString::fromStdString(jm["type"].get<std::string>());
                   if (jm.contains("boardType") && jm["boardType"].is_string())
                         boardType = QString::fromStdString(jm["boardType"].get<std::string>());
 
                   // Migration: map legacy type names
-                  if (machineType == QStringLiteral("Fiber Laser"))
-                        machineType = QStringLiteral("Q-switched Laser");
+                  if (machineTypeName == QStringLiteral("Fiber Laser"))
+                        machineTypeName = QStringLiteral("Q-switched Laser");
 
-                  Machine* m = Machine::create(zcam, machineType, boardType);
+                  // Resolve the string name to a MachineType enum.
+                  auto sv          = machineTypeName.toUtf8();
+                  auto mt          = machineTypeMap.type(std::string_view(sv.constData(), sv.size()));
+                  MachineType type = mt.value_or(MachineType::Q_LASER);
+
+                  Machine* m = Machine::create(zcam, type, boardType);
                   m->setParent(this);
                   m->fromJson(jm);
                   machines.push_back(m);
                   }
             catch (const json::parse_error& e) {
-                  Warning("Machines::loadFromDirectory: parse error in {}: {}", filePath.toStdString(),
-                          e.what());
+                  Warning(
+                      "Machines::loadFromDirectory: parse error in {}: {}", filePath.toStdString(), e.what());
                   }
             }
       emit machinesModelChanged();

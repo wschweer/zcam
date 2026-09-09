@@ -8,9 +8,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(QT_QML_GENERATE_QMLLS_INI On)
 
 set(CMAKE_VERBOSE_MAKEFILE OFF)
-# set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Debug)
 # set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_BUILD_TYPE RelWithDebInfo)
+# set(CMAKE_BUILD_TYPE RelWithDebInfo)
 set(CMAKE_AUTOMOC ON)
 
 # linuxdeploy handles library bundling; skip RPATH rewriting on install
@@ -29,6 +29,8 @@ set(CMAKE_BUILD_RPATH "${QT_LIB_DIR}")
 
 pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(UDEV REQUIRED IMPORTED_TARGET libudev)
+
+find_package(Libnest2D REQUIRED)
 
 # libpcap for raw Ethernet communication (RKQ laser board)
 # Try pkg-config first, fall back to manual discovery.
@@ -96,18 +98,24 @@ qt_add_qml_module(zcam
         qml/GalvoCalibrationDialog.qml
         qml/ZFileDialog.qml
         qml/ManualPanel.qml
+        qml/AiPanel.qml
+        qml/ScriptPanel.qml
     SOURCES
         src/zcam.cpp src/zcam.h
         src/config.cpp src/config.h
         src/machine.cpp src/machine.h
+        src/engine.cpp src/engine.h
+        src/machinetypes.h
         src/machines.cpp src/machines.h
         src/machinemodel.cpp src/machinemodel.h
         src/configmodel.cpp src/configmodel.h
         src/layersettingmodel.cpp src/layersettingmodel.h
         src/propertyjson.cpp src/propertyjson.h
-        src/recipe.cpp src/recipe.h
+        src/laser_mop.cpp src/laser_mop.h
+        src/pathstrategy.cpp src/pathstrategy.h
         src/mop.cpp src/mop.h
-        src/laser_recipe.cpp src/laser_recipe.h
+        src/recipe.cpp src/recipe.h
+        src/recipemodel.cpp src/recipemodel.h
         src/spacemouse.cpp
         src/spacemouse.h
         src/tessgeometry.cpp src/tessgeometry.h
@@ -141,6 +149,7 @@ qt_add_qml_module(zcam
         src/materialtest.cpp src/materialtest.h
         src/undo.cpp src/undo.h
         src/svg.cpp
+        src/dxfexport.cpp src/dxfexport.h
         src/truncatedcubegeometry.cpp src/truncatedcubegeometry.h
         src/dxfimport.cpp src/dxfimport.h src/dxftess.h
         src/importipc2581.cpp src/importipc2581.h
@@ -153,14 +162,20 @@ qt_add_qml_module(zcam
         src/geometryworker.cpp src/geometryworker.h
         src/mediabrowser.cpp src/mediabrowser.h
         src/scriptengine.cpp src/scriptengine.h
+        src/geometryapi.cpp src/geometryapi.h
+        src/scriptapi.cpp src/scriptapi.h
         src/cameraelement.cpp src/cameraelement.h
         src/cameraoverlaygeometry.cpp src/cameraoverlaygeometry.h
         src/cameratexturedata.cpp src/cameratexturedata.h
         src/imageelement.cpp src/imageelement.h
         src/imageimport.cpp src/imageimport.h
+        src/nest.cpp src/nest.h
         src/cal.cpp src/cal.h
         src/ogr.cpp src/ogr.h
         src/galvocalibration.cpp src/galvocalibration.h
+
+        src/ai_agent.cpp src/ai_agent.h
+        src/remotecontrol.cpp src/remotecontrol.h
 
         clipper2/src/clipper.engine.cpp
         clipper2/src/clipper.offset.cpp
@@ -459,6 +474,7 @@ target_link_libraries(zcam PRIVATE
       PkgConfig::UDEV
       PkgConfig::LIBUSB
       spnav
+      Libnest2D::libnest2d
       )
 
 # Link libpcap (pkg-config or fallback path)

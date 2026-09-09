@@ -120,7 +120,7 @@ class ImageElement : public Element3d
                       "label": "Mops",
                       "cells": [
                         {
-                          "name": "laserLayer",
+                          "name": "mop",
                           "type": "laserLayer",
                           "default": ""
                         }

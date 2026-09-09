@@ -34,6 +34,23 @@ void LayerSettingModel::setPass(LaserPass* pass) {
       }
 
 //---------------------------------------------------------
+//   setRecipe
+//    Sets the recipe pointer.  When a pass is already set, the
+//    properties JSON is derived from the recipe (via
+//    laserPassProperties()), so we must re-parse when the recipe
+//    changes.  This also fixes the startup ordering issue where
+//    QML sets pass before recipe: the first setPass() call sees
+//    a null recipe and produces an empty properties list; the
+//    subsequent setRecipe() call now triggers a re-parse.
+//---------------------------------------------------------
+
+void LayerSettingModel::setRecipe(LaserRecipe* r) {
+      _recipe = r;
+      if (_pass)
+            parseProperties();
+      }
+
+//---------------------------------------------------------
 //   clearPass
 //    Allow QML to set the pass pointer to null.  QML cannot
 //    assign null to a LaserPass* Q_PROPERTY directly because
@@ -43,13 +60,11 @@ void LayerSettingModel::setPass(LaserPass* pass) {
 void LayerSettingModel::clearPass() {
       if (!_pass)
             return;
-      _pass = nullptr;
+      _pass   = nullptr;
+      _recipe = nullptr;
       emit passChanged();
       parseProperties();
       }
-
-//---------------------------------------------------------
-//   parseColumnsBlock
 
 //---------------------------------------------------------
 //   parseProperties
@@ -74,7 +89,7 @@ void LayerSettingModel::parseProperties() {
             return;
             }
 
-      std::string_view propStr = _pass->properties();
+      std::string propStr = _recipe ? _recipe->laserPassProperties() : "";
       if (propStr.empty()) {
             _title = _pass->name();
             endResetModel();
@@ -116,7 +131,8 @@ void LayerSettingModel::parseProperties() {
                                                 ci.isLine = true;
                                                 ci.name   = "line";
                                                 if (cell.contains("label") && cell["label"].is_string())
-                                                      ci.rowLabel = QString::fromStdString(cell["label"].get<std::string>());
+                                                      ci.rowLabel = QString::fromStdString(
+                                                          cell["label"].get<std::string>());
                                                 }
                                           else if (cell.contains("cells") && cell["cells"].is_array()) {
                                                 // Row cell: has sub-cells instead of a name
@@ -173,7 +189,8 @@ void LayerSettingModel::parseProperties() {
                                     if (type == "line") {
                                           hasLine = true;
                                           if (cell.contains("label") && cell["label"].is_string())
-                                                lineLabel = QString::fromStdString(cell["label"].get<std::string>());
+                                                lineLabel =
+                                                    QString::fromStdString(cell["label"].get<std::string>());
                                           continue;
                                           }
                                     if (type == "empty") {

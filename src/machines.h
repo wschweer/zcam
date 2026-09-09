@@ -56,6 +56,7 @@ class Machines : public QObject
       ~Machines();
 
       Q_INVOKABLE Machine* machine(int idx);
+      Machine* machine(const QString& name);
       Q_INVOKABLE void updateMachine(int idx, Machine* r);
       Q_INVOKABLE void addMachine(const QString& name);
       Q_INVOKABLE void removeMachine(int idx);

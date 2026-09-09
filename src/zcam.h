@@ -14,6 +14,8 @@
 #include <QObject>
 #include <QQmlEngine>
 #include <QJSEngine>
+#include <QImage>
+#include <QQuickItem>
 #include <QVector3D>
 #include <QVector2D>
 #include <QFont>
@@ -28,6 +30,7 @@
 #include "logger.h"
 #include "group.h"
 #include "macros.h"
+#include "ai_agent.h"
 
 class Project;
 class Element3d;
@@ -36,6 +39,8 @@ class TreeModel;
 class GalvoCalibration;
 class ScriptEngine;
 class Config;
+class AIAgent;
+class QQuickItem;
 
 //---------------------------------------------------------
 //   ZCam
@@ -46,6 +51,9 @@ class ZCam : public QObject
       Q_OBJECT
       QML_ELEMENT
       QML_SINGLETON
+
+      static ZCam* _instance;
+      static QString _startupFilePath;
 
       Q_PROPERTY(bool camDirty READ camDirty NOTIFY camDirtyChanged)
 
@@ -74,6 +82,8 @@ class ZCam : public QObject
       PROPV(QString, currentTool, QString("pointer"))
       PROPV(GalvoCalibration*, galvoCalibration, nullptr)
       PROPV(ScriptEngine*, scriptEngine, nullptr)
+      PROPV(AIAgent*, aiAgent, nullptr)
+      QObject* _canvasItem {nullptr};
 
       void loadAssets();
 
@@ -85,6 +95,12 @@ class ZCam : public QObject
       QPointer<Element3d> _vertexDragElement;
       int _vertexDragIndex {-1};
       QVector3D _vertexDragOrigPos;
+      // Nest bin-corner handles resize the bin (binSize + pos), so the
+      // drag-start snapshot also captures the bin state.  _vertexDragIsNest
+      // distinguishes the two undo paths in endVertexDrag().
+      bool _vertexDragIsNest {false};
+      QVector2D _vertexDragOrigBinSize;
+      QVector3D _vertexDragOrigNestPos;
 
       // State for element drag/rotate/scale undo
       QPointer<Element3d> _elementDragElement;
@@ -160,6 +176,7 @@ class ZCam : public QObject
       Q_INVOKABLE void updateViewCamera(double cx, double cy, double height);
     Q_SIGNALS:
       void viewCameraChanged();
+      void canvasItemChanged();
 
     protected:
       QVector2D _viewCameraCenter {QVector2D(0.0, 0.0)};
@@ -219,8 +236,15 @@ class ZCam : public QObject
       /// specific recipe (e.g. via the Edit button in the inspector).
       void recipeEditorRequested(const QString& name);
 
+      /// Emitted after a Nest element has run its packing algorithm.
+      /// *packed* is the number of children that were re-positioned,
+      /// *total* the number of children considered; packed < total
+      /// means some items did not fit into the bin.
+      void nestFinished(int packed, int total);
+
     public:
       explicit ZCam(QObject* parent = nullptr);
+      static ZCam* instance() { return _instance; }
       static ZCam* create(QQmlEngine*, QJSEngine*);
       void undoChangeProperty(Element*, const char*, QVariant) {}
     public slots:
@@ -251,6 +275,16 @@ class ZCam : public QObject
       /// Try to restore the last-opened project at application startup.
       Q_INVOKABLE bool restoreLastProject();
 
+      /// Handle the file path passed on the command line.  Called from
+      /// the QML startup timer instead of restoreLastProject().
+      ///   - .zcam file         → openProject(path)
+      ///   - importable file     → importFile(path) into the fresh project
+      ///     (SVG, DXF, DWG, BREP, image, IPC-2581 XML)
+      ///   - empty / unset       → restoreLastProject()
+      Q_INVOKABLE bool handleStartupFile();
+      /// Set the file path to open/import at startup (called from main()
+      /// before the QML engine creates the ZCam singleton).
+      static void setStartupFilePath(const QString& path) { _startupFilePath = path; }
       /// update 3d canvas and project tree
       void update();
 
@@ -287,9 +321,12 @@ class ZCam : public QObject
       /// Expand a leading '~' to the user's home directory.
       Q_INVOKABLE static QString expandPath(const QString& path);
 
-      /// Add the configured projectsDirectory as a favorite to the
-      /// Qt Quick FileDialog sidebar (QSettings: QtProject/qquickfiledialog).
-      /// Called once at startup after assets are loaded.
+      /// Add the configured projectsDirectory and the current project's
+      /// directory as favorites to the Qt Quick FileDialog sidebar
+      /// (QSettings: QtProject/qquickfiledialog).
+      /// Called at startup after assets are loaded and after each
+      /// successful openProject() so the current project directory
+      /// appears as a sidebar favorite.
       void setupFileDialogFavorites();
 
       /// Called from QML when an element is dragged in the 3D viewport.
@@ -445,9 +482,9 @@ class ZCam : public QObject
       Q_INVOKABLE Group* layerPtr(const QString& name) const;
 
       /// Returns a list of all LaserLayer element names in the current project.
-      Q_INVOKABLE QStringList laserLayerNames() const;
+      Q_INVOKABLE QStringList mopNames() const;
       /// Returns the Mop* pointer for a given name, or nullptr.
-      Q_INVOKABLE Mop* laserLayerPtr(const QString& name) const;
+      Q_INVOKABLE Mop* mopPtr(const QString& name) const;
 
       /// Returns a list of all Recipe names from ZCam::recipes.
       Q_INVOKABLE QStringList recipeNames() const;
@@ -484,7 +521,37 @@ class ZCam : public QObject
       /// Apply the given font family to the currently selected Text element.
       /// The change is routed through the undo system and marks the project dirty.
       Q_INVOKABLE void applyFontToCurrentText(const QString& family);
-
+      // ── AI agent delegation ──────────────────────────────────────────
+      // These Q_INVOKABLE wrappers let QML call AIAgent methods through
+      // the ZCam singleton (ZCam.aiSendMessage etc.) without needing to
+      // access the AIAgent object directly.
+      Q_INVOKABLE void aiSendMessage(const QString& text) {
+            if (_aiAgent)
+                  _aiAgent->sendMessage(text);
+            }
+      Q_INVOKABLE void aiStop() {
+            if (_aiAgent)
+                  _aiAgent->stop();
+            }
+      Q_INVOKABLE void aiNewSession() {
+            if (_aiAgent)
+                  _aiAgent->newSession();
+            }
+      Q_INVOKABLE void aiSelectSession(int index) {
+            if (_aiAgent)
+                  _aiAgent->selectSession(index);
+            }
+      Q_INVOKABLE void aiDeleteSession(int index) {
+            if (_aiAgent)
+                  _aiAgent->deleteSession(index);
+            }
+      Q_INVOKABLE void aiRefreshOllamaModels() {
+            if (_aiAgent)
+                  _aiAgent->refreshOllamaModels();
+            }
+      Q_INVOKABLE QStringList aiOllamaModels() const {
+            return _aiAgent ? _aiAgent->ollamaModels() : QStringList();
+            }
       /// Re-parent an element to a new parent Element3d.  The element's
       /// local pos/rot/scale are adjusted so that its world-space
       /// transform stays the same (the visual position doesn't jump).
@@ -518,6 +585,34 @@ class ZCam : public QObject
       /// The operation is undoable as a single macro.
       Q_INVOKABLE void combineSelectedPolygons();
 
+      /// Invoke a Q_INVOKABLE method on an Element3d through its
+      /// DYNAMIC meta-object (element->metaObject()).  This is the
+      /// workaround for the QML wrapper_visibility problem: QML/
+      /// JS sees Element3d pointers with their STATIC type, so
+      /// methods declared only in derived classes (Nest::nest,
+      /// Polygon::optimize, Polygon::splitSelectedSegment, ...) come
+      /// through as `undefined` and a guarded call like
+      ///   if (el && el.nest) el.nest();
+      /// silently does nothing.  This invoker dispatches by name on
+      /// the runtime type and works for every Q_INVOKABLE method
+      /// with only simple/convertible arguments.
+      /// Returns false when the element or the method does not exist.
+      Q_INVOKABLE bool invokeElementMethod(
+          Element3d* element, const QString& method, const QVariantList& args = {});
+
+      //--------------------------------------------------------------------
+      //     mopColor
+      //--------------------------------------------------------------------
+      /// Return the Mop colour (QColor) for the given element when it is
+      /// a Mop (LaserMop/NopMop), otherwise the transparent colour.  This
+      /// exists because QML sees Element3d pointers with their STATIC type,
+      /// so Mop-specific members like mopColor() are invisible on the JS
+      /// wrapper.  The Project Tree delegate uses it to draw the small
+      /// coloured circle in front of a LaserMop's name.  NopMop (the
+      /// default no-op Mop on Cad) is excluded because it is not shown in
+      /// the tree — only LaserMops carry a meaningful, user-assigned colour.
+      Q_INVOKABLE QColor mopColor(const Element* el);
+
       /// Delete the current element if it is deletable.
       /// The operation is undoable.
       Q_INVOKABLE void deleteCurrentElement();
@@ -539,6 +634,40 @@ class ZCam : public QObject
       Q_INVOKABLE void galvotest65img(const QString&);
 
       void importSvg(const QString& path);
+
+      //--------------------------------------------------------------------
+      //     Canvas screenshot (AI models / remote control)
+      //    The QML 3-D panel (View3DPanel.qml) registers the main View3D
+      //    item with setCanvasItem() so the C++ side can grab the on-screen
+      //    rendering of the canvas.  grabCanvas() captures exactly the
+      //    canvas region out of the active window; saveCanvasScreenshot()
+      //    writes that image to a PNG file and returns its path.
+      //
+      //    These are exposed to the AI agent as the `screenshot` tool and
+      //    (transitively) to the stdin remote-control interface, so a
+      //    language model can "see" what the 3-D canvas currently shows.
+      //--------------------------------------------------------------------
+
+      /// The main 3-D canvas View3D item (set from View3DPanel.qml).
+      /// Stored as a raw pointer; the QML tree owns its lifetime.
+      Q_PROPERTY(QObject* canvasItem READ canvasItem WRITE setCanvasItem NOTIFY canvasItemChanged)
+      QObject* canvasItem() const { return _canvasItem; }
+      void setCanvasItem(QObject* item);
+
+      /// Capture the on-screen image of the 3-D canvas region.
+      /// *maxWidth* (pixels, 0 = no limit) optionally downscales the
+      /// result while preserving the aspect ratio.
+      /// Returns an empty QImage if no canvas item / window is available
+      /// or the grab failed.
+      Q_INVOKABLE QImage grabCanvas(int maxWidth = 0);
+
+      /// Capture the canvas and save it as a PNG file in the directory
+      /// returned by screenshotDirectory().  Returns the absolute path of
+      /// the written file, or an empty string on failure.
+      Q_INVOKABLE QString saveCanvasScreenshot();
+
+      /// Directory used by saveCanvasScreenshot() for its PNG output.
+      Q_INVOKABLE static QString screenshotDirectory();
 
       /// Returns the bounding box (in mm) of the SVG at the given path.
       /// The box reflects the Y-mirrored, px→mm-converted path data.
@@ -567,6 +696,16 @@ class ZCam : public QObject
       /// are written in millimetres with the Y axis flipped to match
       /// the SVG top-left origin.  Returns true on success.
       Q_INVOKABLE bool exportSvg(const QString& path);
+
+      /// Export the project's CAD tree to a DXF file.
+      /// Polygons are exported as LWPOLYLINE entities; cubic bezier
+      /// segments are exported as SPLINE entities (degree-3 B-spline
+      /// with 4 control points).  Rectangles become closed LWPOLYLINEs,
+      /// Ellipses become ELLIPSE entities and Text elements become TEXT
+      /// entities.  Each element's colour is derived from its effective
+      /// LaserMop, mapped to the nearest ACI colour index and placed on
+      /// a per-colour DXF layer.  Returns true on success.
+      Q_INVOKABLE bool exportDxf(const QString& path);
 
       /// Prepare a drag-preview geometry for the SVG at the given path.
       /// The geometry is a rectangle outline matching the SVG bounding box.

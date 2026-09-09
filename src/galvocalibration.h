@@ -45,12 +45,20 @@ class Machine;
 //    galvoBulge4 is not computed from the 9-point pattern;
 //    it is always set to (0, 0) by the calibration.
 //
-//    galvoOffset compensates a non-centred beam hitting the
-//    galvo/lens.  The offset is estimated from the
-//    left/right (or top/bottom) asymmetry of the measured
-//    line pairs BEFORE the bulge fit, so that the bulge
-//    coefficient is not corrupted by the offset.
+//    galvoOffset compensates a displaced distortion centre (beam
+//    offset on the galvo/lens).  It is estimated from the left/right
+//    (top/bottom) asymmetry of the measured line pairs BEFORE the
+//    joint scale+bulge fit, so the fit is not corrupted by the offset.
+//    The asymmetry is 2*bulge*h²*dx (exact), so dx is recovered as
+//    avg(asym) / (2*bulge*h²) in table units.
+//
+//    galvoScale and galvoBulge are fitted jointly per axis with a
+//    2-parameter least-squares solve from the three centred pair
+//    averages.  A single-parameter bulge fit would implicitly assume
+//    scale == 1 and fold any real scale error into the bulge
+//    coefficient.
 //---------------------------------------------------------
+
 class GalvoCalibration : public QObject
       {
       Q_OBJECT
@@ -81,9 +89,8 @@ class GalvoCalibration : public QObject
       /// supplies the field size.  galvoBulge4 is set to (0, 0).
       /// Returns true on success.
       Q_INVOKABLE bool compute(Machine* machine, double xTopLeft, double xTopRight, double xMiddleLeft,
-                                double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
-                                double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop,
-                                double yRightBottom);
+          double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop, double yLeftBottom,
+          double yCenterTop, double yCenterBottom, double yRightTop, double yRightBottom);
 
       /// Reset computed results to invalid state.
       Q_INVOKABLE void clear();
@@ -95,10 +102,8 @@ class GalvoCalibration : public QObject
       /// Save the 12 raw measurement values (mm) to a JSON file.
       /// Returns true on success.
       Q_INVOKABLE bool saveParameters(const QString& filePath, double xTopLeft, double xTopRight,
-                                       double xMiddleLeft, double xMiddleRight, double xBottomLeft,
-                                       double xBottomRight, double yLeftTop, double yLeftBottom,
-                                       double yCenterTop, double yCenterBottom, double yRightTop,
-                                       double yRightBottom);
+          double xMiddleLeft, double xMiddleRight, double xBottomLeft, double xBottomRight, double yLeftTop,
+          double yLeftBottom, double yCenterTop, double yCenterBottom, double yRightTop, double yRightBottom);
 
       /// Load a previously saved parameter set from a JSON file.
       /// Returns a map with the 12 values (or an empty map on error).

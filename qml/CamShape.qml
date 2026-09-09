@@ -16,7 +16,8 @@ import ZCam
 // Renders the Cam element with per-layer geometry subsets.
 // Each LaserMop contributes two subsets:
 //   even index — MarkTo segments (in the Mop's colour)
-//   odd index   — MoveTo segments (in a dimmed version of that colour)
+//   odd index   — MoveTo / jump segments (in the configured
+//                 "Move Color" from Config, NOT in the Mop colour)
 // The material list is rebuilt whenever element.layerColors changes.
 Model {
     id: model
@@ -44,12 +45,16 @@ Model {
 
         if (!colors || colors.length === 0) {
             // Fallback: two static materials with the old config colours
-            materials = [fallbackMarkMaterial, fallbackMoveMaterial];
+            materials = [fallbackMarkMaterial, moveMaterial];
             return;
         }
 
-        // Build two materials per layer: marks (full colour) and
-        // moves (dimmed colour).
+        // Build one material per layer for the marks (the layer's Mop
+        // colour).  All move (jump) subsets share the single
+        // moveMaterial, which is bound to the configured Config
+        // "Move Color".  Qt Quick 3D maps materials to geometry
+        // subsets positionally, and the same material instance may
+        // appear multiple times in the list.
         var mats = [];
         for (var i = 0; i < colors.length; ++i) {
             var c = colors[i];
@@ -65,16 +70,7 @@ Model {
             mats.push(markMat);
             _dynamicMaterials.push(markMat);
 
-            var moveMat = Qt.createQmlObject(
-                "import QtQuick3D; PrincipledMaterial { " +
-                "cullMode: PrincipledMaterial.NoCulling; " +
-                "lineWidth: 3; " +
-                "lighting: PrincipledMaterial.NoLighting; " +
-                "baseColor: Qt.rgba(" + c.r + ", " + c.g + ", " + c.b + ", 0.4) " +
-                "}",
-                model, "moveMaterial_" + i);
-            mats.push(moveMat);
-            _dynamicMaterials.push(moveMat);
+            mats.push(moveMaterial);
         }
         materials = mats;
     }
@@ -87,19 +83,27 @@ Model {
         ignoreUnknownSignals: true
     }
 
-    // Fallback materials (only used when layerColors is empty)
+    // Shared material for all MoveTo (jump) subsets: the configured
+    // "Move Color" from Config, regardless of which Mop the layer
+    // belongs to.  The binding is live, so changing moveColor in the
+    // Config panel immediately recolours every jump path on the 3D
+    // canvas without rebuilding the material list.  (An alpha set in
+    // the configured colour is honoured, so users can still dim the
+    // jumps if they wish.)
+    PrincipledMaterial {
+        id: moveMaterial
+        cullMode: PrincipledMaterial.NoCulling
+        lineWidth: 3
+        lighting: PrincipledMaterial.NoLighting
+        baseColor: ZCam.config.moveColor
+    }
+
+    // Fallback mark material (only used when layerColors is empty)
     PrincipledMaterial {
         id: fallbackMarkMaterial
         cullMode: PrincipledMaterial.NoCulling
         lineWidth: 3
         lighting: PrincipledMaterial.NoLighting
         baseColor: ZCam.config.markColor
-    }
-    PrincipledMaterial {
-        id: fallbackMoveMaterial
-        cullMode: PrincipledMaterial.NoCulling
-        lineWidth: 3
-        lighting: PrincipledMaterial.NoLighting
-        baseColor: ZCam.config.moveColor
     }
 }

@@ -18,6 +18,16 @@ Item {
     id: root
 
     property int currentMachineIdx: -1
+    property bool _removing: false   // guard: true while removeCurrent() is in progress
+
+    // Delete removes the currently selected machine.
+    // Scoped to this component so it only fires when the machines panel
+    // is loaded and a machine is selected.  No keyboard focus required.
+    Shortcut {
+        sequence: "Delete"
+        enabled: root.visible && root.currentMachineIdx >= 0
+        onActivated: root.removeCurrent()
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -43,6 +53,10 @@ Item {
     Connections {
         target: ZCam.machines
         function onMachinesModelChanged() {
+            // Skip while removeCurrent() is in progress — it handles
+            // index adjustment itself after the model is fully rebuilt.
+            if (_removing)
+                return;
             if (currentMachineIdx >= ZCam.machines.machinesModel.length) {
                 currentMachineIdx = ZCam.machines.machinesModel.length - 1;
                 } else if (currentMachineIdx < 0 && ZCam.machines.machinesModel.length > 0) {
@@ -87,11 +101,7 @@ Item {
                     }
                 ToolButton {
                     text: "-"
-                    onClicked: {
-                        if (currentMachineIdx >= 0) {
-                            ZCam.machines.removeMachine(currentMachineIdx);
-                            }
-                        }
+                    onClicked: root.removeCurrent()
                     }
                 }
 
@@ -184,6 +194,27 @@ Item {
         if (visible)
             selectProjectMachine();
         }
+
+    /// Removes the currently selected machine.  Shared by the "−" button
+    /// and the Delete key.  The index is adjusted after the model is
+    /// fully rebuilt.
+    function removeCurrent() {
+        if (currentMachineIdx < 0)
+            return;
+        let removedIdx = currentMachineIdx;
+        _removing = true;
+        ZCam.machines.removeMachine(currentMachineIdx);
+        currentMachineIdx = -1;
+        _removing = false;
+
+        // Now that the model is fully rebuilt, adjust the index.
+        // Select the machine that took the removed one's position, or
+        // the last one if the removed machine was at the end.
+        let n = ZCam.machines.machinesModel.length;
+        if (n > 0)
+            currentMachineIdx = Math.min(removedIdx, n - 1);
+        machineList.model = ZCam.machines.machinesModel;
+    }
 
     function selectProjectMachine() {
         var name = ZCam.project ? ZCam.project.machineName : "";

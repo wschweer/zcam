@@ -31,6 +31,7 @@
 #include "recipe.h"
 #include "undo.h"
 #include "xmlreader.h"
+#include "laser_mop.h"
 
 //---------------------------------------------------------
 //   PcbPath
@@ -1604,7 +1605,7 @@ bool import(ZCam* zcam, const QString& path) {
             auto* ll = new LaserMop(zcam, fixture);
             ll->setName(QStringLiteral("LL-%1").arg(fi.baseName()));
             ll->setExpanded(false);
-            root->set_laserLayer(ll);
+            root->set_mop(ll);
             us->push(new InsertElementCommand(zcam, fixture, ll, -1));
             }
 

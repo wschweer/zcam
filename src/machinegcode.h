@@ -14,24 +14,24 @@
 #include <QObject>
 #include <QVector3D>
 #include <QtQml/qqmlregistration.h>
-#include "machine.h"
+#include "engine.h"
 #include "macros.h"
 
-class ZCam;
+class Machine;
 
 //---------------------------------------------------------
 //   MachineGCode
-//    G-code CNC machine — concrete Machine subclass.
+//    G-code CNC machine — concrete Engine subclass.
 //---------------------------------------------------------
 
-class MachineGCode : public Machine
+class MachineGCode : public Engine
       {
       Q_OBJECT
       QML_ELEMENT
-      QML_UNCREATABLE("MachineGCode objects are created by Machines")
+      QML_UNCREATABLE("MachineGCode objects are created by Machine")
 
     public:
-      MachineGCode(ZCam* zc, QObject* parent = nullptr) : Machine(zc, parent) {}
+      MachineGCode(Machine* m, QObject* parent = nullptr) : Engine(m, parent) {}
       ~MachineGCode() = default;
-      virtual const std::string_view properties() const override;
+      virtual const std::string properties() const override;
       };

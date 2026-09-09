@@ -14,22 +14,37 @@
 #include <QObject>
 #include <QQuickWindow>
 #include <QQuickItem>
+#include <QFileInfo>
+#include <QUrl>
 #include <QTimer>
 #include <QSet>
 
 //--------------------------------------------------------------------
 //     SideBarColorFixer
 //--------------------------------------------------------------------
-//  Qt 6.12 regression: the Material SideBar.qml buttonDelegate's IconLabel
-//  no longer sets an explicit `color`, causing the sidebar button text to
-//  default to black (QColor() = invalid = black) — unreadable on the dark
-//  Material background.
+//  Two unrelated file-dialog workarounds, both driven by a single
+//  Expose-event filter on the QQuickWindows that back the Qt Quick
+//  (quickimpl) file dialogs:
 //
-//  This event filter catches Expose events on QQuickWindows that look like
-//  file dialogs (by title), waits 50ms for the QML delegates to instantiate,
-//  then walks the item tree and sets every QQuickIconLabel's `color`
-//  property to white.
-
+//  1) Qt 6.12 regression: the Material SideBar.qml buttonDelegate's
+//     IconLabel no longer sets an explicit `color`, so the sidebar
+//     button text defaults to black — unreadable on the dark Material
+//     background.  After a dialog window is exposed we walk its item
+//     tree and set every QQuickIconLabel's `color` to white.
+//
+//  2) Qt behaviour: in "Save" (export) mode QQuickFileDialogImpl only
+//     fills the "File name" text field when the target file already
+//     exists on disk (QQuickFileDialogImplPrivate::updateFileNameTextEdit
+//     guards the setText() with `if (fileInfo.isFile())`).  For an
+//     Export/Save dialog the file does not exist yet, so the field
+//     stays empty even though `selectedFile` is set.  After the dialog
+//     is exposed we find that (empty) text field and, when the dialog
+//     has a selectedFile, fill the field with its file name so the
+//     suggested name is visible in the dialog.
+//
+//  Both fixes are idempotent: they only *add* text / colour where the
+//  field is empty or the colour is missing, so they never clobber
+//  something the user already typed.
 class SideBarColorFixer : public QObject {
     Q_OBJECT
 public:
@@ -51,8 +66,10 @@ protected:
                 if (!title.isEmpty() && win->transientParent()) {
                     // Delay the fix to allow QML delegates to be created
                     QTimer::singleShot(50, this, [win]() {
-                        if (win->contentItem())
+                        if (win->contentItem()) {
                             fixIconLabels(win->contentItem());
+                            prefillSaveFileName(win);
+                        }
                     });
                 }
             }
@@ -90,5 +107,65 @@ private:
         const auto children = item->childItems();
         for (QQuickItem* child : children)
             fixIconLabels(child);
+    }
+
+    // Recursively find a QQuickItem by its `objectName` within an item subtree.
+    static QQuickItem* findItemByObjectName(QQuickItem* item, const QString& objectName)
+    {
+        if (!item)
+            return nullptr;
+        if (item->objectName() == objectName)
+            return item;
+        const auto children = item->childItems();
+        for (QQuickItem* child : children)
+            if (auto* found = findItemByObjectName(child, objectName))
+                return found;
+        return nullptr;
+    }
+
+    // Walk up the parent chain from `from` and return the first ancestor that
+    // carries a non-empty `selectedFile` URL property (the enclosing
+    // QQuickFileDialogImpl).
+    static QUrl selectedFileOf(const QObject* from)
+    {
+        for (const QObject* o = from; o; o = o->parent()) {
+            const QVariant v = o->property("selectedFile");
+            if (v.isValid() && v.canConvert<QUrl>()) {
+                const QUrl url = v.toUrl();
+                if (!url.isEmpty())
+                    return url;
+                }
+            }
+        return QUrl();
+    }
+
+    // In a Save/Export file dialog, pre-fill the (empty) "File name" text
+    // field with the file name of the dialog's selectedFile.  Qt leaves the
+    // field blank for files that do not exist on disk yet, which is exactly
+    // the case for an export target — so the suggested name is normally not
+    // shown.  We only act when the field is still empty, so we never override
+    // a name the user has typed.
+    static void prefillSaveFileName(QQuickWindow* win)
+    {
+        if (!win->contentItem())
+            return;
+
+        QQuickItem* textField = findItemByObjectName(win->contentItem(), "fileNameTextField");
+        if (!textField)
+            return;
+
+        const QString existing = textField->property("text").toString();
+        if (!existing.isEmpty())
+            return; // already has a name — do not touch
+
+        const QUrl selected = selectedFileOf(textField);
+        if (selected.isEmpty())
+            return;
+
+        const QString name = QFileInfo(selected.toLocalFile()).fileName();
+        if (name.isEmpty())
+            return;
+
+        textField->setProperty("text", name);
     }
 };

@@ -511,7 +511,9 @@ static void decode_multi_params(const uint16_t p[6]) {
                   break;
             case 0x0026:
             case 0x0027:
-            case 0x0029: out_printf("p0=%d p1=%d p2=%d p3=%d\n", p[1], p[2], p[3], p[4]); break;
+            case 0x0029:
+                  out_printf("p0=%d p1=%d p2=%d p3=%d p4=%d\n", p[1], p[2], p[3], p[4], p[5]);
+                  break;
             case 0x002E: // SetFpkParam2
                   out_printf("max_v=%d min_v=%d t1=%d t2=%d\n", p[1], p[2], p[3], p[4]);
                   break;
@@ -521,7 +523,9 @@ static void decode_multi_params(const uint16_t p[6]) {
             case 0x0062: // SetFpkParam
                   out_printf("p1=0x%04x p2=0x%04x p3=0x%04x p4=0x%04x\n", p[1], p[2], p[3], p[4]);
                   break;
-            default: out_printf("0x%04x 0x%04x 0x%04x 0x%04x 0x%04x\n", p[1], p[2], p[3], p[4], p[5]); break;
+            default:
+                  out_printf("0x%04x 0x%04x 0x%04x 0x%04x 0x%04x\n", p[1], p[2], p[3], p[4], p[5]);
+                  break;
             }
       }
 

@@ -18,7 +18,7 @@
 //   LaserRKQ
 //---------------------------------------------------------
 
-LaserRKQ::LaserRKQ(ZCam* w, QObject* parent) : Laser(w, parent) {
+LaserRKQ::LaserRKQ(Machine* m, QObject* parent) : Laser(m, parent) {
       }
 
 //---------------------------------------------------------
@@ -69,7 +69,7 @@ void LaserRKQ::laserInit() {
       std::fill(frame.begin(), frame.begin() + 6, 0xFF);
 
       Debug("laserInit: sending {}-byte broadcast frame ({} byte header + {} byte zero payload)", FrameSize,
-            HeaderSize, PayloadSize);
+          HeaderSize, PayloadSize);
 
       if (!sendPacket(frame))
             Warning("laserInit: failed to enqueue broadcast discovery frame");

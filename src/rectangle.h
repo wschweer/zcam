@@ -63,7 +63,7 @@ class Rectangle : public Element3d
                       "label": "Mop",
                       "cells": [
                         {
-                          "name": "laserLayer",
+                          "name": "mop",
                           "type": "laserLayer",
                           "default": ""
                         }

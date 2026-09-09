@@ -20,6 +20,8 @@
 #include <QList>
 #include <QVector2D>
 
+class Framing;
+
 //---------------------------------------------------------
 //   Cam
 //---------------------------------------------------------
@@ -39,8 +41,10 @@ class Cam : public Element3d
       PROPV(QVector2D, viewCenter, QVector2D(0.0, 0.0)) ///< foot point (x,y) [mm] of the viewpoint on z=0
 
       // Colours for each LaserMop layer, in geometry-subset order.
-      // Populated by updateCam(); used by CamShape.qml to build per-layer
-      // materials so each Mop's CAM data is drawn in its own colour.
+      // Populated by updateCam(); used by CamShape.qml to build the per-layer
+      // materials for the MARK subsets so each Mop's CAM data is drawn in
+      // its own colour.  The MOVE (jump) subsets share one material bound to
+      // the configured Config "Move Color" (Config::moveColor) instead.
       QList<QColor> _layerColors;
       Q_PROPERTY(QList<QColor> layerColors READ layerColors NOTIFY layerColorsChanged)
 
@@ -231,7 +235,7 @@ class Cam : public Element3d
             ]
         }
     ]
-                  })"};
+                        })"};
 
     signals:
       void panelChanged();
@@ -250,6 +254,10 @@ class Cam : public Element3d
       /// stores the combined line geometry in this Cam's _geometry.
       Clipper2Lib::PathD convexHull() const;
       Clipper2Lib::RectD boundingBox() const;
+      /// Returns the Framing element that is a child of this Cam,
+      /// or nullptr if none exists.  The laser engine uses it to
+      /// read the framing type and the pre-computed contour.
+      Framing* framing() const;
       /// Recalculate all cam data (panel layout, fixture, laser layers).
       /// This is expensive and must be triggered explicitly — either by
       /// the manual refresh button (ZCam::refreshCam) or at startup.

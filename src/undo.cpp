@@ -37,10 +37,10 @@ void UndoCommand::cleanup(bool undo) {
 //---------------------------------------------------------
 
 void UndoCommand::undo() {
-//      Debug("==");
+      //      Debug("==");
       int n = childList.size();
       for (int i = n - 1; i >= 0; --i) {
-//            Debug("{}", childList[i]->description());
+            //            Debug("{}", childList[i]->description());
             childList[i]->undo();
             }
       flip();
@@ -51,10 +51,10 @@ void UndoCommand::undo() {
 //---------------------------------------------------------
 
 void UndoCommand::redo() {
-//      Debug("==");
+      //      Debug("==");
       int n = childList.size();
       for (int i = 0; i < n; ++i) {
-//            Debug("{}", childList[i]->description());
+            //            Debug("{}", childList[i]->description());
             childList[i]->redo();
             }
       flip();
@@ -98,9 +98,10 @@ void UndoStack::beginMacro() {
             return;
             }
       // Support nesting: if a macro is already active, push the current
-      // command onto the macro stack so the new macro becomes a child.
+      // command onto the macro stack and start a new child macro.
       if (curCmd) {
-            Fatal("already active");
+            macroStack.append(curCmd);
+            curCmd = new UndoCommand(zcam);
             return;
             }
       curCmd = new UndoCommand(zcam);
@@ -123,6 +124,17 @@ void UndoStack::endMacro(bool rollback) {
 
       if (rollback || curCmd->childCount() == 0)
             delete curCmd;
+      else if (!macroStack.isEmpty()) {
+            // Nested macro: attach the child macro to its parent
+            // (the top of the macro stack) instead of pushing it
+            // onto the top-level undo list.
+            UndoCommand* parent = macroStack.takeLast();
+            if (rollback)
+                  curCmd->unwind();
+            parent->appendChild(curCmd);
+            curCmd = parent;
+            return;
+            }
       else {
             // remove redo stack
             while (list.size() > curIdx) {
@@ -143,7 +155,7 @@ void UndoStack::endMacro(bool rollback) {
 //---------------------------------------------------------
 
 void UndoStack::push(UndoCommand* cmd) {
-      Debug("{}: <{}>", inUndoRedo, cmd->description());
+//      Debug("{}: <{}>", inUndoRedo, cmd->description());
       if (_active) // do not record command if not active
             push1(cmd);
       cmd->redo(); // execute command

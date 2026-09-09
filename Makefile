@@ -8,7 +8,7 @@ PROJECT=zcam
 export LOGFILE=${HOME}/${PROJECT}/${PROJECT}.log
 
 ${PROJECT}:
-	#export QT_FATAL_WARNINGS=true
+	export QT_FATAL_WARNINGS=true
 	cd build; cmake --build . --parallel 32 && cd .. && build/${PROJECT}
 
 uv:
@@ -37,7 +37,7 @@ profile:
 #     (for this to work HOME/bin must exist and must be part of your PATH
 #
 i:
-	cp build/${PROJECT}  §{HOME}/bin
+	cp build/${PROJECT}  ${HOME}/bin
 
 #
 #     git push helper

@@ -1,623 +1,1766 @@
 //=============================================================================
-//  wcam
-//  G-Code generator
+//  ZCam - manufacturing tool for G-code machines and Fiber Laser
 //
-//  Copyright (C) 2023 Werner Schweer
+//  Copyright (C) 2026 Werner Schweer
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License version 2
 //  as published by the Free Software Foundation and appearing in
-//  the file LICENSE.GPL
+//  the file LICENCE.GPL
 //=============================================================================
 
 #include "recipe.h"
-#include "cam.h"
-#include "clipper.h"
-#include "element3d.h"
-#include "fixture.h"
-#include "project.h"
-#include "cad.h"
-#include "zcam.h"
 
-#include <algorithm>
-// #include <cmath>
-#include <functional>
-#include <future>
-#include <limits>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QStringList>
+#include <QTextStream>
+#include "logger.h"
 #include <memory>
-#include <vector>
+#include <map>
+#include <functional>
+
+static const std::string _uvLaserPassProperties = R"({
+    "class": "Layer Setting",
+    "rows": [
+        {
+            "label": "Name",
+            "cells": [
+                {
+                    "name": "name",
+                    "type": "singleline"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": false,
+                    "name": "enabled",
+                    "sublabel": "enabled"
+                },
+                {
+                    "type": "int",
+                    "scriptable": true,
+                    "min": 1,
+                    "max": 10000,
+                    "default": 1,
+                    "name": "numPasses",
+                    "sublabel": "passes"
+                }
+            ]
+        },
+        {
+            "cells": [
+                {
+                    "name": "line",
+                    "type": "line",
+                    "label": "Laser"
+                }
+            ]
+        },
+        {
+            "columns": 2,
+            "cells": [
+                {
+                    "label": "Power",
+                    "cells": [
+                        {
+                            "name": "frequency",
+                            "sublabel": "Freq,",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "kHz",
+                            "default": 40.0
+                        },
+                        {
+                            "name": "speed",
+                            "sublabel": "speed",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm/s",
+                            "min": 0.0,
+                            "max": 100000.0,
+                            "default": 1000.0
+                        }
+                    ]
+                },
+                {
+                    "label": "Pulse",
+                    "cells": [
+                        {
+                            "type": "float",
+                            "unit": "ns",
+                            "name": "uvMinPulse",
+                            "sublabel": "minPulse",
+                            "default": 1.0
+                        },
+                        {
+                            "type": "float",
+                            "unit": "ns",
+                            "name": "uvMaxPulse",
+                            "sublabel": "maxPulse",
+                            "default": 20.0
+                        }
+                    ]
+                },
+                {
+                    "label": "FPK",
+                    "cells": [
+                        {
+                            "type": "bool",
+                            "name": "enableFPK",
+                            "label": "enable"
+                        },
+                        {
+                            "type": "float",
+                            "name": "fpkStartPower",
+                            "sublabel": "Start Power",
+                            "enabled": "enableFPK"
+                        },
+                        {
+                            "type": "float",
+                            "name": "fpkIncrement",
+                            "sublabel": "Increment",
+                            "enabled": "enableFPK"
+                        }
+                    ]
+                },
+                {
+                    "label": "Tickle",
+                    "cells": [
+                        {
+                            "type": "bool",
+                            "name": "enableTickle",
+                            "label": "enable"
+                        },
+                        {
+                            "type": "float",
+                            "name": "ticklePulse",
+                            "sublabel": "Pulse",
+                            "unit": "µs",
+                            "enabled": "enableTickle"
+                        },
+                        {
+                            "type": "float",
+                            "name": "tickleFrequence",
+                            "sublabel": "Freq",
+                            "unit": "Hz",
+                            "enabled": "enableTickle"
+                        }
+                    ]
+                },
+                {
+                    "name": "line",
+                    "type": "line",
+                    "colSpan": 2
+                },
+                {
+                    "label": "Hatch",
+                    "cells": [
+                        {
+                            "name": "interval",
+                            "sublabel": " ",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.001,
+                            "max": 100.0,
+                            "default": 0.05
+                        },
+                        {
+                            "name": "intervalLpi",
+                            "sublabel": "Lpi",
+                            "type": "float",
+                            "scriptable": true
+                        },
+                        {
+                            "name": "intervalLpmm",
+                            "sublabel": "Lpmm",
+                            "type": "float",
+                            "scriptable": true
+                        }
+                      ]
+                },
+                {
+                    "label": "Angle",
+                    "cells": [
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "°",
+                            "min": -360.0,
+                            "max": 360.0,
+                            "default": 0.0,
+                            "name": "startAngle",
+                            "sublabel": "Start"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "°",
+                            "min": -360.0,
+                            "max": 360.0,
+                            "default": 90.0,
+                            "name": "angleIncrement",
+                            "sublabel": "Incr"
+                        }
+                    ]
+                },
+                {
+                    "label": " ",
+                    "cells": [
+                        {
+                            "type": "bool",
+                            "default": true,
+                            "name": "zigzag",
+                            "sublabel": "Zigzag"
+                        },
+                        {
+                            "type": "int",
+                            "scriptable": true,
+                            "min": 1,
+                            "max": 100,
+                            "default": 1,
+                            "name": "interleave",
+                            "sublabel": "Interleave"
+                        }
+                    ]
+                },
+                {
+                    "label": "Wobble",
+                    "cells": [
+                        {
+                            "type": "bool",
+                            "default": false,
+                            "name": "wobble",
+                            "sublabel": "enable"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.0,
+                            "max": 10.0,
+                            "default": 0.05,
+                            "name": "wobbleStep",
+                            "sublabel": "Step"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.0,
+                            "max": 10.0,
+                            "default": 0.1,
+                            "name": "wobbleSize",
+                            "sublabel": "Size"
+                        }
+                    ]
+                },
+                {
+                    "name": "line",
+                    "type": "line",
+                    "colSpan": 2
+                },
+                {
+                    "label": "Override",
+                    "cells": [
+                        {
+                            "name": "overrideTimings",
+                            "sublabel": "enable",
+                            "type": "bool",
+                            "default": false
+                        },
+                        {
+                              "name": "leer",
+                              "type": "empty"
+                        },
+                        {
+                              "name": "leer",
+                              "type": "empty"
+                        }
+                    ]
+                },
+                {
+                    "label": "Jump",
+                    "colSpan": 2,
+                    "cells": [
+                        {
+                            "name": "jumpSpeed",
+                            "sublabel": "speed",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "min": 0,
+                            "max": 99999.0,
+                            "default": 6000.0,
+                            "unit": "mm/s²"
+                        },
+                        {
+                            "name": "jumpDistanceLimit",
+                            "sublabel": "limit",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.0,
+                            "max": 100.0,
+                            "default": 10.0
+                        },
+                        {
+                            "name": "minJumpDelay",
+                            "sublabel": "minDelay",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 200.0
+                        },
+                        {
+                            "name": "maxJumpDelay",
+                            "sublabel": "maxDelay",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 400.0
+                        }
+                    ]
+                },
+                {
+                    "label": "Delay",
+                    "colSpan": 2,
+                    "cells": [
+                        {
+                            "name": "onDelay",
+                            "sublabel": "on",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "min": -9999,
+                            "max": 9999.0,
+                            "default": 100.0,
+                            "unit": "µs"
+                        },
+                        {
+                            "name": "offDelay",
+                            "sublabel": "off",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 100.0
+                        },
+                        {
+                            "name": "endDelay",
+                            "sublabel": "end",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 100.0
+                        },
+                        {
+                            "name": "polygonDelay",
+                            "sublabel": "polygon",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 100.0
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+                  })";
+
+static const std::string _laserPassProperties = R"({
+    "class": "Layer Setting",
+    "rows": [
+        {
+            "label": "Name",
+            "cells": [
+                {
+                    "name": "name",
+                    "type": "singleline"
+                }
+            ]
+        },
+        {
+            "label": " ",
+            "cells": [
+                {
+                    "type": "bool",
+                    "default": false,
+                    "name": "enabled",
+                    "sublabel": "enabled"
+                },
+                {
+                    "type": "int",
+                    "scriptable": true,
+                    "min": 1,
+                    "max": 10000,
+                    "default": 1,
+                    "name": "numPasses",
+                    "sublabel": "passes"
+                }
+            ]
+        },
+        {
+            "cells": [
+                {
+                    "name": "line",
+                    "type": "line"
+                }
+            ]
+        },
+        {
+            "columns": 2,
+            "cells": [
+                {
+                    "label": "Laser",
+                    "colSpan": 2,
+                    "cells": [
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "%",
+                            "min": 0.0,
+                            "max": 100.0,
+                            "default": 20.0,
+                            "name": "power",
+                            "sublabel": "Power"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "kHz",
+                            "default": 40.0,
+                            "name": "frequency",
+                            "sublabel": "Frequency"
+                        },
+                        {
+                            "type": "pulsewidth",
+                            "unit": "ns",
+                            "name": "pulseWidth",
+                            "sublabel": "Pulse"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm/s",
+                            "min": 0.0,
+                            "max": 100000.0,
+                            "default": 1000.0,
+                            "name": "speed",
+                            "sublabel": "speed"
+                        }
+                    ]
+                },
+                {
+                    "name": "line",
+                    "type": "line",
+                    "colSpan": 2
+                },
+                {
+                    "label": "Hatch",
+                    "cells": [
+                        {
+                            "name": "interval",
+                            "sublabel": " ",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.001,
+                            "max": 100.0,
+                            "default": 0.05
+                        },
+                        {
+                            "name": "intervalLpi",
+                            "sublabel": "Lpi",
+                            "type": "float",
+                            "scriptable": true
+                        },
+                        {
+                            "name": "intervalLpmm",
+                            "sublabel": "Lpmm",
+                            "type": "float",
+                            "scriptable": true
+                        }
+                      ]
+                },
+                {
+                    "label": "Angle",
+                    "cells": [
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "°",
+                            "min": -360.0,
+                            "max": 360.0,
+                            "default": 0.0,
+                            "name": "startAngle",
+                            "sublabel": "Start"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "°",
+                            "min": -360.0,
+                            "max": 360.0,
+                            "default": 90.0,
+                            "name": "angleIncrement",
+                            "sublabel": "Incr"
+                        }
+                    ]
+                },
+                {
+                    "label": " ",
+                    "cells": [
+                        {
+                            "type": "bool",
+                            "default": true,
+                            "name": "zigzag",
+                            "sublabel": "Zigzag"
+                        },
+                        {
+                            "type": "int",
+                            "scriptable": true,
+                            "min": 1,
+                            "max": 100,
+                            "default": 1,
+                            "name": "interleave",
+                            "sublabel": "Interleave"
+                        }
+                    ]
+                },
+                {
+                    "label": "Wobble",
+                    "cells": [
+                        {
+                            "type": "bool",
+                            "default": false,
+                            "name": "wobble",
+                            "sublabel": "enable"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.0,
+                            "max": 10.0,
+                            "default": 0.05,
+                            "name": "wobbleStep",
+                            "sublabel": "Step"
+                        },
+                        {
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.0,
+                            "max": 10.0,
+                            "default": 0.1,
+                            "name": "wobbleSize",
+                            "sublabel": "Size"
+                        }
+                    ]
+                },
+                {
+                    "name": "line",
+                    "type": "line",
+                    "colSpan": 2
+                },
+                {
+                    "label": "Override",
+                    "cells": [
+                        {
+                            "name": "overrideTimings",
+                            "sublabel": " ",
+                            "type": "bool",
+                            "default": false
+                        },
+                        {
+                              "name": "leer",
+                              "type": "empty"
+                        },
+                        {
+                              "name": "leer",
+                              "type": "empty"
+                        }
+                    ]
+                },
+                {
+                    "label": "Jump",
+                    "colSpan": 2,
+                    "cells": [
+                        {
+                            "name": "jumpSpeed",
+                            "sublabel": "speed",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "min": 0,
+                            "max": 99999.0,
+                            "default": 6000.0,
+                            "unit": "mm/s²"
+                        },
+                        {
+                            "name": "jumpDistanceLimit",
+                            "sublabel": "limit",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "mm",
+                            "min": 0.0,
+                            "max": 100.0,
+                            "default": 10.0
+                        },
+                        {
+                            "name": "minJumpDelay",
+                            "sublabel": "minDelay",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 200.0
+                        },
+                        {
+                            "name": "maxJumpDelay",
+                            "sublabel": "maxDelay",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 400.0
+                        }
+                    ]
+                },
+                {
+                    "label": "Delay",
+                    "colSpan": 2,
+                    "cells": [
+                        {
+                            "name": "onDelay",
+                            "sublabel": "on",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "min": -9999,
+                            "max": 9999.0,
+                            "default": 100.0,
+                            "unit": "µs"
+                        },
+                        {
+                            "name": "offDelay",
+                            "sublabel": "off",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 100.0
+                        },
+                        {
+                            "name": "endDelay",
+                            "sublabel": "end",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 100.0
+                        },
+                        {
+                            "name": "polygonDelay",
+                            "sublabel": "polygon",
+                            "enabled": "overrideTimings",
+                            "type": "float",
+                            "scriptable": true,
+                            "unit": "µs",
+                            "min": -9999.0,
+                            "max": 9999.0,
+                            "default": 100.0
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+                  })";
 
 //---------------------------------------------------------
-//   collectBurnElementsForLaserLayer
-//    Recursively collect all burnable Element3d children under the
-//    given element whose effectiveLaserLayer() equals the given
-//    LaserLayer.  This traverses the full subtree so that elements
-//    at any depth are found, as long as they resolve to this LaserLayer.
+//   LaserLayerSetting
 //---------------------------------------------------------
 
-static void collectBurnElementsForLaserLayer(
-    Element* parent, const Mop* ll, std::vector<const Element3d*>& out) {
-      for (Element* child : parent->children()) {
-            auto* ce = qobject_cast<Element3d*>(child);
-            if (!ce)
-                  continue;
-            // Skip LaserLayer elements themselves — they are not geometry.
-            if (isType<Mop>(ce))
-                  continue;
-            // Check if this element's effective Mop is the one we're looking for.
-            if (ce->effectiveMop() == ll && ce->burn() && !ce->pathList().empty())
-                  out.push_back(ce);
-            // Recurse into children regardless — a child may resolve to a
-            // different LaserLayer or to this one via inheritance.
-            collectBurnElementsForLaserLayer(child, ll, out);
+json LaserPass::toJson() const {
+      json data;
+      data["name"]              = _name.toStdString();
+      data["enabled"]           = _enabled;
+      data["power"]             = _power;
+      data["speed"]             = _speed;
+      data["travelSpeed"]       = _jumpSpeed;
+      data["frequency"]         = _frequency;
+      data["pulseWidth"]        = _pulseWidth;
+      data["numPasses"]         = _numPasses;
+      data["interval"]          = _interval;
+      data["startAngle"]        = _startAngle;
+      data["angleIncrement"]    = _angleIncrement;
+      data["zigzag"]            = _zigzag;
+      data["interleave"]        = _interleave;
+      data["wobble"]            = _wobble;
+      data["wobbleStep"]        = _wobbleStep;
+      data["wobbleSize"]        = _wobbleSize;
+      data["overrideTimings"]   = _overrideTimings;
+      data["onDelay"]           = _onDelay;
+      data["offDelay"]          = _offDelay;
+      data["endDelay"]          = _endDelay;
+      data["polygonDelay"]      = _polygonDelay;
+      data["jumpSpeed"]         = _jumpSpeed;
+      data["minJumpDelay"]      = _minJumpDelay;
+      data["maxJumpDelay"]      = _maxJumpDelay;
+      data["jumpDistanceLimit"] = _jumpDistanceLimit;
+      return data;
+      }
+
+//---------------------------------------------------------
+//   fromJson
+//---------------------------------------------------------
+
+void LaserPass::fromJson(const json& data) {
+      if (data.contains("name"))
+            _name = QString::fromStdString(data.at("name").get<std::string>());
+      if (data.contains("enabled"))
+            _enabled = data.at("enabled");
+      if (data.contains("power"))
+            _power = data.at("power");
+      if (data.contains("speed"))
+            _speed = data.at("speed");
+      if (data.contains("travelSpeed"))
+            _jumpSpeed = data.at("travelSpeed");
+      if (data.contains("frequency"))
+            _frequency = data.at("frequency");
+      if (data.contains("pulseWidth"))
+            _pulseWidth = data.at("pulseWidth");
+      if (data.contains("numPasses"))
+            _numPasses = data.at("numPasses");
+      if (data.contains("interval"))
+            _interval = data.at("interval");
+      if (data.contains("startAngle"))
+            _startAngle = data.at("startAngle");
+      if (data.contains("angleIncrement"))
+            _angleIncrement = data.at("angleIncrement");
+      if (data.contains("zigzag"))
+            _zigzag = data.at("zigzag");
+      if (data.contains("interleave"))
+            _interleave = data.at("interleave");
+      if (data.contains("wobble"))
+            _wobble = data.at("wobble");
+      if (data.contains("wobbleStep"))
+            _wobbleStep = data.at("wobbleStep");
+      if (data.contains("wobbleSize"))
+            _wobbleSize = data.at("wobbleSize");
+      if (data.contains("overrideTimings"))
+            _overrideTimings = data.at("overrideTimings");
+      if (data.contains("onDelay"))
+            _onDelay = data.at("onDelay");
+      if (data.contains("offDelay"))
+            _offDelay = data.at("offDelay");
+      if (data.contains("endDelay"))
+            _endDelay = data.at("endDelay");
+      if (data.contains("polygonDelay"))
+            _polygonDelay = data.at("polygonDelay");
+      if (data.contains("jumpSpeed"))
+            _jumpSpeed = data.at("jumpSpeed");
+      if (data.contains("minJumpDelay"))
+            _minJumpDelay = data.at("minJumpDelay");
+      if (data.contains("maxJumpDelay"))
+            _maxJumpDelay = data.at("maxJumpDelay");
+      if (data.contains("jumpDistanceLimit"))
+            _jumpDistanceLimit = data.at("jumpDistanceLimit");
+      }
+
+//---------------------------------------------------------
+//   LaserLayersSettings
+//---------------------------------------------------------
+
+json LaserPasses::toJson() const {
+      json data = json::array();
+      for (const auto& layer : *this)
+            data.push_back(layer.toJson());
+      return data;
+      }
+
+//---------------------------------------------------------
+//   fromJson
+//---------------------------------------------------------
+
+void LaserPasses::fromJson(const json& data) {
+      clear();
+      if (data.is_array()) {
+            for (const auto& jlayer : data) {
+                  LaserPass l;
+                  l.fromJson(jlayer);
+                  push_back(l);
+                  }
             }
       }
 
 //---------------------------------------------------------
-//   collectElements
-//    Collect all Element3d items in the project tree (from Cad
-//    downward) whose effectiveLaserLayer() equals this LaserLayer.
-//    The search starts at the Cad element and traverses the full
-//    subtree recursively.
+//   Recipe
 //---------------------------------------------------------
 
-std::vector<const Element3d*> LaserMop::collectElements() const {
-      std::vector<const Element3d*> elements;
-      Project* proj = zcam->project();
-      if (!proj)
-            return elements;
-      Cad* cad = proj->cad();
-      if (!cad)
-            return elements;
-      collectBurnElementsForLaserLayer(cad, this, elements);
-      return elements;
+json LaserRecipe::toJson() const {
+      json data;
+      data["name"]        = _name.toStdString();
+      data["description"] = _description.toStdString();
+      data["numPasses"]   = _numPasses;
+      data["machineType"] = std::string(machineTypeMap.name(_machineType));
+      data["layer"]       = _passes.toJson();
+      return data;
       }
 
 //---------------------------------------------------------
-//   Point
+//   fromJson
 //---------------------------------------------------------
 
-using Point = Clipper2Lib::Point<double>;
-
-static void optimize(LaserPath* lp, Clipper2Lib::PathsD lines);
-static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& currentPos);
-
-//---------------------------------------------------------
-//   LaserLayer
-//---------------------------------------------------------
-
-LaserMop::LaserMop(ZCam* w, Element* parent) : Mop(w, parent) {
-      setName("");
-      // LaserLayer no longer creates its own _geometry.
-      // Display geometry is collected and rendered by Cam.
-      set_model("LaserLayer1.qml");
-      // Assign the next free colour index from the project tree.
-      // Index 0 is reserved for NopMop; LaserMops get 1..31.
-      if (w && w->rootElement())
-            set_colorIndex(Mop::nextFreeColorIndex(w->rootElement()));
-      else
-            set_colorIndex(1);
-      }
-
-//---------------------------------------------------------
-//   collectLayerPath
-//    Return polygon list for a single tile (no panel-grid offsets).
-//    The geometry is in project-root coordinate space
-//    (ce->globalMatrix()).
-//    Cam applies the panel-grid offsets when building the full layout.
-//---------------------------------------------------------
-
-PathsD LaserMop::collectLayerPath() {
-      spl.clear();
-      auto elements = collectElements();
-
-      // Projection settings of the active Cam (perspective vs. orthographic).
-      bool persp = false;
-      double h   = 0.0;
-      QPointF vc;
-      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
-            persp = cam->perspective();
-            h     = cam->projectionHeight();
-            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
+void LaserRecipe::fromJson(const json& data) {
+      if (data.contains("name"))
+            _name = QString::fromStdString(data.at("name").get<std::string>());
+      if (data.contains("description"))
+            _description = QString::fromStdString(data.at("description").get<std::string>());
+      if (data.contains("numPasses"))
+            _numPasses = data.at("numPasses");
+      if (data.contains("machineType")) {
+            if (data.at("machineType").is_string()) {
+                  std::string nameStr = data.at("machineType").get<std::string>();
+                  auto mt             = machineTypeMap.type(std::string_view(nameStr));
+                  if (mt)
+                        _machineType = *mt;
+                  else
+                        _machineType = MachineType::UNKNOWN;
+                  }
             }
-
-      for (const auto* ce : elements) {
-            Clipper2Lib::PathsD paths = projectPathListToXY(ce, persp, h, vc);
-            spl.append_range(paths);
-            }
-
-      return spl;
+      if (data.contains("layer"))
+            _passes.fromJson(data.at("layer"));
       }
 
 //---------------------------------------------------------
-//   processTileLines
-//    Process one tile's geometry through the recipe (fill, wobble,
-//    line segments) and return raw line segments in project-root
-//    coordinate space.  No panel-grid offsets are applied —
-//    Cam handles the grid layout.
+//   properties
+//    Returns the JSON description of the recipe properties for
+//    the inspector / property editor.  Describes the top-level
+//    recipe fields: name, description, numPasses and machineType.
+//    The pass/layer settings are described by LaserPass::properties().
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD LaserMop::processTileLines() const {
-      if (!recipe()) {
-            Critical("no recipe for <{}>", name());
+const std::string LaserRecipe::properties() const {
+      return R"({
+    "class": "Recipe",
+    "rows": [
+        {
+            "label": "Name",
+            "cells": [
+                {
+                    "type": "singleline",
+                    "label": " ",
+                    "name": "name"
+                },
+                {
+                    "type": "int",
+                    "name": "numPasses",
+                    "sublabel": "Passes",
+                    "min": 1,
+                    "max": 1000,
+                    "default": 1
+                },
+                {
+                    "type": "machineType",
+                    "sublabel": "type",
+                    "name": "machineType"
+                }
+            ]
+        },
+        {
+            "label": "Description",
+            "cells": [
+                {
+                    "name": "description",
+                    "type": "multiline"
+                }
+            ]
+        }
+    ]
+                  })";
+      }
+
+//=========================================================
+//   RecipeTreeModel
+//=========================================================
+struct RecipeTreeModel::Node {
+      QString name;
+      QString relativePath; // relative to recipes root
+      bool isDir    = false;
+      int recipeIdx = -1; // valid for leaf nodes only
+      Node* parent  = nullptr;
+      std::vector<std::unique_ptr<Node>> children;
+      };
+
+RecipeTreeModel::RecipeTreeModel(QObject* parent)
+    : QAbstractItemModel(parent), _root(std::make_unique<Node>()) {
+      _root->name  = QStringLiteral("root");
+      _root->isDir = true;
+      }
+
+RecipeTreeModel::~RecipeTreeModel() = default;
+
+//---------------------------------------------------------
+//   nodeForIndex
+//---------------------------------------------------------
+
+RecipeTreeModel::Node* RecipeTreeModel::nodeForIndex(const QModelIndex& idx) const {
+      if (!idx.isValid())
+            return _root.get();
+      return static_cast<Node*>(idx.internalPointer());
+      }
+
+//---------------------------------------------------------
+//   indexForNode
+//---------------------------------------------------------
+
+QModelIndex RecipeTreeModel::indexForNode(Node* node) const {
+      if (!node || node == _root.get())
             return {};
+      Node* parent = node->parent;
+      if (!parent)
+            return {};
+      int row = 0;
+      for (const auto& c : parent->children) {
+            if (c.get() == node)
+                  return createIndex(row, 0, node);
+            ++row;
             }
-
-      Clipper2Lib::PathsD lineList;
-      auto elements = collectElements();
-
-      // Projection settings of the active Cam (perspective vs. orthographic).
-      bool persp = false;
-      double h   = 0.0;
-      QPointF vc;
-      if (Cam* cam = zcam->project() ? zcam->project()->cam() : nullptr) {
-            persp = cam->perspective();
-            h     = cam->projectionHeight();
-            vc    = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
-            }
-
-      for (const auto* ce : elements) {
-            Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, h, vc);
-
-            auto* ls = &recipe()->pass(0);
-            if (ce->pathList().fill())
-                  lineList.append_range(createFill(ll));
-            else if (ls->wobble()) {
-                  for (const auto& p : ll) {
-                        if (p.size() < 2)
-                              continue;
-                        auto wl = wobble(p, ls->wobbleStep(), ls->wobbleSize());
-                        lineList.push_back(wl);
-                        }
-                  }
-            else {
-                  for (const auto& l : ll) {
-                        if (l.size() < 2)
-                              continue;
-                        auto currentPoint = l[0];
-                        for (int i = 1; i < l.size(); ++i) {
-                              Clipper2Lib::PathD p;
-                              p.push_back(currentPoint);
-                              currentPoint = l[i];
-                              p.push_back(currentPoint);
-                              lineList.push_back(p);
-                              }
-                        }
-                  }
-            }
-      return lineList;
+      return {};
       }
 
 //---------------------------------------------------------
-//   collectDisplayLines
-//    Return display line segments (mark + move subsets) for a
-//    single tile.  The result has exactly two subsets:
-//      subset 0 — MarkTo segments (if showMarks)
-//      subset 1 — MoveTo segments (if showMoves)
-//    No panel-grid offsets are applied.
+//   index
 //---------------------------------------------------------
 
-Clipper2Lib::PathsD LaserMop::collectDisplayLines() const {
-      Clipper2Lib::PathsD tileLines = processTileLines();
-
-      // Optimise the line order for display
-      Point currentPos(0, 0);
-      auto optimized = optimizePath(std::move(tileLines), currentPos);
-
-      // Build a LaserPath from the optimized lines
-      LaserPath lp;
-      if (!optimized.empty()) {
-            currentPos = optimized.front()[0];
-            lp.moveTo(currentPos.x, currentPos.y);
-            for (const auto& l : optimized) {
-                  if (l.size() == 2) {
-                        if (!(qFuzzyCompare(currentPos.x, l[0].x) && qFuzzyCompare(currentPos.y, l[0].y)))
-                              lp.moveTo(l[0].x, l[0].y);
-                        lp.markTo(l[1].x, l[1].y);
-                        currentPos = {l[1].x, l[1].y};
-                        }
-                  }
-            }
-
-      // Separate MarkTo and MoveTo segments into two subsets
-      Clipper2Lib::PathsD lineList;
-
-      Clipper2Lib::PathD markLines;
-      LaserPathElement last;
-      if (showMarks()) {
-            for (auto& pt : lp) {
-                  if (pt.type == LaserPathElementType::MarkTo) {
-                        markLines.push_back({last.x(), last.y()});
-                        markLines.push_back({pt.x(), pt.y()});
-                        }
-                  last = pt;
-                  }
-            }
-      lineList.push_back(markLines);
-
-      Clipper2Lib::PathD moveLines;
-      if (!lp.empty()) {
-            last = lp.front();
-            if (showMoves()) {
-                  for (auto& pt : lp) {
-                        if (pt.type == LaserPathElementType::MoveTo) {
-                              moveLines.push_back({last.x(), last.y()});
-                              moveLines.push_back({pt.x(), pt.y()});
-                              }
-                        last = pt;
-                        }
-                  }
-            }
-      lineList.push_back(moveLines);
-
-      return lineList;
+QModelIndex RecipeTreeModel::index(int row, int column, const QModelIndex& parent) const {
+      if (!hasIndex(row, column, parent))
+            return {};
+      Node* parentNode = nodeForIndex(parent);
+      if (parentNode && row >= 0 && row < static_cast<int>(parentNode->children.size()))
+            return createIndex(row, column, parentNode->children[row].get());
+      return {};
       }
 
 //---------------------------------------------------------
-//   collectLaserPath
-//    Produces the laser path for all panel tiles.
-//    The geometry is in project-root coordinate space
-//    (ce->globalMatrix()).  Panel-grid offsets are applied here
-//    because the laser path is used for actual laser marking
-//    and must contain the full panel layout.
+//   parent
 //---------------------------------------------------------
 
-LaserPath LaserMop::collectLaserPath() const {
-      if (!recipe()) {
-            Critical("no recipe for <{}>", name());
-            return LaserPath();
-            }
-
-      Cam* cam = zcam->project()->cam();
-
-      double panelHD = cam->panelHDistance();
-      double panelVD = cam->panelVDistance();
-      // Projection settings of the active Cam (perspective vs. orthographic).
-      bool persp  = cam->perspective();
-      double prjH = cam->projectionHeight();
-      QPointF vc  = QPointF(cam->viewCenter().x(), cam->viewCenter().y());
-      double w, h;
-      zcam->project()->fixture()->size(w, h);
-
-      auto elements = collectElements();
-
-      Clipper2Lib::PathsD lineList;
-      for (int row = 0; row < cam->panelRows(); ++row) {
-            for (int column = 0; column < cam->panelColumns(); ++column) {
-                  double xo = (panelHD + w) * column;
-                  double yo = (panelVD + h) * row;
-
-                  for (const auto* ce : elements) {
-                        Clipper2Lib::PathsD ll = projectPathListToXY(ce, persp, prjH, vc);
-
-                        //===========================================
-                        //    convert to CAM coordinate system
-                        //===========================================
-
-                        // Apply panel-grid offsets
-                        for (auto& p : ll)
-                              for (auto& pt : p) {
-                                    pt.x += xo;
-                                    pt.y += yo;
-                                    }
-
-                        auto* ls        = &recipe()->pass(0);
-                        bool mustWobble = ls->wobble();
-                        if (ce->pathList().fill()) {
-                              lineList.append_range(createFill(ll));
-                              }
-                        else {
-                              // process lines
-                              if (mustWobble) {
-                                    for (const auto& p : ll) {
-                                          if (p.size() < 2)
-                                                continue;
-                                          auto wl = wobble(p, ls->wobbleStep(), ls->wobbleSize());
-                                          lineList.push_back(wl);
-                                          }
-                                    }
-                              else {
-                                    for (const auto& l : ll) {
-                                          if (l.size() < 2)
-                                                continue;
-                                          auto currentPoint = l[0];
-                                          for (int i = 1; i < l.size(); ++i) {
-                                                Clipper2Lib::PathD p;
-                                                p.push_back(currentPoint);
-                                                currentPoint = l[i];
-                                                p.push_back(currentPoint);
-                                                lineList.push_back(p);
-                                                }
-                                          }
-                                    }
-                              }
-                        }
-                  }
-            }
-      LaserPath path;
-      optimize(&path, lineList);
-      return path;
+QModelIndex RecipeTreeModel::parent(const QModelIndex& child) const {
+      if (!child.isValid())
+            return {};
+      Node* childNode = static_cast<Node*>(child.internalPointer());
+      if (!childNode || !childNode->parent)
+            return {};
+      Node* parentNode = childNode->parent;
+      if (parentNode == _root.get())
+            return {};
+      return indexForNode(parentNode);
       }
 
 //---------------------------------------------------------
-//   KD-Tree for fast 2-D nearest-neighbour search
-//   Each node stores the point coordinates together with
-//   the originating line index and which endpoint (0 or 1)
-//   it represents.  Used to accelerate greedy path optimisation
-//   from O(N²) down to ~O(N log N).
+//   rowCount
 //---------------------------------------------------------
 
-struct KDNode {
-      double point[2] {};
-      int lineIndex   = 0; // index into the input line array
-      int endPointIdx = 0; // 0 or 1 - which end of the line this node holds
-      std::unique_ptr<KDNode> left, right;
-      };
-
-struct EndPointRef {
-      double x, y;
-      int lineIndex;
-      int endPointIdx; // 0 or 1
-      };
-
-static std::unique_ptr<KDNode> buildKDTree(
-    std::vector<EndPointRef>::iterator begin, std::vector<EndPointRef>::iterator end, int depth) {
-      if (begin == end)
-            return nullptr;
-
-      const int axis = depth & 1; // 0 = x, 1 = y
-
-      const size_t n = static_cast<size_t>(std::distance(begin, end));
-      auto mid       = begin + static_cast<long>(n / 2);
-
-      std::nth_element(begin, mid, end,
-          [axis](const EndPointRef& a, const EndPointRef& b) { return axis == 0 ? a.x < b.x : a.y < b.y; });
-
-      auto node         = std::make_unique<KDNode>();
-      node->point[0]    = mid->x;
-      node->point[1]    = mid->y;
-      node->lineIndex   = mid->lineIndex;
-      node->endPointIdx = mid->endPointIdx;
-      node->left        = buildKDTree(begin, mid, depth + 1);
-      node->right       = buildKDTree(mid + 1, end, depth + 1);
-      return node;
-      }
-
-/// Recursive nearest-neighbour search in the k-d tree.
-/// \param best        best candidate found so far (output)
-/// \param bestDist    squared distance to best candidate (output)
-/// \param used        flags which lines have already been consumed
-static void kdNearest(const KDNode* node, double qx, double qy, int depth, const std::vector<bool>& used,
-    const KDNode*& best, double& bestDist) {
+int RecipeTreeModel::rowCount(const QModelIndex& parent) const {
+      Node* node = nodeForIndex(parent);
       if (!node)
-            return;
-
-      // Evaluate this node if its line has not been consumed yet
-      if (!used[node->lineIndex]) {
-            const double dx = node->point[0] - qx;
-            const double dy = node->point[1] - qy;
-            const double d2 = dx * dx + dy * dy;
-            if (d2 < bestDist) {
-                  bestDist = d2;
-                  best     = node;
-                  }
-            }
-
-      const int axis    = depth & 1;
-      const double diff = (axis == 0 ? qx - node->point[0] : qy - node->point[1]);
-
-      // Visit the near side first
-      const KDNode* nearChild = (diff < 0) ? node->left.get() : node->right.get();
-      const KDNode* farChild  = (diff < 0) ? node->right.get() : node->left.get();
-
-      kdNearest(nearChild, qx, qy, depth + 1, used, best, bestDist);
-
-      // Only visit the far side if it could possibly contain a closer point
-      if (diff * diff < bestDist)
-            kdNearest(farChild, qx, qy, depth + 1, used, best, bestDist);
+            return 0;
+      return static_cast<int>(node->children.size());
       }
 
 //---------------------------------------------------------
-//   optimizePath
-//   Greedy nearest-neighbour path optimisation accelerated by a k-d tree.
-//   Complexity: O(N log N) average, O(N²) worst-case (degenerate tree).
-//
-//   The tree is rebuilt periodically once enough lines have been consumed
-//   so that dead nodes don't degrade search performance.
+//   columnCount
 //---------------------------------------------------------
 
-static Clipper2Lib::PathsD optimizePath(Clipper2Lib::PathsD inputLines, Point& currentPos) {
-      Clipper2Lib::PathsD optimizedLines;
-      const size_t totalLines = inputLines.size();
-      if (totalLines == 0)
-            return optimizedLines;
-      optimizedLines.reserve(totalLines);
+int RecipeTreeModel::columnCount(const QModelIndex& parent) const {
+      Q_UNUSED(parent)
+      return 1;
+      }
 
-      std::vector<bool> used(totalLines, false);
-      size_t remaining = totalLines;
+//---------------------------------------------------------
+//   data
+//---------------------------------------------------------
 
-      // Build a k-d tree over all unused line endpoints (2 nodes per line).
-      // Lines with fewer than 2 points are degenerate and are marked as used
-      // so they are silently skipped during optimisation.
-      auto buildTree = [&]() {
-            // First pass: mark degenerate lines as used so they are never queried
-            for (size_t i = 0; i < totalLines; ++i) {
-                  if (!used[i] && inputLines[i].size() < 2) {
-                        used[i] = true;
-                        --remaining;
+QVariant RecipeTreeModel::data(const QModelIndex& index, int role) const {
+      Node* node = nodeForIndex(index);
+      if (!node || node == _root.get())
+            return {};
+      switch (role) {
+            case Qt::DisplayRole:
+            case NameRole: return node->name;
+            case IsDirRole: return node->isDir;
+            case RecipeIdxRole: return node->recipeIdx;
+            case PathRole: return node->relativePath;
+            }
+      return {};
+      }
+
+//---------------------------------------------------------
+//   roleNames
+//---------------------------------------------------------
+
+QHash<int, QByteArray> RecipeTreeModel::roleNames() const {
+      QHash<int, QByteArray> roles;
+      roles[NameRole]      = "nodeName";
+      roles[IsDirRole]     = "isDir";
+      roles[RecipeIdxRole] = "recipeIdx";
+      roles[PathRole]      = "nodePath";
+      return roles;
+      }
+
+//---------------------------------------------------------
+//   clear / beginBuild / endBuild
+//---------------------------------------------------------
+
+void RecipeTreeModel::clear() {
+      beginResetModel();
+      _root->children.clear();
+      endResetModel();
+      }
+
+void RecipeTreeModel::beginBuild() {
+      beginResetModel();
+      _root->children.clear();
+      }
+
+void RecipeTreeModel::endBuild() {
+      endResetModel();
+      }
+
+//---------------------------------------------------------
+//   addDirNode
+//---------------------------------------------------------
+
+void* RecipeTreeModel::addDirNode(const QString& name, const QString& relativePath, void* parent) {
+      Node* parentNode   = parent ? static_cast<Node*>(parent) : _root.get();
+      auto node          = std::make_unique<Node>();
+      node->name         = name;
+      node->relativePath = relativePath;
+      node->isDir        = true;
+      node->parent       = parentNode;
+      Node* raw          = node.get();
+      parentNode->children.push_back(std::move(node));
+      return raw;
+      }
+
+//---------------------------------------------------------
+//   addRecipeNode
+//---------------------------------------------------------
+
+void* RecipeTreeModel::addRecipeNode(
+    const QString& name, const QString& relativePath, int recipeIdx, void* parent) {
+      Node* parentNode   = parent ? static_cast<Node*>(parent) : _root.get();
+      auto node          = std::make_unique<Node>();
+      node->name         = name;
+      node->relativePath = relativePath;
+      node->isDir        = false;
+      node->recipeIdx    = recipeIdx;
+      node->parent       = parentNode;
+      Node* raw          = node.get();
+      parentNode->children.push_back(std::move(node));
+      return raw;
+      }
+
+//---------------------------------------------------------
+//   removeNode
+//---------------------------------------------------------
+
+void RecipeTreeModel::removeNode(const QModelIndex& idx) {
+      Node* node = nodeForIndex(idx);
+      if (!node || node == _root.get())
+            return;
+      Node* parent = node->parent;
+      if (!parent)
+            return;
+      int row = 0;
+      for (auto& c : parent->children) {
+            if (c.get() == node) {
+                  beginRemoveRows(indexForNode(parent), row, row);
+                  parent->children.erase(parent->children.begin() + row);
+                  endRemoveRows();
+                  return;
+                  }
+            ++row;
+            }
+      }
+
+//---------------------------------------------------------
+//   Q_INVOKABLE helpers
+//---------------------------------------------------------
+
+int RecipeTreeModel::recipeIndex(const QModelIndex& idx) const {
+      Node* node = nodeForIndex(idx);
+      if (!node || node->isDir)
+            return -1;
+      return node->recipeIdx;
+      }
+
+//---------------------------------------------------------
+//   indexForRecipe
+//    Depth-first search through the tree to find the leaf node
+//    whose recipeIdx matches. Returns an invalid model index
+//    if not found.
+//---------------------------------------------------------
+
+QModelIndex RecipeTreeModel::indexForRecipe(int recipeIdx) const {
+      std::function<QModelIndex(Node*)> search = [&](Node* node) -> QModelIndex {
+            for (const auto& child : node->children) {
+                  if (!child->isDir && child->recipeIdx == recipeIdx)
+                        return indexForNode(child.get());
+                  if (child->isDir) {
+                        auto idx = search(child.get());
+                        if (idx.isValid())
+                              return idx;
                         }
                   }
+            return {};
+            };
+      return search(_root.get());
+      }
 
-            std::vector<EndPointRef> pts;
-            pts.reserve(remaining * 2);
-            for (size_t i = 0; i < totalLines; ++i) {
-                  if (used[i])
-                        continue;
-                  pts.push_back({inputLines[i][0].x, inputLines[i][0].y, int(i), 0});
-                  pts.push_back({inputLines[i][1].x, inputLines[i][1].y, int(i), 1});
+bool RecipeTreeModel::isDir(const QModelIndex& idx) const {
+      Node* node = nodeForIndex(idx);
+      return node && node->isDir;
+      }
+
+QString RecipeTreeModel::path(const QModelIndex& idx) const {
+      Node* node = nodeForIndex(idx);
+      return node ? node->relativePath : QString();
+      }
+
+//---------------------------------------------------------
+//   indexForPath
+//    Depth-first search for the folder (dir) node whose relative
+//    path matches \a relPath.  Returns an invalid model index when
+//    no such node exists.
+//---------------------------------------------------------
+
+QModelIndex RecipeTreeModel::indexForPath(const QString& relPath) const {
+      std::function<QModelIndex(Node*)> search = [&](Node* node) -> QModelIndex {
+            for (const auto& child : node->children) {
+                  if (child->isDir && child->relativePath == relPath)
+                        return indexForNode(child.get());
+                  if (child->isDir) {
+                        auto idx = search(child.get());
+                        if (idx.isValid())
+                              return idx;
+                        }
                   }
-            return buildKDTree(pts.begin(), pts.end(), 0);
+            return {};
+            };
+      return search(_root.get());
+      }
+
+//---------------------------------------------------------
+//   topRowCount
+//    Number of children of the root.  Lets QML enumerate the top level
+//    without passing the (invalid) root QModelIndex, which does not
+//    round-trip through the QML/C++ boundary.
+//---------------------------------------------------------
+
+int RecipeTreeModel::topRowCount() const {
+      return static_cast<int>(_root->children.size());
+      }
+
+//---------------------------------------------------------
+//   topIndexAt
+//    Child of the root at \a row, or an invalid index when out of range.
+//---------------------------------------------------------
+
+QModelIndex RecipeTreeModel::topIndexAt(int row) const {
+      if (row < 0 || row >= static_cast<int>(_root->children.size()))
+            return {};
+      return indexForNode(_root->children[row].get());
+      }
+
+//---------------------------------------------------------
+//   sanitiseFileName
+//---------------------------------------------------------
+
+static QString sanitiseFileName(QString name) {
+      if (name.isEmpty())
+            name = QStringLiteral("unnamed");
+      name.replace(QRegularExpression("[^a-zA-Z0-9_\\-]"), "_");
+      return name;
+      }
+
+//---------------------------------------------------------
+//   uniqueRecipeNameInDir
+//    Returns a name that does not collide with an existing recipe
+//    (or its .json file) in the given directory (relative path).
+//    On duplicates the name is suffixed with "-NNN" starting at 1,
+//    i.e. "New Recipe", "New Recipe-1", "New Recipe-2", ....
+//    A name that already ends in "-NNN" (e.g. "foo-1") is treated
+//    as base "foo", so it will continue as "foo-2", "foo-3", ....
+//---------------------------------------------------------
+
+static QString uniqueRecipeNameInDir(const std::vector<std::unique_ptr<LaserRecipe>>& recipes,
+    const QString& name, const QString& relDir) {
+      auto inDir = [&relDir](const LaserRecipe* r) -> bool {
+            // A recipe "lives" in a directory when its relative file path
+            // (the folder holding its .json) equals relDir exactly.
+            return r->relativeFilePath() == relDir;
             };
 
-      std::unique_ptr<KDNode> tree = buildTree();
-      size_t lastRebuildRemaining  = remaining;
-      size_t rebuildThreshold      = (remaining + 3) / 4; // rebuild after 25% consumed
+      auto nameExists = [&](const QString& candidate) -> bool {
+            for (const auto& r : recipes)
+                  if (inDir(r.get()) &&
+                      sanitiseFileName(r->name()) == sanitiseFileName(candidate))
+                        return true;
+            return false;
+            };
 
-      Point pos = currentPos;
+      if (!nameExists(name))
+            return name;
 
-      while (remaining > 0) {
-            // --- nearest-neighbour search via k-d tree ---
-            const KDNode* best = nullptr;
-            double bestDist    = std::numeric_limits<double>::max();
-            kdNearest(tree.get(), pos.x, pos.y, 0, used, best, bestDist);
-
-            if (!best)
-                  break; // safety guard - should never happen
-
-            const int idx   = best->lineIndex;
-            const int epIdx = best->endPointIdx;
-            auto& line      = inputLines[idx];
-
-            Clipper2Lib::PathD nextLine;
-            nextLine.reserve(2);
-            if (epIdx == 0) {
-                  nextLine.push_back(line[0]);
-                  nextLine.push_back(line[1]);
-                  }
-            else {
-                  // Laser the line in reverse
-                  nextLine.push_back(line[1]);
-                  nextLine.push_back(line[0]);
-                  }
-
-            optimizedLines.push_back(std::move(nextLine));
-            used[idx] = true;
-            --remaining;
-            pos = optimizedLines.back()[1];
-
-            // Periodically rebuild the tree so dead nodes don't degrade search performance
-            if (remaining > 0 && lastRebuildRemaining - remaining >= rebuildThreshold) {
-                  tree                 = buildTree();
-                  lastRebuildRemaining = remaining;
-                  rebuildThreshold     = (remaining + 3) / 4;
-                  }
+      // Strip a trailing "-NNN" counter so that "foo-1" yields "foo-2"
+      // instead of "foo-1-2".
+      QString base   = name;
+      QString number;
+      const QRegularExpression re(QStringLiteral("^(.*)-(\\d+)$"));
+      QRegularExpressionMatch m = re.match(name);
+      if (m.hasMatch()) {
+            base   = m.captured(1);
+            number = m.captured(2);
             }
 
-      currentPos = pos;
-      return optimizedLines;
+      int counter = (number.isEmpty() ? 0 : number.toInt());
+      while (nameExists(base + "-" + QString::number(++counter)))
+            ;
+      return base + "-" + QString::number(counter);
       }
 
-//---------------------------------------------------------
-//   createFill
-//    fill polygon spdi with hatch pattern
-//---------------------------------------------------------
-
-Clipper2Lib::PathsD LaserMop::createFill(Clipper2Lib::PathsD& spdi) const {
-      Clipper2Lib::PathsD lineList;
-
-      const LaserPasses* fll = &recipe()->passes();
-
-      if (kerfOffset())
-            spdi = InflatePaths(
-                spdi, kerfOffset(), Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon, 2, 3);
-      Clipper clipper;
-      PathsD spd;
-      clipper.AddSubject(spdi);
-      clipper.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::NonZero, spd);
-
-      //-------------------------------
-      //    fill polygons
-      //-------------------------------
-
-      Point currentPos(0, 0);
-      for (int i = 0; i < fll->size(); ++i) {
-            auto sl                   = &(*fll)[i];
-            Clipper2Lib::RectD bounds = Clipper2Lib::GetBounds(spd);
-            qreal angle               = sl->startAngle();
-            for (int i = 0; i < sl->numPasses(); ++i) {
-                  double interval = sl->interval();
-                  // Compute both hatch directions in parallel using std::async.
-                  // This avoids creating and destroying a std::thread per pass,
-                  // which caused rapid thread churn (hundreds of threads per
-                  // createFill() call when numPasses is large).
-                  auto f1 = std::async(std::launch::async, [spd, bounds, angle, interval] {
-                        Clipper cl;
-                        return cl.hatch(spd, bounds, angle, interval);
-                        });
-                  clipper.Clear();
-                  PathsD lines2 = clipper.hatch(spd, bounds, angle + 90.0, sl->interval());
-                  PathsD lines1 = f1.get();
-
-                  lineList.append_range(lines1);
-                  lineList.append_range(lines2);
-
-                  angle += sl->angleIncrement();
-                  while (angle >= 180.0)
-                        angle -= 180.0;
-                  }
-            }
-      return lineList;
+//=========================================================
+//   LaserReceipes
+//=========================================================
+Recipe::Recipe(QObject* parent) : QObject(parent), _treeModel(new RecipeTreeModel(this)) {
+      // Register the opaque pointer metatypes so that QML can correctly
+      // wrap and unwrap LaserRecipe* and LaserPass* values without
+      // attempting to manage their lifetime.
+      qRegisterMetaType<LaserRecipe*>("LaserRecipe*");
+      qRegisterMetaType<LaserPass*>("LaserPass*");
       }
 
+Recipe::~Recipe() = default;
+
 //---------------------------------------------------------
-//   optimize
+//   set_machineType
+//    Set the machine type filter and reload recipes from disk.
 //---------------------------------------------------------
 
-static void optimize(LaserPath* lp, Clipper2Lib::PathsD lines) {
-      Point currentPosition = lp->empty() ? Point(0, 0) : Point(lp->back().p.x(), lp->back().p.y());
-      auto p                = optimizePath(lines, currentPosition);
-      if (p.empty())
+void Recipe::set_machineType(MachineType type) {
+      if (_machineType == type)
             return;
-      currentPosition = p.front()[0];
-      lp->moveTo(currentPosition.x, currentPosition.y);
-      for (const auto& l : p) {
-            if (l.size() == 2) {
-                  if (!(qFuzzyCompare(currentPosition.x, l[0].x) && qFuzzyCompare(currentPosition.y, l[0].y)))
-                        lp->moveTo(l[0].x, l[0].y);
-                  lp->markTo(l[1].x, l[1].y);
+      _machineType = type;
+      emit machineTypeChanged();
+      reload();
+      }
+
+//---------------------------------------------------------
+//   reload
+//    Reload recipes from disk using the current _rootDir and _machineType.
+//---------------------------------------------------------
+
+void Recipe::reload() {
+      if (_rootDir.isEmpty())
+            return;
+      loadFromDirectory(_rootDir, machineType());
+      }
+
+void Recipe::updateRecipe(int idx, LaserRecipe* r) {
+      if (idx >= 0 && idx < recipes.size() && r) {
+            // LaserRecipe is a QObject (non-copyable), so copy
+            // properties individually.
+            recipes[idx]->set_name(r->name());
+            recipes[idx]->set_description(r->description());
+            recipes[idx]->set_numPasses(r->numPasses());
+            recipes[idx]->set_machineType(r->machineType());
+            recipes[idx]->passes() = r->passes();
+            emit recipeModelChanged();
+            emit recipeChanged(idx);
+            }
+      }
+
+void Recipe::addRecipe(const QString& name) {
+      auto r = std::make_unique<LaserRecipe>();
+      r->set_name(name);
+      recipes.push_back(std::move(r));
+      emit recipeModelChanged();
+      rebuildTreeModel();
+      }
+
+void Recipe::removeRecipe(int idx) {
+      if (idx < 0 || idx >= static_cast<int>(recipes.size()))
+            return;
+
+      // Rename the corresponding .json file on disk by appending
+      // a ".del" extension so it is not picked up on the next load.
+      if (!_rootDir.isEmpty()) {
+            const LaserRecipe* r = recipes[idx].get();
+            QString relPath      = r->relativeFilePath();
+            QString fileName     = sanitiseFileName(r->name()) + ".json";
+
+            // The file lives under _rootDir/machineTypeName/...
+            QString mtName  = QString::fromUtf8(machineTypeMap.name(_machineType));
+            QString baseDir = _rootDir;
+            if (!mtName.isEmpty())
+                  baseDir = QDir(_rootDir).filePath(mtName);
+
+            QString subDirPath = baseDir;
+            if (!relPath.isEmpty())
+                  subDirPath = QDir(baseDir).filePath(relPath);
+
+            QString filePath = QDir(subDirPath).filePath(fileName);
+            QFile file(filePath);
+            if (file.exists()) {
+                  QString delPath = filePath + ".del";
+                  if (!file.rename(delPath))
+                        Warning("LaserReceipes::removeRecipe: cannot rename {} to {}", filePath.toStdString(),
+                            delPath.toStdString());
                   }
-            else {
-                  Critical("=========not a line======");
+            }
+
+      recipes.erase(recipes.begin() + idx);
+      emit recipeModelChanged();
+      rebuildTreeModel();
+      }
+
+LaserPass Recipe::layer(int recipeIdx, int layerIdx) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+            const auto& r = *recipes[recipeIdx];
+            if (layerIdx >= 0 && layerIdx < r.passes().size())
+                  return r.pass(layerIdx);
+            }
+      return LaserPass();
+      }
+
+LaserPass* Recipe::layerPtr(int recipeIdx, int layerIdx) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+            auto& r = *recipes[recipeIdx];
+            if (layerIdx >= 0 && layerIdx < r.passes().size())
+                  return &r.pass(layerIdx);
+            }
+      return nullptr;
+      }
+
+void Recipe::updateLayer(int recipeIdx, int layerIdx, const LaserPass& l) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+            auto& r = *recipes[recipeIdx];
+            if (layerIdx >= 0 && layerIdx < r.passes().size()) {
+                  r.pass(layerIdx) = l;
+                  emit recipeChanged(recipeIdx);
                   }
             }
       }
 
-//---------------------------------------------------------
-//   toLaserPath
-//    Convert LineSegments to LaserPath by connecting
-//    the mark segments with move segments if necessary.
-//---------------------------------------------------------
-
-LaserPath LineSegments::toLaserPath() {
-      LaserPath lp;
-      if (empty())
-            return LaserPath();
-      Vec2d currentPosition = front().p1;
-      lp.moveTo(currentPosition.x(), currentPosition.y());
-      for (const auto& l : *this) {
-            if (!(qFuzzyCompare(currentPosition.x(), l.p1.x()) &&
-                    qFuzzyCompare(currentPosition.y(), l.p1.y())))
-                  lp.moveTo(l.p1.x(), l.p1.y());
-            lp.markTo(l.p2.x(), l.p2.y());
-            currentPosition = l.p2;
+void Recipe::addLayer(int recipeIdx, const QString& name) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+            LaserPass l;
+            l.set_name(name);
+            recipes[recipeIdx]->passes().push_back(l);
+            emit recipeChanged(recipeIdx);
             }
-      return lp;
+      }
+
+void Recipe::removeLayer(int recipeIdx, int layerIdx) {
+      if (recipeIdx >= 0 && recipeIdx < recipes.size()) {
+            auto& r = *recipes[recipeIdx];
+            if (layerIdx >= 0 && layerIdx < r.passes().size()) {
+                  r.passes().erase(r.passes().begin() + layerIdx);
+                  emit recipeChanged(recipeIdx);
+                  }
+            }
+      }
+
+QStringList Recipe::layerModel(int recipeIdx) const {
+      QStringList names;
+      if (recipeIdx >= 0 && recipeIdx < recipes.size())
+            for (const auto& l : recipes[recipeIdx]->passes())
+                  names.append(l.name());
+      return names;
+      }
+
+QStringList Recipe::recipeModel() const {
+      QStringList names;
+      for (const auto& r : recipes)
+            names.append(r->name());
+      return names;
       }
 
 //---------------------------------------------------------
-//   check
+//   toJson
 //---------------------------------------------------------
 
-bool LaserPath::check() {
+json Recipe::toJson() const {
+      json data = json::array();
+      for (const auto& r : recipes)
+            data.push_back(r->toJson());
+      return data;
+      }
+
+//---------------------------------------------------------
+//   fromJson
+//---------------------------------------------------------
+
+void Recipe::fromJson(const json& data) {
+      recipes.clear();
+      if (data.is_array()) {
+            for (const auto& r : data) {
+                  auto recipe = std::make_unique<LaserRecipe>();
+                  recipe->fromJson(r);
+                  recipes.push_back(std::move(recipe));
+                  }
+            }
+      emit recipeModelChanged();
+      }
+
+//---------------------------------------------------------
+//   loadFromDirectory
+//    Recursively load all .json recipe files from dir,
+//    descending into subdirectories.  Builds the tree model.
+//    If mt is non-default, only recipes under dir/machineTypeName/
+//    are loaded.
+//---------------------------------------------------------
+
+void Recipe::loadFromDirectory(const QString& dir, MachineType mt) {
+      recipes.clear();
+      _rootDir     = dir;
+      _machineType = mt;
+
+      _treeModel->beginBuild();
+
+      // Convert the MachineType enum to its string name for the
+      // directory path.
+      QString mtName = QString::fromUtf8(machineTypeMap.name(mt));
+
+      // If a machineType filter is set, only load recipes under
+      // dir/machineTypeName/ and strip the machineType prefix from
+      // relative paths.
+      QString baseDir   = dir;
+      void* machineNode = nullptr; // top-level machine-type node (if any)
+      if (!mtName.isEmpty()) {
+            baseDir = QDir(dir).filePath(mtName);
+            // Add a top-level node showing the machine type so the user
+            // can see for which machine these recipes apply.
+            machineNode = _treeModel->addDirNode(mtName, QString(), nullptr);
+            }
+
+      QDir d(baseDir);
+      if (d.exists()) {
+            // Recursive lambda
+            std::function<void(const QString& absPath, const QString& relPath, void* parentNode)> recurse =
+                [&](const QString& absPath, const QString& relPath, void* parentNode) {
+                      QDir d2(absPath);
+                      // Process subdirectories first
+                      const auto dirs = d2.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+                      for (const QString& subDir : dirs) {
+                            QString subAbs = d2.filePath(subDir);
+                            QString subRel = relPath.isEmpty() ? subDir : (relPath + "/" + subDir);
+                            void* dirNode  = _treeModel->addDirNode(subDir, subRel, parentNode);
+                            recurse(subAbs, subRel, dirNode);
+                            }
+                      // Process recipe files
+                      const auto files = d2.entryList({"*.json"}, QDir::Files, QDir::Name);
+                      for (const QString& fileName : files) {
+                            QString filePath = d2.filePath(fileName);
+                            QFile file(filePath);
+                            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                                  Warning("LaserReceipes::loadFromDirectory: cannot open {}",
+                                      filePath.toStdString());
+                                  continue;
+                                  }
+                            QByteArray data = file.readAll();
+                            file.close();
+                            try {
+                                  json jr     = json::parse(data.toStdString());
+                                  auto recipe = std::make_unique<LaserRecipe>();
+                                  recipe->fromJson(jr);
+                                  recipe->setRelativeFilePath(relPath);
+                                  int idx = static_cast<int>(recipes.size());
+                                  recipes.push_back(std::move(recipe));
+                                  // Display name: use recipe name if available, otherwise file base name
+                                  QString displayName = recipes.back()->name().isEmpty()
+                                                            ? QFileInfo(fileName).baseName()
+                                                            : recipes.back()->name();
+                                  _treeModel->addRecipeNode(displayName, relPath, idx, parentNode);
+                                  }
+                            catch (const json::parse_error& e) {
+                                  Warning("LaserReceipes::loadFromDirectory: parse error in {}: {}",
+                                      filePath.toStdString(), e.what());
+                                  }
+                            }
+                      };
+            recurse(baseDir, QString(), machineNode);
+            }
+
+      _treeModel->endBuild();
+      emit recipeModelChanged();
+      }
+
+//---------------------------------------------------------
+//   saveToDirectory
+//    Save all recipes as individual .json files into dir,
+//    preserving subdirectory structure.  If mt is non-default,
+//    recipes are saved under dir/machineTypeName/.
+//---------------------------------------------------------
+
+void Recipe::saveToDirectory(const QString& dir, MachineType mt) const {
+      // Convert the MachineType enum to its string name for the
+      // directory path.
+      QString mtName = QString::fromUtf8(machineTypeMap.name(mt));
+
+      // If machineType is set, save under dir/machineTypeName/
+      QString baseDir = dir;
+      if (!mtName.isEmpty())
+            baseDir = QDir(dir).filePath(mtName);
+
+      QDir rootDir(baseDir);
+      if (!rootDir.exists())
+            rootDir.mkpath(".");
+
+      for (const auto& r : recipes) {
+            QString relPath  = r->relativeFilePath();
+            QString fileName = sanitiseFileName(r->name()) + ".json";
+
+            // Ensure the subdirectory exists
+            QString subDirPath = baseDir;
+            if (!relPath.isEmpty())
+                  subDirPath = QDir(baseDir).filePath(relPath);
+
+            QDir subDir(subDirPath);
+            if (!subDir.exists())
+                  subDir.mkpath(".");
+
+            QString filePath = QDir(subDirPath).filePath(fileName);
+            QFile file(filePath);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                  Warning(
+                      "LaserReceipes::saveToDirectory: cannot open {} for writing", filePath.toStdString());
+                  continue;
+                  }
+            json jr = r->toJson();
+            QTextStream out(&file);
+            out << QString::fromStdString(jr.dump(4));
+            file.close();
+            }
+      }
+
+//---------------------------------------------------------
+//   addRecipeInDir
+//    Create a new recipe in the given subdirectory (relative
+//    to root).  If relDir is empty, the recipe is created in
+//    the root.
+//---------------------------------------------------------
+
+//---------------------------------------------------------
+//   rebuildTreeModel
+//    Rebuild the tree model from the in-memory recipes list.
+//    Creates directory nodes for each unique relative path
+//    and recipe leaf nodes under their respective directories.
+//---------------------------------------------------------
+
+void Recipe::rebuildTreeModel() {
+      _treeModel->beginBuild();
+
+      // Create a top-level node for the current machine type so
+      // the user can see which machine the recipes belong to.
+      QString mtName    = QString::fromUtf8(machineTypeMap.name(_machineType));
+      void* machineNode = nullptr;
+      if (!mtName.isEmpty())
+            machineNode = _treeModel->addDirNode(mtName, QString(), nullptr);
+
+      // Collect unique directory paths and build folder nodes
+      std::map<QString, void*> dirNodes; // relPath -> node ptr
+      dirNodes[""] = machineNode;        // root (may be null if no machineType)
+
+      // First pass: create all directory nodes
+      for (const auto& r : recipes) {
+            QString relPath = r->relativeFilePath();
+            if (relPath.isEmpty())
+                  continue;
+            // Create intermediate directories
+            QStringList parts = relPath.split("/", Qt::SkipEmptyParts);
+            QString current;
+            for (int i = 0; i < parts.size(); ++i) {
+                  QString parent = current;
+                  current        = parent.isEmpty() ? parts[i] : (parent + "/" + parts[i]);
+                  if (dirNodes.find(current) == dirNodes.end()) {
+                        void* parentNode  = dirNodes[parent];
+                        void* dirNode     = _treeModel->addDirNode(parts[i], current, parentNode);
+                        dirNodes[current] = dirNode;
+                        }
+                  }
+            }
+
+      // Second pass: add recipe nodes
+      for (int i = 0; i < static_cast<int>(recipes.size()); ++i) {
+            const auto& r       = recipes[i];
+            QString relPath     = r->relativeFilePath();
+            void* parentNode    = dirNodes[relPath];
+            QString displayName = r->name().isEmpty() ? QStringLiteral("unnamed") : r->name();
+            _treeModel->addRecipeNode(displayName, relPath, i, parentNode);
+            }
+
+      _treeModel->endBuild();
+      }
+
+//---------------------------------------------------------
+//   addRecipeInDir
+//    Create a new recipe in the given subdirectory (relative
+//    to root).  If relDir is empty, the recipe is created in
+//    the root.  When sourceIdx is valid, the new recipe is a
+//    clone of that recipe.  The machine type is always set to
+//    the type intended for the current directory (directories
+//    are named after their machine type).
+//    Returns the index of the new recipe, or -1 on failure.
+//---------------------------------------------------------
+
+int Recipe::addRecipeInDir(const QString& name, const QString& relDir, int sourceIdx) {
+      auto r = std::make_unique<LaserRecipe>();
+
+      // Optionally clone the settings of an existing (selected) recipe.
+      bool hasSource = (sourceIdx >= 0 && sourceIdx < static_cast<int>(recipes.size()));
+      const LaserRecipe* src = hasSource ? recipes[sourceIdx].get() : nullptr;
+      if (src) {
+            r->set_description(src->description());
+            r->set_numPasses(src->numPasses());
+            r->set_machineType(src->machineType());
+            r->passes() = src->passes();
+      }
+
+      // Base name: when cloning, clone the source recipe's name as well (a
+      // non-empty source name takes precedence over the default \a name).
+      QString baseName = (src && !src->name().isEmpty()) ? src->name() : name;
+      // Assign a unique name within the target directory so that creating
+      // several recipes does not produce name (and therefore file) clashes.
+      r->set_name(uniqueRecipeNameInDir(recipes, baseName, relDir));
+
+      // In any case initialise with the machine type intended for the
+      // current directory (the directory is named after its machine type).
+      r->set_machineType(_machineType);
+
+      r->setRelativeFilePath(relDir);
+      int newIdx = static_cast<int>(recipes.size());
+      recipes.push_back(std::move(r));
+      emit recipeModelChanged();
+
+      // Rebuild the tree model from the in-memory recipes list.
+      // We don't reload from disk because the new recipe hasn't been saved yet.
+      rebuildTreeModel();
+      emit recipeChanged(newIdx);
+      return newIdx;
+      }
+
+//---------------------------------------------------------
+//   addFolder
+//    Create a new subdirectory under the given parent directory
+//    (relative to root).  If parentRelDir is empty, the folder
+//    is created in the root.
+//---------------------------------------------------------
+
+bool Recipe::addFolder(const QString& folderName, const QString& parentRelDir) {
+      if (_rootDir.isEmpty() || folderName.isEmpty())
+            return false;
+
+      QString sanitised = sanitiseFileName(folderName);
+
+      // Create the folder under _rootDir/machineTypeName/...
+      QString mtName  = QString::fromUtf8(machineTypeMap.name(_machineType));
+      QString baseDir = _rootDir;
+      if (!mtName.isEmpty())
+            baseDir = QDir(_rootDir).filePath(mtName);
+
+      QString dirPath = parentRelDir.isEmpty()
+                            ? QDir(baseDir).filePath(sanitised)
+                            : QDir(QDir(baseDir).filePath(parentRelDir)).filePath(sanitised);
+
+      QDir d(dirPath);
+      if (d.exists())
+            return true; // already exists, no error
+      if (!d.mkpath("."))
+            return false;
+
+      // Reload from disk to show the new (possibly empty) folder in the tree
+      reload();
       return true;
-      Vec2d currentPosition = front().p;
-      for (auto p = begin(); p != end(); ++p) {
-            const auto& l = *p;
-            if (qFuzzyCompare(currentPosition.x(), l.p.x()) && qFuzzyCompare(currentPosition.y(), l.p.y())) {
-                  Critical("zero segment in LaserPath");
-                  erase(p);
-                  }
-            currentPosition = l.p;
+      }
+
+//---------------------------------------------------------
+//   properties
+//---------------------------------------------------------
+
+const std::string LaserRecipe::laserPassProperties() const {
+      if (machineType() == MachineType::UV_LASER)
+            return _uvLaserPassProperties;
+      return _laserPassProperties;
+      }
+
+//---------------------------------------------------------
+//   removeFolder
+//    Remove a folder and all recipes inside it.
+//---------------------------------------------------------
+
+bool Recipe::removeFolder(const QString& relDir) {
+      if (_rootDir.isEmpty() || relDir.isEmpty())
+            return false;
+
+      // The folder lives under _rootDir/machineTypeName/...
+      QString mtName  = QString::fromUtf8(machineTypeMap.name(_machineType));
+      QString baseDir = _rootDir;
+      if (!mtName.isEmpty())
+            baseDir = QDir(_rootDir).filePath(mtName);
+
+      QString dirPath = QDir(baseDir).filePath(relDir);
+      QDir d(dirPath);
+      if (!d.exists())
+            return false;
+
+      // Remove all recipes that have this relativePath or a subdirectory of it
+      auto it = recipes.begin();
+      while (it != recipes.end()) {
+            QString rp = (*it)->relativeFilePath();
+            if (rp == relDir || rp.startsWith(relDir + "/"))
+                  it = recipes.erase(it);
+            else
+                  ++it;
             }
+
+      // Remove the directory on disk
+      d.removeRecursively();
+
+      emit recipeModelChanged();
+      rebuildTreeModel();
       return true;
       }

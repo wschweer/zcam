@@ -46,6 +46,7 @@ enum class BjjczStatus : int {
 //---------------------------------------------------------
 //   Status
 //---------------------------------------------------------
+
 class LaserStatusFlags
       {
       uint16_t flags {0};
@@ -63,6 +64,7 @@ class LaserStatusFlags
 //---------------------------------------------------------
 //   formatter LaserStatusFlags
 //---------------------------------------------------------
+
 template <> struct std::formatter<LaserStatusFlags> {
       constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
       auto format(const LaserStatusFlags& f, auto& ctx) const {
@@ -80,6 +82,7 @@ template <> struct std::formatter<LaserStatusFlags> {
 //---------------------------------------------------------
 //   Command
 //---------------------------------------------------------
+
 enum Command : uint16_t {
       listJumpTo        = 0x8001,
       listEndOfList     = 0x8002,
@@ -151,12 +154,14 @@ enum Command : uint16_t {
       WriteAnalogPort2    = 0x0023,
       WriteAnalogPortX    = 0x0024,
       ReadPort            = 0x0025,
-      SetAxisMotionParam  = 0x0026,
-      SetAxisOriginParam  = 0x0027,
-      AxisGoOrigin        = 0x0028,
-      MoveAxisTo          = 0x0029,
-      GetAxisPos          = 0x002A,
-      GetFlyWaitCount     = 0x002B,
+
+      SetAxisMotionParam = 0x0026,
+      SetAxisOriginParam = 0x0027,
+      AxisGoOrigin       = 0x0028,
+      MoveAxisTo         = 0x0029,
+      GetAxisPos         = 0x002A,
+
+      GetFlyWaitCount = 0x002B,
 
       GetMarkCount         = 0x002D,
       SetFpkParam2         = 0x002E,
@@ -183,6 +188,7 @@ enum Command : uint16_t {
 //---------------------------------------------------------
 //   Packet4
 //---------------------------------------------------------
+
 class Packet4 : public std::array<uint16_t, 4>
       {
     public:
@@ -191,6 +197,7 @@ class Packet4 : public std::array<uint16_t, 4>
 //---------------------------------------------------------
 //   Packet6
 //---------------------------------------------------------
+
 class Packet6 : public std::array<uint16_t, 6>
       {
     public:
@@ -221,6 +228,14 @@ class CmdList : public std::array<Packet6, LIST_SIZE>
       CmdList(LaserBJJCZ* l) : laser(l) {}
       bool empty() const { return index == 0; }
       int size() const { return index; }
+      // Clear the buffer without sending anything to the board.
+      // Used after an abort to discard stale partial-list data.
+      void clear() {
+            packetsSend = 0;
+            executing   = false;
+            index       = 0;
+            fill(Packet6());
+            }
       // normal use cycle:
       void start();
       void write(const Packet6& p);
@@ -232,6 +247,7 @@ class CmdList : public std::array<Packet6, LIST_SIZE>
 //    Concrete Laser implementation for the BJJCZ controller board.
 //    Communication is via USB (libusb).
 //---------------------------------------------------------
+
 class LaserBJJCZ : public Laser
       {
       Q_OBJECT
@@ -344,7 +360,7 @@ class LaserBJJCZ : public Laser
       void set_end_of_list(uint16_t end) { command({SetEndOfList, end, 0, 0, 0, 0}); }
       Packet4 stop_execute() const { return command(StopExecute); }
       //
-      Packet4 stop_list() { return command(StopList); }
+      Packet4 stop_list() const { return command(StopList); }
       //    nowhere used:
       Packet4 get_list_status() { return command({GetListStatus}); }
       Packet4 restart_list() { return command({RestartList}); }
@@ -400,8 +416,10 @@ class LaserBJJCZ : public Laser
       Packet4 get_input_port() const { return command({InputPort}); }
       Packet4 get_mark_time() { return command({GetMarkTime, 3}); }
       Packet4 get_user_data() { return command({GetUserData}); }
-      Packet4 move_axis_to(uint16_t p0, uint16_t p1 = 0, uint16_t p2 = 0, uint16_t p3 = 0) {
-            return command({MoveAxisTo, p0, p1, p2, p3});
+      // axis: 0 - Z Axis, 1 - Rotary Axis
+      // pos1/pos2 32 bit signed target position in steps
+      Packet4 move_axis_to(uint16_t axis, uint16_t pos1 = 0, uint16_t pos2 = 0) {
+            return command({MoveAxisTo, axis, pos1, pos2, 0});
             }
       Packet4 set_pfk_param_2(uint16_t p1, uint16_t p2, uint16_t p3, uint16_t p4) {
             return command({SetFpkParam2, p1, p2, p3, p4});
@@ -409,9 +427,12 @@ class LaserBJJCZ : public Laser
       Packet4 set_fly_res(uint16_t f1, uint16_t f2, uint16_t f3, uint16_t f4) {
             return command({SetFlyRes, f1, f2, f3, f4});
             }
-      Packet4 set_axis_motion_param(uint16_t p0 = 0, uint16_t p1 = 0, uint16_t p2 = 0, uint16_t p3 = 0) {
-            return command({SetAxisMotionParam, p0, p1, p2, p3});
-            }
+      // stepsMM - steps per mm, or steps per 1°
+      // minSpeed - Pulse/s
+      // maxSpeed
+      //      Packet4 set_axis_motion_param(uint16_t axis, uint16_t stepsMM, uint16_t minSpeed, uint16_t maxSpeed) {
+      //            return command({SetAxisMotionParam, axis, p1, p2, p3});
+      //            }
       Packet4 set_axis_origin_param(uint16_t p0 = 0, uint16_t p1 = 0, uint16_t p2 = 0, uint16_t p3 = 0) {
             return command({SetAxisOriginParam, p0, p1, p2, p3});
             }
@@ -449,7 +470,7 @@ class LaserBJJCZ : public Laser
       int distance(int x, int y);
 
     public:
-      LaserBJJCZ(ZCam* w, QObject* parent = nullptr);
+      LaserBJJCZ(Machine* m, QObject* parent = nullptr);
       virtual ~LaserBJJCZ();
 
       friend class CmdList;
@@ -470,7 +491,7 @@ class LaserBJJCZ : public Laser
       virtual void markLayer(const LaserPath& path, const LaserParameterSet& sl) override;
 
       virtual LaserPosition mapToGalvo(double, double) override;
-      virtual const std::string_view properties() const override;
+      virtual const std::string properties() const override;
       void setLaserValuesValid(bool v) { _laserValuesValid = v; }
       Q_INVOKABLE virtual void toggleOutputBit(int bit) override { gpioToggle(bit); }
       };

@@ -10,6 +10,7 @@
 //=============================================================================
 
 #include "propertyjson.h"
+#include "machine.h"
 #include "logger.h"
 namespace propjson {
 
@@ -161,6 +162,14 @@ bool writePropertyToJson(nlohmann::json& data, const void* obj, const QMetaObjec
             else
                   data[name] = roundToPrecision(value.toDouble(), precision);
             }
+      else if (type == "machineType") {
+            // MachineType enum — serialize as its human-readable string name.
+            // The property is a MachineType enum; we convert via the QMetaProperty
+            // to int, then look up the name in machineTypeMap.
+            int enumVal   = value.toInt();
+            auto typeName = machineTypeMap.name(static_cast<MachineType>(enumVal));
+            data[name]    = std::string(typeName);
+            }
       else {
             // Fallback: store as string
             if (value.canConvert<QString>())
@@ -223,6 +232,15 @@ bool readPropertyFromJson(const nlohmann::json& data, void* obj, const QMetaObje
                 tid == QMetaType::ULong || tid == QMetaType::ULongLong)
                   return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<int>()));
             return writePropertyRaw(obj, meta, gadget, idx, QVariant(jval.get<double>()));
+            }
+      else if (type == "machineType") {
+            // MachineType enum — deserialize from its human-readable string name.
+            // Look up the name in machineTypeMap and write the enum value.
+            std::string nameStr = jval.get<std::string>();
+            auto mt             = machineTypeMap.type(std::string_view(nameStr));
+            if (mt)
+                  return writePropertyRaw(obj, meta, gadget, idx, QVariant(static_cast<int>(*mt)));
+            return false;
             }
       else {
             // Fallback: string types

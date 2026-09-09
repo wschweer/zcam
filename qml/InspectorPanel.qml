@@ -26,7 +26,12 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
+        // No right margin: the vertical scrollbar sits flush against the
+        // window edge and the property editors get the full horizontal width.
+        anchors.leftMargin: 8
+        anchors.topMargin: 8
+        anchors.bottomMargin: 8
+        anchors.rightMargin: 0
         spacing: 6
 
         // ── Title ─────────────────────────────────────────────────────────────

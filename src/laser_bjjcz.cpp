@@ -13,7 +13,6 @@
 #include <cmath>
 #include <unistd.h>
 #include "usb.h"
-#include "group.h"
 #include "zcam.h"
 #include "project.h"
 #include "laser_bjjcz.h"
@@ -230,16 +229,13 @@ void dump(Packet6* p, bool single) {
 //   LaserBJJCZ
 //---------------------------------------------------------
 
-LaserBJJCZ::LaserBJJCZ(ZCam* w, QObject* parent) : Laser(w, parent), list(this) {
+LaserBJJCZ::LaserBJJCZ(Machine* m, QObject* parent) : Laser(m, parent), list(this) {
       usb               = new Usb();
       _laserValuesValid = false;
       }
 
 LaserBJJCZ::~LaserBJJCZ() {
-      set_control_mode(1);
-      set_standby(2000, 20);
-      set_fiber_mo(0);
-      write_analog_port_1(409);
+      usb->close();
       delete usb;
       }
 
@@ -248,8 +244,8 @@ LaserBJJCZ::~LaserBJJCZ() {
 //---------------------------------------------------------
 
 LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
-      const double maxX  = maxTravel().x();
-      const double maxY  = maxTravel().y();
+      const double maxX  = machine()->maxTravel().x();
+      const double maxY  = machine()->maxTravel().y();
       const double halfX = maxX * 0.5;
       const double halfY = maxY * 0.5;
 
@@ -311,6 +307,8 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
       const double xScale = galvoScale().x() * 51600.0 / maxX;
       const double yScale = galvoScale().y() * 51600.0 / maxY;
 
+      // Debug("======={} {}", galvoScale().x(), galvoScale().y());
+
       double rawX, rawY;
       if (galvoSwapxy()) {
             rawX = trunc(yc * yScale + 0x8000);
@@ -336,7 +334,7 @@ LaserPosition LaserBJJCZ::mapToGalvo(double x, double y) {
 
 bool LaserBJJCZ::initEngine(bool _dryRun) {
       set_dryRun(_dryRun);
-      Assert(zcam);
+      Assert(machine()->getZcam());
 
       try {
             if (!dryRun())
@@ -353,8 +351,8 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
       // safety margin is typical 20%-21%
       double xScale = galvoScale().x();
       double yScale = galvoScale().y();
-      xScale        = xScale * 25800 / maxTravel().x();
-      yScale        = yScale * 25800 / maxTravel().y();
+      xScale        = xScale * 25800 / machine()->maxTravel().x();
+      yScale        = yScale * 25800 / machine()->maxTravel().y();
 
       galvos = (abs(xScale) + abs(yScale)) * .5;
       Debug("native scale {:.2f} {:.2f} galvos(scale): {} {:04x}", xScale, yScale, galvos, int(galvos));
@@ -365,8 +363,9 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
 
       set_inputPort(command(InputPort)[1]);
 
-      if (isMOPALaser())
+      if (type() == MachineType::MOPA_LASER)
             get_fiber_st_mo_ap();
+
       command({UnknownCmdx03, 0, 0, 0, 0});
 
       if (!_dryRun && !is_ready()) {
@@ -375,8 +374,12 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
             return false;
             }
       writeCorrectionTable();
+
       enable_laser();
-      set_control_mode(0);
+      if (type() == MachineType::MOPA_LASER)
+            set_control_mode(0);
+      else if (type() == MachineType::UV_LASER)
+            set_control_mode(1);
       set_laser_mode(1);
       set_delay_mode(1);
       set_timing(1);
@@ -384,9 +387,9 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
       set_standby(2000, 20);
       setFirstPulseKiller(200);
 
-      double fres = (32767.0 / 2.0) / maxTravel().x();
+      double fres = (32767.0 / 2.0) / machine()->maxTravel().x();
 
-      if (isMOPALaser()) {
+      if (type() == MachineType::MOPA_LASER) {
             set_pwm_half_period(2);
             set_pwm_pulse_width(2);
             fiber_pulse_width(1);
@@ -398,32 +401,25 @@ bool LaserBJJCZ::initEngine(bool _dryRun) {
             //    fres - resolution ticks/mm
             //    1000 - period/max_speed (1000mm/s)
             //    24    - bit_depth / config    hardware counter
-            set_fly_res(0, fres, 1000, 24); // 175 lens
-
-            enable_z();
-            gpioWrite(0);
-            enable_z();
+            set_fly_res(0, fres, 1000, 24);
             write_analog_port_1(3275);
             }
-      else if (isUVLaser()) {
+      else if (type() == MachineType::UV_LASER) {
             set_pwm_half_period(66);
             set_pwm_pulse_width(66);
             write_analog_port_2(0);
             //            set_pfk_param_2(fpk_max_voltage, fpk_min_voltage, fpk_t1, fpk_t2);
             set_pfk_param_2(4091, 1, 409, 100);
-            set_fly_res(0, fres, 1000, 24); // 70mm lens
+            set_fly_res(0, fres, 1000, 24);
             enable_z();
             write_analog_port_1(2047);
             }
+      enable_z();
       gpioWrite(0);
       gotoXY(0x8000, 0x8000);
       return true;
       }
 
-// travel        175     70    75   300
-//    fly_res     94    234   218    55
-//    galvos     x889               x111
-//                175
 //---------------------------------------------------------
 //   initPosition
 //---------------------------------------------------------
@@ -459,10 +455,10 @@ Packet4 LaserBJJCZ::command(Packet6 data) const {
 bool LaserBJJCZ::send(const CmdList& data) const {
       if (!waitReady())
             return false;
-      if (stopFraming || stopMarking) {
-            Debug("send aborted");
-            return true;
-            }
+//      if (stopFraming || stopMarking) {
+//            Debug("send aborted");
+//            return true;
+//            }
       if (!usb->write((uchar*)data[0].data(), LIST_SIZE * 12)) {
             Critical("usb send failed");
             return false;
@@ -559,8 +555,10 @@ void LaserBJJCZ::exitEngine() {
       stop_list();
       aborting = true;
       wait_idle();
-      if (isMOPALaser())
+      if (type() == MachineType::MOPA_LASER)
             set_fiber_mo(0);
+      Debug("disable laser");
+      /**/ disable_laser();
       usb->close();
       }
 
@@ -627,7 +625,7 @@ void LaserBJJCZ::mark(const PathD& p) {
                   first = false;
                   }
             else if (firstMove) {
-                  if (isMOPALaser()) {
+                  if (type() == MachineType::MOPA_LASER) {
                         set_fiber_mo(1);
                         list_delay_time(1000);
                         list_laser_on_point(10);
@@ -645,7 +643,6 @@ void LaserBJJCZ::mark(const PathD& p) {
 //---------------------------------------------------------
 
 void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
-      Debug("===");
       if (!_laserValuesValid || l.speed != laserValues.speed)
             list.write({listMarkSpeed, uint16_t(l.speed * abs(galvos) * 0.001)});
       if (!_laserValuesValid || l.jumpSpeed != laserValues.jumpSpeed)
@@ -658,13 +655,16 @@ void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
             list_polygon_delay(l.polygonDelay);
       if (!_laserValuesValid || l.endDelay != laserValues.endDelay)
             list_delay_time(l.endDelay);
-      if (isUVLaser()) {
-            //            list_qswitch_period(uint16_t(round(20000.0 / l.frequency)) & 0xffff);
-            //            list_mark_frequency(100);
+      if (!_laserValuesValid || l.minJumpDelay != laserValues.minJumpDelay)
+            list_jump_delay(l.minJumpDelay);
+
+      if (type() == MachineType::UV_LASER) {
+            if (!_laserValuesValid || l.frequency != laserValues.frequency)
+                  list_mark_frequency(uint16_t(round(20000.0 / l.frequency)) & 0xffff);
             list_set_co2_fpk(20, 20);
-            list_mark_power_ratio(20);
+            list_mark_power_ratio(200); // ??
             }
-      else if (isMOPALaser()) {
+      else if (type() == MachineType::MOPA_LASER) {
             if (!_laserValuesValid || l.pulseWidth != laserValues.pulseWidth) {
                   list_fiber_open_mo(0);
                   list_fiber_ylpm_pulse_width(l.pulseWidth);
@@ -680,8 +680,6 @@ void LaserBJJCZ::setLaser(const LaserParameterSet& l) {
             }
       laserValues       = l;
       _laserValuesValid = true;
-
-      list_jump_delay(l.minJumpDelay);
       }
 
 //---------------------------------------------------------
@@ -692,21 +690,25 @@ bool LaserBJJCZ::startFramingEngine() {
       try {
             aborting = false;
             waitReady();
-            //            set_control_mode(0); //??
-            //            gpioWrite(0x100);
             setLight(true);
             initPosition();
             _laserValuesValid = false;
 
-            waitReady();
+            // Use framingSpeed() when configured, otherwise fall back to
+            // travelSpeed().  Previously framing always used travelSpeed(),
+            // ignoring the dedicated framingSpeed machine property.
+            double frameSpd = framingSpeed();
+            if (frameSpd <= 0.0)
+                  frameSpd = travelSpeed();
 
+            waitReady();
             list.start();
-            list.write({listJumpSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
-            list.write({listMarkSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
+            list.write({listJumpSpeed, uint16_t(frameSpd * galvos * 0.001)});
+            list.write({listMarkSpeed, uint16_t(frameSpd * galvos * 0.001)});
             list.write({listLaserOnDelay, 0});
             list.write({listLaserOffDelay, 0});
             list.write({listPolygonDelay, 0});
-            list.write({listJumpDelay, uint16_t(minJumpDelay())});
+            list.write({listJumpDelay, 0});
             }
       catch (const std::string s) {
             Debug("failed: {}", s);
@@ -722,9 +724,8 @@ bool LaserBJJCZ::startFramingEngine() {
 void LaserBJJCZ::stopFramingEngine() {
       stopFraming = false;
       stop_execute();
-      reset_list(); // DEBUG
 
-      if (isMOPALaser())
+      if (type() == MachineType::MOPA_LASER)
             set_fiber_mo(0);
 
       // gpioWrite(0x100);
@@ -737,7 +738,6 @@ void LaserBJJCZ::stopFramingEngine() {
       list.write({listJumpSpeed, uint16_t(travelSpeed() * galvos * 0.001)});
       list.write({listJumpDelay, uint16_t(minJumpDelay())});
       list.end(1);
-      set_control_mode(1);
 
       //      gpioWrite(0x100);
       set_standby(2000, 20);
@@ -755,6 +755,7 @@ void LaserBJJCZ::stopFramingEngine() {
 
 void LaserBJJCZ::stopMarkingEngine() const {
       stop_execute();
+      stop_list();
       }
 
 //---------------------------------------------------------
@@ -765,17 +766,16 @@ void LaserBJJCZ::startMarkingEngine() {
       aborting          = false;
       _laserValuesValid = false;
 
-      //      gpioWrite(0x0);
       list.start();
       initPosition();
       waitReady();
 
-      if (isMOPALaser()) {
+      if (type() == MachineType::MOPA_LASER) {
             //list_fiber_open_mo(1);
             // set_fiber_mo(1);  ??
             //list_delay_time(800);
             }
-      if (isUVLaser()) {
+      if (type() == MachineType::UV_LASER) {
             //            gpioWrite(0x100);
             set_standby(2000, 20);
             //            gpioWrite(0x300);
@@ -792,9 +792,24 @@ void LaserBJJCZ::startMarkingEngine() {
 //---------------------------------------------------------
 
 void LaserBJJCZ::endMarkingEngine() {
+      // If the marking was aborted (stopMarking was set), the catch
+      // block already called stop_execute().  The CmdList buffer may
+      // still contain stale partial-list data from the interrupted
+      // markLayer() — sending it would corrupt the board state.
+      // Clear the buffer and reset the board's list so the next
+      // operation (framing or a fresh marking) starts clean.
+      if (markingAborted) {
+            stop_execute();
+            list.clear();
+            reset_list();
+            waitReady();
+            if (type() == MachineType::MOPA_LASER)
+                  set_fiber_mo(0);
+            return;
+            }
       list.end();
       wait_finished();
-      if (isMOPALaser())
+      if (type() == MachineType::MOPA_LASER)
             set_fiber_mo(0);
       }
 
@@ -817,6 +832,13 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
       bool moving = true;
 
       for (const auto& p : path) {
+            // Check the abort flag between every path element so the
+            // stop takes effect promptly instead of processing the
+            // entire remaining layer.  Without this, markLayer keeps
+            // filling the CmdList buffer and sending partial lists to
+            // the board even after stopMarking is set.
+            if (stopMarking)
+                  throw std::string("stopped");
             if (p.type == LaserPathElementType::MoveTo) {
                   move(p.x(), p.y());
                   moving = true;
@@ -838,7 +860,7 @@ void LaserBJJCZ::markLayer(const LaserPath& path, const LaserParameterSet& sl) {
             }
       }
 
-static constexpr std::string_view _propertiesQ = // Q-switched Laser
+static const std::string _propertiesQ = // Q-switched Laser
     R"json(
       {
         "class": "Machine",
@@ -1140,7 +1162,7 @@ static constexpr std::string_view _propertiesQ = // Q-switched Laser
     )json";
 
 // MOPA Laser
-static constexpr std::string_view _propertiesMOPA =
+static const std::string _propertiesMOPA =
     R"json(
       {
         "class": "Machine",
@@ -1531,7 +1553,7 @@ static constexpr std::string_view _propertiesMOPA =
     )json";
 
 // UVLaser
-static constexpr std::string_view _propertiesUV =
+static const std::string _propertiesUV =
     R"json(
       {
         "class": "Machine",
@@ -1879,11 +1901,103 @@ static constexpr std::string_view _propertiesUV =
               {
                 "name": "line",
                 "type": "line",
+                "label": "Z-Axis",
+                "colSpan": 2
+              },
+              {
+                "label": " ",
+                "cells": [
+                  {
+                    "type": "bool",
+                    "default": false,
+                    "name": "enableZ",
+                    "sublabel": "enable"
+                  },
+                  {
+                    "type": "float",
+                    "sublabel": "steps/mm",
+                    "name": "stepsMMZ",
+                    "min": 0.0,
+                    "max": 10000.0,
+                    "default": 300.0
+                  }
+                ]
+              },
+              {
+                "label": "Speed",
+                "cells": [
+                  {
+                    "type": "int",
+                    "sublabel": "min",
+                    "name": "minSpeedZ",
+                    "min": -1,
+                    "max": 15,
+                    "default": 15
+                  },
+                  {
+                    "type": "int",
+                    "sublabel": "max",
+                    "name": "maxSpeedZ",
+                    "min": -1,
+                    "max": 15,
+                    "default": 15
+                  }
+                ]
+              },
+              {
+                "name": "line",
+                "type": "line",
+                "label": "Rotary",
+                "colSpan": 2
+              },
+              {
+                "label": " ",
+                "cells": [
+                  {
+                    "type": "bool",
+                    "default": false,
+                    "name": "enableR",
+                    "sublabel": "enable"
+                  },
+                  {
+                    "type": "float",
+                    "sublabel": "steps/mm",
+                    "name": "stepsMMR",
+                    "min": 0.0,
+                    "max": 10000.0,
+                    "default": 300.0
+                  }
+                ]
+              },
+              {
+                "label": "Speed",
+                "cells": [
+                  {
+                    "type": "int",
+                    "sublabel": "min",
+                    "name": "minSpeedR",
+                    "min": 1,
+                    "max": 1000,
+                    "default": 15
+                  },
+                  {
+                    "type": "int",
+                    "sublabel": "max",
+                    "name": "maxSpeedR",
+                    "min": 1,
+                    "max": 1000,
+                    "default": 15
+                  }
+                ]
+              },
+              {
+                "name": "line",
+                "type": "line",
                 "label": "I/O",
                 "colSpan": 2
               },
               {
-                "label": "Gpio",
+                "label": " ",
                 "cells": [
                   {
                     "type": "int",
@@ -1914,14 +2028,15 @@ static constexpr std::string_view _propertiesUV =
 //   properties
 //---------------------------------------------------------
 
-const std::string_view LaserBJJCZ::properties() const {
-      if (type() == machineTypes[0]) // Q
-            return _propertiesQ;
-      if (type() == machineTypes[1]) // MOPA
-            return _propertiesMOPA;
-      if (type() == machineTypes[2]) // UV
-            return _propertiesUV;
-      return _propertiesQ;
+const std::string LaserBJJCZ::properties() const {
+      switch (type()) {
+            case MachineType::Q_LASER: return _propertiesQ;
+            case MachineType::MOPA_LASER: return _propertiesMOPA;
+            case MachineType::UV_LASER: return _propertiesUV;
+            case MachineType::GCODE_LASER:
+            case MachineType::GCODE_MILL:
+            case MachineType::UNKNOWN: return "";
+            }
       }
 
 //---------------------------------------------------------
@@ -2042,12 +2157,21 @@ void CmdList::start() {
 void CmdList::end(int param) {
       write(listEndOfList);
       if (!empty()) {
-            laser->send(*this);
-            if (!executing)
-                  laser->execute_list();
+            // Only send + execute if the board is ready and not being
+            // stopped.  When send() returns false the board is in an
+            // abort state and sending a partial list would corrupt it.
+            if (laser->send(*this)) {
+                  if (!executing)
+                        laser->execute_list();
+                  laser->set_end_of_list(param);
+                  }
             }
-      //      laser->stop_list();   <-- this is wrong here
-      laser->set_end_of_list(param);
+      else {
+            // Buffer is empty (only listEndOfList was written).  Still
+            // send end_of_list when the board is ready.
+            if (laser->send(*this))
+                  laser->set_end_of_list(param);
+            }
       packetsSend = 0;
       executing   = false;
       index       = 0;
@@ -2060,14 +2184,21 @@ void CmdList::end(int param) {
 
 void CmdList::write(const Packet6& p) {
       if (index >= LIST_SIZE) {
-            laser->send(*this);
-            laser->set_end_of_list(0);
-            ++packetsSend;
-            // if two packets are send to the laser we start
-            // executing the list
-            if ((packetsSend >= 2) && !executing) {
-                  laser->execute_list();
-                  executing = true;
+            // If the list send was aborted (stopMarking / stopFraming),
+            // do NOT send set_end_of_list / execute_list — the board is
+            // being stopped and sending partial list control commands
+            // would corrupt its state.  Just clear the buffer and continue
+            // buffering; the abort path (stop_execute + reset_list) will
+            // clean up the board.
+            if (laser->send(*this)) {
+                  laser->set_end_of_list(0);
+                  ++packetsSend;
+                  // if two packets are send to the laser we start
+                  // executing the list
+                  if ((packetsSend >= 2) && !executing) {
+                        laser->execute_list();
+                        executing = true;
+                        }
                   }
             fill(Packet6());
             index = 0;
@@ -2122,7 +2253,10 @@ double LaserBJJCZ::computeJumpDelay(int galvoDistance) const {
 
 void LaserBJJCZ::move(uint16_t x, uint16_t y) {
       uint16_t d = distance(x, y);
-      list_jump_delay(computeJumpDelay(d));
+      if (state == LaserState::Framing)
+            list_jump_delay(0);
+      else
+            list_jump_delay(computeJumpDelay(d));
       list.write({listJumpTo, x, y, 0, d});
       currentX = x;
       currentY = y;
@@ -2162,23 +2296,27 @@ void LaserBJJCZ::mark(uint16_t x, uint16_t y) {
 //    The actual position plus correction value cannot exceed the
 //    16 bit range and must be clamped.
 //
-//    TEST CORRECTION (hardware behaviour):
-//    The original assumption was that the hardware adds the
-//    table values to the nominal galvo position:
-//        actual = nominal + corr
-//    Test results show the hardware actually divides the
-//    table values by 4 and subtracts them:
-//        actual = nominal - corr / 4
-//    The previously computed values were therefore inverted
-//    (wrong sign) and too small by a factor of 4.
-//    To compensate, the correction values are multiplied by -4:
-//        corr_new = -4 * corr_old
-//    so that  nominal - corr_new / 4 = nominal + corr_old
-//    yields the desired physical correction.
+//    HARDWARE BEHAVIOUR (verified empirically):
+//    The hardware subtracts the table values from the nominal
+//    galvo position without any scaling:
+//        actual = nominal - corr
+//    To produce a positive spot shift (push the beam outward
+//    to compensate the inward lens distortion), the correction
+//    values must be negative:
+//        corr = -k * r² * g
+//    so that  actual = nominal + k * r² * g
+//    yields the desired outward correction.
+//
+//    The previously used factor -4 was based on the assumption
+//    that the hardware divides by 4 (actual = nominal - corr/4).
+//    Empirical verification with GalvoCalibration showed the
+//    computed bulge values were ~4× larger than the empirically
+//    determined correct values, proving the hardware does NOT
+//    divide by 4.
 //---------------------------------------------------------
 
 void LaserBJJCZ::writeCorrectionTable() {
-      CalData corData(zcam);
+      CalData corData(machine()->getZcam());
 
       bool errorReadingCorFile = false;
       if (!corFile().isEmpty() && corData.read(corFile().toStdString())) {
@@ -2214,12 +2352,12 @@ void LaserBJJCZ::writeCorrectionTable() {
                   std::swap(k4xlocal, k4ylocal);
                   }
 
-            // Factor -4: the hardware subtracts corr/4 instead of adding corr.
-            // Multiply by -4 so the net effect matches the original model.
-            constexpr double tableScaleFactor = -4.0;
+            // Factor -1: the hardware subtracts corr from the nominal
+            // position (no /4 scaling).  Negative sign produces the
+            // desired outward shift: actual = nominal - (-k*r²*g) = nominal + k*r²*g.
+            constexpr double tableScaleFactor = -1.0;
 
-            int scale = 0x10000 / 64;
-
+            //            int scale = 0x10000 / 64;
             for (double y = -32; y <= 32; ++y) {
                   for (double x = -32; x <= 32; ++x) {
                         const double r2 = x * x + y * y;
@@ -2232,8 +2370,12 @@ void LaserBJJCZ::writeCorrectionTable() {
                         // Avoid 16-bit signed overflow in the packed correction value.
                         constexpr int corrMin = -0x7FFF;
                         constexpr int corrMax = 0x7FFF;
-                        corrX                 = std::clamp(corrX, corrMin, corrMax);
-                        corrY                 = std::clamp(corrY, corrMin, corrMax);
+                        Assert(corrX >= corrMin);
+                        Assert(corrX <= corrMax);
+                        Assert(corrY >= corrMin);
+                        Assert(corrY <= corrMax);
+                        //                        corrX                 = std::clamp(corrX, corrMin, corrMax);
+                        //                        corrY                 = std::clamp(corrY, corrMin, corrMax);
 
                         corData.setValue(x, y, {corrX, corrY});
                         }

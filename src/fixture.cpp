@@ -15,7 +15,7 @@
 #include "zcam.h"
 #include "fixture.h"
 #include "group.h"
-#include "recipe.h"
+#include "laser_mop.h"
 #include "cam.h"
 #include "project.h"
 #include "cad.h"

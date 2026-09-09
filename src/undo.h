@@ -14,10 +14,12 @@
 #include <QList>
 #include <QVariant>
 #include <QVector3D>
+#include <QVector2D>
 #include <QtQml/qqmlregistration.h>
 
 #include "logger.h"
 #include "element.h"
+#include "painterpath.h"
 
 class UndoCommand;
 class ZCam;
@@ -392,6 +394,33 @@ class HandleDragCommand : public UndoCommand
       };
 
 //---------------------------------------------------------
+///   NestBinCommand
+///    Undoable command that restores a complete pair of bin-size
+///    / pos values on a Nest element.  Unlike an ordinary vertex
+///    drag, resizing a Nest bin changes TWO properties at once
+///    (binSize and pos); NestBinDrag therefore records both so a
+///    handle drag can be correctly reverted/re-applied.
+//---------------------------------------------------------
+
+class NestBinCommand : public UndoCommand
+      {
+      Element3d* _nest;
+      QVector2D _oldBinSize;
+      QVector2D _newBinSize;
+      QVector3D _oldPos;
+      QVector3D _newPos;
+
+    public:
+      NestBinCommand(ZCam* zc, Element3d* nest, const QVector2D& oldBinSize, const QVector2D& newBinSize,
+          const QVector3D& oldPos, const QVector3D& newPos)
+          : UndoCommand(zc), _nest(nest), _oldBinSize(oldBinSize), _newBinSize(newBinSize), _oldPos(oldPos),
+            _newPos(newPos) {}
+      void undo() override;
+      void redo() override;
+      std::string description() const override { return std::format("Resize nest bin"); }
+      };
+
+//---------------------------------------------------------
 //   RemoveElementCommand
 //    Undoable command that removes an Element from its parent.
 //    undo() re-inserts it at the original position; redo()
@@ -424,6 +453,12 @@ class RemoveElementCommand : public UndoCommand
 //    parent).  undo() moves it back; redo() moves it again.
 //    Both operations update the tree model and, when the parent
 //    actually changes, notify the 3D scene.
+//
+//    When the old and new parents are different Element3d objects,
+//    the element's local pos / rot / scale are adjusted so that its
+//    world-space transform stays the same (the visual position
+//    doesn't jump).  The original and adjusted transforms are stored
+//    so that undo/redo correctly toggles between them.
 //---------------------------------------------------------
 
 class MoveElementCommand : public UndoCommand
@@ -433,6 +468,12 @@ class MoveElementCommand : public UndoCommand
       Element* _newParent;
       int _oldRow {-1}; ///< original position within old parent
       int _newRow {-1}; ///< target position within new parent
+
+      // World-space-preserving transform adjustment (only used when
+      // the parent actually changes and both are Element3d).
+      bool _transformAdjusted {false};
+      QVector3D _oldPos, _oldRot, _oldScale; ///< original local transform
+      QVector3D _newPos, _newRot, _newScale; ///< adjusted local transform
 
     public:
       MoveElementCommand(
@@ -497,4 +538,26 @@ class ScriptBindingCommand : public UndoCommand
             return std::format(
                 "Script binding {}.{}", _element ? _element->name() : QStringLiteral("?"), _prop);
             }
+      };
+
+//--------------------------------------------------------------------
+//     PolygonPathCommand
+//--------------------------------------------------------------------
+//   Undoable command that replaces the entire PainterPath of a
+//   Polygon.  Stores the old and new path so that undo/redo can
+//   toggle between them.  Used by convertSelectedSegmentToBezier()
+//   and splitSelectedSegment() to make structural path changes
+//   undoable.
+class PolygonPathCommand : public UndoCommand
+      {
+      Polygon* _polygon;
+      PainterPath _oldPath;
+      PainterPath _newPath;
+
+    public:
+      PolygonPathCommand(ZCam* zc, Polygon* poly, const PainterPath& oldPath, const PainterPath& newPath)
+          : UndoCommand(zc), _polygon(poly), _oldPath(oldPath), _newPath(newPath) {}
+      void undo() override;
+      void redo() override;
+      std::string description() const override;
       };

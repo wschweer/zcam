@@ -18,23 +18,24 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-#include "types.h"
 #include "macros.h"
+#include "machinetypes.h"
 
 class ZCam;
 class Machines;
+class Engine;
 class Laser;
 class LaserBJJCZ;
 class LaserRKQ;
-enum MachineType { Q_LASER, MOPA_LASER, UV_LASER, GCODE_CNC };
-inline const std::vector<std::string> machineTypes {"Q-switched Laser", "MOPA Laser", "UV Laser",
-                                                    "GCode CNC"};
-
-inline const std::vector<std::string> boardTypes {"BJJCZ", "RKQ-LM-441"};
+class MachineGCode;
 
 //---------------------------------------------------------
 //   Machine
-//    Virtual base class for all machine types.
+//    Concrete, instantiable class holding shared machine
+//    properties (travel, precision, etc.) and a pointer to
+//    an Engine that encapsulates the type-specific behaviour.
+//    The machine type can be changed dynamically by swapping
+//    the Engine.
 //---------------------------------------------------------
 
 class Machine : public QObject
@@ -44,7 +45,9 @@ class Machine : public QObject
       QML_UNCREATABLE("Machine objects are created by Machines")
 
       PROP(QString, name)
-      PROP(QString, type)
+      PROP(MachineType, type)
+      /// Read-only string name for QML display and serialization.
+      Q_PROPERTY(QString machineTypeName READ machineTypeName NOTIFY typeChanged)
       PROP(QString, boardType)
       PROP(QString, description)
       PROPV(QVector3D, maxTravel, QVector3D(100.0, 100.0, 100.0))
@@ -61,16 +64,42 @@ class Machine : public QObject
       PROP(double, circlePrecision)
       ZCam* zcam;
 
+      friend class Engine;
+
+      Engine* _engine {nullptr};
+
+      Q_PROPERTY(Engine* engine READ engine NOTIFY engineChanged)
+
+    signals:
+      void engineChanged();
+
     public:
-      Machine(ZCam* zc, QObject* parent = nullptr) : QObject(parent), zcam(zc) {}
-      virtual ~Machine() = default;
+      Machine(ZCam* zc, QObject* parent = nullptr);
+      virtual ~Machine();
+      /// Access the owning ZCam instance.
+      ZCam* getZcam() const { return zcam; }
       json toJson() const;
       bool fromJson(const json&);
-      virtual const std::string_view properties() const = 0;
+      /// Human-readable name for the current MachineType, via machineTypeMap.
+      QString machineTypeName() const { return QString::fromUtf8(machineTypeMap.name(_type)); }
+      /// Set the machine type from its string name (e.g. from JSON).
+      void set_typeFromName(const QString& name);
+      /// The owning Engine (may be null before first createEngine()).
+      Engine* engine() const { return _engine; }
+      /// Change the machine type dynamically.  Creates a new Engine
+      /// of the appropriate subclass, copies over shared properties,
+      /// and replaces the old engine.  The old engine is deleted.
+      void changeType(MachineType newType, const QString& boardType = {});
 
-      /// Factory: create a concrete Machine subclass based on the
-      /// machine type and board type strings.
-      static Machine* create(ZCam* zc, const QString& machineType, const QString& boardType);
-      bool isUVLaser() const { return type() == "UV Laser"; }
-      bool isMOPALaser() const { return type() == "MOPA Laser"; }
+      /// Create or replace the Engine based on the current type()
+      /// and boardType().  Called during construction and after a
+      /// type change.
+      void createEngine();
+
+      /// Convenience: return the engine as a Laser, or nullptr.
+      Q_INVOKABLE Laser* laserEngine() const;
+
+      /// Factory: create a Machine with the appropriate Engine
+      /// based on the machine type enum and board type string.
+      static Machine* create(ZCam* zc, MachineType, const QString& boardType);
       };

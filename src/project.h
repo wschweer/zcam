@@ -75,7 +75,7 @@ class Project : public Element3d
             ]
         }
     ]
-            })"};
+                  })"};
 
       void setProjectPath(const QString& v);
       void clearUndoStack();
@@ -129,6 +129,20 @@ class Project : public Element3d
       /// undo/redo stack and marks the project dirty.
       void changeProperty(Element* element, const QString& propName, const QVariant& newValue);
 
+      // ── Element renaming ────────────────────────────────────────────
+      /// Predicted name that setName() would assign for *rawName* without
+      /// applying it: sanitized to a valid JS identifier and de-duplicated
+      /// against the central Element::names registry.
+      static QString uniqueNameFor(const QString& rawName);
+      /// Rename *element* to *newName* via the central Element::names
+      /// registry (uniqueness + JS-identifier sanitization enforced by
+      /// Element::setName()).  The actual de-duplicated name is returned.
+      /// No-op (returns the element's current name) when *newName*
+      /// resolves to the element's current name.  The change is recorded
+      /// on the undo stack as a RenameElementCommand, so it is
+      /// undoable/redoable and marks the project dirty.
+      Q_INVOKABLE QString renameElement(Element* element, const QString& newName);
+
       Q_INVOKABLE void doUndo();
       Q_INVOKABLE void doRedo();
 
@@ -149,6 +163,10 @@ class Project : public Element3d
       /// Add a new Layer as child of the Cad element.
       /// The operation is undoable via the undo stack.
       Q_INVOKABLE void addLayer();
+
+      /// Create a new Nest element as child of the Cad element.
+      /// The operation is undoable via the undo stack.
+      Q_INVOKABLE void addNest();
 
       /// Add a new LaserLayer as child of the given Fixture element.
       /// The operation is undoable via the undo stack.

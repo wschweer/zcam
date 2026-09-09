@@ -30,6 +30,7 @@ using json = nlohmann::json;
 #include "undo.h"
 #include "cal.h"
 #include "ogr.h"
+#include "laser_mop.h"
 
 // resolution of scanned test grid image
 // static const double DPI = 1200.0;
@@ -211,7 +212,7 @@ void ZCam::createGalvoTest64() {
       // Create a LaserLayer linked to the galvo pattern layer
       auto ll = new LaserMop(this, fixture);
       ll->setName("LL-GalvoPattern64");
-      layer->set_laserLayer(ll);
+      layer->set_mop(ll);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));

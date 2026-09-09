@@ -25,7 +25,7 @@ static bool debugIO = false;
 
 static void libusbError(int error) {
       Critical("{}", libusb_strerror(error));
-//      throw libusb_strerror(error);
+      //      throw libusb_strerror(error);
       }
 
 //---------------------------------------------------------
@@ -57,7 +57,7 @@ bool Usb::lookupDevice(int vendor, int product) {
             if (dd.idVendor == vendor && dd.idProduct == product) {
                   device = list[i];
                   Debug("usb device found bus {} port {}", libusb_get_bus_number(device),
-                        libusb_get_port_number(device));
+                      libusb_get_port_number(device));
                   return true;
                   }
             }

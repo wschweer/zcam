@@ -17,13 +17,20 @@
 #include "config.h"
 #include "logger.h"
 #include "propertyjson.h"
+#include "scriptapi.h"
 
 #include <QColor>
 #include <functional>
+#include <QDate>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QMetaMethod>
 #include <QMetaProperty>
 #include <QRegularExpression>
 #include <QSet>
+#include <QTimer>
 #include <QVector2D>
 #include <QVector3D>
 
@@ -267,6 +274,9 @@ static QList<QMetaMethod> dependencySignals(Element* el, bool scalarUse, const Q
 //---------------------------------------------------------
 
 ScriptEngine::ScriptEngine(QObject* parent) : QObject(parent) {
+      _geometryApi = new GeometryApi(this);
+      _scriptApi   = new ScriptApi(this);
+      ensurePrintGlobal();
       }
 
 ScriptEngine::~ScriptEngine() = default;
@@ -298,6 +308,23 @@ void ScriptEngine::rebuildRegistry(bool keepBindings) {
             QJSValue configObj = _engine.newQObject(_zcam->config());
             global.setProperty(QStringLiteral("config"), configObj);
             refreshVectorSnapshots(_zcam->config());
+            }
+
+      // Register the imperative API objects ("zcam" and "geom") as
+      // global namespace objects so scripts can call
+      //   zcam.createElement("rectangle", 10, 20)
+      //   geom.regularPolygon(0, 0, 10, 6)
+      // These persist across rebuilds (they are not tied to the
+      // project tree), so we only register them once.
+      if (_scriptApi && !global.property(QStringLiteral("zcam")).isObject()) {
+            _scriptApi->setZcam(_zcam);
+            _scriptApi->setEngine(&_engine);
+            QJSValue zcamObj = _engine.newQObject(_scriptApi);
+            global.setProperty(QStringLiteral("zcam"), zcamObj);
+            }
+      if (_geometryApi && !global.property(QStringLiteral("geom")).isObject()) {
+            QJSValue geomObj = _engine.newQObject(_geometryApi);
+            global.setProperty(QStringLiteral("geom"), geomObj);
             }
 
       if (!_zcam || !_zcam->project())
@@ -508,7 +535,43 @@ void ScriptEngine::buildAndSetSnapshot(QJSValue& cur, Element* depElement) {
             }
 
       // Keep the QObject wrapper as an escape hatch for method calls.
-      snap.setProperty(QStringLiteral("_obj"), _engine.newQObject(depElement));
+      QJSValue qobjWrapper = _engine.newQObject(depElement);
+      snap.setProperty(QStringLiteral("_obj"), qobjWrapper);
+
+      // Expose every Q_INVOKABLE method of the element as a JS
+      // function on the snapshot object, delegating to the QObject
+      // wrapper.  Without this, scripts that call
+      // ``element.childElements()`` or ``element.findByName(...)``
+      // fail because the snapshot is a plain JS object, not a
+      // QObject wrapper, and does not carry the meta-methods.
+      //
+      // We walk the meta-object's method table and create a thin
+      // JS wrapper function for each Method-type Q_INVOKABLE that
+      // calls ``obj._obj.methodName(args...)`` on the underlying
+      // QObject wrapper.  The wrapper is a JS function that uses the
+      // JS ``arguments`` object to forward all arguments.
+      const QMetaObject* methodMeta = depElement->metaObject();
+      for (int mi = 0; mi < methodMeta->methodCount(); ++mi) {
+            QMetaMethod mm = methodMeta->method(mi);
+            if (mm.methodType() != QMetaMethod::Method)
+                  continue;
+            QString methodName = QString::fromUtf8(mm.name());
+            if (methodName.isEmpty())
+                  continue;
+            // Skip if a property with the same name already exists
+            // on the snapshot (e.g. "children" is a Q_PROPERTY whose
+            // value is already in the snapshot as a list).
+            QJSValue existing = snap.property(methodName);
+            if (existing.isCallable() || existing.isArray() || existing.isObject())
+                  continue;
+            // Build a JS function that forwards to _obj.methodName.
+            QString funcSrc = QStringLiteral(
+                "(function() { return this._obj.%1.apply(this._obj, arguments); })")
+                .arg(methodName);
+            QJSValue fn = _engine.evaluate(funcSrc);
+            if (fn.isCallable())
+                  snap.setProperty(methodName, fn);
+            }
 
       // Preserve the child elements already registered in the old
       // object: they are NOT Q_PROPERTYs of the parent and would be
@@ -632,6 +695,519 @@ ScriptEngine::EvalResult ScriptEngine::eval(const QString& script) {
             }
       r.value = v.toVariant();
       return r;
+      }
+
+//---------------------------------------------------------
+//   evalImperative
+//    Evaluate a multi-statement imperative script.  Unlike
+//    evalWithContext() no `with()` scope chain is applied — the
+//    script uses fully-qualified names like `zcam.createElement(...)`.
+//    A timeout protects against infinite loops.
+//---------------------------------------------------------
+
+ScriptEngine::EvalResult ScriptEngine::evalImperative(const QString& script, int timeoutMs) {
+      EvalResult r;
+      if (script.trimmed().isEmpty()) {
+            r.setError(QStringLiteral("empty script"));
+            return r;
+            }
+
+      // Ensure zcam and geom are registered.
+      QJSValue global = _engine.globalObject();
+      if (_scriptApi && !global.property(QStringLiteral("zcam")).isObject()) {
+            _scriptApi->setZcam(_zcam);
+            _scriptApi->setEngine(&_engine);
+            global.setProperty(QStringLiteral("zcam"), _engine.newQObject(_scriptApi));
+            }
+      if (_geometryApi && !global.property(QStringLiteral("geom")).isObject())
+            global.setProperty(QStringLiteral("geom"), _engine.newQObject(_geometryApi));
+      // Ensure the print() global is present (idempotent).
+      ensurePrintGlobal();
+
+      // Wrap the script in an IIFE so that top-level ``return``
+      // statements (common in AI-generated scripts) are valid.
+      // Without the wrapper QJSEngine::evaluate() treats the script as
+      // a Program production where ``return`` is a SyntaxError.
+      QString wrappedScript = QStringLiteral("(function() {\n") + script + QStringLiteral("\n})();");
+
+      // Set up a timeout via QTimer + QJSEngine::setInterrupted.
+      QTimer timer;
+      timer.setSingleShot(true);
+      timer.setInterval(timeoutMs);
+      QObject::connect(&timer, &QTimer::timeout, [&]() { _engine.setInterrupted(true); });
+      timer.start();
+
+      QJSValue v = _engine.evaluate(wrappedScript);
+
+      timer.stop();
+      _engine.setInterrupted(false); // reset for next evaluation
+
+      if (v.isError()) {
+            r.setError(QStringLiteral("%1:%2: %3")
+                    .arg(v.property(QStringLiteral("lineNumber")).toInt())
+                    .arg(v.property(QStringLiteral("columnNumber")).toInt())
+                    .arg(v.toString()));
+            return r;
+            }
+      r.value = v.toVariant();
+      return r;
+      }
+
+//---------------------------------------------------------
+//   evalImperativeQml
+//    QML-facing wrapper for evalImperative.  Returns a QVariantMap
+//    with { ok, value } or { ok, error }.
+//---------------------------------------------------------
+
+QVariantMap ScriptEngine::evalImperativeQml(const QString& script, int timeoutMs) {
+      EvalResult r = evalImperative(script, timeoutMs);
+      QVariantMap result;
+      if (!r.error.isEmpty()) {
+            result[QStringLiteral("ok")]    = false;
+            result[QStringLiteral("error")] = r.error;
+            }
+      else {
+            result[QStringLiteral("ok")]    = true;
+            result[QStringLiteral("value")] = r.value;
+            }
+      return result;
+      }
+
+//--------------------------------------------------------------------
+//     ScriptEngine::ensurePrintGlobal
+//      Register the global `print(...)` JavaScript function on the
+//      engine's global object.  The wrapper stringifies each argument
+//      (JSON.stringify for objects/arrays, String() otherwise) and
+//      joins them with a space, then forwards the result to the C++
+//      print() method which emits scriptPrinted().  Idempotent —
+//      if a global `print` already exists it is left untouched.
+//--------------------------------------------------------------------
+
+void ScriptEngine::ensurePrintGlobal() {
+      QJSValue global = _engine.globalObject();
+      if (global.property(QStringLiteral("print")).isCallable())
+            return;
+      // Register a thin C++ sink object so the JS closure can call
+      // a Q_INVOKABLE method by name.
+      QJSValue sink = _engine.newQObject(this);
+      global.setProperty(QStringLiteral("_printSink"), sink);
+      const char* src = R"js(
+(function() {
+    var parts = [];
+    for (var i = 0; i < arguments.length; ++i) {
+        var a = arguments[i];
+        if (a === null)
+            parts.push("null");
+        else if (a === undefined)
+            parts.push("undefined");
+        else if (typeof a === "object") {
+            try {
+                parts.push(JSON.stringify(a, null, 2));
+            } catch (e) {
+                parts.push(String(a));
+            }
+        } else {
+            parts.push(String(a));
+        }
+    }
+    _printSink.print(parts.join(" "));
+})
+)js";
+      QJSValue fn = _engine.evaluate(src);
+      if (fn.isCallable())
+            global.setProperty(QStringLiteral("print"), fn);
+      }
+
+//--------------------------------------------------------------------
+//     ScriptEngine::print
+//      C++ sink for the JavaScript `print()` global.  Forwards the
+//      message to the app log and emits scriptPrinted() so the QML
+//      Script Console can display it.
+//--------------------------------------------------------------------
+
+void ScriptEngine::print(const QString& msg) {
+      Log("script print: {}", msg);
+      emit scriptPrinted(msg);
+      }
+
+//--------------------------------------------------------------------
+//     sanitizeScriptName
+//      Turn a free-form user-typed name into a safe, readable
+//      file-system name: keep letters, digits and the safe separators
+//      '-' / '_' / '.', collapse runs of any other character to a
+//      single '-', trim leading/trailing '-' and collapse the result
+//      to a sensible length.  Falls back to "script" when nothing
+//      survives (e.g. an empty name or a name that is all symbols).
+//--------------------------------------------------------------------
+
+QString ScriptEngine::sanitizeScriptName(const QString& name) {
+      QString out;
+      out.reserve(name.size());
+      bool lastDash = true; // suppress a leading dash
+      for (const QChar& c : name) {
+            if (c.isLetterOrNumber() || c == u'-' || c == u'_' || c == u'.') {
+                  lastDash = (c == u'-');
+                  out.append(c);
+                  }
+            else if (c.isSpace()) {
+                  if (!lastDash && !out.isEmpty()) {
+                        out.append(u'-');
+                        lastDash = true;
+                        }
+                  }
+            else {
+                  // any other character → separator
+                  if (!lastDash && !out.isEmpty()) {
+                        out.append(u'-');
+                        lastDash = true;
+                        }
+                  }
+            }
+      // Trim trailing dashes / dots.
+      while (!out.isEmpty() && (out.back() == u'-' || out.back() == u'.'))
+            out.chop(1);
+      if (out.isEmpty())
+            out = QStringLiteral("script");
+      // Guard against absurdly long names (file-system limit).
+      if (out.size() > 120)
+            out = out.left(120);
+      return out;
+      }
+
+//--------------------------------------------------------------------
+//     uniqueScriptName
+//      If <base> is already in <taken>, append "-1", "-2", ... until
+//      a free name is found (up to 10000 attempts, then give up and
+//      fall back to base).
+//--------------------------------------------------------------------
+
+QString ScriptEngine::uniqueScriptName(const QString& base, const QStringList& taken) {
+      if (!taken.contains(base))
+            return base;
+      int n = 1;
+      QString candidate;
+      do {
+            candidate = QStringLiteral("%1-%2").arg(base).arg(n);
+            ++n;
+            } while (taken.contains(candidate) && n < 10000);
+      return candidate;
+      }
+
+//--------------------------------------------------------------------
+//     scriptsDirectory
+//      The named scripts live in ~/ZCam/scripts (created on demand),
+//      mirroring the AI sessions in ~/ZCam/ai_sessions.
+//--------------------------------------------------------------------
+
+QString ScriptEngine::scriptsDirectory() const {
+      QString home = QDir::homePath();
+      QString dir  = home + "/ZCam/scripts";
+      QDir().mkpath(dir);
+      return dir;
+      }
+
+//--------------------------------------------------------------------
+//     nextScriptPath
+//      Generate the next available script file path:
+//      ~/ZCam/scripts/Script-yy-MM-dd-n.js
+//      Mirrors AIAgent::nextSessionPath() which produces
+//      Session-yy-MM-dd-n.json.
+//--------------------------------------------------------------------
+
+QString ScriptEngine::nextScriptPath() const {
+      QDir dir(scriptsDirectory());
+      if (!dir.exists())
+            dir.mkpath(".");
+      QDate today = QDate::currentDate();
+      int n       = 1;
+      QString path;
+      do {
+            path = dir.absoluteFilePath(QString("Script-%1-%2.js").arg(today.toString("yy-MM-dd")).arg(n));
+            ++n;
+            } while (QFile::exists(path) && n < 10000);
+      return path;
+      }
+
+//--------------------------------------------------------------------
+//     scriptFileName
+//      Reconstructs the full script filename ("Script-…-n.js")
+//      from a compact display name stored in _scriptList.
+//--------------------------------------------------------------------
+
+QString ScriptEngine::scriptFileName(int index) const {
+      QString name = _scriptList.at(index);
+      if (!name.startsWith("Script-"))
+            name = "Script-" + name;
+      if (!name.endsWith(".js"))
+            name += ".js";
+      return name;
+      }
+
+//--------------------------------------------------------------------
+//     refreshScriptList
+//      Re-read the scripts directory and rebuild _scriptList with
+//      compact display names (strip "Script-" prefix and ".js" suffix).
+//      Emits scriptListChanged().
+//--------------------------------------------------------------------
+
+void ScriptEngine::refreshScriptList() {
+      QDir dir(scriptsDirectory());
+      QStringList files = dir.entryList({QStringLiteral("Script-*.js")}, QDir::Files, QDir::Name);
+      _scriptList.clear();
+      for (const QString& f : files) {
+            QString display = f;
+            if (display.startsWith("Script-"))
+                  display = display.mid(7);
+            if (display.endsWith(".js"))
+                  display.chop(3);
+            _scriptList.append(display);
+            }
+      emit scriptListChanged();
+      }
+
+//--------------------------------------------------------------------
+//     scriptNames
+//      Sorted list of existing script display names (without the
+//      "Script-" prefix and ".js" suffix).  Also refreshes the
+//      internal _scriptList so the Q_PROPERTY stays in sync.
+//--------------------------------------------------------------------
+
+QStringList ScriptEngine::scriptNames() {
+      refreshScriptList();
+      return _scriptList;
+      }
+
+//--------------------------------------------------------------------
+//     scriptText
+//      Load the named script from disk.  *name* is a display name
+//      (without "Script-" prefix); it is sanitised and the
+//      "Script-" prefix is prepended automatically.
+//--------------------------------------------------------------------
+
+QString ScriptEngine::scriptText(const QString& name) {
+      QString safe = sanitizeScriptName(name);
+      if (safe.isEmpty())
+            return {};
+      // The file on disk is "Script-<safe>.js".
+      if (!safe.startsWith("Script-"))
+            safe = "Script-" + safe;
+      QFile f(scriptsDirectory() + "/" + safe + ".js");
+      if (!f.open(QIODevice::ReadOnly))
+            return {};
+      return QString::fromUtf8(f.readAll());
+      }
+
+//--------------------------------------------------------------------
+//     saveScript
+//      Create or overwrite the script <name>.js with <content>.
+//      *name* is a display name (without "Script-" prefix); the
+//      "Script-" prefix is prepended automatically.
+//--------------------------------------------------------------------
+
+bool ScriptEngine::saveScript(const QString& name, const QString& content) {
+      QString safe = sanitizeScriptName(name);
+      if (safe.isEmpty())
+            return false;
+      if (!safe.startsWith("Script-"))
+            safe = "Script-" + safe;
+      QDir().mkpath(scriptsDirectory());
+      QFile f(scriptsDirectory() + "/" + safe + ".js");
+      if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            Warning("script save failed: {}", f.fileName().toStdString());
+            return false;
+            }
+      f.write(content.toUtf8());
+      f.close();
+      return true;
+      }
+
+//--------------------------------------------------------------------
+//     selectScript
+//      Load the script at the given index into the current state.
+//      Updates _currentScriptIndex, _currentScriptName and emits
+//      the appropriate signals.
+//--------------------------------------------------------------------
+
+void ScriptEngine::selectScript(int index) {
+      if (index < 0 || index >= _scriptList.size()) {
+            _currentScriptIndex = -1;
+            _currentScriptName.clear();
+            emit currentScriptChanged();
+            emit currentScriptNameChanged();
+            return;
+            }
+      _currentScriptIndex = index;
+      _currentScriptName  = scriptFileName(index);
+      emit currentScriptChanged();
+      emit currentScriptNameChanged();
+      }
+
+//--------------------------------------------------------------------
+//     setCurrentScript
+//      Q_PROPERTY WRITE method — delegates to selectScript().
+//--------------------------------------------------------------------
+
+void ScriptEngine::setCurrentScript(int index) {
+      if (index == _currentScriptIndex)
+            return;
+      selectScript(index);
+      }
+
+//--------------------------------------------------------------------
+//     newScript
+//      Create a brand-new empty script with an auto-generated name
+//      like "Script-yy-MM-dd-n" (mirroring AIAgent sessions).
+//      When *name* is non-empty it is used as a base (sanitised and
+//      de-duplicated); when empty a name is auto-generated.
+//      Returns the display name (without "Script-" prefix) that
+//      was actually created.  Refreshes the script list and selects
+//      the new script as the current one.
+//--------------------------------------------------------------------
+
+QString ScriptEngine::newScript(const QString& name) {
+      QString path;
+      QString displayName;
+      if (name.isEmpty()) {
+            // Auto-generate like AI sessions: Script-yy-MM-dd-n.js
+            path        = nextScriptPath();
+            QString fn  = QFileInfo(path).fileName();      // "Script-yy-MM-dd-n.js"
+            displayName = fn;
+            if (displayName.startsWith("Script-"))
+                  displayName = displayName.mid(7);
+            if (displayName.endsWith(".js"))
+                  displayName.chop(3);
+            QDir().mkpath(QFileInfo(path).absolutePath());
+            QFile f(path);
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                  f.close();
+            }
+      else {
+            // User-supplied name: sanitise, prepend "Script-", de-duplicate.
+            QStringList taken = _scriptList;
+            QString safe     = sanitizeScriptName(name);
+            if (!safe.startsWith("Script-"))
+                  safe = "Script-" + safe;
+            QString unique   = uniqueScriptName(safe, taken);
+            saveScript(unique.mid(7), QString());     // saveScript prepends "Script-"
+            displayName = unique;
+            if (displayName.startsWith("Script-"))
+                  displayName = displayName.mid(7);
+            }
+      refreshScriptList();
+      int newIdx = _scriptList.indexOf(displayName);
+      if (newIdx < 0)
+            newIdx = _scriptList.size() - 1;
+      selectScript(newIdx);
+      return displayName;
+      }
+
+//--------------------------------------------------------------------
+//     deleteScriptByIndex
+//      Delete the script at the given index and refresh the list.
+//      If the deleted script was the current one, the first remaining
+//      script (if any) becomes current.
+//--------------------------------------------------------------------
+
+bool ScriptEngine::deleteScriptByIndex(int index) {
+      if (index < 0 || index >= _scriptList.size())
+            return false;
+      QString fileName = scriptFileName(index);
+      QString path     = scriptsDirectory() + "/" + fileName;
+      bool removed     = QFile::remove(path);
+      Debug("script delete: {} ({})", path.toStdString(), removed ? "ok" : "not found");
+      if (!removed)
+            return false;
+      bool wasCurrent = (_currentScriptIndex == index);
+      refreshScriptList();
+      if (wasCurrent) {
+            // Select the first remaining script, or clear.
+            if (_scriptList.isEmpty()) {
+                  _currentScriptIndex = -1;
+                  _currentScriptName.clear();
+                  emit currentScriptChanged();
+                  emit currentScriptNameChanged();
+                  }
+            else
+                  selectScript(0);
+            }
+      else if (_currentScriptIndex > index) {
+            // The current index shifted because a lower entry was removed.
+            --_currentScriptIndex;
+            emit currentScriptChanged();
+            }
+      return true;
+      }
+
+//--------------------------------------------------------------------
+//     deleteScript
+//      Delete the named script file.  *name* is a display name
+//      (without "Script-" prefix).  Returns true if it existed.
+//--------------------------------------------------------------------
+
+bool ScriptEngine::deleteScript(const QString& name) {
+      QString safe = sanitizeScriptName(name);
+      if (safe.isEmpty())
+            return false;
+      if (!safe.startsWith("Script-"))
+            safe = "Script-" + safe;
+      QString path = scriptsDirectory() + "/" + safe + ".js";
+      bool removed = QFile::remove(path);
+      Debug("script delete: {} ({})", path.toStdString(), removed ? "ok" : "not found");
+      if (removed)
+            refreshScriptList();
+      return removed;
+      }
+
+//--------------------------------------------------------------------
+//     renameScript
+//      Rename an existing script.  *newName* is sanitised and
+//      de-duplicated (ignoring <oldName> itself).  Returns the new
+//      display name (without "Script-" prefix) that was actually
+//      used ("" on failure).  Refreshes the script list and keeps
+//      the renamed script selected.
+//--------------------------------------------------------------------
+
+QString ScriptEngine::renameScript(const QString& oldName, const QString& newName) {
+      QString oldSafe = sanitizeScriptName(oldName);
+      if (oldSafe.isEmpty())
+            return {};
+      if (!oldSafe.startsWith("Script-"))
+            oldSafe = "Script-" + oldSafe;
+      QString oldPath = scriptsDirectory() + "/" + oldSafe + ".js";
+      if (!QFile::exists(oldPath))
+            return {};
+      // Load the content before moving the file.
+      QString content = scriptText(oldName);
+      QStringList taken = _scriptList;
+      // Remove the old display name from the taken list so we can
+      // rename onto it without de-duplicating against itself.
+      QString oldDisplay = oldSafe;
+      if (oldDisplay.startsWith("Script-"))
+            oldDisplay = oldDisplay.mid(7);
+      taken.removeAll(oldDisplay);
+      QString newSafe = sanitizeScriptName(newName.isEmpty() ? oldSafe : newName);
+      if (!newSafe.startsWith("Script-"))
+            newSafe = "Script-" + newSafe;
+      QString unique  = uniqueScriptName(newSafe, taken);
+      QString newPath = scriptsDirectory() + "/" + unique + ".js";
+      // Write the new file, then delete the old one.
+      QFile f(newPath);
+      if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            Warning("script rename failed: {}", newPath.toStdString());
+            return {};
+            }
+      f.write(content.toUtf8());
+      f.close();
+      QFile::remove(oldPath);
+      // Refresh and select the renamed script.
+      refreshScriptList();
+      QString newDisplay = unique;
+      if (newDisplay.startsWith("Script-"))
+            newDisplay = newDisplay.mid(7);
+      int newIdx = _scriptList.indexOf(newDisplay);
+      if (newIdx >= 0)
+            selectScript(newIdx);
+      return newDisplay;
       }
 
 //---------------------------------------------------------

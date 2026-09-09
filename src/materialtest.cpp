@@ -27,6 +27,8 @@
 #include "treemodel.h"
 #include "logger.h"
 #include "laser.h"
+#include "laser_mop.h"
+#include "config.h"
 
 //---------------------------------------------------------
 //   MaterialTest
@@ -173,7 +175,7 @@ void ZCam::createMaterialTest() {
       auto ll = new LaserMop(this, fixture);
       ll->setName("LL-Pattern");
       // Set the LaserLayer on the Pattern layer so all children inherit it.
-      mtest->set_laserLayer(ll);
+      mtest->set_mop(ll);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));
@@ -248,16 +250,16 @@ static QString label(ParameterType t) {
 void MaterialTest::createChildren() {
       // Delete the fixture LaserLayers (Recipe elements) that were created
       // by the previous createChildren() call.  These are identified by
-      // collecting the laserLayer() pointers set on direct child Groups
+      // collecting the mop() pointers set on direct child Groups
       // of this MaterialTest, then matching them against Recipe elements
       // in the Fixture.  External LaserLayers (e.g. LL-Pattern whose
-      // laserLayer is set on the parent Pattern layer) are preserved.
+      // mop is set on the parent Pattern layer) are preserved.
       Fixture* fixture = zcam->project()->fixture();
       if (!fixture)
             return;
 
       // Collect the set of LaserLayer (Recipe*) pointers that are set as
-      // the laserLayer property on direct child Groups of this MaterialTest.
+      // the mop property on direct child Groups of this MaterialTest.
       // These are exactly the LaserLayers created by previous createChildren()
       // calls and must be deleted before recreating the children.
       //
@@ -268,8 +270,8 @@ void MaterialTest::createChildren() {
       QSet<Mop*> childLaserLayers;
       for (Element* c : children()) {
             auto* e3d = qobject_cast<Element3d*>(c);
-            if (e3d && e3d->laserLayer())
-                  childLaserLayers.insert(e3d->laserLayer());
+            if (e3d && e3d->mop())
+                  childLaserLayers.insert(e3d->mop());
             }
 
       // Delete the old fixture LaserLayers that belong to this MaterialTest.
@@ -359,7 +361,7 @@ void MaterialTest::createChildren() {
                   LaserMop* ll = new LaserMop(zcam, fixture);
                   ll->setName(format("ll-{}-{}", row, column).c_str());
                   ll->set_recipe(materialLayer());
-                  layer->set_laserLayer(ll);
+                  layer->set_mop(ll);
                   ll->set_overrideType1(int(rowParameter()));
                   ll->set_overrideValue1(rv);
                   ll->set_overrideType2(int(columnParameter()));
@@ -386,7 +388,7 @@ void MaterialTest::createChildren() {
 
             LaserMop* ll = new LaserMop(zcam, fixture);
             ll->setName("ll-border");
-            borderL->set_laserLayer(ll);
+            borderL->set_mop(ll);
             ll->set_recipe(borderLayer());
             fixture->addChild(ll);
 
@@ -479,7 +481,7 @@ void MaterialTest::createChildren() {
 
             LaserMop* ll = new LaserMop(zcam, fixture);
             ll->setName("ll-text");
-            textL->set_laserLayer(ll);
+            textL->set_mop(ll);
             ll->set_recipe(textLayer());
             fixture->addChild(ll);
             }
@@ -502,15 +504,15 @@ void MaterialTest::createChildren() {
                   }
             }
       // Also emit add3dElement for new fixture LaserLayers.
-      // Use the same direct laserLayer() property check on the newly
+      // Use the same direct mop() property check on the newly
       // created child Groups — collectElements() would fail because the
       // children's pathList may not be populated yet.
       if (fixture) {
             QSet<Mop*> newChildLaserLayers;
             for (Element* c : children()) {
                   auto* e3d = qobject_cast<Element3d*>(c);
-                  if (e3d && e3d->laserLayer())
-                        newChildLaserLayers.insert(e3d->laserLayer());
+                  if (e3d && e3d->mop())
+                        newChildLaserLayers.insert(e3d->mop());
                   }
             for (Element* c : fixture->children()) {
                   auto* ll = qobject_cast<LaserMop*>(c);
@@ -535,6 +537,7 @@ void MaterialTest::addText(double x, double y, const QString& s, Group* layer, d
       r->setName("text");
       r->set_text(s);
       r->set_pointSize(pt);
+      r->set_fill(true);
       //      r->setWeight(800);
       r->set_fontFamily("Noto Sans");
       r->set_pos(QVector3D(x, y, 0));
@@ -609,13 +612,22 @@ void ZCam::createGalvoTest() {
       // creating a new one.  The Machine* is owned by the
       // Machines asset (not by the Project), so the pointer
       // remains valid across project recreation.
-      Machine* savedMachine = project() ? project()->machine() : nullptr;
+      Machine* machine = project() ? project()->machine() : nullptr;
       startNewProject();
 
       // Restore the machine to the new project so the material
       // test pattern uses the same machine as the current project.
-      if (savedMachine)
-            project()->set_machine(savedMachine);
+      if (machine) {
+            Debug("use saved machine {}", machine->name());
+            project()->set_machine(machine);
+            }
+      else {
+            machine = machines()->machine(config()->defaultMachine());
+            }
+      if (!machine) {
+            Critical("no machine");
+            return;
+            }
 
       project()->setName("Galvo-Test 9");
 
@@ -645,6 +657,7 @@ void ZCam::createGalvoTest() {
       const double ext = 5.0; // mm
 
       // One square the size of the laser work area
+#if 0
       auto sq = new Rectangle(this, layer);
       sq->setName("workArea");
       sq->set_size(QVector2D(w, h));
@@ -654,7 +667,7 @@ void ZCam::createGalvoTest() {
       sq->setColor(QColor("black"));
       sq->update();
       layer->addChild(sq);
-
+#endif
       // Crosshair: 3 horizontal + 3 vertical lines
       // extending a few millimeters beyond the work area.
       // The lines are at the field edges (0, h/2, h) and (0, w/2, w),
@@ -690,7 +703,7 @@ void ZCam::createGalvoTest() {
       // Create a LaserLayer linked to the galvo pattern layer
       auto ll = new LaserMop(this, fixture);
       ll->setName("LL-GalvoPattern9");
-      layer->set_laserLayer(ll);
+      layer->set_mop(ll);
       auto recipes = this->recipes();
       if (recipes && recipes->recipeCount() > 0)
             ll->set_recipe(recipes->recipePtr(0));
